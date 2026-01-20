@@ -1,0 +1,851 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T-Sheet - Select Tee Time</title>
+  <link rel="stylesheet" href="/frontend/style.css">
+  <style>
+    body {
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    
+    .tsheet-container {
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: none;
+      max-width: 100%;
+      width: 100%;
+      padding: 0;
+      min-height: 100vh;
+      background: #fff;
+    }
+    
+    .tsheet-header {
+      display: flex;
+      align-items: center;
+      padding: 15px 20px;
+      background: #fff;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .back-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: none;
+      font-size: 24px;
+      color: #064f32;
+      cursor: pointer;
+      padding: 0;
+    }
+    
+    .header-info {
+      margin-left: 10px;
+    }
+    
+    .club-name {
+      font-size: 12px;
+      color: #888;
+      margin: 0;
+    }
+    
+    .page-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin: 0;
+    }
+    
+    .selectors {
+      display: flex;
+      gap: 15px;
+      padding: 15px 20px;
+    }
+    
+    .selector-btn {
+      flex: 1;
+      padding: 15px;
+      border: 2px solid #064f32;
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      text-align: center;
+    }
+    
+    .selector-btn.active {
+      background: #fff;
+    }
+    
+    .selector-btn .main-text {
+      font-size: 18px;
+      font-weight: 600;
+      color: #064f32;
+    }
+    
+    .selector-btn .sub-text {
+      font-size: 12px;
+      color: #888;
+    }
+    
+    .column-headers {
+      display: flex;
+      padding: 15px 20px;
+      border-bottom: 2px solid #333;
+      gap: 20px;
+      align-items: center;
+    }
+     
+     .time-header {
+       width: 100px;
+       font-size: 13px;
+       font-weight: 700;
+       color: #333;
+       text-align: left;
+     }
+     
+     .players-header {
+       flex: 1;
+       text-align: center;
+       font-size: 13px;
+       font-weight: 700;
+       color: #333;
+     }
+     
+
+    
+    .tee-times-list {
+      padding: 10px 20px;
+      overflow-y: auto;
+      max-height: calc(100vh - 250px);
+    }
+    
+    .tee-time-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+      min-height: 45px;
+      gap: 30px;
+      padding: 0 20px;
+      border-bottom: 1px solid #f0f0f0;
+      padding-bottom: 20px;
+    }
+    
+    .tee-time-label {
+      width: 100px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      text-align: left;
+    }
+    
+    .player-slots {
+      display: flex;
+      flex: 1;
+      gap: 12px;
+      justify-content: center;
+    }
+    
+    .player-slot {
+      width: 45px;
+      height: 45px;
+      padding: 0;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #999;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .player-slot:hover {
+      border-color: #064f32;
+      background: #f0f7f4;
+      color: #064f32;
+    }
+    
+    .player-slot.booked {
+      background: #fff;
+      color: #2ecc71;
+      border-color: #2ecc71;
+      font-weight: 600;
+    }
+    
+    .player-slot.checked-in {
+      background: #2ecc71;
+      color: #fff;
+      border-color: #2ecc71;
+      font-weight: 600;
+    }
+    
+
+    
+    .add-tee-time-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+      padding: 20px;
+      gap: 30px;
+    }
+    
+    .add-tee-time-btn {
+      width: 50px;
+      height: 50px;
+      padding: 0;
+      border: 2px solid #064f32;
+      border-radius: 25px;
+      background: #fff;
+      color: #064f32;
+      font-size: 28px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .add-tee-time-btn:hover {
+      background: #f0f7f4;
+    }
+    
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: #fff;
+      border-radius: 15px;
+      padding: 25px;
+      width: 90%;
+      max-width: 400px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .modal-close {
+      width: 30px;
+      height: 30px;
+      border: none;
+      background: #f0f0f0;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+    
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    
+    .price-display {
+      font-size: 20px;
+      font-weight: 700;
+      color: #064f32;
+      text-align: center;
+      padding: 15px;
+      background: #f0f7f4;
+      border-radius: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .modal-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    
+    .btn-primary {
+      background: #064f32;
+      color: #fff;
+    }
+    
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .btn-danger {
+      background: #dc3545;
+      color: #fff;
+    }
+    
+    .btn-success {
+      background: #28a745;
+      color: #fff;
+    }
+    
+    /* Date picker modal */
+    .date-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      margin-bottom: 20px;
+    }
+    
+    .date-picker-day {
+      padding: 10px 5px;
+      text-align: center;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .date-picker-day:hover {
+      background: #f0f7f4;
+      border-color: #064f32;
+    }
+    
+    .date-picker-day.selected {
+      background: #064f32;
+      color: #fff;
+      border-color: #064f32;
+    }
+    
+    .date-picker-day.today {
+      border-color: #064f32;
+      font-weight: 600;
+    }
+    
+    .holes-selector {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+    }
+    
+    .holes-option {
+      padding: 15px 30px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: center;
+    }
+    
+    .holes-option:hover,
+    .holes-option.selected {
+      border-color: #064f32;
+      background: #f0f7f4;
+    }
+    
+    .holes-option .number {
+      font-size: 24px;
+      font-weight: 700;
+      color: #064f32;
+    }
+    
+    .holes-option .label {
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="tsheet-container">
+    <div class="tsheet-header">
+      <button class="back-btn" onclick="history.back()">‹</button>
+      <div class="header-info">
+        <p class="club-name">Golf Club</p>
+        <h1 class="page-title">Select Tee Time</h1>
+      </div>
+    </div>
+    
+    <div class="selectors">
+      <button class="selector-btn" onclick="openDatePicker()">
+        <div class="main-text" id="selected-day">Today</div>
+        <div class="sub-text" id="selected-date"></div>
+      </button>
+      <button class="selector-btn" onclick="openHolesPicker()">
+        <div class="main-text" id="selected-holes">18</div>
+        <div class="sub-text">Holes</div>
+      </button>
+    </div>
+    
+    <div class="column-headers">
+      <div class="time-header">TEE TIME</div>
+      <div class="players-header">Select Players</div>
+    </div>
+    
+    <div class="tee-times-list" id="tee_times_list">
+      <!-- Tee times will be loaded here -->
+    </div>
+  </div>
+
+  <!-- Booking Modal -->
+  <div class="modal-overlay" id="bookingModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle">Book Slot</span>
+        <button class="modal-close" onclick="closeModal('bookingModal')">×</button>
+      </div>
+      <div id="modalBody">
+        <!-- Dynamic content -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Date Picker Modal -->
+  <div class="modal-overlay" id="datePickerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">Select Date</span>
+        <button class="modal-close" onclick="closeModal('datePickerModal')">×</button>
+      </div>
+      <div id="datePickerBody">
+        <!-- Calendar will be rendered here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Holes Picker Modal -->
+  <div class="modal-overlay" id="holesPickerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">Select Holes</span>
+        <button class="modal-close" onclick="closeModal('holesPickerModal')">×</button>
+      </div>
+      <div class="holes-selector">
+        <div class="holes-option" onclick="selectHoles(9)">
+          <div class="number">9</div>
+          <div class="label">Holes</div>
+        </div>
+        <div class="holes-option selected" onclick="selectHoles(18)">
+          <div class="number">18</div>
+          <div class="label">Holes</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Tee Time Modal -->
+  <div class="modal-overlay" id="addTeeTimeModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">Add New Tee Time</span>
+        <button class="modal-close" onclick="closeModal('addTeeTimeModal')">×</button>
+      </div>
+      <div class="form-group">
+        <label>Select Time</label>
+        <input type="time" id="new_tee_time" step="600">
+      </div>
+      <button class="modal-btn btn-primary" onclick="createTeeTime()">Create Tee Time</button>
+    </div>
+  </div>
+
+<script>
+const API_PREFIX = '/tsheet';
+const token = localStorage.getItem('token');
+if(!token) location.href='/frontend/index.html';
+
+let selectedDate = new Date();
+let selectedHoles = 18;
+let allTeeTimes = [];
+let golfFees = [];
+
+// Format time for display
+function formatTime(date) {
+  const d = new Date(date);
+  let hours = d.getHours();
+  let minutes = d.getMinutes();
+  return `${hours}:${minutes.toString().padStart(2, '0')}`;
+}
+
+// Format date for display
+function formatDateDisplay(date) {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const checkDate = new Date(date);
+  checkDate.setHours(0,0,0,0);
+  
+  const dayName = days[date.getDay()];
+  const dateStr = `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  
+  if (checkDate.getTime() === today.getTime()) {
+    return { day: 'Today', date: dateStr };
+  }
+  
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (checkDate.getTime() === tomorrow.getTime()) {
+    return { day: 'Tomorrow', date: dateStr };
+  }
+  
+  return { day: dayName, date: dateStr };
+}
+
+// Update date display
+function updateDateDisplay() {
+  const display = formatDateDisplay(selectedDate);
+  document.getElementById('selected-day').textContent = display.day;
+  document.getElementById('selected-date').textContent = display.date;
+}
+
+// Load golf fees
+async function loadFees() {
+  try {
+    const res = await fetch('/fees/golf', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (res.ok) {
+      golfFees = await res.json();
+    }
+  } catch(e) {
+    console.error('Failed to load fees:', e);
+  }
+}
+
+// Load tee times
+async function loadTeeTimes() {
+  try {
+    const res = await fetch(API_PREFIX + '/', { headers: { 'Authorization': 'Bearer ' + token }});
+    allTeeTimes = await res.json();
+    renderTeeTimes();
+  } catch(e) {
+    console.error('Failed to load tee times:', e);
+  }
+}
+
+// Render tee times for selected date
+function renderTeeTimes() {
+  const container = document.getElementById('tee_times_list');
+  
+  // Filter tee times for selected date
+  const dateStr = selectedDate.toISOString().split('T')[0];
+  const dayTeeTimes = allTeeTimes.filter(tt => {
+    const ttDate = new Date(tt.tee_time).toISOString().split('T')[0];
+    return ttDate === dateStr;
+  }).sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
+  
+  let html = '';
+  
+  // Tee time rows
+  dayTeeTimes.forEach(tt => {
+    const time = formatTime(tt.tee_time);
+    const bookings = tt.bookings || [];
+    
+    html += `
+      <div class="tee-time-row">
+        <div class="tee-time-label">${time}</div>
+        <div class="player-slots">
+    `;
+    
+    // 4 player slots with numbers
+    for (let i = 0; i < 4; i++) {
+      const booking = bookings[i];
+      const slotNumber = i + 1;
+      if (booking) {
+        const statusClass = booking.status === 'checked_in' ? 'checked-in' : 'booked';
+        html += `<div class="player-slot ${statusClass}" onclick="openBookingDetails(${tt.id}, ${booking.id})" title="${booking.player_name}">${slotNumber}</div>`;
+      } else {
+        html += `<div class="player-slot" onclick="openBookingForm(${tt.id}, ${slotNumber})">${slotNumber}</div>`;
+      }
+    }
+    
+    html += `
+        </div>
+      </div>
+    `;
+  });
+  
+  // Add new tee time button
+  html += `
+    <div class="add-tee-time-row">
+      <button class="add-tee-time-btn" onclick="openAddTeeTimeModal()">+</button>
+    </div>
+  `;
+  
+  container.innerHTML = html;
+}
+
+// Open modals
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+function openDatePicker() {
+  renderDatePicker();
+  openModal('datePickerModal');
+}
+
+function openHolesPicker() {
+  openModal('holesPickerModal');
+}
+
+function openAddTeeTimeModal() {
+  openModal('addTeeTimeModal');
+}
+
+// Render date picker
+function renderDatePicker() {
+  const container = document.getElementById('datePickerBody');
+  const today = new Date();
+  const days = [];
+  
+  // Show next 14 days
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    days.push(d);
+  }
+  
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  let html = '<div class="date-picker-grid">';
+  
+  // Day name headers
+  dayNames.forEach(name => {
+    html += `<div style="text-align: center; font-size: 11px; color: #888; padding: 5px;">${name}</div>`;
+  });
+  
+  // Add empty cells for alignment
+  const firstDayOfWeek = days[0].getDay();
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    html += '<div></div>';
+  }
+  
+  days.forEach(d => {
+    const isToday = d.toDateString() === today.toDateString();
+    const isSelected = d.toDateString() === selectedDate.toDateString();
+    let classes = 'date-picker-day';
+    if (isToday) classes += ' today';
+    if (isSelected) classes += ' selected';
+    
+    html += `<div class="${classes}" onclick="selectDate('${d.toISOString()}')">${d.getDate()}</div>`;
+  });
+  
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function selectDate(isoString) {
+  selectedDate = new Date(isoString);
+  updateDateDisplay();
+  closeModal('datePickerModal');
+  renderTeeTimes();
+}
+
+function selectHoles(num) {
+  selectedHoles = num;
+  document.getElementById('selected-holes').textContent = num;
+  document.querySelectorAll('.holes-option').forEach(el => el.classList.remove('selected'));
+  event.target.closest('.holes-option').classList.add('selected');
+  closeModal('holesPickerModal');
+  renderTeeTimes();
+}
+
+// Create new tee time
+async function createTeeTime() {
+  const timeInput = document.getElementById('new_tee_time').value;
+  if (!timeInput) {
+    alert('Please select a time');
+    return;
+  }
+  
+  const [hours, minutes] = timeInput.split(':');
+  const teeDateTime = new Date(selectedDate);
+  teeDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+  
+  try {
+    const res = await fetch(API_PREFIX + '/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({ tee_time: teeDateTime.toISOString() })
+    });
+    
+    if (res.ok) {
+      closeModal('addTeeTimeModal');
+      loadTeeTimes();
+    } else {
+      const error = await res.json();
+      alert('Error: ' + JSON.stringify(error));
+    }
+  } catch(e) {
+    alert('Failed to create tee time');
+  }
+}
+
+// Open booking page
+function openBookingForm(teeTimeId, slotNumber) {
+  const teeTime = allTeeTimes.find(tt => tt.id === teeTimeId);
+  if (teeTime) {
+    window.location.href = `/frontend/booking.html?tee_time_id=${teeTimeId}&tee_time=${encodeURIComponent(teeTime.tee_time)}`;
+  }
+}
+
+function updatePriceDisplay() {
+  const select = document.getElementById('booking_fee');
+  const option = select.options[select.selectedIndex];
+  const price = option.getAttribute('data-price');
+  
+  if (price) {
+    document.getElementById('price_display').textContent = `Total: R${price}`;
+  } else {
+    document.getElementById('price_display').textContent = 'Select a fee type';
+  }
+}
+
+async function createBooking(teeTimeId) {
+  const name = document.getElementById('booking_name').value;
+  const email = document.getElementById('booking_email').value;
+  const handicap = document.getElementById('booking_handicap').value;
+  const feeId = document.getElementById('booking_fee').value;
+  
+  if (!name) {
+    alert('Please enter player name');
+    return;
+  }
+  
+  if (!feeId) {
+    alert('Please select a fee type');
+    return;
+  }
+  
+  try {
+    const res = await fetch('/tsheet/booking', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        tee_time_id: teeTimeId,
+        player_name: name,
+        player_email: email,
+        handicap_number: handicap || null,
+        fee_category_id: parseInt(feeId)
+      })
+    });
+    
+    if (res.ok) {
+      closeModal('bookingModal');
+      alert('✓ Booking created successfully!');
+      loadTeeTimes();
+    } else {
+      const error = await res.json();
+      alert('Booking error: ' + JSON.stringify(error));
+    }
+  } catch(e) {
+    alert('Failed to create booking');
+  }
+}
+
+// Open booking details
+async function openBookingDetails(teeTimeId, bookingId) {
+  // Find the booking
+  const teeTime = allTeeTimes.find(tt => tt.id === teeTimeId);
+  const booking = teeTime?.bookings?.find(b => b.id === bookingId);
+  
+  if (!booking) return;
+  
+  document.getElementById('modalTitle').textContent = 'Booking Details';
+  
+  const isCheckedIn = booking.status === 'checked_in';
+  
+  document.getElementById('modalBody').innerHTML = `
+    <div style="padding: 15px; background: #f9f9f9; border-radius: 10px; margin-bottom: 15px;">
+      <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">${booking.player_name}</div>
+      <div style="font-size: 14px; color: #666; margin-bottom: 5px;">
+        <strong>Status:</strong> ${booking.status.replace('_', ' ')}
+      </div>
+      <div style="font-size: 14px; color: #666; margin-bottom: 5px;">
+        <strong>Price:</strong> R${booking.price}
+      </div>
+      ${booking.player_email ? `<div style="font-size: 14px; color: #666;"><strong>Email:</strong> ${booking.player_email}</div>` : ''}
+    </div>
+    ${!isCheckedIn ? `<button class="modal-btn btn-success" onclick="checkIn(${bookingId})">Check In</button>` : ''}
+    <button class="modal-btn btn-secondary" onclick="closeModal('bookingModal')">Close</button>
+  `;
+  
+  openModal('bookingModal');
+}
+
+async function checkIn(bookingId) {
+  try {
+    const res = await fetch('/checkin/' + bookingId, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    
+    if (res.ok) {
+      closeModal('bookingModal');
+      alert('✓ Checked in successfully!');
+      loadTeeTimes();
+    } else {
+      alert('Check-in failed');
+    }
+  } catch(e) {
+    alert('Check-in failed');
+  }
+}
+
+// Initialize
+updateDateDisplay();
+loadFees();
+loadTeeTimes();
+</script>
+</body>
+</html>

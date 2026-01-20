@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Check-in | GreenLink</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="overlay"></div>
+
+    <div class="container fade-in">
+        <div class="header-card fade-in-slow">
+            <img src="assets/logo.jpeg" alt="GreenLink Logo" class="logo" />
+            <h1>Player Check-in</h1>
+            <p>Scan handicap card or enter GreenLink ID</p>
+        </div>
+
+        <div class="card fade-in">
+            <h2>Quick Check-in</h2>
+            
+            <!-- Card Scanner Input -->
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600;">Scan Handicap Card or GreenLink ID</label>
+                <input 
+                    type="text" 
+                    id="cardScanner" 
+                    placeholder="Place card on scanner or type ID..." 
+                    autofocus 
+                    style="font-size: 18px; padding: 15px;"
+                />
+                <p style="font-size: 13px; color: #666; margin-top: 5px;">
+                    💡 Tip: Focus this field and scan the player's card
+                </p>
+            </div>
+
+            <button onclick="searchBooking()" style="margin-bottom: 20px;">Search Booking</button>
+
+            <!-- Booking Results -->
+            <div id="bookingResults"></div>
+        </div>
+
+        <div class="card fade-in">
+            <h3>Manual Booking Lookup</h3>
+            <input type="number" id="bookingId" placeholder="Enter Booking ID" />
+            <button onclick="checkinById()">Check-in by ID</button>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="goBack()" style="background: #666;">← Back to Dashboard</button>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+        if (!token) window.location.href = '/frontend/index.html';
+
+        // Auto-submit when card is scanned (simulating barcode scanner)
+        document.getElementById('cardScanner').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchBooking();
+            }
+        });
+
+        async function searchBooking() {
+            const cardValue = document.getElementById('cardScanner').value.trim();
+            if (!cardValue) {
+                alert('Please scan a card or enter an ID');
+                return;
+            }
+
+            // Get all tee times and search for matching booking
+            const res = await fetch('/tsheet/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            
+            if (!res.ok) {
+                alert('Error fetching tee times');
+                return;
+            }
+
+            const teeTimes = await res.json();
+            let foundBookings = [];
+
+            // Search through all bookings
+            for (const tt of teeTimes) {
+                const bookingsRes = await fetch(`/tsheet/bookings/${tt.id}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const bookings = await bookingsRes.json();
+                
+                // Match by club_card, handicap_number, or greenlink_id
+                const matches = bookings.filter(b => 
+                    b.club_card === cardValue || 
+                    b.handicap_number === cardValue || 
+                    b.greenlink_id === cardValue
+                );
+                
+                foundBookings.push(...matches);
+            }
+
+            displayResults(foundBookings);
+        }
+
+        function displayResults(bookings) {
+            const results = document.getElementById('bookingResults');
+            
+            if (bookings.length === 0) {
+                results.innerHTML = '<div style="padding: 15px; background: #ffe6e6; border-radius: 8px; color: #cc0000;">No bookings found for this card</div>';
+                return;
+            }
+
+            const html = bookings.map(b => `
+                <div style="padding: 15px; background: #f0f9f0; border-radius: 8px; margin-bottom: 10px;">
+                    <strong style="font-size: 18px;">${b.player_name}</strong><br/>
+                    <span style="color: #666;">Email: ${b.player_email || 'N/A'}</span><br/>
+                    <span style="color: #666;">Status: <strong>${b.status}</strong></span><br/>
+                    <span style="color: #666;">Booking ID: ${b.id}</span><br/>
+                    ${b.status === 'booked' ? 
+                        `<button onclick="performCheckin(${b.id})" style="margin-top: 10px; background: #064f32;">✓ Check In</button>` : 
+                        `<span style="color: #0b6e47;">✓ Already checked in</span>`
+                    }
+                </div>
+            `).join('');
+
+            results.innerHTML = html;
+        }
+
+        async function performCheckin(bookingId) {
+            const res = await fetch('/checkin/' + bookingId, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                alert(`✓ Check-in successful!\n\nPlayer: ${data.booking.player_name}\nHandicap SA Round: ${data.round.handicap_sa_round_id}`);
+                document.getElementById('cardScanner').value = '';
+                document.getElementById('bookingResults').innerHTML = '';
+            } else {
+                alert('Check-in failed. Please try again.');
+            }
+        }
+
+        async function checkinById() {
+            const id = document.getElementById('bookingId').value;
+            if (!id) {
+                alert('Enter booking ID');
+                return;
+            }
+            await performCheckin(parseInt(id));
+        }
+
+        function goBack() {
+            window.location.href = '/frontend/dashboard.html';
+        }
+    </script>
+</body>
+</html>

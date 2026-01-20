@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GreenLink Admin Dashboard</title>
+    <link rel="stylesheet" href="admin-style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo-section">
+                <h2>GreenLink Admin</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                    📊 Dashboard
+                </a>
+                <a href="#bookings" class="nav-item" data-page="bookings">
+                    📅 Bookings
+                </a>
+                <a href="#players" class="nav-item" data-page="players">
+                    👥 Players
+                </a>
+                <a href="#revenue" class="nav-item" data-page="revenue">
+                    💰 Revenue
+                </a>
+                <a href="#tee-times" class="nav-item" data-page="tee-times">
+                    ⛳ Tee Times
+                </a>
+                <a href="#ledger" class="nav-item" data-page="ledger">
+                    📋 Ledger
+                </a>
+                <a href="#logout" class="nav-item logout" id="logoutBtn">
+                    🚪 Logout
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="user-info">
+                    <span id="admin-name">Admin</span>
+                    <span class="timestamp" id="current-time"></span>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content">
+                <!-- Dashboard Page -->
+                <section id="dashboard" class="page active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-content">
+                                <div class="stat-label">Total Bookings</div>
+                                <div class="stat-value" id="total-bookings">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-content">
+                                <div class="stat-label">Registered Players</div>
+                                <div class="stat-value" id="total-players">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💰</div>
+                            <div class="stat-content">
+                                <div class="stat-label">Total Revenue</div>
+                                <div class="stat-value">R<span id="total-revenue">0</span></div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🏌️</div>
+                            <div class="stat-content">
+                                <div class="stat-label">Completed Rounds</div>
+                                <div class="stat-value" id="completed-rounds">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Today's Performance</h3>
+                            <div class="today-stats">
+                                <div class="today-stat">
+                                    <span>Today's Bookings</span>
+                                    <span class="stat-number" id="today-bookings">0</span>
+                                </div>
+                                <div class="today-stat">
+                                    <span>Today's Revenue</span>
+                                    <span class="stat-number">R<span id="today-revenue">0</span></span>
+                                </div>
+                                <div class="today-stat">
+                                    <span>This Week</span>
+                                    <span class="stat-number">R<span id="week-revenue">0</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card">
+                            <h3>Booking Status</h3>
+                            <div class="status-breakdown">
+                                <div class="status-item">
+                                    <span class="status-label">Booked</span>
+                                    <div class="status-bar"><div class="status-fill booked" id="status-booked">0</div></div>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Checked In</span>
+                                    <div class="status-bar"><div class="status-fill checked-in" id="status-checked-in">0</div></div>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Completed</span>
+                                    <div class="status-bar"><div class="status-fill completed" id="status-completed">0</div></div>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Cancelled</span>
+                                    <div class="status-bar"><div class="status-fill cancelled" id="status-cancelled">0</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card full-width">
+                        <h3>Monthly Revenue Trend</h3>
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- Bookings Page -->
+                <section id="bookings" class="page">
+                    <div class="page-header">
+                        <h2>All Bookings</h2>
+                        <div class="filters">
+                            <select id="filter-status">
+                                <option value="">All Status</option>
+                                <option value="booked">Booked</option>
+                                <option value="checked_in">Checked In</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Player</th>
+                                    <th>Email</th>
+                                    <th>Price</th>
+                                    <th>Status</th>
+                                    <th>Tee Time</th>
+                                    <th>Round</th>
+                                    <th>Created</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bookings-table">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="bookings-pagination"></div>
+                </section>
+
+                <!-- Players Page -->
+                <section id="players" class="page">
+                    <div class="page-header">
+                        <h2>Registered Players</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Handicap</th>
+                                    <th>Bookings</th>
+                                    <th>Total Spent</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="players-table">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="players-pagination"></div>
+                </section>
+
+                <!-- Revenue Page -->
+                <section id="revenue" class="page">
+                    <div class="page-header">
+                        <h2>Revenue Analytics</h2>
+                    </div>
+                    <div class="analytics-grid">
+                        <div class="dashboard-card">
+                            <h3>Revenue by Day</h3>
+                            <canvas id="dailyRevenueChart"></canvas>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Revenue by Status</h3>
+                            <canvas id="statusRevenueChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tee Times Page -->
+                <section id="tee-times" class="page">
+                    <div class="page-header">
+                        <h2>Tee Times & Bookings</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Tee Time</th>
+                                    <th>Hole</th>
+                                    <th>Players</th>
+                                    <th>Total Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tee-times-table">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Ledger Page -->
+                <section id="ledger" class="page">
+                    <div class="page-header">
+                        <h2>Ledger (All Transactions)</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Booking ID</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Pastel Synced</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ledger-table">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="ledger-pagination"></div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for booking details -->
+    <div id="booking-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Booking Details</h2>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Modal for player details -->
+    <div id="player-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Player Details</h2>
+            <div id="player-modal-body"></div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GreenLink Dashboard</title>
+  <link rel="stylesheet" href="/frontend/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>Dashboard</h1></div>
+    <div class="card p-4 mt-3">
+      <button onclick="goto('tsheet.html')" class="btn btn-primary">Open T-Sheet</button>
+      <button onclick="goto('checkin.html')" class="btn btn-secondary mt-2">Check-in</button>
+      <button onclick="goto('scoring.html')" class="btn btn-success mt-2">Score Entry</button>
+      <button onclick="logout()" class="btn btn-danger mt-2">Logout</button>
+    </div>
+
+    <div class="card p-5 mt-5" style="background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; border: none; border-radius: 15px; box-shadow: 0 8px 16px rgba(46, 204, 113, 0.3);">
+      <h2 style="margin-bottom: 30px; font-size: 28px;">Welcome, <span id="user_name" style="font-weight: bold;">Player</span>!</h2>
+      <div style="font-size: 18px; line-height: 2;">
+        <p><strong>Email:</strong> <span id="user_email" style="font-size: 16px;">-</span></p>
+        <p><strong>Handicap:</strong> <span id="user_handicap" style="font-size: 16px;">-</span></p>
+      </div>
+    </div>
+  </div>
+
+<script>
+function logout(){ localStorage.removeItem('token'); window.location.href='/frontend/index.html'; }
+function goto(p){ window.location.href='/frontend/'+p; }
+
+async function loadUserInfo(){
+  const token = localStorage.getItem('token');
+  const res = await fetch('/users/me', { headers: { 'Authorization': 'Bearer '+token }});
+  if(!res.ok){ alert('Session invalid'); logout(); return; }
+  const user = await res.json();
+  document.getElementById('user_name').textContent = user.name;
+  document.getElementById('user_email').textContent = user.email;
+  document.getElementById('user_handicap').textContent = user.handicap_number || 'Not set';
+}
+if(!localStorage.getItem('token')) window.location.href='/frontend/index.html';
+else loadUserInfo();
+</script>
+</body>
+</html>

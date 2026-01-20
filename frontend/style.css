@@ -1,0 +1,244 @@
+/* -----------------------------
+GLOBAL RESET & BASE
+------------------------------ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Inter", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 30px;
+
+    background: url("assets/grass.jpg") no-repeat center center/cover fixed;
+    position: relative;
+}
+
+/* DARK OVERLAY (stronger for visibility) */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(4px);
+    z-index: 0;
+}
+
+/* -----------------------------
+CONTAINER
+------------------------------ */
+.container {
+    width: 100%;
+    max-width: 580px;
+    z-index: 2;
+
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+/* -----------------------------
+GLASS CARD STYLE (STRONGER, BRIGHTER)
+------------------------------ */
+.header-card, .card {
+    background: rgba(255,255,255,0.25);
+    padding: 38px;
+    border-radius: 22px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: 0 15px 60px rgba(0,0,0,0.35);
+}
+
+/* -----------------------------
+HEADER CARD
+------------------------------ */
+.header-card {
+    text-align: center;
+}
+
+.logo {
+    width: 200px;
+    margin-bottom: 16px;
+}
+
+.header-card h1 {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 10px;
+    color: #ffffff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.header-card p {
+    font-size: 16px;
+    opacity: 0.95;
+    color: #f5f5f5;
+}
+
+/* -----------------------------
+FORM CARDS
+------------------------------ */
+.card h2 {
+    text-align: center;
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: #ffffff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.card form {
+    display: flex;
+    flex-direction: column;
+}
+
+/* -----------------------------
+INPUTS (BRIGHTER + GOLF STYLE)
+------------------------------ */
+input {
+    padding: 15px;
+    margin: 12px 0;
+    border-radius: 12px;
+    border: none;
+    font-size: 16px;
+    outline: none;
+    background: rgba(255,255,255,0.9);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+    transition: 0.25s;
+}
+
+input:focus {
+    border: 2px solid #00b368;
+    background: #ffffff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+/* -----------------------------
+BUTTONS (BRIGHTER GREEN + BIGGER)
+------------------------------ */
+button {
+    padding: 16px;
+    margin-top: 14px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #058a42, #00c068);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.5px;
+    transition: 0.25s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+button:hover {
+    background: linear-gradient(135deg, #00a152, #00d977);
+    transform: scale(1.04);
+}
+
+
+
+/* -----------------------------
+TOGGLE TEXT
+------------------------------ */
+.toggle-text {
+    text-align: center;
+    margin-top: 16px;
+    color: #fff;
+    font-size: 15px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.toggle-text a {
+    color: #00ffb3;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* -----------------------------
+LOADING SPINNER
+------------------------------ */
+.loading {
+    display: none;
+    margin-top: 12px;
+    text-align: center;
+    color: white;
+}
+
+.spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255,255,255,0.4);
+    border-top: 3px solid white;
+    border-radius: 50%;
+    margin: auto;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* -----------------------------
+ANIMATIONS
+------------------------------ */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(25px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* -----------------------------
+DARK MODE
+------------------------------ */
+.dark body,
+.dark .card,
+.dark .header-card {
+    background: rgba(20,20,20,0.65);
+}
+
+.dark input {
+    background: rgba(255,255,255,0.22);
+    color: white;
+}
+
+.dark input::placeholder {
+    color: #ddd;
+}
+
+.dark .toggle-text {
+    color: #ddd;
+}
+
+/* -----------------------------
+RESPONSIVENESS
+------------------------------ */
+@media (max-width: 480px) {
+    .container {
+        max-width: 92%;
+    }
+    .header-card, .card {
+        padding: 28px;
+    }
+    .logo {
+        width: 150px;
+    }
+}
+
+.header {
+    width: fit-content;
+    color: #00ff88;
+    margin: 0 auto 16px auto;
+    padding: 10px 26px;
+    background: rgba(0, 180, 95, 0.22); /* transparent deep green */
+    backdrop-filter: blur(8px);
+    border-radius: 40px;
+    border: 1px solid rgba(0, 255, 140, 0.4);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+

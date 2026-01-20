@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Score Entry | GreenLink</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="overlay"></div>
+
+    <div class="container fade-in">
+        <div class="header-card fade-in-slow">
+            <img src="assets/logo.jpeg" alt="GreenLink Logo" class="logo" />
+            <h1>Score Entry</h1>
+            <p>Enter your scorecard</p>
+        </div>
+
+        <div class="card fade-in">
+            <h2>Select Your Booking</h2>
+            <input type="number" id="bookingId" placeholder="Enter Booking ID" />
+            <button onclick="loadRound()">Load Scorecard</button>
+        </div>
+
+        <div id="scorecardSection" style="display: none;">
+            <div class="card fade-in">
+                <h2>Player: <span id="playerName"></span></h2>
+                <p style="color: #666;">Booking ID: <span id="displayBookingId"></span></p>
+                <p style="color: #666;">Round ID: <span id="roundId"></span></p>
+            </div>
+
+            <div class="card fade-in">
+                <h3>18-Hole Scorecard</h3>
+                <div style="margin-bottom: 20px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #064f32; color: white;">
+                                <th style="padding: 10px; border: 1px solid #ccc;">Hole</th>
+                                <th style="padding: 10px; border: 1px solid #ccc;">Par</th>
+                                <th style="padding: 10px; border: 1px solid #ccc;">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scorecardTable"></tbody>
+                    </table>
+                </div>
+
+                <div style="background: #f0f9f0; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <strong style="font-size: 18px;">Total Score: <span id="totalScore">0</span></strong>
+                </div>
+
+                <button onclick="submitScores()" style="font-size: 18px; padding: 15px;">
+                    ✓ Submit Scorecard
+                </button>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="goBack()" style="background: #666;">← Back to Dashboard</button>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+        if (!token) window.location.href = '/frontend/index.html';
+
+        let currentBooking = null;
+        let currentRound = null;
+
+        // Standard par for 18 holes (can be customized)
+        const parValues = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 3, 5, 4, 4];
+
+        async function loadRound() {
+            const bookingId = document.getElementById('bookingId').value;
+            if (!bookingId) {
+                alert('Please enter a booking ID');
+                return;
+            }
+
+            // Fetch booking details (we'll need to create an endpoint or fetch from tee times)
+            const res = await fetch('/tsheet/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            const teeTimes = await res.json();
+            let foundBooking = null;
+
+            for (const tt of teeTimes) {
+                const bookingsRes = await fetch(`/tsheet/bookings/${tt.id}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const bookings = await bookingsRes.json();
+                foundBooking = bookings.find(b => b.id === parseInt(bookingId));
+                if (foundBooking) break;
+            }
+
+            if (!foundBooking) {
+                alert('Booking not found');
+                return;
+            }
+
+            if (foundBooking.status !== 'checked_in' && foundBooking.status !== 'completed') {
+                alert('Player must be checked in before entering scores');
+                return;
+            }
+
+            currentBooking = foundBooking;
+            displayScorecard();
+        }
+
+        function displayScorecard() {
+            document.getElementById('scorecardSection').style.display = 'block';
+            document.getElementById('playerName').textContent = currentBooking.player_name;
+            document.getElementById('displayBookingId').textContent = currentBooking.id;
+            document.getElementById('roundId').textContent = 'Pending...';
+
+            const table = document.getElementById('scorecardTable');
+            let rows = '';
+
+            for (let i = 1; i <= 18; i++) {
+                rows += `
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center; font-weight: 600;">${i}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${parValues[i-1]}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">
+                            <input 
+                                type="number" 
+                                id="score_${i}" 
+                                min="1" 
+                                max="15" 
+                                style="width: 60px; text-align: center; padding: 5px;"
+                                onchange="calculateTotal()"
+                            />
+                        </td>
+                    </tr>
+                `;
+            }
+
+            table.innerHTML = rows;
+        }
+
+        function calculateTotal() {
+            let total = 0;
+            for (let i = 1; i <= 18; i++) {
+                const score = parseInt(document.getElementById(`score_${i}`).value) || 0;
+                total += score;
+            }
+            document.getElementById('totalScore').textContent = total;
+        }
+
+        async function submitScores() {
+            // Collect all scores
+            const scores = [];
+            for (let i = 1; i <= 18; i++) {
+                const score = parseInt(document.getElementById(`score_${i}`).value);
+                if (!score || score < 1) {
+                    alert(`Please enter a valid score for hole ${i}`);
+                    return;
+                }
+                scores.push({ hole: i, par: parValues[i-1], score: score });
+            }
+
+            const scoresJson = JSON.stringify(scores);
+
+            const res = await fetch('/scoring/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    booking_id: currentBooking.id,
+                    scores_json: scoresJson
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const total = scores.reduce((sum, s) => sum + s.score, 0);
+                alert(`✓ Scores submitted successfully!\n\nTotal: ${total}\nRound closed and synced to Handicap SA`);
+                
+                // Clear form
+                document.getElementById('bookingId').value = '';
+                document.getElementById('scorecardSection').style.display = 'none';
+                currentBooking = null;
+            } else {
+                alert('Error submitting scores. Please try again.');
+            }
+        }
+
+        function goBack() {
+            window.location.href = '/frontend/dashboard.html';
+        }
+    </script>
+</body>
+</html>

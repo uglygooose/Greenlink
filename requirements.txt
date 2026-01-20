@@ -1,0 +1,18 @@
+fastapi[all]==0.121.1
+uvicorn[standard]==0.22.0
+python-dotenv==1.2.1
+sqlalchemy==2.0.45
+mysql-connector-python==8.1.0
+passlib==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.5.0
+pydantic==2.12.4
+requests==2.32.5
+
+# Excel export for end-of-day payment collection
+openpyxl==3.1.5
+
+# Sage Pastel Partner Integration (DEPRECATED - Using Excel exports instead)
+# Uses Flowgear cloud service (Mac/Linux compatible)
+# No local SDK needed - Flowgear bridges Mac FastAPI to Windows Pastel Partner
+# Setup: https://www.flowgear.net (free trial available)
