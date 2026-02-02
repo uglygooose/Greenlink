@@ -20,7 +20,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     const email = loginEmail.value;
     const password = loginPassword.value;
 
-    const res = await fetch("https://greenlink-31286426692.us-central1.run.app/login", {
+    const res = await fetch("http://localhost:8000/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
@@ -51,7 +51,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const email = newEmail.value;
     const password = newPassword.value;
 
-    const res = await fetch("https://greenlink-31286426692.us-central1.run.app/users/", {
+    const res = await fetch("http://localhost:8000/users/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })

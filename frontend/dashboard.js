@@ -10,7 +10,7 @@ async function loadDashboard(){
     return;
   }
 
-  const res = await fetch("https://greenlink-31286426692.us-central1.run.app/users/", {
+  const res = await fetch("http://localhost:8000/users/", {
     headers: { "Authorization": `Bearer ${token}` }
   });
 

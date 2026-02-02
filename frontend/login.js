@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const payload = { email, password };
 
-        const res = await fetch("https://greenlink-31286426692.us-central1.run.app/login", {
+        const res = await fetch("http://localhost:8000/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -60,12 +60,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.role === "admin") {
             console.log("Admin detected, redirecting to admin.html");
             setTimeout(() => {
-                window.location.href = "https://greenlink-31286426692.us-central1.run.app/frontend/admin.html";
+                window.location.href = "http://localhost:8000/frontend/admin.html";
             }, 500);
         } else {
             console.log("Regular user, redirecting to dashboard.html");
             setTimeout(() => {
-                window.location.href = "https://greenlink-31286426692.us-central1.run.app/frontend/dashboard.html";
+                window.location.href = "http://localhost:8000/frontend/dashboard.html";
             }, 500);
         }
     });

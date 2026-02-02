@@ -33,6 +33,9 @@
                 <a href="#ledger" class="nav-item" data-page="ledger">
                     📋 Ledger
                 </a>
+                <a href="#cashbook" class="nav-item" data-page="cashbook">
+                    💳 Cashbook
+                </a>
                 <a href="#logout" class="nav-item logout" id="logoutBtn">
                     🚪 Logout
                 </a>
@@ -257,6 +260,63 @@
                         </table>
                     </div>
                     <div class="pagination" id="ledger-pagination"></div>
+                </section>
+
+                <!-- Cashbook Page -->
+                <section id="cashbook" class="page">
+                    <div class="page-header">
+                        <h2>Cashbook Export</h2>
+                        <div class="filters">
+                            <input type="date" id="cashbook-date" />
+                            <button class="btn-primary" onclick="loadCashbookSummary()">Load Summary</button>
+                            <button class="btn-success" onclick="exportCashbookToCSV()" id="export-btn" disabled>
+                                📥 Export to CSV
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-card">
+                        <h3>Daily Summary</h3>
+                        <div class="cashbook-summary" id="cashbook-summary">
+                            <div class="summary-stat">
+                                <span>Date</span>
+                                <span id="summary-date">-</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Transactions</span>
+                                <span id="summary-count">0</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Total Amount</span>
+                                <span id="summary-amount">R0.00</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Total Tax (VAT)</span>
+                                <span id="summary-tax">R0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <h3>Payment Records</h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Date</th>
+                                    <th>GDC</th>
+                                    <th>Reference</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Tax Type</th>
+                                    <th>Tax Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cashbook-records">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </section>
             </div>
         </main>

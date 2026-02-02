@@ -19,6 +19,9 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.player)
     handicap_number = Column(String(50), nullable=True)
     greenlink_id = Column(String(50), unique=True, nullable=True)
+    birth_date = Column(DateTime, nullable=True)
+    handicap_sa_id = Column(String(50), nullable=True)
+    home_course = Column(String(100), nullable=True)
 
 class TeeTime(Base):
     __tablename__ = "tee_times"

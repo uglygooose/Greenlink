@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine
-from app.routers import users, tee, checkin, scoring, admin, cashbook
+from app.routers import users, tee, checkin, scoring, admin, cashbook, profile
 from app import auth, models, crud, schemas, fee_models
 from app.auth import get_db
 
@@ -55,6 +55,7 @@ app.include_router(checkin.router)
 app.include_router(scoring.router)
 app.include_router(admin.router)
 app.include_router(cashbook.router)
+app.include_router(profile.router)
 
 # Import and include fees router
 try:

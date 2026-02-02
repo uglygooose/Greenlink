@@ -1,6 +1,6 @@
 # app/routers/cashbook.py
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, date
@@ -72,22 +72,35 @@ def create_payment_record(booking: Booking, batch_id: int = 1) -> PaymentRecord:
     amount = booking.price if booking.price else 350.0
     
     # Create reference from booking ID and player
-    reference = f"BK{booking.id:06d}"
+    reference = f"BK{booking.id:05d}"  # 5 chars max for reference
     description = f"Golf Fee - {booking.player_name}"
     
     # Format dates
-    date_str = tee_time.tee_time.strftime("%d/%m/%Y") if tee_time else datetime.now().strftime("%d/%m/%Y")
+    date_obj = tee_time.tee_time if tee_time else datetime.now()
+    date_str = date_obj.strftime("%d/%m/%Y")
+    
+    # Period: month number (1-12)
+    period_num = date_obj.month
     
     # Calculate tax (assuming 15% VAT for South Africa)
     tax_type = 1  # Has tax
     tax_rate = 0.15
     tax_amount = round(amount * tax_rate / (1 + tax_rate), 2)  # Extract tax from inclusive price
     
+    # Account number: max 7 characters
+    account_number = f"GL{booking.id:05d}"  # GL + 5 digits = 7 chars max
+    
+    # GDC: Use "G" for General Ledger
+    gdc = "G"
+    
+    # Contra account: Remove slashes, just use account code
+    contra_account = "3455000"  # No slashes
+    
     return PaymentRecord(
-        period=date_str,
+        period=str(period_num),  # Month number as string
         date=date_str,
-        gdc=booking.greenlink_id or booking.handicap_number or booking.club_card or "N/A",
-        account_number=f"ACC{booking.id:06d}",
+        gdc=gdc,  # General Ledger
+        account_number=account_number,  # 7 chars max
         reference=reference,
         description=description,
         amount=amount,
@@ -95,7 +108,7 @@ def create_payment_record(booking: Booking, batch_id: int = 1) -> PaymentRecord:
         tax_amount=tax_amount,
         open_item="",
         projects_code="",
-        contra_account="3455/000",  # GL Account for green fees
+        contra_account=contra_account,  # No slashes
         exchange_rate=1,
         bank_exchange_rate=1,
         batch_id=batch_id,
@@ -272,10 +285,10 @@ def export_daily_payments_excel(
     # Generate filename
     filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.xlsx"
     
-    return FileResponse(
-        path=excel_file,
-        filename=filename,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return StreamingResponse(
+        iter([excel_file.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 

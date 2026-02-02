@@ -8,7 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
+from pydantic import BaseModel
+from typing import Optional
 from app.models import User, Booking, TeeTime, Round, LedgerEntry, UserRole, BookingStatus
+from app.fee_models import FeeCategory
 from app.auth import get_current_user, get_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -426,3 +429,233 @@ async def get_admin_summary(
             for b in recent_bookings
         ]
     }
+
+
+# ========================
+# Price Management Models
+# ========================
+
+class PlayerPriceUpdate(BaseModel):
+    """Update player's fee/price"""
+    fee_category_id: Optional[int] = None  # Fee category to apply
+    custom_price: Optional[float] = None   # Or set custom price directly
+
+class AvailableFeeResponse(BaseModel):
+    """Available fee category"""
+    id: int
+    code: int
+    description: str
+    price: float
+    fee_type: str
+
+
+# ========================
+# Price Management Endpoints
+# ========================
+
+@router.get("/fee-categories")
+async def get_fee_categories(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Get all available fee categories for pricing players"""
+    
+    categories = db.query(FeeCategory).filter(FeeCategory.active == 1).all()
+    
+    return [
+        {
+            "id": cat.id,
+            "code": cat.code,
+            "description": cat.description,
+            "price": float(cat.price),
+            "fee_type": cat.fee_type
+        }
+        for cat in categories
+    ]
+
+
+@router.put("/players/{player_id}/price")
+async def update_player_price(
+    player_id: int,
+    price_update: PlayerPriceUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Update a player's fee/price"""
+    
+    player = db.query(User).filter(User.id == player_id, User.role == UserRole.player).first()
+    
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    
+    # Validate input
+    if price_update.fee_category_id is None and price_update.custom_price is None:
+        raise HTTPException(status_code=400, detail="Either fee_category_id or custom_price must be provided")
+    
+    # Update based on input
+    if price_update.fee_category_id:
+        fee_category = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id).first()
+        if not fee_category:
+            raise HTTPException(status_code=404, detail="Fee category not found")
+        
+        # Get all bookings for this player and update their fee_category_id
+        bookings = db.query(Booking).filter(
+            Booking.player_email == player.email,
+            Booking.status.in_([BookingStatus.booked, BookingStatus.checked_in])
+        ).all()
+        
+        for booking in bookings:
+            booking.fee_category_id = fee_category.id
+            booking.price = fee_category.price
+        
+        db.commit()
+        
+        return {
+            "status": "success",
+            "message": f"Updated {len(bookings)} bookings with fee category: {fee_category.description}",
+            "player_id": player_id,
+            "fee_category": {
+                "id": fee_category.id,
+                "code": fee_category.code,
+                "description": fee_category.description,
+                "price": float(fee_category.price)
+            }
+        }
+    
+    elif price_update.custom_price:
+        if price_update.custom_price < 0:
+            raise HTTPException(status_code=400, detail="Price cannot be negative")
+        
+        # Update all active bookings for this player with custom price
+        bookings = db.query(Booking).filter(
+            Booking.player_email == player.email,
+            Booking.status.in_([BookingStatus.booked, BookingStatus.checked_in])
+        ).all()
+        
+        for booking in bookings:
+            booking.price = price_update.custom_price
+            booking.fee_category_id = None  # Clear fee category when using custom price
+        
+        db.commit()
+        
+        return {
+            "status": "success",
+            "message": f"Updated {len(bookings)} bookings with custom price: R{price_update.custom_price:.2f}",
+            "player_id": player_id,
+            "custom_price": price_update.custom_price
+        }
+
+
+@router.get("/players/{player_id}/price-info")
+async def get_player_price_info(
+    player_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Get price info for a specific player (admin only)"""
+    
+    player = db.query(User).filter(User.id == player_id, User.role == UserRole.player).first()
+    
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    
+    # Get recent bookings to see current pricing
+    recent_bookings = db.query(Booking).filter(
+        Booking.player_email == player.email
+    ).order_by(desc(Booking.created_at)).limit(5).all()
+    
+    # Get current pricing info from most recent booking
+    current_price = None
+    current_fee_category = None
+    
+    if recent_bookings:
+        latest = recent_bookings[0]
+        current_price = latest.price
+        
+        if latest.fee_category_id:
+            fee_cat = db.query(FeeCategory).filter(FeeCategory.id == latest.fee_category_id).first()
+            if fee_cat:
+                current_fee_category = {
+                    "id": fee_cat.id,
+                    "code": fee_cat.code,
+                    "description": fee_cat.description,
+                    "price": float(fee_cat.price)
+                }
+    
+    return {
+        "player_id": player_id,
+        "player_name": player.name,
+        "player_email": player.email,
+        "current_price": current_price,
+        "current_fee_category": current_fee_category,
+        "recent_bookings": [
+            {
+                "id": b.id,
+                "price": float(b.price),
+                "status": b.status,
+                "created_at": b.created_at.isoformat()
+            }
+            for b in recent_bookings
+        ]
+    }
+
+
+@router.put("/bookings/{booking_id}/price")
+async def update_booking_price(
+    booking_id: int,
+    price_update: PlayerPriceUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Update price for a specific booking (admin only)"""
+    
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Validate input
+    if price_update.fee_category_id is None and price_update.custom_price is None:
+        raise HTTPException(status_code=400, detail="Either fee_category_id or custom_price must be provided")
+    
+    # Update based on input
+    if price_update.fee_category_id:
+        fee_category = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id).first()
+        if not fee_category:
+            raise HTTPException(status_code=404, detail="Fee category not found")
+        
+        booking.fee_category_id = fee_category.id
+        booking.price = fee_category.price
+        
+        db.commit()
+        db.refresh(booking)
+        
+        return {
+            "status": "success",
+            "message": f"Booking #{booking.id} price updated to {fee_category.description}",
+            "booking_id": booking_id,
+            "new_price": float(booking.price),
+            "fee_category": {
+                "id": fee_category.id,
+                "code": fee_category.code,
+                "description": fee_category.description,
+                "price": float(fee_category.price)
+            }
+        }
+    
+    elif price_update.custom_price:
+        if price_update.custom_price < 0:
+            raise HTTPException(status_code=400, detail="Price cannot be negative")
+        
+        booking.price = price_update.custom_price
+        booking.fee_category_id = None  # Clear fee category when using custom price
+        
+        db.commit()
+        db.refresh(booking)
+        
+        return {
+            "status": "success",
+            "message": f"Booking #{booking.id} price updated to R{price_update.custom_price:.2f}",
+            "booking_id": booking_id,
+            "new_price": float(booking.price)
+        }

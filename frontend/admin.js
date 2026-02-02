@@ -1,6 +1,6 @@
 // Admin Dashboard JavaScript
 
-const API_BASE = "https://greenlink-31286426692.us-central1.run.app";
+const API_BASE = "http://localhost:8000";
 let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
@@ -94,6 +94,9 @@ function setupNavigation() {
                 case "ledger":
                     loadLedger();
                     break;
+                case "cashbook":
+                    initCashbook();
+                    break;
             }
         });
     });
@@ -110,7 +113,8 @@ function showPage(pageName) {
         players: "Players",
         revenue: "Revenue Analytics",
         "tee-times": "Tee Times",
-        ledger: "Ledger"
+        ledger: "Ledger",
+        cashbook: "Cashbook Export"
     };
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
 }
@@ -267,6 +271,7 @@ async function viewBookingDetail(bookingId) {
             <div class="modal-section">
                 <div class="modal-label">Price</div>
                 <div class="modal-value">R${booking.price.toFixed(2)}</div>
+                <button class="btn-edit" onclick="openEditBookingPriceModal(${bookingId}, '${booking.player_name}')">Edit Price</button>
             </div>
             <div class="modal-section">
                 <div class="modal-label">Status</div>
@@ -343,6 +348,13 @@ async function viewPlayerDetail(playerId) {
         });
 
         const player = await response.json();
+        
+        // Get price info
+        const priceResponse = await fetch(`${API_BASE}/api/admin/players/${playerId}/price-info`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const priceInfo = await priceResponse.json();
 
         const html = `
             <div class="modal-section">
@@ -356,6 +368,11 @@ async function viewPlayerDetail(playerId) {
             <div class="modal-section">
                 <div class="modal-label">Handicap</div>
                 <div class="modal-value">${player.handicap_number || "Not provided"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Current Price</div>
+                <div class="modal-value">R${priceInfo.current_price ? priceInfo.current_price.toFixed(2) : "N/A"}</div>
+                <button class="btn-edit" onclick="openEditPriceModal(${playerId}, '${player.name}')">Edit Price</button>
             </div>
             <div class="modal-section">
                 <div class="modal-label">Total Spent</div>
@@ -397,6 +414,189 @@ async function viewPlayerDetail(playerId) {
     } catch (error) {
         console.error("Failed to load player detail:", error);
     }
+}
+
+// Edit Player Price Modal
+async function openEditPriceModal(playerId, playerName) {
+    const token = localStorage.getItem("token");
+
+    try {
+        // Get available fee categories
+        const response = await fetch(`${API_BASE}/api/admin/fee-categories`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const categories = await response.json();
+
+        const html = `
+            <div class="modal-section">
+                <h2>Edit Price for ${playerName}</h2>
+            </div>
+            <div class="modal-section">
+                <label>Select Fee Type:</label>
+                <select id="fee-category-select" style="width: 100%; padding: 8px; margin: 10px 0;">
+                    <option value="">-- Custom Price --</option>
+                    ${categories.map(cat => `
+                        <option value="${cat.id}">
+                            ${cat.description} (R${cat.price.toFixed(2)})
+                        </option>
+                    `).join("")}
+                </select>
+            </div>
+            <div class="modal-section">
+                <label>Or Enter Custom Price (R):</label>
+                <input type="number" id="custom-price-input" placeholder="Enter custom price" step="0.01" min="0" style="width: 100%; padding: 8px; margin: 10px 0;">
+            </div>
+            <div class="modal-section" style="display: flex; gap: 10px;">
+                <button class="btn-save" onclick="savePlayerPrice(${playerId})">Save Price</button>
+                <button class="btn-cancel" onclick="closePriceModal()">Cancel</button>
+            </div>
+        `;
+
+        document.getElementById("player-modal-body").innerHTML = html;
+    } catch (error) {
+        console.error("Failed to load fee categories:", error);
+        alert("Failed to load fee categories");
+    }
+}
+
+async function savePlayerPrice(playerId) {
+    const token = localStorage.getItem("token");
+    const feeSelect = document.getElementById("fee-category-select");
+    const customPrice = document.getElementById("custom-price-input");
+
+    let payload = {};
+
+    if (feeSelect.value) {
+        payload.fee_category_id = parseInt(feeSelect.value);
+    } else if (customPrice.value) {
+        payload.custom_price = parseFloat(customPrice.value);
+    } else {
+        alert("Please select a fee type or enter a custom price");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/players/${playerId}/price`, {
+            method: "PUT",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            alert("Error: " + result.detail);
+            return;
+        }
+
+        alert(result.message);
+        document.getElementById("player-modal").classList.remove("show");
+        loadPlayers(); // Refresh players list
+    } catch (error) {
+        console.error("Failed to save price:", error);
+        alert("Failed to save price");
+    }
+}
+
+function closePriceModal() {
+    document.getElementById("player-modal").classList.remove("show");
+}
+
+// ========================
+// Booking Price Editing
+// ========================
+
+async function openEditBookingPriceModal(bookingId, playerName) {
+    const token = localStorage.getItem("token");
+
+    try {
+        // Get available fee categories
+        const response = await fetch(`${API_BASE}/api/admin/fee-categories`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const categories = await response.json();
+
+        const html = `
+            <div class="modal-section">
+                <h2>Edit Booking Price - ${playerName}</h2>
+            </div>
+            <div class="modal-section">
+                <label>Select Fee Type:</label>
+                <select id="booking-fee-category-select" style="width: 100%; padding: 8px; margin: 10px 0;">
+                    <option value="">-- Custom Price --</option>
+                    ${categories.map(cat => `
+                        <option value="${cat.id}">
+                            ${cat.description} (R${cat.price.toFixed(2)})
+                        </option>
+                    `).join("")}
+                </select>
+            </div>
+            <div class="modal-section">
+                <label>Or Enter Custom Price (R):</label>
+                <input type="number" id="booking-custom-price-input" placeholder="Enter custom price" step="0.01" min="0" style="width: 100%; padding: 8px; margin: 10px 0;">
+            </div>
+            <div class="modal-section" style="display: flex; gap: 10px;">
+                <button class="btn-save" onclick="saveBookingPrice(${bookingId})">Save Price</button>
+                <button class="btn-cancel" onclick="closeBookingPriceModal()">Cancel</button>
+            </div>
+        `;
+
+        document.getElementById("modal-body").innerHTML = html;
+    } catch (error) {
+        console.error("Failed to load fee categories:", error);
+        alert("Failed to load fee categories");
+    }
+}
+
+async function saveBookingPrice(bookingId) {
+    const token = localStorage.getItem("token");
+    const feeSelect = document.getElementById("booking-fee-category-select");
+    const customPrice = document.getElementById("booking-custom-price-input");
+
+    let payload = {};
+
+    if (feeSelect.value) {
+        payload.fee_category_id = parseInt(feeSelect.value);
+    } else if (customPrice.value) {
+        payload.custom_price = parseFloat(customPrice.value);
+    } else {
+        alert("Please select a fee type or enter a custom price");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}/price`, {
+            method: "PUT",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            alert("Error: " + result.detail);
+            return;
+        }
+
+        alert(result.message);
+        document.getElementById("booking-modal").classList.remove("show");
+        loadBookings(); // Refresh bookings list
+    } catch (error) {
+        console.error("Failed to save booking price:", error);
+        alert("Failed to save booking price");
+    }
+}
+
+function closeBookingPriceModal() {
+    document.getElementById("booking-modal").classList.remove("show");
 }
 
 // Revenue
@@ -551,3 +751,118 @@ document.addEventListener("change", (e) => {
         loadBookings();
     }
 });
+
+// ========================
+// Cashbook Functions
+// ========================
+
+function initCashbook() {
+    // Set today's date as default
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById("cashbook-date").value = today;
+    loadCashbookSummary();
+}
+
+async function loadCashbookSummary() {
+    const token = localStorage.getItem("token");
+    const dateInput = document.getElementById("cashbook-date").value;
+    
+    if (!dateInput) {
+        alert("Please select a date");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/cashbook/daily-summary?summary_date=${dateInput}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            alert("Error: " + error.detail);
+            return;
+        }
+
+        const data = await response.json();
+
+        // Update summary stats
+        document.getElementById("summary-date").textContent = data.date;
+        document.getElementById("summary-count").textContent = data.transaction_count;
+        document.getElementById("summary-amount").textContent = `R${data.total_payments.toFixed(2)}`;
+        document.getElementById("summary-tax").textContent = `R${data.total_tax.toFixed(2)}`;
+
+        // Populate payment records
+        const table = document.getElementById("cashbook-records");
+        if (data.records.length === 0) {
+            table.innerHTML = `<tr><td colspan="8" style="text-align: center;">No payment records found for this date</td></tr>`;
+            document.getElementById("export-btn").disabled = true;
+            return;
+        }
+
+        table.innerHTML = data.records.map(record => `
+            <tr>
+                <td>${record.period}</td>
+                <td>${record.date}</td>
+                <td>${record.gdc}</td>
+                <td>${record.reference}</td>
+                <td>${record.description}</td>
+                <td>R${record.amount.toFixed(2)}</td>
+                <td>${record.tax_type === 1 ? "Yes" : "No"}</td>
+                <td>R${record.tax_amount.toFixed(2)}</td>
+            </tr>
+        `).join("");
+
+        // Enable export button
+        document.getElementById("export-btn").disabled = false;
+    } catch (error) {
+        console.error("Failed to load cashbook summary:", error);
+        alert("Failed to load cashbook summary");
+    }
+}
+
+async function exportCashbookToCSV() {
+    const token = localStorage.getItem("token");
+    const dateInput = document.getElementById("cashbook-date").value;
+    
+    if (!dateInput) {
+        alert("Please select a date");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/cashbook/export-excel?export_date=${dateInput}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            alert("Error: " + error.detail);
+            return;
+        }
+
+        // Create blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        
+        // Get filename from content-disposition header or create one
+        const disposition = response.headers.get("content-disposition");
+        let filename = `Cashbook_Payments_${dateInput.replace(/-/g, '')}.xlsx`;
+        
+        if (disposition && disposition.includes("filename")) {
+            filename = disposition.split("filename=")[1].replace(/"/g, "");
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        alert("Cashbook exported successfully!");
+    } catch (error) {
+        console.error("Failed to export cashbook:", error);
+        alert("Failed to export cashbook");
+    }
+}

@@ -455,6 +455,134 @@ canvas {
     color: #2c3e50;
 }
 
+/* Buttons */
+.btn-primary,
+.btn-success,
+.btn-cancel,
+.btn-save,
+.btn-view,
+.btn-edit {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2980b9;
+}
+
+.btn-success {
+    background: #27ae60;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #229954;
+}
+
+.btn-success:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn-cancel {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-cancel:hover {
+    background: #c0392b;
+}
+
+.btn-save {
+    background: #27ae60;
+    color: white;
+}
+
+.btn-save:hover {
+    background: #229954;
+}
+
+.btn-view {
+    background: #3498db;
+    color: white;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.btn-view:hover {
+    background: #2980b9;
+}
+
+.btn-edit {
+    background: #f39c12;
+    color: white;
+    padding: 8px 14px;
+    font-size: 13px;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.btn-edit:hover {
+    background: #d68910;
+}
+
+/* Cashbook Styles */
+.cashbook-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.summary-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.summary-stat span:first-child {
+    font-size: 13px;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.summary-stat span:last-child {
+    font-size: 24px;
+    font-weight: 700;
+    color: #064f32;
+}
+
+.page-header .filters {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.page-header .filters input[type="date"] {
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .admin-container {
