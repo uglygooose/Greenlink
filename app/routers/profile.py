@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+from sqlalchemy import or_
 from app.auth import get_db, get_current_user
 from app import models
 
@@ -110,11 +111,15 @@ def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get
     
     # Get fees matching player's age
     from app.fee_models import FeeCategory
-    fees = db.query(FeeCategory).filter(
-        FeeCategory.active == 1,
-        FeeCategory.min_age <= age,
-        FeeCategory.max_age >= age
-    ).all()
+    fees = (
+        db.query(FeeCategory)
+        .filter(
+            FeeCategory.active == 1,
+            or_(FeeCategory.min_age == None, FeeCategory.min_age <= age),
+            or_(FeeCategory.max_age == None, FeeCategory.max_age >= age),
+        )
+        .all()
+    )
     
     # Hide prices from players - they only see fee descriptions
     return [{"id": f.id, "code": f.code, "description": f.description} for f in fees]

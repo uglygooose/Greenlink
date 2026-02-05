@@ -12,6 +12,14 @@ Run this SQL:
 mysql -u root -p greenlink < create_fees_table.sql
 ```
 
+## Step 1b: Enable Automatic Fee Selection (Recommended)
+
+If you want the system to auto-select the correct fee based on booking details (e.g., weekday vs weekend, member vs visitor, 9 vs 18 holes), run:
+
+```bash
+mysql -u root -p greenlink < migrate_phase5_pricing_filters.sql
+```
+
 ## Step 2: Populate Fee Categories
 
 Run the Python script to load all 60+ fee categories:
@@ -91,6 +99,8 @@ When booking:
 Select Tee Time → Select Fee Type → Player Details → Book → Sage One Sync
 ```
 
+With auto-pricing enabled, `fee_category_id` can be omitted and the backend will choose a matching golf fee when enough details are provided.
+
 ## API Endpoints
 
 ### Get All Golf Fees
@@ -117,6 +127,28 @@ POST /tsheet/booking
 ```
 
 Price auto-set to R340 from fee_category
+
+### Create Booking with Auto Pricing
+```
+POST /tsheet/booking
+{
+  "tee_time_id": 1,
+  "player_name": "John Doe",
+  "player_email": "john@example.com",
+  "player_type": "visitor",
+  "holes": 18
+}
+```
+
+To preview the auto-selected price before booking, use:
+```
+POST /fees/suggest/golf
+{
+  "tee_time_id": 1,
+  "player_type": "visitor",
+  "holes": 18
+}
+```
 
 ## Testing
 

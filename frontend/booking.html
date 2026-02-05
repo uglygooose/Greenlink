@@ -3,223 +3,258 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Specify Players</title>
+  <title>Umhlali Booking</title>
   <link rel="stylesheet" href="/frontend/style.css">
   <style>
+    :root {
+      --ucc-olive: #5a7a3a;
+      --ucc-olive-dark: #4e6a31;
+      --ucc-sage: #e6ecd6;
+      --ucc-cream: #f6f4ec;
+      --ucc-orange: #f28c2c;
+      --ucc-gold: #f5c542;
+      --ucc-ink: #1f2a1b;
+      --ucc-muted: #6c7b66;
+      --ucc-border: #d9dfc9;
+      --ucc-card: #ffffff;
+      --ucc-shadow: 0 12px 30px rgba(31, 42, 27, 0.12);
+    }
+
     * {
       box-sizing: border-box;
     }
-    
+
     body {
       margin: 0;
       padding: 0;
-      background: #f5f5f5;
+      background: radial-gradient(circle at top, #f6f4ec 0%, #e6ecd6 45%, #f6f4ec 100%);
       min-height: 100vh;
+      color: var(--ucc-ink);
+      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
     }
-    
+
     .booking-container {
       position: relative;
       top: auto;
       left: auto;
       transform: none;
-      max-width: 100%;
-      width: 100%;
-      padding: 0;
+      max-width: 1200px;
+      width: calc(100% - 32px);
+      margin: 18px auto 120px;
+      padding: 0 0 140px;
       min-height: 100vh;
-      background: #fff;
-      padding-bottom: 140px;
+      background: transparent;
     }
-    
+
     .booking-header {
       display: flex;
       align-items: center;
-      padding: 15px 20px;
-      background: #fff;
-      border-bottom: 1px solid #eee;
+      padding: 18px 24px;
+      background: linear-gradient(135deg, #f6f4ec 0%, #e6ecd6 100%);
+      border: 1px solid var(--ucc-border);
+      border-radius: 20px;
+      box-shadow: var(--ucc-shadow);
+      gap: 16px;
     }
-    
+
+    .club-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 2px solid var(--ucc-border);
+      object-fit: cover;
+    }
+
     .back-btn {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border: none;
-      background: none;
-      font-size: 24px;
-      color: #064f32;
+      background: #ffffff;
+      border-radius: 12px;
+      font-size: 22px;
+      color: var(--ucc-olive-dark);
       cursor: pointer;
       padding: 0;
+      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.12);
     }
-    
+
     .header-info {
-      margin-left: 10px;
+      margin-left: 4px;
     }
-    
+
     .club-name {
       font-size: 12px;
-      color: #888;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ucc-muted);
       margin: 0;
     }
-    
+
     .page-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #333;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ucc-ink);
       margin: 0;
     }
-    
+
     .selectors {
       display: flex;
       gap: 15px;
-      padding: 15px 20px;
-      background: #f9f9f9;
+      padding: 18px 6px 8px;
     }
-    
+
     .selector-btn {
       flex: 1;
-      padding: 15px;
-      border: 2px solid #064f32;
-      border-radius: 10px;
-      background: #fff;
-      cursor: pointer;
+      padding: 16px 18px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 16px;
+      background: var(--ucc-card);
       text-align: center;
+      box-shadow: 0 8px 20px rgba(31, 42, 27, 0.08);
     }
-    
+
     .selector-btn .main-text {
       font-size: 18px;
       font-weight: 600;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
     }
-    
+
     .selector-btn .sub-text {
       font-size: 12px;
-      color: #888;
+      color: var(--ucc-muted);
     }
-    
+
     .booking-tabs {
       display: flex;
       justify-content: center;
-      padding: 15px 20px;
+      padding: 10px 6px 0;
       gap: 0;
-      background: #f9f9f9;
     }
-    
+
     .tab-btn {
       padding: 10px 25px;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ucc-border);
       background: #fff;
       font-size: 14px;
-      color: #666;
+      color: var(--ucc-muted);
       cursor: pointer;
       transition: all 0.2s;
     }
-    
+
     .tab-btn:first-child {
       border-radius: 20px 0 0 20px;
       border-right: none;
     }
-    
+
     .tab-btn:last-child {
       border-radius: 0 20px 20px 0;
     }
-    
+
     .tab-btn.active {
-      background: #fff;
-      color: #064f32;
+      background: #f3f7ea;
+      color: var(--ucc-olive-dark);
       font-weight: 600;
-      border-color: #064f32;
+      border-color: var(--ucc-olive);
     }
-    
+
     .players-section {
-      padding: 20px;
+      padding: 20px 12px 30px;
     }
-    
+
     .section-title {
-      font-size: 16px;
-      color: #bbb;
+      font-size: 14px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ucc-muted);
       margin-bottom: 15px;
-      font-weight: 400;
+      font-weight: 600;
     }
-    
+
     .player-card {
       display: flex;
       align-items: center;
-      padding: 15px;
-      background: #f9f9f9;
-      border-radius: 12px;
+      padding: 16px;
+      background: var(--ucc-card);
+      border-radius: 14px;
       margin-bottom: 15px;
       cursor: pointer;
       transition: all 0.2s;
+      border: 1px solid var(--ucc-border);
+      box-shadow: 0 10px 22px rgba(31, 42, 27, 0.08);
     }
-    
+
     .player-card:hover {
-      background: #f0f0f0;
+      border-color: var(--ucc-olive);
+      transform: translateY(-1px);
     }
-    
+
     .player-avatar {
       width: 50px;
       height: 50px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #e0e0e0, #c0c0c0);
+      background: linear-gradient(135deg, #f5c542, #f28c2c);
       display: flex;
       align-items: center;
       justify-content: center;
       margin-right: 15px;
-      font-size: 20px;
-      color: #888;
+      font-size: 16px;
+      color: #fff;
+      font-weight: 700;
     }
-    
+
     .player-info {
       flex: 1;
     }
-    
+
     .player-name {
       font-size: 16px;
-      font-weight: 600;
-      color: #333;
+      font-weight: 700;
+      color: var(--ucc-ink);
       margin-bottom: 3px;
     }
-    
+
     .player-type {
-      font-size: 14px;
-      color: #666;
+      font-size: 13px;
+      color: var(--ucc-muted);
     }
-    
+
     .player-price {
-      font-size: 24px;
-      font-weight: 600;
-      color: #333;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ucc-olive-dark);
     }
-    
+
     .player-price .currency {
-      font-size: 14px;
-      color: #666;
+      font-size: 12px;
+      color: var(--ucc-muted);
       vertical-align: super;
     }
-    
+
     .modify-text {
       font-size: 12px;
-      color: #ccc;
+      color: #9aa391;
       font-style: italic;
-      margin-top: 8px;
-      text-align: center;
+      margin-top: 6px;
+      text-align: left;
     }
-    
+
     .add-player-btn {
       display: inline-flex;
       align-items: center;
       padding: 10px 20px;
-      border: 1px solid #064f32;
+      border: 1px solid var(--ucc-olive);
       border-radius: 20px;
       background: #fff;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
       font-size: 14px;
       cursor: pointer;
       margin-top: 10px;
     }
-    
+
     .add-player-btn:hover {
-      background: #f0f7f4;
+      background: #f3f7ea;
     }
-    
+
     /* Bottom bar */
     .bottom-bar {
       position: fixed;
@@ -227,55 +262,59 @@
       left: 0;
       right: 0;
       background: #fff;
-      padding: 20px;
-      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+      padding: 18px 20px;
+      box-shadow: 0 -8px 22px rgba(31, 42, 27, 0.12);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 20px;
+      border-top: 1px solid var(--ucc-border);
     }
-    
+
     .total-section {
       flex: 1;
     }
-    
+
     .total-label {
-      font-size: 14px;
-      color: #333;
-      font-weight: 500;
-    }
-    
-    .total-price {
-      font-size: 28px;
-      font-weight: 700;
-      color: #333;
-    }
-    
-    .total-price .currency {
-      font-size: 16px;
-      color: #666;
-    }
-    
-    .free-cancel {
       font-size: 12px;
-      color: #064f32;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ucc-muted);
       font-weight: 600;
     }
-    
+
+    .total-price {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ucc-olive-dark);
+    }
+
+    .total-price .currency {
+      font-size: 14px;
+      color: var(--ucc-muted);
+    }
+
+    .free-cancel {
+      font-size: 12px;
+      color: var(--ucc-olive);
+      font-weight: 600;
+    }
+
     .continue-btn {
-      padding: 18px 50px;
-      background: #064f32;
+      padding: 16px 44px;
+      background: var(--ucc-olive);
       color: #fff;
       border: none;
       border-radius: 30px;
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
       cursor: pointer;
     }
-    
+
     .continue-btn:hover {
-      background: #0b6e47;
+      background: var(--ucc-olive-dark);
     }
-    
+
     /* Modal styles */
     .modal-overlay {
       display: none;
@@ -289,76 +328,100 @@
       justify-content: center;
       align-items: center;
     }
-    
+
     .modal-overlay.active {
       display: flex;
     }
-    
+
     .modal-content {
       background: #fff;
-      border-radius: 15px;
+      border-radius: 18px;
       padding: 25px;
       width: 90%;
-      max-width: 400px;
+      max-width: 420px;
       max-height: 80vh;
       overflow-y: auto;
+      box-shadow: var(--ucc-shadow);
     }
-    
+
     .modal-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
     }
-    
+
     .modal-title {
       font-size: 18px;
-      font-weight: 600;
-      color: #333;
+      font-weight: 700;
+      color: var(--ucc-ink);
     }
-    
+
     .modal-close {
       width: 30px;
       height: 30px;
       border: none;
-      background: #f0f0f0;
+      background: #f3f3ef;
       border-radius: 50%;
       font-size: 18px;
       cursor: pointer;
-      color: #666;
+      color: var(--ucc-muted);
     }
-    
+
     .form-group {
       margin-bottom: 15px;
     }
-    
+
     .form-group label {
       display: block;
       font-size: 13px;
-      color: #666;
+      color: var(--ucc-muted);
       margin-bottom: 5px;
     }
-    
+
     .form-group input,
     .form-group select {
       width: 100%;
       padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 10px;
       font-size: 14px;
     }
-    
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      color: var(--ucc-ink);
+      user-select: none;
+    }
+
+    .toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      padding: 0;
+    }
+
+    .helper-text {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--ucc-muted);
+      font-weight: 600;
+    }
+
     .price-display {
       font-size: 20px;
       font-weight: 700;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
       text-align: center;
       padding: 15px;
-      background: #f0f7f4;
+      background: #f3f7ea;
       border-radius: 10px;
       margin-bottom: 15px;
     }
-    
+
     .modal-btn {
       width: 100%;
       padding: 14px;
@@ -369,68 +432,95 @@
       cursor: pointer;
       margin-bottom: 10px;
     }
-    
+
     .btn-primary {
-      background: #064f32;
+      background: var(--ucc-olive);
       color: #fff;
     }
-    
+
     .btn-secondary {
-      background: #f0f0f0;
+      background: #f3f3ef;
       color: #333;
     }
-    
+
     .btn-danger {
-      background: #dc3545;
+      background: #b23a2b;
       color: #fff;
     }
-    
+
     .player-type-selector {
       display: flex;
       gap: 10px;
       margin-bottom: 15px;
     }
-    
+
     .type-option {
       flex: 1;
       padding: 12px;
-      border: 2px solid #ddd;
+      border: 2px solid var(--ucc-border);
       border-radius: 10px;
       text-align: center;
       cursor: pointer;
       transition: all 0.2s;
+      background: #fff;
     }
-    
+
     .type-option:hover,
     .type-option.selected {
-      border-color: #064f32;
-      background: #f0f7f4;
+      border-color: var(--ucc-olive);
+      background: #f3f7ea;
     }
-    
+
     .type-option .type-name {
       font-weight: 600;
-      color: #333;
+      color: var(--ucc-ink);
     }
-    
+
     .empty-state {
       text-align: center;
       padding: 40px 20px;
-      color: #888;
+      color: var(--ucc-muted);
     }
-    
+
     .empty-state-icon {
       font-size: 48px;
       margin-bottom: 15px;
+    }
+
+    @media (max-width: 860px) {
+      .selectors {
+        flex-direction: column;
+      }
+
+      .booking-tabs {
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .tab-btn {
+        border-radius: 16px;
+        border-right: 1px solid var(--ucc-border);
+      }
+
+      .bottom-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .continue-btn {
+        width: 100%;
+      }
     }
   </style>
 </head>
 <body>
   <div class="booking-container">
     <div class="booking-header">
-      <button class="back-btn" onclick="goBack()">‹</button>
+      <button class="back-btn" onclick="goBack()">&lsaquo;</button>
+      <img class="club-logo" src="/frontend/assets/logo.jpeg" alt="Umhlali Country Club">
       <div class="header-info">
-        <p class="club-name">Golf Club</p>
-        <h1 class="page-title">Specify Players</h1>
+        <p class="club-name">Umhlali Country Club</p>
+        <h1 class="page-title">Party Details</h1>
       </div>
     </div>
     
@@ -465,7 +555,7 @@
       <div class="total-price"><span class="currency">R</span><span id="total-amount">0</span></div>
       <div class="free-cancel">FREE Cancellation</div>
     </div>
-    <button class="continue-btn" onclick="confirmBookings()">Continue »</button>
+    <button class="continue-btn" onclick="confirmBookings()">Continue &rsaquo;</button>
   </div>
 
   <!-- Add Player Modal -->
@@ -473,7 +563,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Add Player</span>
-        <button class="modal-close" onclick="closeModal('addPlayerModal')">×</button>
+        <button class="modal-close" onclick="closeModal('addPlayerModal')">&times;</button>
       </div>
       
       <div class="player-type-selector">
@@ -506,6 +596,15 @@
           <option value="">Select fee type</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>Cart</label>
+        <label class="toggle">
+          <input type="checkbox" id="player_cart" onchange="updateModalPrice()">
+          Yes
+        </label>
+        <div class="helper-text" id="player_cart_label">No cart</div>
+        <div class="helper-text">Splits automatically when 2 players choose cart (member rate if mixed).</div>
+      </div>
       <div class="price-display" id="modal_price">Select a fee type</div>
       <button class="modal-btn btn-primary" onclick="addPlayer()">Add Player</button>
     </div>
@@ -516,7 +615,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Modify Player</span>
-        <button class="modal-close" onclick="closeModal('editPlayerModal')">×</button>
+        <button class="modal-close" onclick="closeModal('editPlayerModal')">&times;</button>
       </div>
       <div id="editPlayerBody">
         <!-- Dynamic content -->
@@ -538,6 +637,8 @@ let players = [];
 let golfFees = [];
 let selectedPlayerType = 'member';
 let existingBookings = [];
+let modalPricingSeq = 0;
+let bookingSubmitting = false;
 
 // Initialize
 async function init() {
@@ -563,8 +664,10 @@ async function init() {
 }
 
 function formatDate(date) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = String(date.getFullYear()).slice(2);
+  return `${d}/${m}/${y}`;
 }
 
 function formatTime(date) {
@@ -590,7 +693,7 @@ async function loadFees() {
 
 function populateFeeDropdown() {
   const select = document.getElementById('player_fee');
-  select.innerHTML = '<option value="">Select fee type</option>';
+  select.innerHTML = '<option value="">Auto (Recommended)</option>';
   golfFees.forEach(f => {
     select.innerHTML += `<option value="${f.id}" data-price="${f.price}">${f.description} - R${f.price}</option>`;
   });
@@ -607,7 +710,8 @@ async function loadExistingBookings() {
           id: b.id,
           name: b.player_name,
           email: b.player_email,
-          type: b.fee_category_id ? 'Member' : 'Guest',
+          type: b.member_id ? 'Member' : 'Visitor',
+          playerType: b.member_id ? 'member' : 'visitor',
           handicap: b.handicap_number || '',
           price: b.price,
           feeId: b.fee_category_id,
@@ -621,8 +725,56 @@ async function loadExistingBookings() {
   }
 }
 
+function normalizeEmail(value) {
+  const email = String(value || '').trim();
+  if (!email) return null;
+  return email.includes('@') ? email : null;
+}
+
+function computeCartSplits(list) {
+  const map = new Map();
+  const cartPlayers = list
+    .map((p, idx) => ({ player: p, index: idx }))
+    .filter(item => item.player && !item.player.isExisting && item.player.cart);
+
+  for (let i = 0; i < cartPlayers.length; i += 2) {
+    const first = cartPlayers[i];
+    const second = cartPlayers[i + 1];
+    const firstCart = parseFloat(first.player.cartPrice || 0) || 0;
+    const secondCart = parseFloat(second?.player.cartPrice || 0) || 0;
+
+    if (second) {
+      const useMemberRate = first.player.playerType === 'member' || second.player.playerType === 'member';
+      let pairRate = 0;
+      if (useMemberRate) {
+        const memberCart = first.player.playerType === 'member' ? firstCart : (second.player.playerType === 'member' ? secondCart : 0);
+        pairRate = memberCart || Math.max(firstCart, secondCart);
+      } else {
+        pairRate = Math.max(firstCart, secondCart) || firstCart || secondCart;
+      }
+      map.set(first.index, { charge: pairRate / 2, memberRate: useMemberRate });
+      map.set(second.index, { charge: pairRate / 2, memberRate: useMemberRate });
+    } else {
+      map.set(first.index, { charge: firstCart, memberRate: false });
+    }
+  }
+
+  return map;
+}
+
+function getDisplayPrice(player, index, cartSplitMap) {
+  if (!player) return 0;
+  if (player.isExisting) return parseFloat(player.price) || 0;
+
+  const base = parseFloat(player.basePrice ?? player.price) || 0;
+  const cartInfo = cartSplitMap.get(index);
+  const cart = player.cart ? (cartInfo?.charge ?? (parseFloat(player.cartPrice) || 0)) : 0;
+  return base + cart;
+}
+
 function renderPlayers() {
   const container = document.getElementById('players-list');
+  const cartSplitMap = computeCartSplits(players);
   
   if (players.length === 0) {
     container.innerHTML = `
@@ -636,6 +788,7 @@ function renderPlayers() {
     let html = '';
     players.forEach((p, index) => {
       const initials = p.name.split(' ').map(n => n[0]).join('').toUpperCase();
+      const displayPrice = getDisplayPrice(p, index, cartSplitMap);
       html += `
         <div class="player-card" onclick="editPlayer(${index})">
           <div class="player-avatar">${initials}</div>
@@ -645,7 +798,7 @@ function renderPlayers() {
             <div class="modify-text">tap to modify & add rentals</div>
           </div>
           <div class="player-price">
-            <span class="currency">R</span>${p.price}
+            <span class="currency">R</span>${Number(displayPrice || 0).toFixed(0)}
           </div>
         </div>
       `;
@@ -657,7 +810,8 @@ function renderPlayers() {
 }
 
 function updateTotal() {
-  const total = players.reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+  const cartSplitMap = computeCartSplits(players);
+  const total = players.reduce((sum, p, index) => sum + (parseFloat(getDisplayPrice(p, index, cartSplitMap)) || 0), 0);
   document.getElementById('total-amount').textContent = total.toFixed(0);
 }
 
@@ -687,15 +841,19 @@ function openAddPlayerModal() {
   document.getElementById('player_email').value = '';
   document.getElementById('player_handicap').value = '';
   document.getElementById('player_fee').value = '';
+  document.getElementById('player_cart').checked = false;
+  document.getElementById('player_cart_label').textContent = 'No cart';
   document.getElementById('modal_price').textContent = 'Select a fee type';
   selectedPlayerType = 'member';
   updateTypeSelection();
+  updateModalPrice();
   openModal('addPlayerModal');
 }
 
 function selectPlayerType(type) {
   selectedPlayerType = type;
   updateTypeSelection();
+  updateModalPrice();
 }
 
 function updateTypeSelection() {
@@ -703,45 +861,148 @@ function updateTypeSelection() {
   document.getElementById('type-' + selectedPlayerType).classList.add('selected');
 }
 
-function updateModalPrice() {
-  const select = document.getElementById('player_fee');
-  const option = select.options[select.selectedIndex];
-  const price = option.getAttribute('data-price');
-  
-  if (price) {
-    document.getElementById('modal_price').textContent = `R${price}`;
-  } else {
-    document.getElementById('modal_price').textContent = 'Select a fee type';
+async function suggestGolfFee(playerType) {
+  try {
+    const res = await fetch('/fees/suggest/golf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        tee_time_id: parseInt(teeTimeId),
+        player_type: playerType
+      })
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('Golf fee suggestion failed:', e);
+    return null;
   }
 }
 
-function addPlayer() {
+async function suggestCartFee(playerType) {
+  try {
+    const res = await fetch('/fees/suggest/cart', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        tee_time_id: parseInt(teeTimeId),
+        player_type: playerType,
+        holes: 18
+      })
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('Cart fee suggestion failed:', e);
+    return null;
+  }
+}
+
+async function updateModalPrice() {
+  const seq = ++modalPricingSeq;
+  const select = document.getElementById('player_fee');
+  const option = select.options[select.selectedIndex];
+  const price = option.getAttribute('data-price');
+  const cartChecked = Boolean(document.getElementById('player_cart')?.checked);
+
+  let basePrice = price ? parseFloat(price) : null;
+  if (basePrice === null) {
+    const suggested = await suggestGolfFee(selectedPlayerType);
+    if (seq !== modalPricingSeq) return;
+    basePrice = suggested?.price ?? null;
+  }
+
+  let cartPrice = 0;
+  let cartLabel = 'No cart';
+  if (cartChecked) {
+    const suggestedCart = await suggestCartFee(selectedPlayerType);
+    if (seq !== modalPricingSeq) return;
+    if (suggestedCart) {
+      cartPrice = parseFloat(suggestedCart.price) || 0;
+      cartLabel = `${suggestedCart.description} - R${Number(cartPrice).toFixed(0)}`;
+    } else {
+      cartLabel = 'Cart pricing unavailable';
+    }
+  }
+
+  document.getElementById('player_cart_label').textContent = cartLabel;
+
+  if (basePrice !== null) {
+    const total = (parseFloat(basePrice) || 0) + (parseFloat(cartPrice) || 0);
+    document.getElementById('modal_price').textContent = `R${total.toFixed(0)}`;
+  } else if (cartChecked && cartPrice > 0) {
+    document.getElementById('modal_price').textContent = `Auto pricing + Cart (adds R${Number(cartPrice).toFixed(0)})`;
+  } else {
+    document.getElementById('modal_price').textContent = 'Auto pricing';
+  }
+}
+
+async function addPlayer() {
   const name = document.getElementById('player_name').value;
-  const email = document.getElementById('player_email').value;
+  const email = normalizeEmail(document.getElementById('player_email').value);
   const handicap = document.getElementById('player_handicap').value;
   const feeSelect = document.getElementById('player_fee');
   const feeId = feeSelect.value;
   const price = feeSelect.options[feeSelect.selectedIndex].getAttribute('data-price');
+  const wantsCart = Boolean(document.getElementById('player_cart')?.checked);
   
   if (!name) {
     alert('Please enter player name');
     return;
   }
-  
-  if (!feeId) {
-    alert('Please select a fee type');
-    return;
+
+  const isAutoFee = !feeId;
+  let resolvedFeeId = feeId ? parseInt(feeId) : null;
+  let resolvedPrice = price ? parseFloat(price) : null;
+
+  // If no fee selected, ask backend to auto-select a golf fee based on booking details.
+  if (!resolvedFeeId) {
+    const suggested = await suggestGolfFee(selectedPlayerType);
+    if (!suggested) {
+      alert('Auto pricing could not determine a fee. Please choose a fee type manually.');
+      return;
+    }
+    resolvedFeeId = suggested.id;
+    resolvedPrice = suggested.price;
   }
-  
+
+  let cartPrice = 0;
+  let cartFee = null;
+  if (wantsCart) {
+    const suggestedCart = await suggestCartFee(selectedPlayerType);
+    if (!suggestedCart) {
+      alert('Cart pricing unavailable right now. Please try again or disable cart.');
+      return;
+    }
+    cartPrice = parseFloat(suggestedCart.price) || 0;
+    cartFee = suggestedCart.description || 'Cart';
+  }
+
   const typeMap = { member: 'Member', guest: 'Guest', visitor: 'Visitor' };
+  const basePrice = parseFloat(resolvedPrice) || 0;
+  const totalPrice = basePrice + (wantsCart ? cartPrice : 0);
   
   players.push({
     name: name,
-    email: email,
+    email: email || '',
     type: typeMap[selectedPlayerType],
+    playerType: selectedPlayerType,
     handicap: handicap,
-    price: parseFloat(price),
-    feeId: parseInt(feeId),
+    basePrice,
+    cart: wantsCart,
+    cartPrice: wantsCart ? cartPrice : 0,
+    cartFee,
+    price: totalPrice,
+    feeId: resolvedFeeId,
+    autoFee: isAutoFee,
     isExisting: false
   });
   
@@ -751,6 +1012,8 @@ function addPlayer() {
 
 function editPlayer(index) {
   const player = players[index];
+  const cartSplitMap = computeCartSplits(players);
+  const displayPrice = getDisplayPrice(player, index, cartSplitMap);
   
   const typeMap = { 'Member': 'member', 'Guest': 'guest', 'Visitor': 'visitor' };
   
@@ -779,8 +1042,19 @@ function editPlayer(index) {
       <label>Handicap Number</label>
       <input type="text" id="edit_handicap" value="${player.handicap || ''}">
     </div>
+
+    ${!player.isExisting ? `
+      <div class="form-group">
+        <label>Cart</label>
+        <label class="toggle">
+          <input type="checkbox" id="edit_cart" ${player.cart ? 'checked' : ''} onchange="toggleEditCart(${index})">
+          Yes
+        </label>
+        <div class="helper-text" id="edit_cart_label">${player.cart ? `${player.cartFee || 'Cart'} - R${Number(player.cartPrice || 0).toFixed(0)}` : 'No cart'}</div>
+      </div>
+    ` : ''}
     
-    <div class="price-display">R${player.price}</div>
+    <div class="price-display" id="edit_price">R${Number(displayPrice || 0).toFixed(0)}</div>
     
     <button class="modal-btn btn-primary" onclick="savePlayer(${index})">Save Changes</button>
     ${!player.isExisting ? `<button class="modal-btn btn-danger" onclick="removePlayer(${index})">Remove Player</button>` : ''}
@@ -789,9 +1063,12 @@ function editPlayer(index) {
   openModal('editPlayerModal');
 }
 
-function updateEditType(type, index) {
+async function updateEditType(type, index) {
   const typeMap = { member: 'Member', guest: 'Guest', visitor: 'Visitor' };
-  players[index].type = typeMap[type];
+  const player = players[index];
+  player.type = typeMap[type];
+  player.playerType = type;
+  await repricePlayer(index);
   editPlayer(index);
 }
 
@@ -803,6 +1080,91 @@ function savePlayer(index) {
   renderPlayers();
 }
 
+async function repricePlayer(index) {
+  const player = players[index];
+  if (!player || player.isExisting) return;
+
+  // Refresh base price only for auto-priced players.
+  if (player.autoFee) {
+    const suggested = await suggestGolfFee(player.playerType);
+    if (suggested) {
+      player.feeId = suggested.id;
+      player.basePrice = parseFloat(suggested.price) || 0;
+    }
+  } else if (player.basePrice === undefined || player.basePrice === null) {
+    player.basePrice = parseFloat(player.price) || 0;
+  }
+
+  // Refresh cart if selected.
+  if (player.cart) {
+    const suggestedCart = await suggestCartFee(player.playerType);
+    if (suggestedCart) {
+      player.cartPrice = parseFloat(suggestedCart.price) || 0;
+      player.cartFee = suggestedCart.description || 'Cart';
+    }
+  } else {
+    player.cartPrice = 0;
+    player.cartFee = null;
+  }
+
+  player.price = (parseFloat(player.basePrice) || 0) + (player.cart ? (parseFloat(player.cartPrice) || 0) : 0);
+  renderPlayers();
+
+  const priceEl = document.getElementById('edit_price');
+  if (priceEl) {
+    const cartSplitMap = computeCartSplits(players);
+    const displayPrice = getDisplayPrice(player, index, cartSplitMap);
+    priceEl.textContent = `R${Number(displayPrice || 0).toFixed(0)}`;
+  }
+  const labelEl = document.getElementById('edit_cart_label');
+  if (labelEl) labelEl.textContent = player.cart ? `${player.cartFee || 'Cart'} - R${Number(player.cartPrice || 0).toFixed(0)}` : 'No cart';
+}
+
+async function toggleEditCart(index) {
+  const player = players[index];
+  if (!player || player.isExisting) return;
+
+  const wantsCart = Boolean(document.getElementById('edit_cart')?.checked);
+  player.cart = wantsCart;
+
+  if (!wantsCart) {
+    player.cartPrice = 0;
+    player.cartFee = null;
+    player.price = (parseFloat(player.basePrice) || parseFloat(player.price) || 0);
+    renderPlayers();
+    const priceEl = document.getElementById('edit_price');
+    if (priceEl) priceEl.textContent = `R${Number(player.price || 0).toFixed(0)}`;
+    const labelEl = document.getElementById('edit_cart_label');
+    if (labelEl) labelEl.textContent = 'No cart';
+    return;
+  }
+
+  const suggestedCart = await suggestCartFee(player.playerType);
+  if (!suggestedCart) {
+    alert('Cart pricing unavailable right now.');
+    const checkbox = document.getElementById('edit_cart');
+    if (checkbox) checkbox.checked = false;
+    player.cart = false;
+    player.cartPrice = 0;
+    player.cartFee = null;
+    return;
+  }
+
+  player.cartPrice = parseFloat(suggestedCart.price) || 0;
+  player.cartFee = suggestedCart.description || 'Cart';
+  player.price = (parseFloat(player.basePrice) || 0) + player.cartPrice;
+
+  renderPlayers();
+  const priceEl = document.getElementById('edit_price');
+  if (priceEl) {
+    const cartSplitMap = computeCartSplits(players);
+    const displayPrice = getDisplayPrice(player, index, cartSplitMap);
+    priceEl.textContent = `R${Number(displayPrice || 0).toFixed(0)}`;
+  }
+  const labelEl = document.getElementById('edit_cart_label');
+  if (labelEl) labelEl.textContent = `${player.cartFee} - R${Number(player.cartPrice || 0).toFixed(0)}`;
+}
+
 function removePlayer(index) {
   if (confirm('Remove this player?')) {
     players.splice(index, 1);
@@ -812,16 +1174,30 @@ function removePlayer(index) {
 }
 
 async function confirmBookings() {
+  if (bookingSubmitting) return;
+  bookingSubmitting = true;
+  const btn = document.querySelector('.continue-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+
   // Filter only new players (not existing bookings)
   const newPlayers = players.filter(p => !p.isExisting);
   
   if (newPlayers.length === 0 && existingBookings.length === 0) {
     alert('Please add at least one player');
+    bookingSubmitting = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = 'Continue &rsaquo;';
+    }
     return;
   }
   
   // Create bookings for new players
   let successCount = 0;
+  const errors = [];
   for (const player of newPlayers) {
     try {
       const res = await fetch('/tsheet/booking', {
@@ -833,8 +1209,10 @@ async function confirmBookings() {
         body: JSON.stringify({
           tee_time_id: parseInt(teeTimeId),
           player_name: player.name,
-          player_email: player.email || null,
+          player_email: normalizeEmail(player.email),
           handicap_number: player.handicap || null,
+          player_type: player.playerType || null,
+          cart: Boolean(player.cart),
           fee_category_id: player.feeId
         })
       });
@@ -842,21 +1220,36 @@ async function confirmBookings() {
       if (res.ok) {
         successCount++;
       } else {
-        const error = await res.json();
+        const error = await res.json().catch(() => ({}));
         console.error('Booking error:', error);
+        errors.push({ name: player.name, body: JSON.stringify(error) });
       }
     } catch(e) {
       console.error('Failed to create booking:', e);
+      errors.push({ name: player.name, body: String(e) });
     }
   }
   
+  if (errors.length) {
+    const summary = errors.slice(0, 3).map(e => `• ${e.name}: ${e.body || "Unknown error"}`).join("\n");
+    alert(`Created ${successCount} booking(s). ${errors.length} failed.\n\n${summary}`);
+  }
+
   if (successCount > 0 || existingBookings.length > 0) {
     alert(`✓ ${successCount} booking(s) created successfully!`);
     window.location.href = '/frontend/tsheet.html';
+    return;
   } else if (newPlayers.length > 0) {
     alert('Failed to create bookings');
   } else {
     window.location.href = '/frontend/tsheet.html';
+    return;
+  }
+
+  bookingSubmitting = false;
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = 'Continue &rsaquo;';
   }
 }
 

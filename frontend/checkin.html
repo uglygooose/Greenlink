@@ -118,7 +118,9 @@
                     <span style="color: #666;">Booking ID: ${b.id}</span><br/>
                     ${b.status === 'booked' ? 
                         `<button onclick="performCheckin(${b.id})" style="margin-top: 10px; background: #064f32;">✓ Check In</button>` : 
-                        `<span style="color: #0b6e47;">✓ Already checked in</span>`
+                        b.status === 'checked_in' ?
+                        `<button onclick="performCheckin(${b.id})" style="margin-top: 10px; background: #0b6e47;">Open Round</button>` :
+                        `<span style="color: #0b6e47;">✓ ${b.status}</span>`
                     }
                 </div>
             `).join('');

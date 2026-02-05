@@ -1,4 +1,5 @@
 console.log("GreenLink front-end loaded.");
+const API_BASE = window.location.origin;
 
 // TOGGLE BETWEEN LOGIN & SIGNUP
 document.getElementById("showSignup").addEventListener("click", (e) => {
@@ -20,7 +21,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     const email = loginEmail.value;
     const password = loginPassword.value;
 
-    const res = await fetch("http://localhost:8000/login", {
+    const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
@@ -51,7 +52,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const email = newEmail.value;
     const password = newPassword.value;
 
-    const res = await fetch("http://localhost:8000/users/", {
+    const res = await fetch(`${API_BASE}/users/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })

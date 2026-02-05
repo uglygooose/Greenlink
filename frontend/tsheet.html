@@ -3,219 +3,556 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>T-Sheet - Select Tee Time</title>
+  <title>Umhlali Tee Sheet</title>
   <link rel="stylesheet" href="/frontend/style.css">
   <style>
-    body {
-      background: #f5f5f5;
-      min-height: 100vh;
+    :root {
+      --ucc-olive: #5a7a3a;
+      --ucc-olive-dark: #4e6a31;
+      --ucc-sage: #e6ecd6;
+      --ucc-cream: #f6f4ec;
+      --ucc-orange: #f28c2c;
+      --ucc-gold: #f5c542;
+      --ucc-ink: #1f2a1b;
+      --ucc-muted: #6c7b66;
+      --ucc-border: #d9dfc9;
+      --ucc-card: #ffffff;
+      --ucc-shadow: 0 12px 30px rgba(31, 42, 27, 0.12);
     }
-    
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #f6f4ec 0%, #e6ecd6 45%, #f6f4ec 100%);
+      min-height: 100vh;
+      color: var(--ucc-ink);
+      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    }
+
+    body.embedded {
+      background: #f6f4ec;
+    }
+
+    body.embedded .tsheet-header,
+    body.embedded .selectors,
+    body.embedded .sheet-actions .non-embed {
+      display: none;
+    }
+
+    body.embedded .tsheet-container {
+      max-width: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 16px;
+    }
+
+    body.embedded .empty-state .action-btn {
+      display: none;
+    }
+
     .tsheet-container {
       position: relative;
       top: auto;
       left: auto;
       transform: none;
-      max-width: 100%;
-      width: 100%;
-      padding: 0;
+      max-width: 1200px;
+      width: calc(100% - 32px);
+      margin: 18px auto 32px;
+      padding: 0 0 18px;
       min-height: 100vh;
-      background: #fff;
+      background: transparent;
     }
-    
+
     .tsheet-header {
       display: flex;
       align-items: center;
-      padding: 15px 20px;
-      background: #fff;
-      border-bottom: 1px solid #eee;
+      padding: 18px 24px;
+      background: linear-gradient(135deg, #f6f4ec 0%, #e6ecd6 100%);
+      border: 1px solid var(--ucc-border);
+      border-radius: 20px;
+      box-shadow: var(--ucc-shadow);
+      gap: 16px;
     }
-    
+
+    .club-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 2px solid var(--ucc-border);
+      object-fit: cover;
+    }
+
     .back-btn {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border: none;
-      background: none;
-      font-size: 24px;
-      color: #064f32;
+      background: #ffffff;
+      border-radius: 12px;
+      font-size: 22px;
+      color: var(--ucc-olive-dark);
       cursor: pointer;
       padding: 0;
+      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.12);
     }
-    
+
     .header-info {
-      margin-left: 10px;
+      margin-left: 4px;
     }
-    
+
     .club-name {
       font-size: 12px;
-      color: #888;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ucc-muted);
       margin: 0;
     }
-    
+
     .page-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #333;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ucc-ink);
       margin: 0;
     }
-    
+
     .selectors {
       display: flex;
       gap: 15px;
-      padding: 15px 20px;
+      padding: 18px 6px 8px;
     }
-    
+
     .selector-btn {
       flex: 1;
-      padding: 15px;
-      border: 2px solid #064f32;
-      border-radius: 10px;
-      background: #fff;
+      padding: 16px 18px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 16px;
+      background: var(--ucc-card);
       cursor: pointer;
       text-align: center;
+      box-shadow: 0 8px 20px rgba(31, 42, 27, 0.08);
     }
-    
+
     .selector-btn.active {
-      background: #fff;
+      border-color: var(--ucc-olive);
+      box-shadow: 0 8px 20px rgba(90, 122, 58, 0.2);
     }
-    
+
     .selector-btn .main-text {
       font-size: 18px;
       font-weight: 600;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
     }
-    
+
     .selector-btn .sub-text {
-      font-size: 12px;
-      color: #888;
-    }
-    
-    .column-headers {
+
+    .sheet-actions {
       display: flex;
-      padding: 15px 20px;
-      border-bottom: 2px solid #333;
-      gap: 20px;
+      gap: 12px;
+      padding: 4px 6px 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      padding: 10px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--ucc-border);
+      background: #fff;
+      color: var(--ucc-olive-dark);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.08);
+    }
+
+    .action-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .action-btn.primary {
+      background: var(--ucc-olive);
+      color: #fff;
+      border-color: var(--ucc-olive);
+    }
+
+    .action-btn.ghost {
+      background: #fff;
+      border-style: dashed;
+      color: var(--ucc-olive-dark);
+    }
+
+    .action-note {
+      font-size: 12px;
+      color: var(--ucc-muted);
+      margin-left: auto;
+    }
+
+    .table-wrap {
+      border-radius: 18px;
+      border: 1px solid var(--ucc-border);
+      background: #fff;
+      overflow: hidden;
+      box-shadow: 0 14px 30px rgba(31, 42, 27, 0.08);
+    }
+
+    .sheet-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .sheet-table th {
+      background: #f3f7ea;
+      color: var(--ucc-olive-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+      padding: 14px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--ucc-border);
+    }
+
+    .sheet-table td {
+      padding: 12px;
+      border-bottom: 1px solid #edf0e4;
+      vertical-align: top;
+      background: #fff;
+    }
+
+    .time-col {
+      width: 110px;
+      font-weight: 700;
+      color: var(--ucc-ink);
+      font-size: 15px;
+    }
+
+    .tee-col {
+      width: 70px;
+      font-weight: 700;
+      color: var(--ucc-olive-dark);
+    }
+
+    .slot-card {
+      border-radius: 12px;
+      border: 1px solid var(--ucc-border);
+      padding: 10px 12px;
+      background: #fafbf7;
+      min-height: 70px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slot-card.open {
+      background: #f6f4ec;
+      cursor: pointer;
+    }
+
+    .slot-card.booked {
+      background: #fffaf0;
+      border-color: #e1d8b5;
+      cursor: pointer;
+    }
+
+    .slot-card.checked-in {
+      background: #eef6ea;
+      border-color: var(--ucc-olive);
+      cursor: pointer;
+    }
+
+    .slot-card.no-show {
+      background: #f9e2d0;
+      border-color: var(--ucc-orange);
+    }
+
+    .slot-card.cancelled {
+      background: #f1f2f0;
+      border-color: #d1d6cf;
+    }
+
+    .slot-card.closed {
+      background: #f7f7f4;
+      border-style: dashed;
+      color: #9aa391;
+    }
+
+    .slot-top {
+      display: flex;
+      justify-content: space-between;
       align-items: center;
     }
-     
+
+    .slot-status {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ucc-muted);
+      font-weight: 700;
+    }
+
+    .slot-status.checked-in {
+      color: var(--ucc-olive);
+    }
+
+    .slot-status.no-show {
+      color: #9a4a00;
+    }
+
+    .slot-status.cancelled {
+      color: #7d827c;
+    }
+
+    .slot-name {
+      font-weight: 700;
+      color: var(--ucc-ink);
+      font-size: 14px;
+    }
+
+    .slot-meta {
+      font-size: 12px;
+      color: var(--ucc-muted);
+    }
+
+    .slot-action {
+      margin-top: auto;
+      align-self: flex-start;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ucc-olive-dark);
+      text-decoration: underline;
+    }
+
+    .empty-row td {
+      padding: 28px;
+      background: #fbfbf7;
+    }
+
+    .empty-state {
+      padding: 32px;
+      border-radius: 16px;
+      border: 1px dashed var(--ucc-border);
+      text-align: center;
+      color: var(--ucc-muted);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    .empty-state h3 {
+      margin: 0 0 8px;
+      color: var(--ucc-olive-dark);
+    }
+
+    .empty-state p {
+      margin: 0 0 18px;
+    }
+
+
+    .sheet-actions {
+      display: flex;
+      gap: 12px;
+      padding: 4px 6px 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      padding: 10px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--ucc-border);
+      background: #fff;
+      color: var(--ucc-olive-dark);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.08);
+    }
+
+    .action-btn.primary {
+      background: var(--ucc-olive);
+      color: #fff;
+      border-color: var(--ucc-olive);
+    }
+
+    .action-btn.ghost {
+      background: #fff;
+      border-style: dashed;
+      color: var(--ucc-olive-dark);
+    }
+
+    .action-note {
+      font-size: 12px;
+      color: var(--ucc-muted);
+      margin-left: auto;
+    }
+
+    .empty-state {
+      padding: 36px 28px;
+      border-radius: 18px;
+      border: 1px dashed var(--ucc-border);
+      text-align: center;
+      color: var(--ucc-muted);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    .empty-state h3 {
+      margin: 0 0 8px;
+      color: var(--ucc-olive-dark);
+    }
+
+    .empty-state p {
+      margin: 0 0 18px;
+    }
+
+      font-size: 12px;
+      color: var(--ucc-muted);
+    }
+
+    .column-headers {
+      display: flex;
+      padding: 16px 20px;
+      border-bottom: 2px solid var(--ucc-olive-dark);
+      gap: 20px;
+      align-items: center;
+      margin-top: 10px;
+    }
+
      .time-header {
        width: 100px;
        font-size: 13px;
        font-weight: 700;
-       color: #333;
+       color: var(--ucc-olive-dark);
        text-align: left;
      }
-     
+
      .players-header {
        flex: 1;
        text-align: center;
        font-size: 13px;
        font-weight: 700;
-       color: #333;
+       color: var(--ucc-olive-dark);
      }
-     
 
-    
-    .tee-times-list {
-      padding: 10px 20px;
-      overflow-y: auto;
-      max-height: calc(100vh - 250px);
+    .status-legend {
+      display: flex;
+      gap: 16px;
+      padding: 8px 20px 6px;
+      font-size: 12px;
+      color: var(--ucc-muted);
+      align-items: center;
     }
-    
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid var(--ucc-border);
+      background: #fff;
+    }
+
+    .legend-dot.booked { background: #f6f4ec; border-color: var(--ucc-olive); }
+    .legend-dot.checked-in { background: var(--ucc-olive); border-color: var(--ucc-olive); }
+    .legend-dot.no-show { background: #f9e2d0; border-color: var(--ucc-orange); }
+    .legend-dot.cancelled { background: #eef0ea; border-color: #cbd3d9; }
+
+    .tee-times-list {
+      padding: 6px 20px 20px;
+      overflow-y: auto;
+      max-height: calc(100vh - 320px);
+    }
+
     .tee-time-row {
       display: flex;
       align-items: center;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       min-height: 45px;
       gap: 30px;
-      padding: 0 20px;
-      border-bottom: 1px solid #f0f0f0;
-      padding-bottom: 20px;
+      padding: 14px 16px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 16px;
+      background: var(--ucc-card);
+      box-shadow: 0 10px 26px rgba(31, 42, 27, 0.08);
     }
-    
+
     .tee-time-label {
       width: 100px;
-      font-size: 15px;
-      font-weight: 600;
-      color: #333;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ucc-ink);
       text-align: left;
     }
-    
+
     .player-slots {
       display: flex;
       flex: 1;
       gap: 12px;
       justify-content: center;
+      flex-wrap: wrap;
     }
-    
+
     .player-slot {
       width: 45px;
       height: 45px;
       padding: 0;
-      border: 2px solid #ddd;
-      border-radius: 8px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
       background: #fff;
       text-align: center;
       font-size: 14px;
       font-weight: 600;
-      color: #999;
+      color: var(--ucc-muted);
       cursor: pointer;
       transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
-    
-    .player-slot:hover {
-      border-color: #064f32;
-      background: #f0f7f4;
-      color: #064f32;
-    }
-    
-    .player-slot.booked {
-      background: #fff;
-      color: #2ecc71;
-      border-color: #2ecc71;
-      font-weight: 600;
-    }
-    
-    .player-slot.checked-in {
-      background: #2ecc71;
-      color: #fff;
-      border-color: #2ecc71;
-      font-weight: 600;
-    }
-    
 
-    
-    .add-tee-time-row {
-      display: flex;
-      align-items: center;
-      margin-bottom: 15px;
-      padding: 20px;
-      gap: 30px;
+    .player-slot:hover {
+      border-color: var(--ucc-olive);
+      background: #f3f7ea;
+      color: var(--ucc-olive-dark);
     }
-    
-    .add-tee-time-btn {
-      width: 50px;
-      height: 50px;
-      padding: 0;
-      border: 2px solid #064f32;
-      border-radius: 25px;
-      background: #fff;
-      color: #064f32;
-      font-size: 28px;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+
+    .player-slot.booked {
+      background: #f6f4ec;
+      color: var(--ucc-olive-dark);
+      border-color: var(--ucc-olive);
+      font-weight: 700;
     }
-    
-    .add-tee-time-btn:hover {
-      background: #f0f7f4;
+
+    .player-slot.checked-in {
+      background: var(--ucc-olive);
+      color: #fff;
+      border-color: var(--ucc-olive);
+      font-weight: 700;
     }
-    
+
+    .player-slot.no-show {
+      background: #f9e2d0;
+      color: #9a4a00;
+      border-color: var(--ucc-orange);
+      font-weight: 700;
+    }
+
+    .player-slot.cancelled {
+      background: #eef0ea;
+      color: #8a8f98;
+      border-color: #cbd3d9;
+      font-weight: 600;
+    }
+
     /* Modal styles */
     .modal-overlay {
       display: none;
@@ -229,77 +566,78 @@
       justify-content: center;
       align-items: center;
     }
-    
+
     .modal-overlay.active {
       display: flex;
     }
-    
+
     .modal-content {
       background: #fff;
-      border-radius: 15px;
+      border-radius: 18px;
       padding: 25px;
       width: 90%;
       max-width: 400px;
       max-height: 80vh;
       overflow-y: auto;
+      box-shadow: var(--ucc-shadow);
     }
-    
+
     .modal-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
     }
-    
+
     .modal-title {
       font-size: 18px;
       font-weight: 600;
-      color: #333;
+      color: var(--ucc-ink);
     }
-    
+
     .modal-close {
       width: 30px;
       height: 30px;
       border: none;
-      background: #f0f0f0;
+      background: #f3f3ef;
       border-radius: 50%;
       font-size: 18px;
       cursor: pointer;
-      color: #666;
+      color: var(--ucc-muted);
     }
-    
+
     .form-group {
       margin-bottom: 15px;
     }
-    
+
     .form-group label {
       display: block;
       font-size: 13px;
-      color: #666;
+      color: var(--ucc-muted);
       margin-bottom: 5px;
     }
-    
+
     .form-group input,
     .form-group select {
       width: 100%;
       padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 10px;
       font-size: 14px;
       box-sizing: border-box;
     }
-    
+
     .price-display {
       font-size: 20px;
       font-weight: 700;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
       text-align: center;
       padding: 15px;
-      background: #f0f7f4;
+      background: #f3f7ea;
       border-radius: 10px;
       margin-bottom: 15px;
     }
-    
+
     .modal-btn {
       width: 100%;
       padding: 14px;
@@ -310,27 +648,27 @@
       cursor: pointer;
       margin-bottom: 10px;
     }
-    
+
     .btn-primary {
-      background: #064f32;
+      background: var(--ucc-olive);
       color: #fff;
     }
-    
+
     .btn-secondary {
-      background: #f0f0f0;
-      color: #333;
+      background: #f3f3ef;
+      color: var(--ucc-ink);
     }
-    
+
     .btn-danger {
-      background: #dc3545;
+      background: #b23a2b;
       color: #fff;
     }
-    
+
     .btn-success {
-      background: #28a745;
+      background: var(--ucc-olive);
       color: #fff;
     }
-    
+
     /* Date picker modal */
     .date-picker-grid {
       display: grid;
@@ -338,71 +676,92 @@
       gap: 5px;
       margin-bottom: 20px;
     }
-    
+
     .date-picker-day {
       padding: 10px 5px;
       text-align: center;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ucc-border);
       border-radius: 8px;
       cursor: pointer;
       font-size: 12px;
     }
-    
+
     .date-picker-day:hover {
-      background: #f0f7f4;
-      border-color: #064f32;
+      background: #f3f7ea;
+      border-color: var(--ucc-olive);
     }
-    
+
     .date-picker-day.selected {
-      background: #064f32;
+      background: var(--ucc-olive);
       color: #fff;
-      border-color: #064f32;
+      border-color: var(--ucc-olive);
     }
-    
+
     .date-picker-day.today {
-      border-color: #064f32;
+      border-color: var(--ucc-olive);
       font-weight: 600;
     }
-    
+
     .holes-selector {
       display: flex;
       gap: 15px;
       justify-content: center;
     }
-    
+
     .holes-option {
       padding: 15px 30px;
-      border: 2px solid #ddd;
+      border: 2px solid var(--ucc-border);
       border-radius: 10px;
       cursor: pointer;
       text-align: center;
     }
-    
+
     .holes-option:hover,
     .holes-option.selected {
-      border-color: #064f32;
-      background: #f0f7f4;
+      border-color: var(--ucc-olive);
+      background: #f3f7ea;
     }
-    
+
     .holes-option .number {
       font-size: 24px;
       font-weight: 700;
-      color: #064f32;
+      color: var(--ucc-olive-dark);
     }
-    
+
     .holes-option .label {
       font-size: 12px;
-      color: #666;
+      color: var(--ucc-muted);
+    }
+
+    @media (max-width: 860px) {
+      .selectors {
+        flex-direction: column;
+      }
+
+      .tee-time-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .tee-time-label {
+        width: auto;
+      }
+
+      .player-slots {
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>
 <body>
   <div class="tsheet-container">
     <div class="tsheet-header">
-      <button class="back-btn" onclick="history.back()">‹</button>
+      <button class="back-btn" onclick="history.back()">&lsaquo;</button>
+      <img class="club-logo" src="/frontend/assets/logo.jpeg" alt="Umhlali Country Club">
       <div class="header-info">
-        <p class="club-name">Golf Club</p>
-        <h1 class="page-title">Select Tee Time</h1>
+        <p class="club-name">Umhlali Country Club</p>
+        <h1 class="page-title">Tee Sheet Overview</h1>
       </div>
     </div>
     
@@ -416,14 +775,34 @@
         <div class="sub-text">Holes</div>
       </button>
     </div>
+
     
-    <div class="column-headers">
-      <div class="time-header">TEE TIME</div>
-      <div class="players-header">Select Players</div>
+    <div class="sheet-actions">
+      <span class="non-embed">
+        <button class="action-btn primary" id="generate-btn" onclick="generateTeeSheet()">Generate Day Tee Sheet</button>
+        <button class="action-btn ghost" onclick="openAddTeeTimeModal()">Add Single Tee Time</button>
+      </span>
+      <button class="action-btn" id="earlier-btn" onclick="viewEarlier()">View Earlier</button>
+      <button class="action-btn" id="later-btn" onclick="viewLater()">View Later</button>
+      <span class="action-note" id="page-info">Showing 0–0</span>
     </div>
-    
-    <div class="tee-times-list" id="tee_times_list">
-      <!-- Tee times will be loaded here -->
+
+    <div class="table-wrap">
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th class="time-col">Time</th>
+            <th class="tee-col">Tee</th>
+            <th>Player 1</th>
+            <th>Player 2</th>
+            <th>Player 3</th>
+            <th>Player 4</th>
+          </tr>
+        </thead>
+        <tbody id="tee_times_list">
+          <!-- Tee times will be loaded here -->
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -432,7 +811,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Book Slot</span>
-        <button class="modal-close" onclick="closeModal('bookingModal')">×</button>
+        <button class="modal-close" onclick="closeModal('bookingModal')">&times;</button>
       </div>
       <div id="modalBody">
         <!-- Dynamic content -->
@@ -445,7 +824,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Select Date</span>
-        <button class="modal-close" onclick="closeModal('datePickerModal')">×</button>
+        <button class="modal-close" onclick="closeModal('datePickerModal')">&times;</button>
       </div>
       <div id="datePickerBody">
         <!-- Calendar will be rendered here -->
@@ -458,7 +837,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Select Holes</span>
-        <button class="modal-close" onclick="closeModal('holesPickerModal')">×</button>
+        <button class="modal-close" onclick="closeModal('holesPickerModal')">&times;</button>
       </div>
       <div class="holes-selector">
         <div class="holes-option" onclick="selectHoles(9)">
@@ -478,7 +857,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Add New Tee Time</span>
-        <button class="modal-close" onclick="closeModal('addTeeTimeModal')">×</button>
+        <button class="modal-close" onclick="closeModal('addTeeTimeModal')">&times;</button>
       </div>
       <div class="form-group">
         <label>Select Time</label>
@@ -494,11 +873,93 @@ const token = localStorage.getItem('token');
 if(!token) location.href='/frontend/index.html';
 
 let selectedDate = new Date();
+
+const params = new URLSearchParams(window.location.search);
+const isEmbedded = params.get('embedded') === '1';
+const dateParam = params.get('date');
+if (dateParam) {
+  selectedDate = new Date(`${dateParam}T00:00:00`);
+}
+if (isEmbedded) {
+  document.body.classList.add('embedded');
+}
+
 let selectedHoles = 18;
 let allTeeTimes = [];
 let golfFees = [];
+let autoGeneratedDates = {};
+let pageStartIndex = 0;
+const PAGE_SIZE = 10;
+
+const DEFAULT_START = "06:30";
+const DEFAULT_END = "16:30";
+const DEFAULT_INTERVAL_MIN = 10;
+
 
 // Format time for display
+
+
+function buildDateTime(baseDate, timeStr) {
+  const [h, m] = timeStr.split(':');
+  const d = new Date(baseDate);
+  d.setHours(parseInt(h), parseInt(m), 0, 0);
+  return d;
+}
+
+function dateToYMD(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function buildRangeForDay(date) {
+  const startYMD = dateToYMD(date);
+  const nextDay = new Date(date);
+  nextDay.setDate(nextDay.getDate() + 1);
+  const endYMD = dateToYMD(nextDay);
+  return {
+    start: `${startYMD}T00:00:00`,
+    end: `${endYMD}T00:00:00`
+  };
+}
+
+function floorToInterval(dateObj, intervalMin) {
+  const d = new Date(dateObj);
+  const mins = d.getMinutes();
+  d.setSeconds(0, 0);
+  d.setMinutes(Math.floor(mins / intervalMin) * intervalMin);
+  return d;
+}
+
+function isPastTeeTime(teeTimeIso) {
+  const today0 = new Date();
+  today0.setHours(0, 0, 0, 0);
+
+  const selected0 = new Date(selectedDate);
+  selected0.setHours(0, 0, 0, 0);
+
+  // Past days: all times closed. Future days: all open.
+  if (selected0.getTime() < today0.getTime()) return true;
+  if (selected0.getTime() > today0.getTime()) return false;
+
+  // Today: closed if earlier than current interval floor (e.g. 11:05 => 11:00).
+  const threshold = floorToInterval(new Date(), DEFAULT_INTERVAL_MIN);
+  return new Date(teeTimeIso) < threshold;
+}
+
+async function createTeeTimeAt(teeDateTime) {
+  const res = await fetch(API_PREFIX + '/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify({ tee_time: teeDateTime.toISOString() })
+  });
+  return res.ok;
+}
+
 function formatTime(date) {
   const d = new Date(date);
   let hours = d.getHours();
@@ -509,7 +970,6 @@ function formatTime(date) {
 // Format date for display
 function formatDateDisplay(date) {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -517,7 +977,10 @@ function formatDateDisplay(date) {
   checkDate.setHours(0,0,0,0);
   
   const dayName = days[date.getDay()];
-  const dateStr = `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yy = String(date.getFullYear()).slice(2);
+  const dateStr = `${dd}/${mm}/${yy}`;
   
   if (checkDate.getTime() === today.getTime()) {
     return { day: 'Today', date: dateStr };
@@ -554,62 +1017,186 @@ async function loadFees() {
 // Load tee times
 async function loadTeeTimes() {
   try {
-    const res = await fetch(API_PREFIX + '/', { headers: { 'Authorization': 'Bearer ' + token }});
-    allTeeTimes = await res.json();
+    const range = buildRangeForDay(selectedDate);
+    const qs = `?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`;
+    const res = await fetch(API_PREFIX + '/range' + qs, { headers: { 'Authorization': 'Bearer ' + token }});
+    allTeeTimes = res.ok ? await res.json() : [];
+    resetPageStartIndex();
     renderTeeTimes();
   } catch(e) {
     console.error('Failed to load tee times:', e);
   }
 }
 
+function resetPageStartIndex() {
+  const list = Array.isArray(allTeeTimes) ? allTeeTimes : [];
+  if (list.length === 0) {
+    pageStartIndex = 0;
+    return;
+  }
+
+  // Default: start at beginning for non-today dates.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const checkDate = new Date(selectedDate);
+  checkDate.setHours(0, 0, 0, 0);
+  if (checkDate.getTime() !== today.getTime()) {
+    pageStartIndex = 0;
+    return;
+  }
+
+  const threshold = floorToInterval(new Date(), DEFAULT_INTERVAL_MIN);
+  let idx = list.findIndex(tt => new Date(tt.tee_time) >= threshold);
+  if (idx < 0) idx = Math.max(0, list.length - PAGE_SIZE);
+  const maxStart = Math.max(0, list.length - PAGE_SIZE);
+  pageStartIndex = Math.min(Math.max(0, idx), maxStart);
+}
+
+function updatePagerInfo(total, shown) {
+  const info = document.getElementById('page-info');
+  const earlier = document.getElementById('earlier-btn');
+  const later = document.getElementById('later-btn');
+  if (!info || !earlier || !later) return;
+
+  if (total === 0) {
+    info.textContent = 'No tee times';
+    earlier.disabled = true;
+    later.disabled = true;
+    return;
+  }
+
+  const start = Math.min(total, pageStartIndex + 1);
+  const end = Math.min(total, pageStartIndex + shown);
+  info.textContent = `Showing ${start}\u2013${end} of ${total}`;
+
+  earlier.disabled = pageStartIndex <= 0;
+  later.disabled = pageStartIndex + shown >= total;
+}
+
+function viewEarlier() {
+  pageStartIndex = Math.max(0, pageStartIndex - PAGE_SIZE);
+  renderTeeTimes();
+}
+
+function viewLater() {
+  const total = Array.isArray(allTeeTimes) ? allTeeTimes.length : 0;
+  const maxStart = Math.max(0, total - PAGE_SIZE);
+  pageStartIndex = Math.min(maxStart, pageStartIndex + PAGE_SIZE);
+  renderTeeTimes();
+}
+
 // Render tee times for selected date
 function renderTeeTimes() {
   const container = document.getElementById('tee_times_list');
   
-  // Filter tee times for selected date
-  const dateStr = selectedDate.toISOString().split('T')[0];
-  const dayTeeTimes = allTeeTimes.filter(tt => {
-    const ttDate = new Date(tt.tee_time).toISOString().split('T')[0];
-    return ttDate === dateStr;
-  }).sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
+  const dateStr = dateToYMD(selectedDate);
+  const dayTeeTimes = (Array.isArray(allTeeTimes) ? allTeeTimes : []).slice().sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
   
   let html = '';
-  
-  // Tee time rows
-  dayTeeTimes.forEach(tt => {
-    const time = formatTime(tt.tee_time);
-    const bookings = tt.bookings || [];
-    
-    html += `
-      <div class="tee-time-row">
-        <div class="tee-time-label">${time}</div>
-        <div class="player-slots">
+
+  if (dayTeeTimes.length === 0) {
+    updatePagerInfo(0, 0);
+    if (!autoGeneratedDates[dateStr]) {
+      autoGeneratedDates[dateStr] = true;
+      container.innerHTML = `
+        <tr class="empty-row">
+          <td colspan="6">
+            <div class="empty-state">
+              <h3>Generating tee sheet...</h3>
+              <p>Creating 10-minute intervals for today.</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      generateTeeSheet();
+      return;
+    }
+
+    container.innerHTML = `
+      <tr class="empty-row">
+        <td colspan="6">
+          <div class="empty-state">
+            <h3>No tee times for this day</h3>
+            <p>Generate the day sheet or add a single time to get started.</p>
+            <button class="action-btn primary" onclick="generateTeeSheet()">Generate Day Tee Sheet</button>
+          </div>
+        </td>
+      </tr>
     `;
-    
-    // 4 player slots with numbers
+    return;
+  }
+
+  const maxStart = Math.max(0, dayTeeTimes.length - PAGE_SIZE);
+  pageStartIndex = Math.min(Math.max(0, pageStartIndex), maxStart);
+  const page = dayTeeTimes.slice(pageStartIndex, pageStartIndex + PAGE_SIZE);
+  updatePagerInfo(dayTeeTimes.length, page.length);
+  
+  page.forEach(tt => {
+    const time = formatTime(tt.tee_time);
+    const teeLabel = tt.hole ? tt.hole : '1';
+    const bookings = tt.bookings || [];
+    const capacity = tt.capacity || 4;
+
+    html += `
+      <tr>
+        <td class="time-col">${time}</td>
+        <td class="tee-col">${teeLabel}</td>
+    `;
+
     for (let i = 0; i < 4; i++) {
+      if (i >= capacity) {
+        html += `
+          <td>
+            <div class="slot-card closed">
+              <div class="slot-top"><span class="slot-status">Closed</span></div>
+              <div class="slot-name">Not available</div>
+            </div>
+          </td>
+        `;
+        continue;
+      }
+
       const booking = bookings[i];
-      const slotNumber = i + 1;
       if (booking) {
-        const statusClass = booking.status === 'checked_in' ? 'checked-in' : 'booked';
-        html += `<div class="player-slot ${statusClass}" onclick="openBookingDetails(${tt.id}, ${booking.id})" title="${booking.player_name}">${slotNumber}</div>`;
+        const status = booking.status || 'booked';
+        const statusClass = status === 'checked_in' ? 'checked-in' : status === 'no_show' ? 'no-show' : status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'checked-in' : 'booked';
+        const statusLabel = status.replace('_', ' ');
+        html += `
+          <td>
+            <div class="slot-card ${statusClass}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
+              <div class="slot-top"><span class="slot-status ${statusClass}">${statusLabel}</span></div>
+              <div class="slot-name">${booking.player_name}</div>
+              <div class="slot-meta">R${booking.price}</div>
+            </div>
+          </td>
+        `;
       } else {
-        html += `<div class="player-slot" onclick="openBookingForm(${tt.id}, ${slotNumber})">${slotNumber}</div>`;
+        const slotNumber = i + 1;
+        if (isPastTeeTime(tt.tee_time)) {
+          html += `
+            <td>
+              <div class="slot-card closed">
+                <div class="slot-top"><span class="slot-status">Closed</span></div>
+                <div class="slot-name">Past time</div>
+              </div>
+            </td>
+          `;
+        } else {
+          html += `
+            <td>
+              <div class="slot-card open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
+                <div class="slot-top"><span class="slot-status">Open</span></div>
+                <div class="slot-name">Available</div>
+                <div class="slot-action">Add player</div>
+              </div>
+            </td>
+          `;
+        }
       }
     }
-    
-    html += `
-        </div>
-      </div>
-    `;
+
+    html += `</tr>`;
   });
-  
-  // Add new tee time button
-  html += `
-    <div class="add-tee-time-row">
-      <button class="add-tee-time-btn" onclick="openAddTeeTimeModal()">+</button>
-    </div>
-  `;
   
   container.innerHTML = html;
 }
@@ -682,7 +1269,7 @@ function selectDate(isoString) {
   selectedDate = new Date(isoString);
   updateDateDisplay();
   closeModal('datePickerModal');
-  renderTeeTimes();
+  loadTeeTimes();
 }
 
 function selectHoles(num) {
@@ -707,21 +1294,12 @@ async function createTeeTime() {
   teeDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
   
   try {
-    const res = await fetch(API_PREFIX + '/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
-      },
-      body: JSON.stringify({ tee_time: teeDateTime.toISOString() })
-    });
-    
-    if (res.ok) {
+    const ok = await createTeeTimeAt(teeDateTime);
+    if (ok) {
       closeModal('addTeeTimeModal');
       loadTeeTimes();
     } else {
-      const error = await res.json();
-      alert('Error: ' + JSON.stringify(error));
+      alert('Failed to create tee time');
     }
   } catch(e) {
     alert('Failed to create tee time');
@@ -729,6 +1307,38 @@ async function createTeeTime() {
 }
 
 // Open booking page
+
+
+async function generateTeeSheet() {
+  const button = document.getElementById('generate-btn');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Generating...';
+  }
+
+  try {
+    const start = buildDateTime(selectedDate, DEFAULT_START);
+    const end = buildDateTime(selectedDate, DEFAULT_END);
+    const interval = DEFAULT_INTERVAL_MIN;
+
+    let created = 0;
+    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + interval * 60000)) {
+      const ok = await createTeeTimeAt(t);
+      if (ok) created++;
+    }
+
+    await loadTeeTimes();
+    alert(`OK: Generated ${created} tee times`);
+  } catch (e) {
+    alert('Failed to generate tee times');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Generate Day Tee Sheet';
+    }
+  }
+}
+
 function openBookingForm(teeTimeId, slotNumber) {
   const teeTime = allTeeTimes.find(tt => tt.id === teeTimeId);
   if (teeTime) {
@@ -806,15 +1416,15 @@ async function openBookingDetails(teeTimeId, bookingId) {
   const isCheckedIn = booking.status === 'checked_in';
   
   document.getElementById('modalBody').innerHTML = `
-    <div style="padding: 15px; background: #f9f9f9; border-radius: 10px; margin-bottom: 15px;">
+    <div style="padding: 15px; background: var(--ucc-cream); border-radius: 10px; margin-bottom: 15px;">
       <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">${booking.player_name}</div>
-      <div style="font-size: 14px; color: #666; margin-bottom: 5px;">
+      <div style="font-size: 14px; color: var(--ucc-muted); margin-bottom: 5px;">
         <strong>Status:</strong> ${booking.status.replace('_', ' ')}
       </div>
-      <div style="font-size: 14px; color: #666; margin-bottom: 5px;">
+      <div style="font-size: 14px; color: var(--ucc-muted); margin-bottom: 5px;">
         <strong>Price:</strong> R${booking.price}
       </div>
-      ${booking.player_email ? `<div style="font-size: 14px; color: #666;"><strong>Email:</strong> ${booking.player_email}</div>` : ''}
+      ${booking.player_email ? `<div style="font-size: 14px; color: var(--ucc-muted);"><strong>Email:</strong> ${booking.player_email}</div>` : ''}
     </div>
     ${!isCheckedIn ? `<button class="modal-btn btn-success" onclick="checkIn(${bookingId})">Check In</button>` : ''}
     <button class="modal-btn btn-secondary" onclick="closeModal('bookingModal')">Close</button>

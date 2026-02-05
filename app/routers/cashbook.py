@@ -7,16 +7,24 @@ from datetime import datetime, date
 from typing import List, Optional
 from pydantic import BaseModel
 from io import BytesIO
+import csv
+from io import StringIO
 import os
 
-from app.auth import get_db
-from app.models import Booking, TeeTime, BookingStatus
+from app.auth import get_db, get_current_user
+from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, DayClose, AccountingSetting, User, UserRole
 from app.fee_models import FeeCategory
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 router = APIRouter(prefix="/cashbook", tags=["cashbook"])
+
+
+def verify_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 class PaymentRecord(BaseModel):
     """Individual payment record"""
@@ -49,6 +57,25 @@ class DailyPaymentsSummary(BaseModel):
     records: List[PaymentRecord]
 
 
+class AccountingSettingsPayload(BaseModel):
+    green_fees_gl: Optional[str] = None
+    cashbook_contra_gl: Optional[str] = None
+    vat_rate: Optional[float] = None
+    tax_type: Optional[int] = None
+    cashbook_name: Optional[str] = None
+
+
+def get_accounting_settings(db: Session) -> AccountingSetting:
+    settings = db.query(AccountingSetting).first()
+    if settings:
+        return settings
+    settings = AccountingSetting()
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
 def get_active_completed_bookings(db: Session, target_date: Optional[date] = None) -> List:
     """Get all bookings that were checked in or completed on a specific date"""
     if target_date is None:
@@ -56,14 +83,25 @@ def get_active_completed_bookings(db: Session, target_date: Optional[date] = Non
     
     # Query bookings that were checked in or completed on the target date
     bookings = db.query(Booking).join(TeeTime).filter(
-        func.date(Booking.created_at) == target_date,
+        func.date(TeeTime.tee_time) == target_date,
         Booking.status.in_([BookingStatus.checked_in, BookingStatus.completed])
     ).all()
     
     return bookings
 
 
-def create_payment_record(booking: Booking, batch_id: int = 1) -> PaymentRecord:
+def sanitize_gl(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return value.replace("/", "").replace(" ", "").replace("-", "")
+
+
+def format_amount(value: float) -> str:
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
+def create_payment_record(booking: Booking, settings: AccountingSetting, batch_id: int = 1) -> PaymentRecord:
     """Convert a booking to a payment record"""
     tee_time = booking.tee_time
     fee_category = booking.fee_category_id
@@ -82,19 +120,22 @@ def create_payment_record(booking: Booking, batch_id: int = 1) -> PaymentRecord:
     # Period: month number (1-12)
     period_num = date_obj.month
     
-    # Calculate tax (assuming 15% VAT for South Africa)
-    tax_type = 1  # Has tax
-    tax_rate = 0.15
-    tax_amount = round(amount * tax_rate / (1 + tax_rate), 2)  # Extract tax from inclusive price
+    # Calculate tax (defaults to 15% VAT for SA)
+    tax_type = settings.tax_type if settings else 1
+    tax_rate = settings.vat_rate if settings else 0.15
+    if tax_type and tax_rate:
+        tax_amount = round(amount * tax_rate / (1 + tax_rate), 2)  # Extract tax from inclusive price
+    else:
+        tax_amount = 0.0
     
-    # Account number: max 7 characters
-    account_number = f"GL{booking.id:05d}"  # GL + 5 digits = 7 chars max
+    # Account number: GL account from settings
+    account_number = sanitize_gl(settings.green_fees_gl if settings else "1000-000")
     
     # GDC: Use "G" for General Ledger
     gdc = "G"
     
-    # Contra account: Remove slashes, just use account code
-    contra_account = "3455000"  # No slashes
+    # Contra account: cashbook bank account (no slashes/spaces)
+    contra_account = sanitize_gl(settings.cashbook_contra_gl if settings else "8400/000")
     
     return PaymentRecord(
         period=str(period_num),  # Month number as string
@@ -106,8 +147,8 @@ def create_payment_record(booking: Booking, batch_id: int = 1) -> PaymentRecord:
         amount=amount,
         tax_type=tax_type,
         tax_amount=tax_amount,
-        open_item="",
-        projects_code="",
+        open_item=" ",
+        projects_code="     ",
         contra_account=contra_account,  # No slashes
         exchange_rate=1,
         bank_exchange_rate=1,
@@ -206,6 +247,34 @@ def create_excel_workbook(payments: List[PaymentRecord], date_str: str) -> Bytes
     return output
 
 
+def create_csv_content(payments: List[PaymentRecord]) -> StringIO:
+    output = StringIO()
+    writer = csv.writer(output)
+    for p in payments:
+        writer.writerow([
+            p.period,
+            p.date,
+            p.gdc,
+            p.account_number,
+            p.reference,
+            p.description,
+            format_amount(p.amount),
+            p.tax_type,
+            format_amount(p.tax_amount),
+            p.open_item,
+            p.projects_code,
+            p.contra_account,
+            format_amount(p.exchange_rate),
+            format_amount(p.bank_exchange_rate),
+            p.batch_id,
+            p.discount_tax_type,
+            format_amount(p.discount_amount),
+            format_amount(p.home_amount)
+        ])
+    output.seek(0)
+    return output
+
+
 @router.get("/daily-summary")
 def get_daily_summary(
     summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
@@ -236,7 +305,8 @@ def get_daily_summary(
         )
     
     # Convert to payment records
-    records = [create_payment_record(booking) for booking in bookings]
+    settings = get_accounting_settings(db)
+    records = [create_payment_record(booking, settings) for booking in bookings]
     
     # Calculate totals
     total_payments = sum(r.amount for r in records)
@@ -277,7 +347,8 @@ def export_daily_payments_excel(
         raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
     
     # Convert to payment records
-    records = [create_payment_record(booking) for booking in bookings]
+    settings = get_accounting_settings(db)
+    records = [create_payment_record(booking, settings) for booking in bookings]
     
     # Create Excel workbook
     excel_file = create_excel_workbook(records, target_date.strftime("%d/%m/%Y"))
@@ -290,6 +361,224 @@ def export_daily_payments_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/export-csv")
+def export_daily_payments_csv(
+    export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    db: Session = Depends(get_db)
+):
+    """Export daily payments to CSV file (Sage import)"""
+    if export_date:
+        try:
+            target_date = datetime.strptime(export_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date.today()
+
+    try:
+        bookings = get_active_completed_bookings(db, target_date)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    if not bookings:
+        raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
+
+    settings = get_accounting_settings(db)
+    records = [create_payment_record(booking, settings) for booking in bookings]
+    csv_content = create_csv_content(records)
+
+    filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.csv"
+    response = StreamingResponse(iter([csv_content.getvalue()]), media_type="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
+
+
+@router.get("/close-status")
+def get_close_status(
+    summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    db: Session = Depends(get_db)
+):
+    if summary_date:
+        try:
+            target_date = datetime.strptime(summary_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date.today()
+
+    close = db.query(DayClose).filter(DayClose.close_date == target_date).order_by(DayClose.id.desc()).first()
+    if not close:
+        return {
+            "date": target_date.strftime("%Y-%m-%d"),
+            "is_closed": False
+        }
+
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "is_closed": close.status == "closed",
+        "status": close.status,
+        "closed_at": close.closed_at.isoformat() if close.closed_at else None,
+        "closed_by_user_id": close.closed_by_user_id,
+        "export_batch_id": close.export_batch_id,
+        "export_filename": close.export_filename,
+        "auto_push": bool(close.auto_push)
+    }
+
+
+@router.get("/settings")
+def get_accounting_settings_api(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    settings = get_accounting_settings(db)
+    return {
+        "green_fees_gl": settings.green_fees_gl,
+        "cashbook_contra_gl": settings.cashbook_contra_gl,
+        "vat_rate": settings.vat_rate,
+        "tax_type": settings.tax_type,
+        "cashbook_name": settings.cashbook_name,
+        "updated_at": settings.updated_at.isoformat() if settings.updated_at else None
+    }
+
+
+@router.put("/settings")
+def update_accounting_settings_api(
+    payload: AccountingSettingsPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    settings = get_accounting_settings(db)
+    if payload.green_fees_gl is not None:
+        settings.green_fees_gl = payload.green_fees_gl.strip()
+    if payload.cashbook_contra_gl is not None:
+        settings.cashbook_contra_gl = payload.cashbook_contra_gl.strip()
+    if payload.vat_rate is not None:
+        settings.vat_rate = payload.vat_rate
+    if payload.tax_type is not None:
+        settings.tax_type = payload.tax_type
+    if payload.cashbook_name is not None:
+        settings.cashbook_name = payload.cashbook_name.strip()
+    settings.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(settings)
+    return {
+        "status": "success",
+        "settings": {
+            "green_fees_gl": settings.green_fees_gl,
+            "cashbook_contra_gl": settings.cashbook_contra_gl,
+            "vat_rate": settings.vat_rate,
+            "tax_type": settings.tax_type,
+            "cashbook_name": settings.cashbook_name
+        }
+    }
+
+
+@router.post("/close-day")
+def close_day(
+    close_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    auto_push: int = Query(0, description="1 to enable auto-push (placeholder)"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    if close_date:
+        try:
+            target_date = datetime.strptime(close_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date.today()
+
+    existing = db.query(DayClose).filter(
+        DayClose.close_date == target_date,
+        DayClose.status == "closed"
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Day is already closed")
+
+    bookings = get_active_completed_bookings(db, target_date)
+    booking_ids = [b.id for b in bookings]
+    batch_id = f"GL-{target_date.strftime('%Y%m%d')}-{datetime.utcnow().strftime('%H%M%S')}"
+
+    if booking_ids:
+        ledger_entries = db.query(LedgerEntry).filter(LedgerEntry.booking_id.in_(booking_ids)).all()
+        for le in ledger_entries:
+            le.pastel_synced = 1
+            le.pastel_transaction_id = batch_id
+
+    filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.csv"
+    close = db.query(DayClose).filter(DayClose.close_date == target_date).first()
+    if close:
+        close.status = "closed"
+        close.closed_by_user_id = admin.id
+        close.closed_at = datetime.utcnow()
+        close.export_method = "cashbook"
+        close.export_batch_id = batch_id
+        close.export_filename = filename
+        close.auto_push = 1 if auto_push else 0
+    else:
+        close = DayClose(
+            close_date=target_date,
+            status="closed",
+            closed_by_user_id=admin.id,
+            closed_at=datetime.utcnow(),
+            export_method="cashbook",
+            export_batch_id=batch_id,
+            export_filename=filename,
+            auto_push=1 if auto_push else 0
+        )
+        db.add(close)
+
+    db.commit()
+
+    return {
+        "status": "closed",
+        "date": target_date.strftime("%Y-%m-%d"),
+        "batch_id": batch_id,
+        "bookings": len(booking_ids),
+        "export_filename": filename
+    }
+
+
+@router.post("/reopen-day")
+def reopen_day(
+    reopen_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    if reopen_date:
+        try:
+            target_date = datetime.strptime(reopen_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date.today()
+
+    close = db.query(DayClose).filter(
+        DayClose.close_date == target_date,
+        DayClose.status == "closed"
+    ).first()
+    if not close:
+        raise HTTPException(status_code=404, detail="Day is not closed")
+
+    bookings = get_active_completed_bookings(db, target_date)
+    booking_ids = [b.id for b in bookings]
+    if booking_ids:
+        ledger_entries = db.query(LedgerEntry).filter(LedgerEntry.booking_id.in_(booking_ids)).all()
+        for le in ledger_entries:
+            le.pastel_synced = 0
+            le.pastel_transaction_id = None
+
+    close.status = "reopened"
+    close.reopened_by_user_id = admin.id
+    close.reopened_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "status": "reopened",
+        "date": target_date.strftime("%Y-%m-%d")
+    }
 
 
 @router.post("/finalize-day")
@@ -336,7 +625,8 @@ def finalize_day_payments(
         }
     
     # Convert to payment records
-    records = [create_payment_record(booking) for booking in bookings]
+    settings = get_accounting_settings(db)
+    records = [create_payment_record(booking, settings) for booking in bookings]
     
     # Calculate totals
     total_payments = sum(r.amount for r in records)

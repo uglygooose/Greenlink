@@ -1,4 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
+    const API_BASE = window.location.origin;
 
     const loginCard = document.getElementById("loginCard");
     const signupCard = document.getElementById("signupCard");
@@ -37,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const payload = { email, password };
 
-        const res = await fetch("http://localhost:8000/login", {
+        const res = await fetch(`${API_BASE}/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -60,12 +61,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.role === "admin") {
             console.log("Admin detected, redirecting to admin.html");
             setTimeout(() => {
-                window.location.href = "http://localhost:8000/frontend/admin.html";
+                window.location.href = "/frontend/admin.html";
             }, 500);
         } else {
             console.log("Regular user, redirecting to dashboard.html");
             setTimeout(() => {
-                window.location.href = "http://localhost:8000/frontend/dashboard.html";
+                window.location.href = "/frontend/dashboard.html";
             }, 500);
         }
     });

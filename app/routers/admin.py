@@ -5,12 +5,13 @@ All endpoints require admin role
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from datetime import datetime, timedelta
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import String, cast, desc, func, or_, case
+from datetime import date, datetime, timedelta
 from pydantic import BaseModel
 from typing import Optional
-from app.models import User, Booking, TeeTime, Round, LedgerEntry, UserRole, BookingStatus
+from app import crud
+from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member
 from app.fee_models import FeeCategory
 from app.auth import get_current_user, get_db
 
@@ -24,10 +25,23 @@ def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def assert_day_open(db: Session, target_date):
+    if not target_date:
+        return
+    closed = db.query(DayClose).filter(
+        DayClose.close_date == target_date,
+        DayClose.status == "closed"
+    ).first()
+    if closed:
+        raise HTTPException(status_code=403, detail="Day is closed. Reopen to edit.")
+
+
 @router.get("/dashboard")
 async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
     """Get main dashboard statistics"""
     
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).scalar() or 0
     
@@ -36,32 +50,45 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     checked_in_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.checked_in).scalar() or 0
     completed_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.completed).scalar() or 0
     cancelled_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.cancelled).scalar() or 0
+    no_show_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.no_show).scalar() or 0
     
     # Total revenue
-    total_revenue = db.query(func.sum(Booking.price)).scalar() or 0.0
+    total_revenue = db.query(func.sum(Booking.price)).filter(Booking.status.in_(paid_statuses)).scalar() or 0.0
     
-    # Completed rounds
-    completed_rounds = db.query(func.count(Round.id)).filter(Round.closed == 1).scalar() or 0
+    # Completed rounds (admin expectation = bookings marked completed)
+    completed_rounds = completed_count
     
     # Registered players
     total_players = db.query(func.count(User.id)).filter(User.role == UserRole.player).scalar() or 0
     
     # Today's bookings
     today = datetime.utcnow().date()
-    today_bookings = db.query(func.count(Booking.id)).filter(
-        func.date(Booking.created_at) == today
-    ).scalar() or 0
+    today_bookings = (
+        db.query(func.count(Booking.id))
+        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(func.date(TeeTime.tee_time) == today)
+        .scalar()
+        or 0
+    )
     
     # Today's revenue
-    today_revenue = db.query(func.sum(Booking.price)).filter(
-        func.date(Booking.created_at) == today
-    ).scalar() or 0.0
+    today_revenue = (
+        db.query(func.sum(Booking.price))
+        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(func.date(TeeTime.tee_time) == today, Booking.status.in_(paid_statuses))
+        .scalar()
+        or 0.0
+    )
     
     # Last 7 days revenue
     week_ago = datetime.utcnow() - timedelta(days=7)
-    week_revenue = db.query(func.sum(Booking.price)).filter(
-        Booking.created_at >= week_ago
-    ).scalar() or 0.0
+    week_revenue = (
+        db.query(func.sum(Booking.price))
+        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(TeeTime.tee_time >= week_ago, Booking.status.in_(paid_statuses))
+        .scalar()
+        or 0.0
+    )
     
     return {
         "total_bookings": total_bookings,
@@ -73,6 +100,7 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
             "booked": booked_count,
             "checked_in": checked_in_count,
             "completed": completed_count,
+            "no_show": no_show_count,
             "cancelled": cancelled_count
         },
         "completed_rounds": completed_rounds,
@@ -85,15 +113,55 @@ async def get_all_bookings(
     skip: int = 0,
     limit: int = 50,
     status: str = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    period: Optional[str] = None,  # day | week | month
+    anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
     """Get all bookings with filters"""
     
-    query = db.query(Booking).order_by(desc(Booking.created_at))
+    query = (
+        db.query(Booking)
+        .options(selectinload(Booking.tee_time), selectinload(Booking.round))
+        .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
+    )
     
     if status:
         query = query.filter(Booking.status == status)
+
+    # Filter by tee time range (inclusive start, exclusive end).
+    # This is used by the admin UI for daily/weekly/monthly views.
+    if start and end:
+        query = query.filter(TeeTime.tee_time >= start, TeeTime.tee_time < end)
+        query = query.order_by(TeeTime.tee_time, Booking.id)
+    elif period and anchor_date:
+        period = period.lower().strip()
+        if period not in {"day", "week", "month"}:
+            raise HTTPException(status_code=400, detail="Invalid period (use day, week, or month)")
+
+        if period == "day":
+            range_start = datetime.combine(anchor_date, datetime.min.time())
+            range_end = range_start + timedelta(days=1)
+        elif period == "week":
+            # Monday-start week
+            monday = anchor_date - timedelta(days=anchor_date.weekday())
+            range_start = datetime.combine(monday, datetime.min.time())
+            range_end = range_start + timedelta(days=7)
+        else:  # month
+            month_start = anchor_date.replace(day=1)
+            if month_start.month == 12:
+                next_month = date(month_start.year + 1, 1, 1)
+            else:
+                next_month = date(month_start.year, month_start.month + 1, 1)
+            range_start = datetime.combine(month_start, datetime.min.time())
+            range_end = datetime.combine(next_month, datetime.min.time())
+
+        query = query.filter(TeeTime.tee_time >= range_start, TeeTime.tee_time < range_end)
+        query = query.order_by(TeeTime.tee_time, Booking.id)
+    else:
+        query = query.order_by(desc(Booking.created_at))
     
     total = query.count()
     
@@ -143,13 +211,29 @@ async def get_booking_detail(
         }
     
     ledger_entries = db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).all()
-    
+
+    fee_category = None
+    if booking.fee_category_id:
+        fee_cat = db.query(FeeCategory).filter(FeeCategory.id == booking.fee_category_id).first()
+        if fee_cat:
+            fee_category = {
+                "id": fee_cat.id,
+                "code": fee_cat.code,
+                "description": fee_cat.description,
+                "price": float(fee_cat.price),
+                "fee_type": fee_cat.fee_type,
+            }
+     
     return {
         "id": booking.id,
+        "tee_time_id": booking.tee_time_id,
+        "member_id": booking.member_id,
         "player_name": booking.player_name,
         "player_email": booking.player_email,
         "club_card": booking.club_card,
         "handicap_number": booking.handicap_number,
+        "fee_category_id": booking.fee_category_id,
+        "fee_category": fee_category,
         "price": float(booking.price),
         "status": booking.status,
         "tee_time": booking.tee_time.tee_time.isoformat() if booking.tee_time else None,
@@ -168,18 +252,139 @@ async def get_booking_detail(
     }
 
 
+class BookingStatusUpdate(BaseModel):
+    status: str
+
+
+@router.put("/bookings/{booking_id}/status")
+async def update_booking_status(
+    booking_id: int,
+    payload: BookingStatusUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Update booking status (admin quick actions)"""
+
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.tee_time:
+        assert_day_open(db, booking.tee_time.tee_time.date())
+
+    allowed = {s.value for s in BookingStatus}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {payload.status}")
+
+    booking.status = BookingStatus(payload.status)
+    paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
+
+    if booking.status in paid_statuses:
+        crud.ensure_paid_ledger_entry(db, booking)
+    else:
+        # If a booking is moved back to an unpaid state, remove its payment record.
+        db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete()
+
+    db.commit()
+    db.refresh(booking)
+
+    return {
+        "status": "success",
+        "booking_id": booking.id,
+        "new_status": booking.status
+    }
+
+
+@router.delete("/bookings/{booking_id}")
+async def delete_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin)
+):
+    """Delete a booking and related records (admin only)"""
+
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.tee_time:
+        assert_day_open(db, booking.tee_time.tee_time.date())
+
+    # Remove related records
+    db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).delete()
+    db.query(Round).filter(Round.booking_id == booking_id).delete()
+
+    db.delete(booking)
+    db.commit()
+
+    return {"status": "success", "booking_id": booking_id}
+
+
 @router.get("/players")
 async def get_all_players(
     skip: int = 0,
     limit: int = 50,
+    q: Optional[str] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
     """Get all registered players"""
-    
-    players = db.query(User).filter(User.role == UserRole.player).order_by(desc(User.id)).offset(skip).limit(limit).all()
-    total = db.query(func.count(User.id)).filter(User.role == UserRole.player).scalar()
-    
+
+    base_query = db.query(User).filter(User.role == UserRole.player)
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        base_query = base_query.filter(
+            or_(
+                func.lower(User.name).like(like),
+                func.lower(User.email).like(like),
+                func.lower(User.handicap_number).like(like),
+                func.lower(User.greenlink_id).like(like),
+            )
+        )
+
+    total = base_query.count()
+
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    bookings_count_expr = func.count(Booking.id)
+    total_spent_expr = func.coalesce(
+        func.sum(case((Booking.status.in_(paid_statuses), Booking.price), else_=0.0)),
+        0.0,
+    )
+
+    players = (
+        db.query(
+            User.id.label("id"),
+            User.name.label("name"),
+            User.email.label("email"),
+            User.handicap_number.label("handicap_number"),
+            User.greenlink_id.label("greenlink_id"),
+            bookings_count_expr.label("bookings_count"),
+            total_spent_expr.label("total_spent"),
+        )
+        .outerjoin(Booking, Booking.player_email == User.email)
+        .filter(User.role == UserRole.player)
+    )
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        players = players.filter(
+            or_(
+                func.lower(User.name).like(like),
+                func.lower(User.email).like(like),
+                func.lower(User.handicap_number).like(like),
+                func.lower(User.greenlink_id).like(like),
+            )
+        )
+
+    players = (
+        players.group_by(User.id, User.name, User.email, User.handicap_number, User.greenlink_id)
+        .order_by(desc(User.id))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
     return {
         "total": total,
         "players": [
@@ -189,12 +394,182 @@ async def get_all_players(
                 "email": p.email,
                 "handicap_number": p.handicap_number,
                 "greenlink_id": p.greenlink_id,
-                "bookings_count": db.query(func.count(Booking.id)).filter(
-                    Booking.player_email == p.email
-                ).scalar() or 0
+                "bookings_count": int(p.bookings_count or 0),
+                "total_spent": float(p.total_spent or 0.0),
             }
             for p in players
         ]
+    }
+
+
+@router.get("/members")
+async def get_members(
+    skip: int = 0,
+    limit: int = 50,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """List member profiles (with basic booking stats)."""
+
+    base_query = db.query(Member)
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        base_query = base_query.filter(
+            or_(
+                func.lower(Member.first_name).like(like),
+                func.lower(Member.last_name).like(like),
+                func.lower(Member.email).like(like),
+                func.lower(Member.member_number).like(like),
+                func.lower(Member.phone).like(like),
+                func.lower(Member.handicap_number).like(like),
+            )
+        )
+
+    total = base_query.count()
+
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    stats = (
+        db.query(
+            Booking.member_id.label("member_id"),
+            func.count(Booking.id).label("bookings_count"),
+            func.coalesce(
+                func.sum(case((Booking.status.in_(paid_statuses), Booking.price), else_=0.0)),
+                0.0,
+            ).label("total_spent"),
+            func.max(TeeTime.tee_time).label("last_seen"),
+        )
+        .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(Booking.member_id.isnot(None))
+        .group_by(Booking.member_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Member,
+            func.coalesce(stats.c.bookings_count, 0).label("bookings_count"),
+            func.coalesce(stats.c.total_spent, 0.0).label("total_spent"),
+            stats.c.last_seen.label("last_seen"),
+        )
+        .outerjoin(stats, stats.c.member_id == Member.id)
+    )
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(Member.first_name).like(like),
+                func.lower(Member.last_name).like(like),
+                func.lower(Member.email).like(like),
+                func.lower(Member.member_number).like(like),
+                func.lower(Member.phone).like(like),
+                func.lower(Member.handicap_number).like(like),
+            )
+        )
+
+    rows = (
+        query.order_by(desc(Member.active), Member.last_name, Member.first_name)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "members": [
+            {
+                "id": m.id,
+                "member_number": m.member_number,
+                "first_name": m.first_name,
+                "last_name": m.last_name,
+                "name": f"{m.first_name} {m.last_name}".strip(),
+                "email": m.email,
+                "phone": m.phone,
+                "handicap_number": m.handicap_number,
+                "home_club": m.home_club,
+                "active": bool(m.active),
+                "bookings_count": int(bookings_count or 0),
+                "total_spent": float(total_spent or 0.0),
+                "last_seen": last_seen.isoformat() if last_seen else None,
+            }
+            for (m, bookings_count, total_spent, last_seen) in rows
+        ],
+    }
+
+
+@router.get("/guests")
+async def get_guest_players(
+    skip: int = 0,
+    limit: int = 50,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """Aggregate non-member bookings into guest profiles."""
+
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+
+    guest_key = func.lower(func.coalesce(Booking.player_email, cast(Booking.player_name, String)))
+    last_seen_expr = func.max(TeeTime.tee_time)
+
+    query = (
+        db.query(
+            guest_key.label("guest_key"),
+            func.max(Booking.player_name).label("name"),
+            func.max(Booking.player_email).label("email"),
+            func.max(Booking.handicap_number).label("handicap_number"),
+            func.count(Booking.id).label("bookings_count"),
+            func.coalesce(
+                func.sum(case((Booking.status.in_(paid_statuses), Booking.price), else_=0.0)),
+                0.0,
+            ).label("total_spent"),
+            last_seen_expr.label("last_seen"),
+        )
+        .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(Booking.member_id.is_(None))
+    )
+
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(Booking.player_name).like(like),
+                func.lower(Booking.player_email).like(like),
+                func.lower(Booking.handicap_number).like(like),
+            )
+        )
+
+    query = query.group_by(guest_key)
+
+    total = query.count()
+
+    rows = query.order_by(desc(last_seen_expr)).offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "guests": [
+            {
+                "key": guest_key_value,
+                "name": name,
+                "email": email,
+                "handicap_number": handicap_number,
+                "bookings_count": int(bookings_count or 0),
+                "total_spent": float(total_spent or 0.0),
+                "last_seen": last_seen.isoformat() if last_seen else None,
+            }
+            for (
+                guest_key_value,
+                name,
+                email,
+                handicap_number,
+                bookings_count,
+                total_spent,
+                last_seen,
+            ) in rows
+        ],
     }
 
 
@@ -240,6 +615,55 @@ async def get_player_detail(
         ]
     }
 
+@router.get("/members/search")
+async def search_members(
+    q: str,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """Search members for quick booking (pro shop)."""
+
+    needle = (q or "").strip().lower()
+    if not needle:
+        return {"members": []}
+
+    like = f"%{needle}%"
+    members = (
+        db.query(Member)
+        .filter(
+            or_(
+                func.lower(Member.first_name).like(like),
+                func.lower(Member.last_name).like(like),
+                func.lower(Member.email).like(like),
+                func.lower(Member.member_number).like(like),
+                func.lower(Member.phone).like(like),
+                func.lower(Member.handicap_number).like(like),
+            )
+        )
+        .order_by(desc(Member.active), Member.last_name, Member.first_name)
+        .limit(max(1, min(limit, 25)))
+        .all()
+    )
+
+    return {
+        "members": [
+            {
+                "id": m.id,
+                "member_number": m.member_number,
+                "first_name": m.first_name,
+                "last_name": m.last_name,
+                "name": f"{m.first_name} {m.last_name}".strip(),
+                "email": m.email,
+                "phone": m.phone,
+                "handicap_number": m.handicap_number,
+                "home_club": m.home_club,
+                "active": bool(m.active),
+            }
+            for m in members
+        ]
+    }
+
 
 @router.get("/revenue")
 async def get_revenue_analytics(
@@ -258,6 +682,20 @@ async def get_revenue_analytics(
         func.count(Booking.id).label("bookings")
     ).filter(
         Booking.created_at >= start_date
+    ).group_by(
+        func.date(Booking.created_at)
+    ).order_by(
+        func.date(Booking.created_at)
+    ).all()
+
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    daily_paid_revenue = db.query(
+        func.date(Booking.created_at).label("date"),
+        func.sum(Booking.price).label("amount"),
+        func.count(Booking.id).label("bookings")
+    ).filter(
+        Booking.created_at >= start_date,
+        Booking.status.in_(paid_statuses)
     ).group_by(
         func.date(Booking.created_at)
     ).order_by(
@@ -284,6 +722,14 @@ async def get_revenue_analytics(
                 "bookings": dr[2]
             }
             for dr in daily_revenue
+        ],
+        "daily_paid_revenue": [
+            {
+                "date": str(dr[0]),
+                "amount": float(dr[1]) if dr[1] else 0.0,
+                "bookings": dr[2]
+            }
+            for dr in daily_paid_revenue
         ],
         "revenue_by_status": [
             {
@@ -336,15 +782,33 @@ async def get_tee_times(
 async def get_ledger_entries(
     skip: int = 0,
     limit: int = 50,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    q: Optional[str] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
     """Get all ledger entries (transaction history)"""
     
-    entries = db.query(LedgerEntry).order_by(desc(LedgerEntry.created_at)).offset(skip).limit(limit).all()
-    total = db.query(func.count(LedgerEntry.id)).scalar()
-    
-    total_amount = db.query(func.sum(LedgerEntry.amount)).scalar() or 0.0
+    query = db.query(LedgerEntry)
+
+    if start and end:
+        query = query.filter(LedgerEntry.created_at >= start, LedgerEntry.created_at < end)
+
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(LedgerEntry.description).like(like),
+                func.lower(cast(LedgerEntry.booking_id, String)).like(like),
+            )
+        )
+
+    total = query.count()
+    total_amount = query.with_entities(func.sum(LedgerEntry.amount)).scalar() or 0.0
+
+    entries = query.order_by(desc(LedgerEntry.created_at)).offset(skip).limit(limit).all()
     
     return {
         "total": total,
@@ -448,7 +912,6 @@ class AvailableFeeResponse(BaseModel):
     price: float
     fee_type: str
 
-
 # ========================
 # Price Management Endpoints
 # ========================
@@ -507,6 +970,8 @@ async def update_player_price(
         for booking in bookings:
             booking.fee_category_id = fee_category.id
             booking.price = fee_category.price
+            if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
+                crud.ensure_paid_ledger_entry(db, booking)
         
         db.commit()
         
@@ -535,6 +1000,8 @@ async def update_player_price(
         for booking in bookings:
             booking.price = price_update.custom_price
             booking.fee_category_id = None  # Clear fee category when using custom price
+            if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
+                crud.ensure_paid_ledger_entry(db, booking)
         
         db.commit()
         
@@ -613,6 +1080,9 @@ async def update_booking_price(
     
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.tee_time:
+        assert_day_open(db, booking.tee_time.tee_time.date())
     
     # Validate input
     if price_update.fee_category_id is None and price_update.custom_price is None:
@@ -626,6 +1096,8 @@ async def update_booking_price(
         
         booking.fee_category_id = fee_category.id
         booking.price = fee_category.price
+        if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
+            crud.ensure_paid_ledger_entry(db, booking)
         
         db.commit()
         db.refresh(booking)
@@ -649,6 +1121,8 @@ async def update_booking_price(
         
         booking.price = price_update.custom_price
         booking.fee_category_id = None  # Clear fee category when using custom price
+        if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
+            crud.ensure_paid_ledger_entry(db, booking)
         
         db.commit()
         db.refresh(booking)

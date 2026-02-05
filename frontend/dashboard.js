@@ -5,12 +5,13 @@ function logout(){
 
 async function loadDashboard(){
   const token = localStorage.getItem("token");
+  const API_BASE = window.location.origin;
   if (!token) {
     window.location.href = "/frontend/index.html";
     return;
   }
 
-  const res = await fetch("http://localhost:8000/users/", {
+  const res = await fetch(`${API_BASE}/users/`, {
     headers: { "Authorization": `Bearer ${token}` }
   });
 
