@@ -18,8 +18,8 @@ document.getElementById("showLogin").addEventListener("click", (e) => {
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const email = loginEmail.value;
-    const password = loginPassword.value;
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
 
     const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
@@ -48,9 +48,9 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
 document.getElementById("createUserForm").addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const name = newName.value;
-    const email = newEmail.value;
-    const password = newPassword.value;
+    const name = document.getElementById("newName").value.trim();
+    const email = document.getElementById("newEmail").value.trim();
+    const password = document.getElementById("newPassword").value;
 
     const res = await fetch(`${API_BASE}/users/`, {
         method: "POST",
