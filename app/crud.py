@@ -1,3 +1,4 @@
+from __future__ import annotations
 # app/crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy import func
