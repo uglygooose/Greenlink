@@ -54,8 +54,12 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking) -> None:
         except Exception:
             pass
     notes = str(getattr(booking, "notes", "") or "")
-    if "Cart:" in notes:
+    if bool(getattr(booking, "cart", False)) or "Cart:" in notes:
         description = f"{description} + Cart"
+    if bool(getattr(booking, "push_cart", False)):
+        description = f"{description} + Push Cart"
+    if bool(getattr(booking, "caddy", False)):
+        description = f"{description} + Caddy"
     amount = float(getattr(booking, "price", None) or 0.0)
 
     existing = db.query(models.LedgerEntry).filter(models.LedgerEntry.booking_id == booking.id).first()
@@ -143,9 +147,11 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
 
     # Resolve member link (explicit id or match by email)
     resolved_member_id = getattr(booking_in, "member_id", None)
+    resolved_user = None
     if not resolved_member_id and getattr(booking_in, "player_email", None):
         email = str(booking_in.player_email).strip().lower()
         if email:
+            resolved_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
             member_match = (
                 db.query(models.Member)
                 .filter(func.lower(models.Member.email) == email, models.Member.active == 1)
@@ -159,6 +165,56 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         member = db.query(models.Member).filter(models.Member.id == resolved_member_id).first()
         if not member:
             raise HTTPException(status_code=404, detail="Member not found")
+    else:
+        member = None
+
+    # Resolve registered user (player profile) by email when available.
+    if resolved_user is None and getattr(booking_in, "player_email", None):
+        email = str(booking_in.player_email).strip().lower()
+        if email:
+            resolved_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+
+    # Booking attributes (persisted for reporting)
+    holes = int(getattr(booking_in, "holes", None) or 18)
+    holes = 9 if holes == 9 else 18
+    prepaid = bool(getattr(booking_in, "prepaid", False))
+    cart_required = bool(getattr(booking_in, "cart", False))
+    push_cart_required = bool(getattr(booking_in, "push_cart", False))
+    caddy_required = bool(getattr(booking_in, "caddy", False))
+
+    # Snapshot profile fields for reporting (manual inputs win, then user, then member)
+    handicap_sa_id = getattr(booking_in, "handicap_sa_id", None) or getattr(resolved_user, "handicap_sa_id", None) or getattr(member, "handicap_sa_id", None)
+    home_club = getattr(booking_in, "home_club", None) or getattr(resolved_user, "home_course", None) or getattr(member, "home_club", None)
+    gender_val = getattr(booking_in, "gender", None) or getattr(resolved_user, "gender", None) or getattr(member, "gender", None)
+    player_category_val = getattr(booking_in, "player_category", None) or getattr(resolved_user, "player_category", None) or getattr(member, "player_category", None)
+    handicap_index = getattr(booking_in, "handicap_index", None)
+    if handicap_index is None:
+        handicap_index = getattr(resolved_user, "handicap_index", None)
+    if handicap_index is None:
+        handicap_index = getattr(member, "handicap_index", None)
+
+    # Derive player category when not explicitly set:
+    # - Pensioner when age >= 60 (SA common standard)
+    # - Student when profile is explicitly marked student
+    # - Otherwise Adult
+    if not player_category_val:
+        try:
+            from app.pricing import compute_age
+
+            # Determine age if we have a birth date.
+            birth_date = getattr(booking_in, "birth_date", None)
+            if not birth_date and resolved_user and getattr(resolved_user, "birth_date", None):
+                birth_date = resolved_user.birth_date.date()
+            age = compute_age(tee_time.tee_time.date(), birth_date) if birth_date else None
+
+            if age is not None and int(age) >= 60:
+                player_category_val = "pensioner"
+            elif bool(getattr(resolved_user, "student", False)) or bool(getattr(member, "student", False)):
+                player_category_val = "student"
+            else:
+                player_category_val = "adult"
+        except Exception:
+            player_category_val = "adult"
 
     # Fee resolution
     fee_category_id = getattr(booking_in, "fee_category_id", None)
@@ -182,7 +238,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
 
             player_type = normalize_player_type(getattr(booking_in, "player_type", None))
             gender = normalize_gender(getattr(booking_in, "gender", None))
-            holes = int(getattr(booking_in, "holes", None) or 18)
+            holes = int(getattr(booking_in, "holes", None) or holes or 18)
 
             # Infer player type when possible
             if not player_type:
@@ -335,7 +391,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         except Exception as e:
             print(f"[CART] Auto-cart skipped: {str(e)[:120]}")
      
-    status = models.BookingStatus.checked_in if bool(getattr(booking_in, "prepaid", False)) else models.BookingStatus.booked
+    status = models.BookingStatus.checked_in if prepaid else models.BookingStatus.booked
 
     b = models.Booking(
         tee_time_id=booking_in.tee_time_id,
@@ -345,6 +401,8 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         club_card=booking_in.club_card,
         handicap_number=getattr(booking_in, 'handicap_number', None),
         greenlink_id=getattr(booking_in, 'greenlink_id', None),
+        handicap_sa_id=handicap_sa_id,
+        home_club=home_club,
         source=getattr(booking_in, 'source', None) or models.BookingSource.proshop,
         external_provider=getattr(booking_in, 'external_provider', None),
         external_booking_id=getattr(booking_in, 'external_booking_id', None),
@@ -352,6 +410,14 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         fee_category_id=fee_category_id,
         price=price,
         status=status,
+        holes=holes,
+        prepaid=prepaid,
+        cart=cart_required,
+        push_cart=push_cart_required,
+        caddy=caddy_required,
+        gender=gender_val,
+        player_category=player_category_val,
+        handicap_index_at_booking=handicap_index,
         notes=notes_val
     )
     db.add(b)
@@ -368,8 +434,13 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
                 resolved_fee_cat = db.query(FeeCategory).filter(FeeCategory.id == fee_category_id).first()
             if resolved_fee_cat:
                 fee_description = resolved_fee_cat.description
-        if getattr(b, "notes", None) and "Cart:" in str(getattr(b, "notes", "") or ""):
+        notes = str(getattr(b, "notes", "") or "")
+        if bool(getattr(b, "cart", False)) or ("Cart:" in notes):
             fee_description = f"{fee_description} + Cart"
+        if bool(getattr(b, "push_cart", False)):
+            fee_description = f"{fee_description} + Push Cart"
+        if bool(getattr(b, "caddy", False)):
+            fee_description = f"{fee_description} + Caddy"
 
         # Create ledger entry with actual price
         le = models.LedgerEntry(

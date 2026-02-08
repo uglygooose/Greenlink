@@ -4,6 +4,8 @@ Admin Dashboard API Routes
 All endpoints require admin role
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import String, cast, desc, func, or_, case
@@ -14,6 +16,7 @@ from app import crud
 from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member
 from app.fee_models import FeeCategory
 from app.auth import get_current_user, get_db
+from calendar import isleap
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -34,6 +37,58 @@ def assert_day_open(db: Session, target_date):
     ).first()
     if closed:
         raise HTTPException(status_code=403, detail="Day is closed. Reopen to edit.")
+
+
+def _days_in_year(year: int) -> int:
+    return 366 if isleap(year) else 365
+
+
+def _week_start(d: date) -> date:
+    # Monday-start week (South Africa standard in most reporting contexts)
+    return d - timedelta(days=d.weekday())
+
+
+def _period_window(period: str, anchor: date) -> tuple[date, date, int]:
+    """
+    Returns (start_date, end_date_inclusive, days_elapsed) for a period ending at anchor.
+    days_elapsed is used to derive targets from annual targets.
+    """
+    p = (period or "").lower().strip()
+    if p in {"day", "today"}:
+        return anchor, anchor, 1
+    if p in {"week", "wtd"}:
+        start = _week_start(anchor)
+        return start, anchor, (anchor - start).days + 1
+    if p in {"month", "mtd"}:
+        start = anchor.replace(day=1)
+        return start, anchor, anchor.day
+    if p in {"ytd", "year", "year_to_date"}:
+        start = date(anchor.year, 1, 1)
+        return start, anchor, (anchor - start).days + 1
+    # Default to day
+    return anchor, anchor, 1
+
+
+def _annual_target(db: Session, year: int, metric: str, default: float | None = None) -> float | None:
+    try:
+        from app.models import KpiTarget
+        row = db.query(KpiTarget).filter(KpiTarget.year == year, KpiTarget.metric == metric).first()
+        if row and row.annual_target is not None:
+            return float(row.annual_target)
+    except Exception:
+        # In offline/demo modes or before tables exist, fall back to defaults.
+        pass
+    return default
+
+
+def _derive_target(annual: float | None, year: int, days_elapsed: int) -> float | None:
+    if annual is None:
+        return None
+    denom = float(_days_in_year(year))
+    if denom <= 0:
+        return None
+    d = max(0, int(days_elapsed or 0))
+    return float(annual) * (float(d) / denom)
 
 
 @router.get("/dashboard")
@@ -90,6 +145,53 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
         or 0.0
     )
     
+    # KPI targets vs actuals (Day/WTD/MTD/YTD)
+    anchor = datetime.utcnow().date()
+    year = int(anchor.year)
+    paid_statuses_set = [BookingStatus.checked_in, BookingStatus.completed]
+
+    annual_revenue_target = _annual_target(db, year, "revenue", default=35000.0)
+    annual_rounds_target = _annual_target(db, year, "rounds", default=None)
+
+    def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
+        revenue = (
+            db.query(func.sum(Booking.price))
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .filter(
+                func.date(TeeTime.tee_time) >= start_d,
+                func.date(TeeTime.tee_time) <= end_d,
+                Booking.status.in_(paid_statuses_set),
+            )
+            .scalar()
+            or 0.0
+        )
+        rounds = (
+            db.query(func.count(Booking.id))
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .filter(
+                func.date(TeeTime.tee_time) >= start_d,
+                func.date(TeeTime.tee_time) <= end_d,
+                Booking.status.in_(paid_statuses_set),
+            )
+            .scalar()
+            or 0
+        )
+        return float(revenue), int(rounds)
+
+    kpis = {}
+    for period_key in ["day", "wtd", "mtd", "ytd"]:
+        start_d, end_d, elapsed_days = _period_window(period_key, anchor)
+        actual_revenue, actual_rounds = _paid_window_actuals(start_d, end_d)
+        kpis[period_key] = {
+            "start_date": start_d.isoformat(),
+            "end_date": end_d.isoformat(),
+            "days": int(elapsed_days),
+            "revenue_actual": float(actual_revenue),
+            "revenue_target": _derive_target(annual_revenue_target, year, elapsed_days),
+            "rounds_actual": int(actual_rounds),
+            "rounds_target": _derive_target(annual_rounds_target, year, elapsed_days),
+        }
+
     return {
         "total_bookings": total_bookings,
         "total_players": total_players,
@@ -104,8 +206,52 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
             "cancelled": cancelled_count
         },
         "completed_rounds": completed_rounds,
-        "today_bookings": today_bookings
+        "today_bookings": today_bookings,
+        "targets": {
+            "year": year,
+            "annual": {
+                "revenue": annual_revenue_target,
+                "rounds": annual_rounds_target,
+            },
+            "periods": kpis,
+        },
     }
+
+
+class KpiTargetUpsert(BaseModel):
+    year: int
+    metric: str
+    annual_target: float
+
+
+@router.put("/targets")
+async def upsert_kpi_target(
+    payload: KpiTargetUpsert,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    metric = (payload.metric or "").strip().lower()
+    if metric not in {"revenue", "rounds"}:
+        raise HTTPException(status_code=400, detail="metric must be 'revenue' or 'rounds'")
+    if payload.year < 2000 or payload.year > 2100:
+        raise HTTPException(status_code=400, detail="invalid year")
+    if payload.annual_target < 0:
+        raise HTTPException(status_code=400, detail="annual_target must be >= 0")
+
+    from app.models import KpiTarget
+
+    row = db.query(KpiTarget).filter(KpiTarget.year == payload.year, KpiTarget.metric == metric).first()
+    if not row:
+        row = KpiTarget(year=payload.year, metric=metric, annual_target=float(payload.annual_target))
+        db.add(row)
+    else:
+        row.annual_target = float(payload.annual_target)
+        row.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(row)
+
+    return {"status": "ok", "year": row.year, "metric": row.metric, "annual_target": float(row.annual_target)}
 
 
 @router.get("/bookings")
@@ -179,7 +325,17 @@ async def get_all_bookings(
                 "tee_time": b.tee_time.tee_time.isoformat() if b.tee_time else None,
                 "created_at": b.created_at.isoformat(),
                 "has_round": bool(b.round),
-                "round_completed": b.round.closed if b.round else False
+                "round_completed": b.round.closed if b.round else False,
+                "holes": b.holes,
+                "prepaid": bool(b.prepaid) if b.prepaid is not None else None,
+                "handicap_sa_id": getattr(b, "handicap_sa_id", None),
+                "home_club": getattr(b, "home_club", None),
+                "gender": getattr(b, "gender", None),
+                "player_category": getattr(b, "player_category", None),
+                "handicap_index_at_booking": getattr(b, "handicap_index_at_booking", None),
+                "cart": bool(b.cart) if b.cart is not None else None,
+                "push_cart": bool(getattr(b, "push_cart", None)) if getattr(b, "push_cart", None) is not None else None,
+                "caddy": bool(getattr(b, "caddy", None)) if getattr(b, "caddy", None) is not None else None,
             }
             for b in bookings
         ]
@@ -232,6 +388,19 @@ async def get_booking_detail(
         "player_email": booking.player_email,
         "club_card": booking.club_card,
         "handicap_number": booking.handicap_number,
+        "handicap_sa_id": getattr(booking, "handicap_sa_id", None),
+        "home_club": getattr(booking, "home_club", None),
+        "gender": getattr(booking, "gender", None),
+        "player_category": getattr(booking, "player_category", None),
+        "handicap_index_at_booking": getattr(booking, "handicap_index_at_booking", None),
+        "handicap_index_at_play": getattr(booking, "handicap_index_at_play", None),
+        "holes": booking.holes,
+        "prepaid": bool(booking.prepaid) if booking.prepaid is not None else None,
+        "requirements": {
+            "cart": bool(getattr(booking, "cart", False)),
+            "push_cart": bool(getattr(booking, "push_cart", False)),
+            "caddy": bool(getattr(booking, "caddy", False)),
+        },
         "fee_category_id": booking.fee_category_id,
         "fee_category": fee_category,
         "price": float(booking.price),
@@ -359,6 +528,11 @@ async def get_all_players(
             User.email.label("email"),
             User.handicap_number.label("handicap_number"),
             User.greenlink_id.label("greenlink_id"),
+            User.handicap_sa_id.label("handicap_sa_id"),
+            User.home_course.label("home_course"),
+            User.gender.label("gender"),
+            User.player_category.label("player_category"),
+            User.handicap_index.label("handicap_index"),
             bookings_count_expr.label("bookings_count"),
             total_spent_expr.label("total_spent"),
         )
@@ -378,7 +552,18 @@ async def get_all_players(
         )
 
     players = (
-        players.group_by(User.id, User.name, User.email, User.handicap_number, User.greenlink_id)
+        players.group_by(
+            User.id,
+            User.name,
+            User.email,
+            User.handicap_number,
+            User.greenlink_id,
+            User.handicap_sa_id,
+            User.home_course,
+            User.gender,
+            User.player_category,
+            User.handicap_index,
+        )
         .order_by(desc(User.id))
         .offset(skip)
         .limit(limit)
@@ -394,6 +579,11 @@ async def get_all_players(
                 "email": p.email,
                 "handicap_number": p.handicap_number,
                 "greenlink_id": p.greenlink_id,
+                "handicap_sa_id": getattr(p, "handicap_sa_id", None),
+                "home_course": getattr(p, "home_course", None),
+                "gender": getattr(p, "gender", None),
+                "player_category": getattr(p, "player_category", None),
+                "handicap_index": float(getattr(p, "handicap_index", None)) if getattr(p, "handicap_index", None) is not None else None,
                 "bookings_count": int(p.bookings_count or 0),
                 "total_spent": float(p.total_spent or 0.0),
             }
@@ -668,53 +858,82 @@ async def search_members(
 @router.get("/revenue")
 async def get_revenue_analytics(
     days: int = 30,
+    period: Optional[str] = None,  # day | wtd | mtd | ytd
+    anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
-    """Get revenue analytics for last N days"""
-    
-    start_date = datetime.utcnow() - timedelta(days=days)
+    """Get revenue analytics for last N days or a named period ending at anchor_date."""
+
+    anchor = anchor_date or datetime.utcnow().date()
+    if period:
+        start_d, end_d, elapsed_days = _period_window(period, anchor)
+        start_date = datetime.combine(start_d, datetime.min.time())
+        end_date_exclusive = datetime.combine(end_d + timedelta(days=1), datetime.min.time())
+        period_days = (end_d - start_d).days + 1
+    else:
+        # Backwards compatible "last N days" mode (based on booking created_at).
+        start_date = datetime.utcnow() - timedelta(days=days)
+        end_date_exclusive = None
+        elapsed_days = None
+        period_days = days
     
     # Daily revenue
-    daily_revenue = db.query(
+    daily_revenue_query = db.query(
         func.date(Booking.created_at).label("date"),
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("bookings")
-    ).filter(
-        Booking.created_at >= start_date
-    ).group_by(
-        func.date(Booking.created_at)
-    ).order_by(
-        func.date(Booking.created_at)
-    ).all()
+    ).filter(Booking.created_at >= start_date)
+
+    if end_date_exclusive is not None:
+        daily_revenue_query = daily_revenue_query.filter(Booking.created_at < end_date_exclusive)
+
+    daily_revenue = (
+        daily_revenue_query.group_by(func.date(Booking.created_at))
+        .order_by(func.date(Booking.created_at))
+        .all()
+    )
 
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
-    daily_paid_revenue = db.query(
+    daily_paid_revenue_query = db.query(
         func.date(Booking.created_at).label("date"),
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("bookings")
     ).filter(
         Booking.created_at >= start_date,
         Booking.status.in_(paid_statuses)
-    ).group_by(
-        func.date(Booking.created_at)
-    ).order_by(
-        func.date(Booking.created_at)
-    ).all()
+    )
+
+    if end_date_exclusive is not None:
+        daily_paid_revenue_query = daily_paid_revenue_query.filter(Booking.created_at < end_date_exclusive)
+
+    daily_paid_revenue = (
+        daily_paid_revenue_query.group_by(func.date(Booking.created_at))
+        .order_by(func.date(Booking.created_at))
+        .all()
+    )
     
     # Revenue by booking status
-    status_revenue = db.query(
+    status_revenue_query = db.query(
         Booking.status,
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("count")
-    ).filter(
-        Booking.created_at >= start_date
-    ).group_by(
-        Booking.status
-    ).all()
+    ).filter(Booking.created_at >= start_date)
+
+    if end_date_exclusive is not None:
+        status_revenue_query = status_revenue_query.filter(Booking.created_at < end_date_exclusive)
+
+    status_revenue = status_revenue_query.group_by(Booking.status).all()
+
+    year = int(anchor.year)
+    annual_revenue_target = _annual_target(db, year, "revenue", default=35000.0)
+    derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     
     return {
-        "period_days": days,
+        "period_days": int(period_days or days),
+        "period": (period or "").lower().strip() or None,
+        "anchor_date": anchor.isoformat(),
+        "target_revenue": derived_target,
         "daily_revenue": [
             {
                 "date": str(dr[0]),

@@ -37,6 +37,11 @@ class UserResponse(UserBase):
     role: str
     handicap_number: Optional[str]
     greenlink_id: Optional[str]
+    handicap_sa_id: Optional[str] = None
+    home_course: Optional[str] = None
+    gender: Optional[str] = None
+    player_category: Optional[str] = None
+    handicap_index: Optional[float] = None
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +91,9 @@ class BookingCreate(BaseModel):
     club_card: Optional[str] = None
     handicap_number: Optional[str] = None
     greenlink_id: Optional[str] = None
+    handicap_sa_id: Optional[str] = None
+    home_club: Optional[str] = None
+    handicap_index: Optional[float] = None
     source: Optional[str] = "proshop"
     external_provider: Optional[str] = None
     external_booking_id: Optional[str] = None
@@ -93,14 +101,17 @@ class BookingCreate(BaseModel):
     price: Optional[float] = None
     prepaid: Optional[bool] = False
     cart: Optional[bool] = False
+    push_cart: Optional[bool] = False
+    caddy: Optional[bool] = False
+    holes: Optional[int] = None  # 9 or 18 (default 18)
+    gender: Optional[str] = None
+    player_category: Optional[str] = None
 
     # Optional inputs for automatic fee selection when `fee_category_id` is not provided.
-    # These are NOT persisted on the Booking model; they only influence the chosen fee.
+    # Some fields may be snapshotted onto the Booking for reporting.
     player_type: Optional[str] = None   # member | visitor | non_affiliated | reciprocity
-    gender: Optional[str] = None        # male | female
     birth_date: Optional[date] = None
     age: Optional[int] = None
-    holes: Optional[int] = None         # 9 or 18 (default 18)
     auto_price: Optional[bool] = True
     notes: Optional[str] = None
 
@@ -116,12 +127,23 @@ class BookingOut(BaseModel):
     club_card: Optional[str]
     handicap_number: Optional[str]
     greenlink_id: Optional[str]
+    handicap_sa_id: Optional[str] = None
+    home_club: Optional[str] = None
     source: Optional[str] = None
     external_provider: Optional[str] = None
     external_booking_id: Optional[str] = None
     fee_category_id: Optional[int]
     price: float
     status: str
+    holes: Optional[int] = None
+    prepaid: Optional[bool] = None
+    cart: Optional[bool] = None
+    push_cart: Optional[bool] = None
+    caddy: Optional[bool] = None
+    gender: Optional[str] = None
+    player_category: Optional[str] = None
+    handicap_index_at_booking: Optional[float] = None
+    handicap_index_at_play: Optional[float] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
 

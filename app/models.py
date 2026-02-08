@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Enum, Float, Text
+from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Enum, Float, Text, Boolean, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -9,6 +9,17 @@ class UserRole(str, enum.Enum):
     admin = "admin"
     club_staff = "club_staff"
     player = "player"
+
+class Gender(str, enum.Enum):
+    male = "male"
+    female = "female"
+    unknown = "unknown"
+
+class PlayerCategory(str, enum.Enum):
+    adult = "adult"
+    student = "student"
+    pensioner = "pensioner"
+    junior = "junior"
 
 class User(Base):
     __tablename__ = "users"
@@ -22,6 +33,10 @@ class User(Base):
     birth_date = Column(DateTime, nullable=True)
     handicap_sa_id = Column(String(50), nullable=True)
     home_course = Column(String(100), nullable=True)
+    gender = Column(String(20), nullable=True)  # Gender enum values stored as text for portability.
+    player_category = Column(String(20), nullable=True)  # PlayerCategory stored as text.
+    student = Column(Boolean, nullable=True)
+    handicap_index = Column(Float, nullable=True)
 
 
 class Member(Base):
@@ -35,6 +50,11 @@ class Member(Base):
     handicap_number = Column(String(50), nullable=True)
     home_club = Column(String(120), nullable=True)
     active = Column(Integer, default=1)
+    gender = Column(String(20), nullable=True)
+    player_category = Column(String(20), nullable=True)
+    student = Column(Boolean, nullable=True)
+    handicap_index = Column(Float, nullable=True)
+    handicap_sa_id = Column(String(50), nullable=True)
 
     bookings = relationship("Booking", back_populates="member")
 
@@ -45,6 +65,8 @@ class TeeTime(Base):
     hole = Column(String(10), nullable=True)
     capacity = Column(Integer, default=4)
     status = Column(String(20), default="open")  # open/blocked
+    available_from = Column(DateTime, nullable=True)
+    bookable_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     bookings = relationship("Booking", back_populates="tee_time", cascade="all, delete-orphan")
@@ -80,6 +102,19 @@ class Booking(Base):
     fee_category_id = Column(Integer, ForeignKey("fee_categories.id"), nullable=True)
     price = Column(Float, default=350.0)  # Default green fee
     status = Column(Enum(BookingStatus), default=BookingStatus.booked)
+    # Booking-level attributes (snapshotted at booking time for reporting)
+    holes = Column(Integer, nullable=True)
+    prepaid = Column(Boolean, nullable=True)
+    gender = Column(String(20), nullable=True)
+    player_category = Column(String(20), nullable=True)
+    handicap_sa_id = Column(String(50), nullable=True)
+    home_club = Column(String(120), nullable=True)
+    handicap_index_at_booking = Column(Float, nullable=True)
+    handicap_index_at_play = Column(Float, nullable=True)
+    # Requirements captured at booking time
+    cart = Column(Boolean, nullable=True)
+    push_cart = Column(Boolean, nullable=True)
+    caddy = Column(Boolean, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -133,4 +168,21 @@ class AccountingSetting(Base):
     vat_rate = Column(Float, default=0.15)
     tax_type = Column(Integer, default=1)  # 0=no tax, 1=tax
     cashbook_name = Column(String(120), default="Main Bank")
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KpiTarget(Base):
+    __tablename__ = "kpi_targets"
+    id = Column(BigInteger, primary_key=True, index=True)
+    year = Column(Integer, nullable=False, index=True)
+    metric = Column(String(50), nullable=False, index=True)  # "revenue" | "rounds" (extendable)
+    annual_target = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ClubSetting(Base):
+    __tablename__ = "club_settings"
+    key = Column(String(200), primary_key=True)
+    value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)

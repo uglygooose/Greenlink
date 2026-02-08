@@ -8,6 +8,7 @@ from app.database import Base, engine
 from app.routers import users, tee, checkin, scoring, admin, cashbook, profile
 from app import auth, models, crud, schemas, fee_models
 from app.auth import get_db
+from app.migrations import run_auto_migrations
 
 # -----------------------------------------
 # Create app instance
@@ -41,6 +42,7 @@ def root():
 # -----------------------------------------
 try:
     Base.metadata.create_all(bind=engine)
+    run_auto_migrations(engine)
     print("[DB] Database connected successfully")
 except Exception as e:
     print(f"[DB] Warning: Could not connect to database: {str(e)[:100]}")
