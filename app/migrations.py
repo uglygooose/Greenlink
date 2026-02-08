@@ -92,6 +92,23 @@ def run_auto_migrations(engine) -> None:
         # ----------------------------
         "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS available_from timestamptz NULL;",
         "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS bookable_until timestamptz NULL;",
+        # ----------------------------
+        # Supabase hardening (PostgREST exposure)
+        # ----------------------------
+        # Supabase's Security Advisor flags tables in the `public` schema without RLS enabled.
+        # Our app uses a server-side DB connection (not the Supabase client SDK), so it's safe
+        # to enable RLS without policies: PostgREST access is denied by default.
+        "ALTER TABLE IF EXISTS public.fee_categories ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.accounting_settings ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.day_closures ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.rounds ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.ledger_entries ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.members ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.tee_times ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.bookings ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.kpi_targets ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.club_settings ENABLE ROW LEVEL SECURITY;",
     ]
 
     with engine.begin() as conn:
