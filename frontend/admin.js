@@ -5,7 +5,7 @@ let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
 let peopleView = "players"; // players | members | guests
-let selectedTee = "1";
+let selectedTee = "all";
 let selectedHolesView = "18";
 let bookingPeriod = "day";
 let ledgerPeriod = "day";
@@ -1411,7 +1411,7 @@ function setupTeeSheetFilters() {
         btn.addEventListener("click", () => {
             teeButtons.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
-            selectedTee = btn.dataset.tee || "1";
+            selectedTee = btn.dataset.tee || "all";
             loadTeeTimes();
         });
     });
@@ -1610,12 +1610,24 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         return;
     }
 
-    tbody.innerHTML = dayTeeTimes.map(tt => {
-        const time = new Date(tt.tee_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const groupByTime = String(selectedTee) === "all";
+    let prevTimeKey = null;
+
+    const html = [];
+    for (const tt of dayTeeTimes) {
+        const dt = new Date(tt.tee_time);
+        const timeKey = dt.toISOString().slice(0, 16); // UTC minute precision for stable grouping
+        const timeLabel = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
         const teeLabel = tt.hole || "1";
         const bookings = (tt.bookings || []).slice(0, 4);
         const capacity = tt.capacity || 4;
         const closed = isTeeTimeClosed(dateStr, tt.tee_time);
+
+        const repeatedTime = groupByTime && prevTimeKey === timeKey;
+        const timeCell = repeatedTime ? "" : escapeHtml(timeLabel);
+        const rowClass = repeatedTime ? "tee-row-sub" : "";
+        prevTimeKey = timeKey;
 
         const cells = [];
         for (let i = 0; i < 4; i++) {
@@ -1651,6 +1663,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 `);
             } else {
                 const slotNumber = i + 1;
+                const toAdd = Math.max(1, slotNumber - bookings.length);
                 if (closed) {
                     cells.push(`
                         <td>
@@ -1665,7 +1678,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                         <td>
                             <div class="slot-card open" onclick="openBookingFormAdmin(${tt.id}, '${tt.tee_time}', '${teeLabel}', ${capacity}, ${bookings.length}, ${slotNumber})">
                                 <div class="slot-name">Available</div>
-                                <div class="slot-action">Add player</div>
+                                <div class="slot-action">Add ${toAdd} player${toAdd === 1 ? "" : "s"}</div>
                             </div>
                         </td>
                     `);
@@ -1673,14 +1686,16 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
             }
         }
 
-        return `
-            <tr data-tee-time-iso="${tt.tee_time}">
-                <td class="time-col">${time}</td>
-                <td class="tee-col">${teeLabel}</td>
+        html.push(`
+            <tr class="${rowClass}" data-tee-time-iso="${tt.tee_time}">
+                <td class="time-col">${timeCell}</td>
+                <td class="tee-col">${escapeHtml(teeLabel)}</td>
                 ${cells.join("")}
             </tr>
-        `;
-    }).join("");
+        `);
+    }
+
+    tbody.innerHTML = html.join("");
 }
 
 async function loadTeeTimes() {
@@ -1717,13 +1732,16 @@ async function loadTeeTimes() {
             existingKeys.add(teeKey(dateStr, tee, new Date(tt.tee_time)));
         });
 
-        const dayTeeRaw = dayAll.filter(tt => (tt.hole || "1") === selectedTee);
+        const teeListForView = String(selectedTee) === "all" ? ["1", "10"] : [String(selectedTee || "1")];
+        const dayTeeRaw = dayAll.filter(tt => teeListForView.includes(String(tt.hole || "1")));
 
-        // Group duplicates by tee_time (minute precision) per tee
+        // Group duplicates by tee_time (minute precision) + tee
         const grouped = new Map();
         dayTeeRaw.forEach(tt => {
             const d = new Date(tt.tee_time);
-            const key = d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+            const timeKey = d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+            const teeKeyVal = String(tt.hole || "1");
+            const key = `${timeKey}|${teeKeyVal}`;
             const existing = grouped.get(key);
             if (!existing) {
                 grouped.set(key, {
@@ -1736,9 +1754,13 @@ async function loadTeeTimes() {
             }
         });
 
-        const dayTeeTimes = Array.from(grouped.values()).sort(
-            (a, b) => new Date(a.tee_time) - new Date(b.tee_time)
-        );
+        const dayTeeTimes = Array.from(grouped.values()).sort((a, b) => {
+            const d = new Date(a.tee_time) - new Date(b.tee_time);
+            if (d !== 0) return d;
+            const ta = parseInt(String(a.hole || "1"), 10) || 0;
+            const tb = parseInt(String(b.hole || "1"), 10) || 0;
+            return ta - tb; // Tee 1 above Tee 10 when times match
+        });
         const filteredTeeTimes = filterTeeTimesByHoles(dayTeeTimes, dateStr);
         const isNineView = String(selectedHolesView) === "9";
 
@@ -1760,9 +1782,9 @@ async function loadTeeTimes() {
 
         if (dayTeeTimes.length === 0) {
             if (isNineView) {
-                const nineKey = `${dateStr}|${selectedTee}|9`;
+                const nineKey = `${dateStr}|${String(selectedTee)}|9`;
                 if (lastNineAutoGenKey !== nineKey) {
-                    const created = await generateDaySheetWindow(dateStr, existingKeys, [selectedTee], TEE_NINE_HOLE_START, TEE_DEFAULT_END);
+                    const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
                     if (created && created > 0) {
                         lastNineAutoGenKey = nineKey;
                         return loadTeeTimes();
@@ -1773,14 +1795,14 @@ async function loadTeeTimes() {
                 applyTeeSheetSearchFilter();
                 return;
             }
-            await generateDaySheet(dateStr, existingKeys, [selectedTee]);
+            await generateDaySheet(dateStr, existingKeys, teeListForView);
             return loadTeeTimes();
         }
 
         if (filteredTeeTimes.length === 0 && isNineView) {
-            const nineKey = `${dateStr}|${selectedTee}|9`;
+            const nineKey = `${dateStr}|${String(selectedTee)}|9`;
             if (lastNineAutoGenKey !== nineKey) {
-                const created = await generateDaySheetWindow(dateStr, existingKeys, [selectedTee], TEE_NINE_HOLE_START, TEE_DEFAULT_END);
+                const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
                 if (created && created > 0) {
                     lastNineAutoGenKey = nineKey;
                     return loadTeeTimes();
@@ -1805,7 +1827,7 @@ async function loadTeeTimes() {
 }
 
 function openBookingFormAdmin(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount, slotNumber) {
-    openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount);
+    openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount, slotNumber);
 }
 
 function openBookingDetails(teeTimeId, bookingId) {
@@ -1995,7 +2017,7 @@ async function suggestCartForRow(row) {
     }
 }
 
-async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount) {
+async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount, desiredTotal) {
     teeBookingState = {
         teeTimeId,
         teeTimeIso,
@@ -2022,6 +2044,8 @@ async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, ex
 
     const available = Math.max(0, teeBookingState.capacity - teeBookingState.existing);
     document.getElementById("tee-booking-available").textContent = available;
+    const bookedEl = document.getElementById("tee-booking-booked");
+    if (bookedEl) bookedEl.textContent = String(teeBookingState.existing || 0);
 
     const rowsContainer = document.getElementById("tee-booking-rows");
     rowsContainer.innerHTML = "";
@@ -2029,8 +2053,18 @@ async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, ex
     if (available <= 0) {
         rowsContainer.innerHTML = `<div class="empty-state">No available slots for this tee time.</div>`;
     } else {
-        addBookingRow();
+        let desired = parseInt(String(desiredTotal ?? ""), 10);
+        if (!Number.isFinite(desired) || desired <= 0) desired = Math.min(teeBookingState.capacity, (teeBookingState.existing || 0) + 1);
+        desired = Math.max(1, Math.min(teeBookingState.capacity, desired));
+
+        // Clicking slot N should default to "book up to N players total" at this tee time.
+        let toAdd = Math.max(1, desired - (teeBookingState.existing || 0));
+        toAdd = Math.min(available, toAdd);
+
+        for (let i = 0; i < toAdd; i++) addBookingRow();
     }
+
+    updateTeeBookingAddingCount();
 
     document.getElementById("tee-booking-total").textContent = "0";
     document.getElementById("tee-booking-modal").classList.add("show");
@@ -2047,6 +2081,13 @@ function setupTeeBookingModal() {
             teeBookingState.prepaid = Boolean(paidToggle.checked);
         });
     }
+}
+
+function updateTeeBookingAddingCount() {
+    const rowsContainer = document.getElementById("tee-booking-rows");
+    const addingEl = document.getElementById("tee-booking-adding");
+    if (!rowsContainer || !addingEl) return;
+    addingEl.textContent = String(rowsContainer.querySelectorAll(".tee-booking-row").length);
 }
 
 function addBookingRow() {
@@ -2102,17 +2143,19 @@ function addBookingRow() {
                     ${feeOptionsHtml()}
                 </select>
             </div>
-            <div>
-                <label>Cart</label>
-                <label style="display:flex; align-items:center; gap:8px; font-weight:600; color:#2c3e50;">
-                    <input type="checkbox" data-field="cart">
-                    Yes
-                </label>
+            <div class="requirements">
+                <label>Requirements</label>
+                <div class="req-toggles">
+                    <label class="req-toggle"><input type="checkbox" data-field="cart">Cart</label>
+                    <label class="req-toggle"><input type="checkbox" data-field="push_cart">Push Cart</label>
+                    <label class="req-toggle"><input type="checkbox" data-field="caddy">Caddy</label>
+                </div>
                 <div class="cart-fee-label" data-row-cart-label>—</div>
             </div>
         </div>
     `;
     rowsContainer.appendChild(row);
+    updateTeeBookingAddingCount();
     row.dataset.cartPrice = "0";
     row.dataset.cartLabel = "Cart";
     suggestFeeForRow(row);
@@ -2124,6 +2167,7 @@ function removeBookingRow(index) {
     const row = rowsContainer.querySelector(`.tee-booking-row[data-index="${index}"]`);
     if (row) {
         row.remove();
+        updateTeeBookingAddingCount();
         updateBookingTotals();
     }
 }
@@ -2452,6 +2496,8 @@ async function submitTeeBooking() {
             const feeSelect = row.querySelector('select[data-field=\"fee\"]');
             const feeId = feeSelect.value;
             const cart = Boolean(row.querySelector('input[data-field=\"cart\"]')?.checked);
+            const pushCart = Boolean(row.querySelector('input[data-field=\"push_cart\"]')?.checked);
+            const caddy = Boolean(row.querySelector('input[data-field=\"caddy\"]')?.checked);
 
             if (!name) {
                 errors.push({ name: "(missing name)", body: "Player name is required." });
@@ -2469,7 +2515,9 @@ async function submitTeeBooking() {
                 player_type: playerType || "visitor",
                 holes: teeBookingState.holes || 18,
                 prepaid,
-                cart
+                cart,
+                push_cart: pushCart,
+                caddy
             };
 
             if (row.dataset.memberId) {

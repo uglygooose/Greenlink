@@ -515,7 +515,11 @@ canvas {
 }
 
 .tee-booking-content {
-    max-width: 720px;
+    max-width: 920px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .tee-booking-meta {
@@ -525,6 +529,12 @@ canvas {
     margin-bottom: 20px;
     padding-bottom: 16px;
     border-bottom: 1px solid #ecf0f1;
+}
+
+#tee-booking-rows {
+    flex: 1;
+    overflow: auto;
+    padding-right: 6px;
 }
 
 .tee-booking-row {
@@ -564,6 +574,32 @@ canvas {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 12px;
+}
+
+.booking-grid .requirements {
+    grid-column: 1 / -1;
+}
+
+.req-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    padding: 4px 0 2px;
+}
+
+.req-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    color: #2c3e50;
+    font-size: 12px;
+}
+
+.req-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
 }
 
 .booking-grid label {
@@ -670,6 +706,11 @@ canvas {
     align-items: center;
     justify-content: space-between;
     margin-top: 16px;
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: 12px;
+    border-top: 1px solid #ecf0f1;
 }
 
 .tee-booking-total {
@@ -974,6 +1015,39 @@ canvas {
     font-weight: 700;
     color: #0a6b47;
     font-size: 11px;
+}
+
+/* Keep Time + Tee visible when horizontally scrolling */
+.tee-sheet-table th.time-col,
+.tee-sheet-table td.time-col {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+}
+
+.tee-sheet-table th.tee-col,
+.tee-sheet-table td.tee-col {
+    position: sticky;
+    left: 110px;
+    z-index: 3;
+}
+
+.tee-sheet-table th.time-col,
+.tee-sheet-table th.tee-col {
+    z-index: 5;
+}
+
+.tee-sheet-table td.time-col,
+.tee-sheet-table td.tee-col {
+    background: #fff;
+}
+
+.tee-row-sub td {
+    background: #fbfcf8;
+}
+
+.tee-row-sub td.time-col {
+    background: #fff;
 }
 
 .slot-card {

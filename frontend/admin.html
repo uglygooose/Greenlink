@@ -292,7 +292,8 @@
                         <h2>Daily Tee Sheet</h2>
                         <div class="filters tee-sheet-filters">
                             <div class="tee-toggle" role="group" aria-label="Select Tee">
-                                <button class="tee-btn active" data-tee="1" type="button">Tee 1</button>
+                                <button class="tee-btn active" data-tee="all" type="button">Tee 1 + 10</button>
+                                <button class="tee-btn" data-tee="1" type="button">Tee 1</button>
                                 <button class="tee-btn" data-tee="10" type="button">Tee 10</button>
                             </div>
                             <div class="tee-toggle" role="group" aria-label="Select Holes">
@@ -507,8 +508,16 @@
                     <div class="modal-value" id="tee-booking-tee">-</div>
                 </div>
                 <div>
+                    <span class="modal-label">Already Booked</span>
+                    <div class="modal-value" id="tee-booking-booked">0</div>
+                </div>
+                <div>
                     <span class="modal-label">Available Slots</span>
                     <div class="modal-value" id="tee-booking-available">0</div>
+                </div>
+                <div>
+                    <span class="modal-label">Adding</span>
+                    <div class="modal-value" id="tee-booking-adding">0</div>
                 </div>
                 <div>
                     <span class="modal-label">Payment</span>
