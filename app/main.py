@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,6 +39,11 @@ app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 def root():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/frontend/index.html")
+
+@app.get("/favicon.ico")
+def favicon():
+    # Avoid noisy 404s in the browser console.
+    return Response(status_code=204)
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):

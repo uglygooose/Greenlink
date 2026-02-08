@@ -1546,42 +1546,43 @@ function teeKey(dateStr, tee, dateObj) {
 }
 
 async function generateDaySheet(dateStr, existingKeys, tees = ["1", "10"]) {
-    const start = buildDateTime(dateStr, TEE_DEFAULT_START);
-    const end = buildDateTime(dateStr, TEE_DEFAULT_END);
-    const interval = TEE_DEFAULT_INTERVAL_MIN;
-
-    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + interval * 60000)) {
-        for (const tee of tees) {
-            const key = teeKey(dateStr, tee, t);
-            if (existingKeys && existingKeys.has(key)) continue;
-            const hh = String(t.getHours()).padStart(2, "0");
-            const mm = String(t.getMinutes()).padStart(2, "0");
-            await createTeeTimeAt(dateStr, `${hh}:${mm}`, tee);
-            if (existingKeys) existingKeys.add(key);
-        }
-    }
+    return generateTeeSheetRange(dateStr, tees, TEE_DEFAULT_START, TEE_DEFAULT_END);
 }
 
 async function generateDaySheetWindow(dateStr, existingKeys, tees, startTime, endTime) {
-    const start = buildDateTime(dateStr, startTime);
-    const end = buildDateTime(dateStr, endTime);
-    const interval = TEE_DEFAULT_INTERVAL_MIN;
+    return generateTeeSheetRange(dateStr, tees, startTime, endTime);
+}
 
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return;
+async function generateTeeSheetRange(dateStr, tees, startTime, endTime) {
+    const token = localStorage.getItem("token");
+    const response = await fetch("/tsheet/generate", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            date: dateStr,
+            tees: Array.isArray(tees) ? tees : ["1", "10"],
+            start_time: startTime,
+            end_time: endTime,
+            interval_min: TEE_DEFAULT_INTERVAL_MIN,
+            capacity: 4,
+            status: "open"
+        })
+    });
 
-    let created = 0;
-    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + interval * 60000)) {
-        for (const tee of tees) {
-            const key = teeKey(dateStr, tee, t);
-            if (existingKeys && existingKeys.has(key)) continue;
-            const hh = String(t.getHours()).padStart(2, "0");
-            const mm = String(t.getMinutes()).padStart(2, "0");
-            const ok = await createTeeTimeAt(dateStr, `${hh}:${mm}`, tee);
-            if (ok) created += 1;
-            if (existingKeys) existingKeys.add(key);
-        }
+    const raw = await response.text();
+    let data = null;
+    try {
+        data = raw ? JSON.parse(raw) : null;
+    } catch {
+        data = null;
     }
-    return created;
+    if (!response.ok) {
+        throw new Error((data && data.detail) ? data.detail : (raw || "Unable to generate tee times"));
+    }
+    return Number(data?.created || 0);
 }
 
 function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {

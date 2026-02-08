@@ -1,10 +1,15 @@
 # app/routers/tee.py
-from datetime import datetime
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from datetime import date as Date
+from datetime import time as Time
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 from typing import List
+from pydantic import BaseModel
 from app.auth import get_db, get_current_user
 from app import crud, models, schemas
 
@@ -58,6 +63,108 @@ def _booking_payload(b: models.Booking) -> dict:
 def create_tee(tee: schemas.TeeTimeCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     tt = crud.create_tee_time(db, tee.tee_time, tee.hole, tee.capacity or 4, tee.status or "open")
     return tt
+
+
+class TeeSheetGenerateRequest(BaseModel):
+    date: Date
+    tees: List[str] = ["1", "10"]
+    start_time: str = "06:30"
+    end_time: str = "16:30"
+    interval_min: int = 10
+    capacity: int = 4
+    status: str = "open"
+
+
+def _parse_hhmm(value: str) -> Time:
+    raw = (value or "").strip()
+    parts = raw.split(":")
+    if len(parts) != 2:
+        raise ValueError("invalid time")
+    hh = int(parts[0])
+    mm = int(parts[1])
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+        raise ValueError("invalid time")
+    return Time(hour=hh, minute=mm)
+
+
+@router.post("/generate")
+def generate_tee_sheet(
+    req: TeeSheetGenerateRequest,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """
+    Create tee times for a date in one request.
+    This avoids hammering the DB with hundreds of /tsheet/create calls.
+    """
+    try:
+        target_date = req.date
+        if crud.is_day_closed(db, target_date):
+            raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
+
+        tees = [str(t).strip() for t in (req.tees or []) if str(t).strip()]
+        if not tees:
+            raise HTTPException(status_code=400, detail="No tees provided")
+
+        start_t = _parse_hhmm(req.start_time)
+        end_t = _parse_hhmm(req.end_time)
+        start_dt = datetime.combine(target_date, start_t)
+        end_dt = datetime.combine(target_date, end_t)
+        if start_dt > end_dt:
+            raise HTTPException(status_code=400, detail="start_time must be <= end_time")
+
+        interval = int(req.interval_min or 10)
+        if interval < 1 or interval > 60:
+            raise HTTPException(status_code=400, detail="interval_min must be between 1 and 60")
+
+        capacity = int(req.capacity or 4)
+        if capacity < 1 or capacity > 6:
+            raise HTTPException(status_code=400, detail="capacity must be between 1 and 6")
+
+        status = (req.status or "open").strip() or "open"
+
+        existing_rows = (
+            db.query(models.TeeTime.tee_time, models.TeeTime.hole)
+            .filter(
+                models.TeeTime.tee_time >= start_dt,
+                models.TeeTime.tee_time <= end_dt,
+                models.TeeTime.hole.in_(tees),
+            )
+            .all()
+        )
+        existing = set()
+        for tee_time, hole in existing_rows:
+            if tee_time is None:
+                continue
+            existing.add((tee_time.replace(second=0, microsecond=0), str(hole or "")))
+
+        created = 0
+        new_rows: list[models.TeeTime] = []
+        t = start_dt
+        while t <= end_dt:
+            t_key = t.replace(second=0, microsecond=0)
+            for tee in tees:
+                key = (t_key, tee)
+                if key in existing:
+                    continue
+                existing.add(key)
+                new_rows.append(models.TeeTime(tee_time=t_key, hole=tee, capacity=capacity, status=status))
+                created += 1
+            t = t + timedelta(minutes=interval)
+
+        if new_rows:
+            db.add_all(new_rows)
+            db.commit()
+
+        return {"created": created, "date": str(target_date), "start_time": req.start_time, "end_time": req.end_time}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        print(f"[TSHEET] DB error (generate): {str(e)[:240]}")
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    except Exception as e:
+        print(f"[TSHEET] Unexpected error (generate): {str(e)[:240]}")
+        raise HTTPException(status_code=500, detail="Failed to generate tee sheet")
 
 @router.get("/range", response_model=List[schemas.TeeTimeWithBookings])
 def tee_range(
