@@ -1713,7 +1713,16 @@ async function loadTeeTimes() {
             headers: { Authorization: `Bearer ${token}` }
         });
 
-        const data = await response.json();
+        const raw = await response.text();
+        let data = null;
+        try {
+            data = raw ? JSON.parse(raw) : null;
+        } catch {
+            data = null;
+        }
+        if (!response.ok) {
+            throw new Error((data && data.detail) ? data.detail : (raw || "Unable to load tee sheet"));
+        }
         const dayAll = (Array.isArray(data) ? data : []).sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
 
         const existingKeys = new Set();
