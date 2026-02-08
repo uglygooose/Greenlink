@@ -1,4 +1,3 @@
-# app/database.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
@@ -22,6 +21,18 @@ if not DATABASE_URL:
 
     DATABASE_URL = f"mysql+mysqlconnector://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+connect_args = {}
+# Supabase's PgBouncer pooler (transaction mode) can break when the driver uses
+# server-side prepared statements. psycopg3 enables them by default after a few
+# executions; disable them to avoid 500s on simple queries (e.g. /login).
+if DATABASE_URL and DATABASE_URL.startswith("postgresql+psycopg"):
+    connect_args["prepare_threshold"] = 0
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    connect_args=connect_args,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

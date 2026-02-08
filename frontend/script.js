@@ -27,21 +27,29 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         body: JSON.stringify({ email, password })
     });
 
-    const data = await res.json();
+    const raw = await res.text();
+    let data = null;
+    try {
+        data = raw ? JSON.parse(raw) : null;
+    } catch {
+        data = null;
+    }
+
     if (res.ok) {
-        localStorage.setItem('token', data.access_token);
-        localStorage.setItem('user_role', data.role || 'player');
+        localStorage.setItem('token', data?.access_token || "");
+        localStorage.setItem('user_role', data?.role || 'player');
         
         // Redirect based on role
-        if (data.role === 'admin') {
+        if (data?.role === 'admin') {
             window.location.href = '/frontend/admin.html';
         } else {
             window.location.href = '/frontend/dashboard.html';
         }
     } else {
-        alert("Login failed: " + (data.detail || "Invalid credentials"));
+        const msg = data?.detail || raw || "Login failed";
+        alert("Login failed: " + msg);
     }
-    console.log("Login response:", data);
+    console.log("Login response:", data || raw);
 });
 
 // CREATE USER

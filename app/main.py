@@ -2,7 +2,9 @@
 from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import Base, engine
 from app.routers import users, tee, checkin, scoring, admin, cashbook, profile
@@ -36,6 +38,18 @@ app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 def root():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/frontend/index.html")
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    """
+    Lightweight health check for Render/Supabase debugging.
+    """
+    try:
+        db.execute(text("select 1"))
+        return {"ok": True, "db": "ok"}
+    except SQLAlchemyError as e:
+        print(f"[HEALTH] Database error: {str(e)[:200]}")
+        return {"ok": False, "db": "error"}
 
 # -----------------------------------------
 # Database initialization
@@ -76,9 +90,20 @@ def login(data: schemas.UserLogin, db: Session = Depends(get_db)):
     """
     Login user and return JWT token
     """
-    user = crud.authenticate_user(db, email=data.email, password=data.password)
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid username or password")
-    return user
+    try:
+        user = crud.authenticate_user(db, email=data.email, password=data.password)
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid username or password")
+        return user
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        # If the DB is unreachable/misconfigured on a demo host, surface a JSON error
+        # instead of a generic "Internal Server Error" HTML response.
+        print(f"[LOGIN] Database error: {str(e)[:200]}")
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    except Exception as e:
+        print(f"[LOGIN] Unexpected error: {str(e)[:200]}")
+        raise HTTPException(status_code=500, detail="Login failed")
 
 app.include_router(api)
