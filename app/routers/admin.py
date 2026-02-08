@@ -125,6 +125,50 @@ def _member_green_fee_18(db: Session) -> float:
     return 340.0
 
 
+def _float_setting(db: Session, key: str, default: float) -> float:
+    """Read a float club setting from DB; fall back to default on any error."""
+    try:
+        from app.models import ClubSetting
+
+        row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+        if not row:
+            return float(default)
+        raw = (row.value or "").strip()
+        if not raw:
+            return float(default)
+        return float(raw)
+    except Exception:
+        return float(default)
+
+
+def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds_target: float | None) -> float | None:
+    """
+    Derive annual revenue target using a member/visitor mix model.
+
+    Client assumption:
+    - 50% of rounds are members (by volume)
+    - 33% of revenue comes from members, 67% visitors
+
+    If we assume "member revenue per round" ~ member 18-hole fee, then:
+      total_revenue = member_rounds * member_fee / member_revenue_share
+    """
+    if annual_rounds_target is None:
+        return None
+
+    member_round_share = _float_setting(db, "target_member_round_share", 0.50)
+    member_revenue_share = _float_setting(db, "target_member_revenue_share", 0.33)
+
+    # Guard rails
+    if member_round_share <= 0 or member_round_share >= 1:
+        member_round_share = 0.50
+    if member_revenue_share <= 0 or member_revenue_share >= 1:
+        member_revenue_share = 0.33
+
+    member_fee = float(_member_green_fee_18(db))
+    member_rounds = float(annual_rounds_target) * float(member_round_share)
+    return (member_rounds * member_fee) / float(member_revenue_share)
+
+
 @router.get("/dashboard")
 async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
     """Get main dashboard statistics"""
@@ -190,7 +234,7 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
     annual_revenue_target = _annual_target(db, year, "revenue", default=None)
     if annual_revenue_target is None and annual_rounds_target is not None:
-        annual_revenue_target = float(annual_rounds_target) * float(_member_green_fee_18(db))
+        annual_revenue_target = _derive_annual_revenue_target_from_mix(db, year, float(annual_rounds_target))
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
         revenue = (
@@ -248,12 +292,17 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
         "today_bookings": today_bookings,
         "targets": {
             "year": year,
-            "annual": {
-                "revenue": annual_revenue_target,
-                "rounds": annual_rounds_target,
+        "annual": {
+            "revenue": annual_revenue_target,
+            "rounds": annual_rounds_target,
+            "assumptions": {
+                "member_round_share": _float_setting(db, "target_member_round_share", 0.50),
+                "member_revenue_share": _float_setting(db, "target_member_revenue_share", 0.33),
+                "member_fee_18": float(_member_green_fee_18(db)),
             },
-            "periods": kpis,
         },
+        "periods": kpis,
+    },
     }
 
 
@@ -973,7 +1022,7 @@ async def get_revenue_analytics(
     annual_revenue_target = _annual_target(db, year, "revenue", default=None)
     annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
     if annual_revenue_target is None and annual_rounds_target is not None:
-        annual_revenue_target = float(annual_rounds_target) * float(_member_green_fee_18(db))
+        annual_revenue_target = _derive_annual_revenue_target_from_mix(db, year, float(annual_rounds_target))
 
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     

@@ -7,7 +7,11 @@ This document maps the client's demo feedback to concrete product requirements a
 - KPI "Rounds" should be counted as **paid**: booking status in `checked_in` or `completed` (consistent with revenue).
 - Student/Adult/Pensioner should be implemented with **SA defaults + configurable overrides** (see "Player Categories").
 - Rounds target should be **auto-derived** from an **annual rounds target** of `35,000` for now.
-- Revenue targets are derived from `annual_rounds_target * member_18_green_fee` unless explicitly overridden.
+- Revenue targets are derived from a member/visitor mix model unless explicitly overridden:
+  - Member rounds share: 50%
+  - Member revenue share: 33%
+  - Baseline member 18-hole fee: fee code `1` when loaded (fallback R340)
+  - `annual_revenue = (annual_rounds * member_round_share * member_fee) / member_revenue_share`
 
 ## Workstreams
 
