@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GreenLink Admin Dashboard</title>
-    <link rel="stylesheet" href="admin-style.css?v=2026-02-08-02" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-02-08-03" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -307,25 +307,29 @@
                         <span class="legend-item"><span class="legend-dot no-show"></span>No-show</span>
                         <span class="legend-item"><span class="legend-dot cancelled"></span>Cancelled</span>
                     </div>
-                    <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
-                    <div class="tee-sheet-table-wrap">
-                        <table class="tee-sheet-table">
-                            <thead>
-                                <tr>
-                                    <th class="time-col">Time</th>
-                                    <th class="tee-col">Tee</th>
-                                    <th>Player 1</th>
-                                    <th>Player 2</th>
-                                    <th>Player 3</th>
-                                    <th>Player 4</th>
-                                </tr>
-                            </thead>
+                     <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
+                     <div class="tee-sheet-table-wrap">
+                        <div class="tee-sheet-head" aria-hidden="true">
+                            <table class="tee-sheet-table tee-sheet-table-head">
+                                <thead>
+                                    <tr>
+                                        <th class="time-col">Time</th>
+                                        <th class="tee-col">Tee</th>
+                                        <th>Player 1</th>
+                                        <th>Player 2</th>
+                                        <th>Player 3</th>
+                                        <th>Player 4</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </div>
+                        <table class="tee-sheet-table tee-sheet-table-body">
                             <tbody id="admin-tee-sheet-body">
                                 <!-- Populated by JS -->
                             </tbody>
                         </table>
-                    </div>
-                </section>
+                     </div>
+                 </section>
 
                 <!-- Ledger Page -->
                 <section id="ledger" class="page">
@@ -531,6 +535,6 @@
         </div>
     </div>
 
-    <script src="admin.js?v=2026-02-08-02"></script>
+    <script src="admin.js?v=2026-02-08-03"></script>
 </body>
 </html>

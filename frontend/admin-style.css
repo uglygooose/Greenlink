@@ -974,6 +974,15 @@ canvas {
     background: #fff;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     max-height: 70vh;
+    position: relative;
+}
+
+.tee-sheet-head {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #f3f7ea;
+    border-bottom: 1px solid #e0e6ed;
 }
 
 .tee-sheet-table {
@@ -982,6 +991,7 @@ canvas {
     border-collapse: separate;
     border-spacing: 0;
     font-size: 14px;
+    table-layout: fixed;
 }
 
 .tee-sheet-table th {
@@ -992,10 +1002,7 @@ canvas {
     font-size: 10px;
     padding: 8px 8px;
     text-align: left;
-    border-bottom: 1px solid #e0e6ed;
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    border-bottom: 0;
 }
 
 .tee-sheet-table td {
@@ -1024,24 +1031,31 @@ canvas {
 .tee-sheet-table td.time-col {
     position: sticky;
     left: 0;
-    z-index: 3;
+    z-index: 6;
 }
 
 .tee-sheet-table th.tee-col,
 .tee-sheet-table td.tee-col {
     position: sticky;
     left: 110px;
-    z-index: 3;
+    z-index: 6;
 }
 
 .tee-sheet-table th.time-col,
 .tee-sheet-table th.tee-col {
-    z-index: 12;
+    z-index: 25;
 }
 
 .tee-sheet-table td.time-col,
 .tee-sheet-table td.tee-col {
     background: #fff;
+}
+
+.tee-sheet-head .tee-sheet-table td.time-col,
+.tee-sheet-head .tee-sheet-table td.tee-col,
+.tee-sheet-head .tee-sheet-table th.time-col,
+.tee-sheet-head .tee-sheet-table th.tee-col {
+    background: #f3f7ea;
 }
 
 .tee-row-sub td {
