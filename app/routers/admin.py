@@ -150,8 +150,11 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     year = int(anchor.year)
     paid_statuses_set = [BookingStatus.checked_in, BookingStatus.completed]
 
-    annual_revenue_target = _annual_target(db, year, "revenue", default=35000.0)
-    annual_rounds_target = _annual_target(db, year, "rounds", default=None)
+    # Default targets (can be overridden via kpi_targets table):
+    # - Rounds: 35,000/year (client demo target)
+    # - Revenue: unset by default (set explicitly when decided)
+    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
+    annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
         revenue = (
@@ -931,7 +934,7 @@ async def get_revenue_analytics(
     status_revenue = status_revenue_query.group_by(Booking.status).all()
 
     year = int(anchor.year)
-    annual_revenue_target = _annual_target(db, year, "revenue", default=35000.0)
+    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     
     return {

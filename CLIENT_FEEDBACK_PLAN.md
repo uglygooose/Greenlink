@@ -6,7 +6,8 @@ This document maps the client's demo feedback to concrete product requirements a
 
 - KPI "Rounds" should be counted as **paid**: booking status in `checked_in` or `completed` (consistent with revenue).
 - Student/Adult/Pensioner should be implemented with **SA defaults + configurable overrides** (see "Player Categories").
-- Revenue target should be **auto-derived** from an **annual revenue target** of `R35,000` for now.
+- Rounds target should be **auto-derived** from an **annual rounds target** of `35,000` for now.
+- Revenue targets are supported, but should be set explicitly once confirmed.
 
 ## Workstreams
 
@@ -128,4 +129,3 @@ This project does not currently run migrations automatically. To avoid breaking 
   - `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`
   - `CREATE TABLE IF NOT EXISTS ...`
 - Gate it behind `AUTO_MIGRATE=1` env var so production can later switch to proper migrations.
-
