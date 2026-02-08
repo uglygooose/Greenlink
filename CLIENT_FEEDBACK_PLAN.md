@@ -7,7 +7,7 @@ This document maps the client's demo feedback to concrete product requirements a
 - KPI "Rounds" should be counted as **paid**: booking status in `checked_in` or `completed` (consistent with revenue).
 - Student/Adult/Pensioner should be implemented with **SA defaults + configurable overrides** (see "Player Categories").
 - Rounds target should be **auto-derived** from an **annual rounds target** of `35,000` for now.
-- Revenue targets are supported, but should be set explicitly once confirmed.
+- Revenue targets are derived from `annual_rounds_target * member_18_green_fee` unless explicitly overridden.
 
 ## Workstreams
 

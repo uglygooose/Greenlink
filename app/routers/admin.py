@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app import crud
 from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member
-from app.fee_models import FeeCategory
+from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db
 from calendar import isleap
 
@@ -91,6 +91,40 @@ def _derive_target(annual: float | None, year: int, days_elapsed: int) -> float 
     return float(annual) * (float(d) / denom)
 
 
+def _member_green_fee_18(db: Session) -> float:
+    """
+    Baseline member green fee used to derive revenue targets from rounds targets.
+
+    We prefer a stable "member 18 holes" fee (code 1 in the default fee list).
+    If fees aren't loaded, fall back to a sensible demo default.
+    """
+    try:
+        fee = db.query(FeeCategory).filter(FeeCategory.code == 1).first()
+        if fee and getattr(fee, "price", None) is not None:
+            return float(fee.price)
+
+        # Otherwise: any member golf fee for 18 holes without a restricted day kind.
+        fee = (
+            db.query(FeeCategory)
+            .filter(
+                FeeCategory.active == 1,
+                FeeCategory.fee_type == FeeType.GOLF,
+                FeeCategory.audience == "member",
+                FeeCategory.holes == 18,
+                FeeCategory.day_kind.is_(None),
+            )
+            .order_by(FeeCategory.priority.desc(), FeeCategory.code.asc())
+            .first()
+        )
+        if fee and getattr(fee, "price", None) is not None:
+            return float(fee.price)
+    except Exception:
+        pass
+
+    # Default from the 2026 price list (member 18 holes).
+    return 340.0
+
+
 @router.get("/dashboard")
 async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
     """Get main dashboard statistics"""
@@ -151,10 +185,12 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     paid_statuses_set = [BookingStatus.checked_in, BookingStatus.completed]
 
     # Default targets (can be overridden via kpi_targets table):
-    # - Rounds: 35,000/year (client demo target)
-    # - Revenue: unset by default (set explicitly when decided)
-    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
+    # - Rounds: 35,000/year (client target)
+    # - Revenue: derived from rounds target * member 18-hole rate unless explicitly set
     annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
+    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
+    if annual_revenue_target is None and annual_rounds_target is not None:
+        annual_revenue_target = float(annual_rounds_target) * float(_member_green_fee_18(db))
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
         revenue = (
@@ -935,6 +971,10 @@ async def get_revenue_analytics(
 
     year = int(anchor.year)
     annual_revenue_target = _annual_target(db, year, "revenue", default=None)
+    annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
+    if annual_revenue_target is None and annual_rounds_target is not None:
+        annual_revenue_target = float(annual_rounds_target) * float(_member_green_fee_18(db))
+
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     
     return {
