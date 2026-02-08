@@ -1339,6 +1339,7 @@ const TEE_DEFAULT_END = "16:30";
 const TEE_DEFAULT_INTERVAL_MIN = 10;
 const TEE_NINE_HOLE_START = "15:00"; // 9-hole view starts later than 18-hole view
 let lastNineAutoGenKey = null;
+let lastFullAutoGenKey = null;
 
 function floorToInterval(dateObj, intervalMin) {
     const d = new Date(dateObj);
@@ -1387,7 +1388,20 @@ function scrollTeeSheetToNow(dateStr) {
     });
 
     if (target) {
-        setTimeout(() => target.scrollIntoView({ block: "start" }), 0);
+        setTimeout(() => {
+            const wrap = document.querySelector(".tee-sheet-table-wrap");
+            if (!wrap) {
+                target.scrollIntoView({ block: "start" });
+                return;
+            }
+
+            const head = wrap.querySelector(".tee-sheet-head");
+            const headH = head ? head.getBoundingClientRect().height : 0;
+            const wrapRect = wrap.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const delta = (targetRect.top - wrapRect.top) - headH;
+            wrap.scrollTop = Math.max(0, wrap.scrollTop + delta);
+        }, 0);
     }
 }
 
@@ -1704,6 +1718,11 @@ async function loadTeeTimes() {
         </tr>
     `;
 
+    // Avoid "starting mid-day" when switching dates after scrolling today's sheet.
+    // Today's view will auto-scroll back down after data loads.
+    const wrap = document.querySelector(".tee-sheet-table-wrap");
+    if (wrap) wrap.scrollTop = 0;
+
     try {
         const start = `${dateStr}T00:00:00`;
         const [y, m, d] = dateStr.split("-").map(Number);
@@ -1763,6 +1782,30 @@ async function loadTeeTimes() {
         });
         const filteredTeeTimes = filterTeeTimesByHoles(dayTeeTimes, dateStr);
         const isNineView = String(selectedHolesView) === "9";
+
+        // If the day has only a partial tee sheet (e.g., the 9-hole window was generated first),
+        // top it up to a full day when in 18-hole view.
+        if (!isNineView) {
+            const hasStart = dayAll.some(tt => {
+                const t = String(tt.tee_time || "");
+                const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
+                return hhmm === TEE_DEFAULT_START && (String(tt.hole || "1") === "1" || String(tt.hole || "1") === "10");
+            });
+            const hasEnd = dayAll.some(tt => {
+                const t = String(tt.tee_time || "");
+                const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
+                return hhmm === TEE_DEFAULT_END && (String(tt.hole || "1") === "1" || String(tt.hole || "1") === "10");
+            });
+
+            const fullKey = `${dateStr}|full`;
+            if ((!hasStart || !hasEnd) && lastFullAutoGenKey !== fullKey) {
+                lastFullAutoGenKey = fullKey;
+                const created = await generateTeeSheetRange(dateStr, ["1", "10"], TEE_DEFAULT_START, TEE_DEFAULT_END);
+                if (created && created > 0) {
+                    return loadTeeTimes();
+                }
+            }
+        }
 
         if (dayAll.length === 0) {
             if (isNineView) {
