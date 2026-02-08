@@ -28,6 +28,8 @@ class User(Base):
     email = Column(String(200), unique=True, index=True, nullable=False)
     password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.player)
+    phone = Column(String(50), nullable=True)
+    account_type = Column(String(20), nullable=True)  # member | visitor (used for pricing defaults)
     handicap_number = Column(String(50), nullable=True)
     greenlink_id = Column(String(50), unique=True, nullable=True)
     birth_date = Column(DateTime, nullable=True)

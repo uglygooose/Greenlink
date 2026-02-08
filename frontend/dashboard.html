@@ -17,7 +17,7 @@
     
     <!-- Alert if profile incomplete -->
     <div id="profile_alert" class="alert alert-warning" style="display: none;">
-      <strong>⚠️ Complete Your Profile</strong> - Please update your profile with birth date and Handicap SA member number to book tee times.
+      <strong>Complete Your Profile</strong> - Please update your profile details (phone, date of birth, and home club) before booking tee times.
       <button onclick="toggleProfile()" class="btn btn-sm btn-primary" style="float: right;">Update Profile</button>
     </div>
 
@@ -37,16 +37,20 @@
           <input type="text" id="profile_name" class="form-control" required>
         </div>
         <div class="form-group mt-3">
+          <label>Phone Number</label>
+          <input type="tel" id="profile_phone" class="form-control" required>
+        </div>
+        <div class="form-group mt-3">
           <label>Birth Date</label>
           <input type="date" id="profile_birth_date" class="form-control" required>
         </div>
         <div class="form-group mt-3">
-          <label>Handicap SA Member Number</label>
-          <input type="text" id="profile_handicap_sa_id" class="form-control" placeholder="e.g., SA123456">
+          <label>HNA SA Player ID (optional)</label>
+          <input type="text" id="profile_handicap_sa_id" class="form-control" placeholder="e.g., 27XXXXXXXX">
         </div>
         <div class="form-group mt-3">
-          <label>Home Course</label>
-          <input type="text" id="profile_home_course" class="form-control" placeholder="e.g., Wanderers Golf Club">
+          <label>Home Club</label>
+          <input type="text" id="profile_home_course" class="form-control" placeholder="e.g., Umhlali Country Club" required>
         </div>
         <button type="submit" class="btn btn-success mt-4">Save Profile</button>
         <button type="button" onclick="toggleProfile()" class="btn btn-secondary mt-4 ms-2">Cancel</button>
@@ -58,9 +62,10 @@
       <h2 style="margin-bottom: 30px; font-size: 28px;">Welcome, <span id="user_name" style="font-weight: bold;">Player</span>!</h2>
       <div style="font-size: 18px; line-height: 2;">
         <p><strong>Email:</strong> <span id="user_email" style="font-size: 16px;">-</span></p>
+        <p><strong>Phone:</strong> <span id="user_phone" style="font-size: 16px;">-</span></p>
         <p><strong>Age:</strong> <span id="user_age" style="font-size: 16px;">-</span></p>
         <p><strong>Handicap SA ID:</strong> <span id="user_handicap_sa" style="font-size: 16px;">-</span></p>
-        <p><strong>Home Course:</strong> <span id="user_home_course" style="font-size: 16px;">-</span></p>
+        <p><strong>Home Club:</strong> <span id="user_home_course" style="font-size: 16px;">-</span></p>
       </div>
     </div>
   </div>
@@ -86,18 +91,20 @@ async function loadUserInfo(){
   // Display profile info
   document.getElementById('user_name').textContent = profile.name;
   document.getElementById('user_email').textContent = profile.email;
+  document.getElementById('user_phone').textContent = profile.phone || 'Not set';
   document.getElementById('user_age').textContent = profile.age || 'Not set';
   document.getElementById('user_handicap_sa').textContent = profile.handicap_sa_id || 'Not set';
   document.getElementById('user_home_course').textContent = profile.home_course || 'Not set';
   
   // Populate form
   document.getElementById('profile_name').value = profile.name;
+  if(profile.phone) document.getElementById('profile_phone').value = profile.phone;
   if(profile.birth_date) document.getElementById('profile_birth_date').value = profile.birth_date;
   if(profile.handicap_sa_id) document.getElementById('profile_handicap_sa_id').value = profile.handicap_sa_id;
   if(profile.home_course) document.getElementById('profile_home_course').value = profile.home_course;
   
   // Show alert if profile incomplete
-  if(!profile.birth_date || !profile.handicap_sa_id){
+  if(!profile.phone || !profile.birth_date || !profile.home_course){
     document.getElementById('profile_alert').style.display = 'block';
   }
 }
@@ -107,6 +114,7 @@ async function saveProfile(e){
   
   const profileData = {
     name: document.getElementById('profile_name').value,
+    phone: document.getElementById('profile_phone').value,
     birth_date: document.getElementById('profile_birth_date').value,
     handicap_sa_id: document.getElementById('profile_handicap_sa_id').value,
     home_course: document.getElementById('profile_home_course').value

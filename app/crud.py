@@ -88,6 +88,10 @@ def create_user(db: Session, user: schemas.UserCreate):
     home_club = (getattr(user, "home_club", None) or "").strip() or None
     gender = (getattr(user, "gender", None) or "").strip() or None
     player_category = (getattr(user, "player_category", None) or "").strip() or None
+    phone = (getattr(user, "phone", None) or "").strip() or None
+    account_type = (getattr(user, "account_type", None) or "").strip().lower() or None
+    if account_type not in {None, "", "member", "visitor"}:
+        account_type = None
     student_flag = getattr(user, "student", None)
     if student_flag is None and player_category:
         student_flag = player_category.lower() == "student"
@@ -96,6 +100,8 @@ def create_user(db: Session, user: schemas.UserCreate):
         name=user.name,
         email=str(user.email).strip().lower(),
         password=hashed,
+        phone=phone,
+        account_type=account_type,
         handicap_sa_id=(getattr(user, "handicap_sa_id", None) or "").strip() or None,
         handicap_number=(getattr(user, "handicap_number", None) or "").strip() or None,
         handicap_index=getattr(user, "handicap_index", None),

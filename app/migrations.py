@@ -48,6 +48,8 @@ def run_auto_migrations(engine) -> None:
         # ----------------------------
         # Users additions
         # ----------------------------
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone text NULL;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type text NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_sa_id text NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS home_course text NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_number text NULL;",

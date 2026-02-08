@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GreenLink T-Shot Demo</title>
+    <title>GreenLink - Pro Shop Portal</title>
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -16,8 +16,8 @@
         <!-- Header / Branding -->
         <div class="header-card fade-in-slow">
             <img src="assets/logo.jpeg" alt="GreenLink Logo" class="logo" />
-            <h1>GreenLink T-Shot Demo</h1>
-            <p>Booking → Check-in → Scoring → Ledger (MVP)</p>
+            <h1>GreenLink</h1>
+            <p>Bookings -> Check-in -> Scoring -> Ledger</p>
         </div>
 
         <!-- Login Card -->
@@ -28,51 +28,87 @@
                 <input type="password" id="loginPassword" placeholder="Password" required />
                 <button type="submit">Login</button>
             </form>
-            <p class="toggle-text">
-                Don't have an account?
-                <a href="#" id="showSignup">Create one</a>
-            </p>
+            <div class="card-actions">
+                <button type="button" class="btn-secondary" id="openSignup">Create account</button>
+            </div>
         </div>
 
-        <!-- Signup Card -->
-        <div class="card fade-in hidden" id="signupCard">
-            <h2>Create Demo User</h2>
-            <form id="createUserForm">
-                <input type="text" id="newName" placeholder="Name" required />
-                <input type="email" id="newEmail" placeholder="Email" required />
-                <input type="password" id="newPassword" placeholder="Password" required />
-                <select id="newAccountType">
-                    <option value="visitor">Visitor account</option>
-                    <option value="member">Member account</option>
-                </select>
-                <input type="text" id="newMemberNumber" placeholder="Member number (optional)" />
-                <input type="text" id="newPhone" placeholder="Phone (optional)" />
-                <select id="newGender">
-                    <option value="">Gender (optional)</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="unknown">Prefer not to say</option>
-                </select>
-                <select id="newCategory">
-                    <option value="">Category (optional)</option>
-                    <option value="adult">Adult</option>
-                    <option value="student">Student</option>
-                    <option value="pensioner">Pensioner</option>
-                    <option value="junior">Junior</option>
-                </select>
-                <input type="text" id="newHandicapSaId" placeholder="HNA SA Player ID (optional)" />
-                <input type="text" id="newHandicapNumber" placeholder="Handicap number (optional)" />
-                <input type="number" id="newHandicapIndex" placeholder="Handicap index (optional)" step="0.1" min="0" />
-                <input type="text" id="newHomeClub" placeholder="Home club (optional)" />
-                <input type="date" id="newBirthDate" placeholder="Birth date (optional)" />
-                <button type="submit">Create User</button>
+    </div>
+
+    <!-- Create account modal -->
+    <div class="modal" id="signupModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="signupTitle">
+        <div class="modal-backdrop" data-close-modal="signupModal"></div>
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h2 id="signupTitle">Create Account</h2>
+                <button type="button" class="modal-close" aria-label="Close" data-close-modal="signupModal">x</button>
+            </div>
+
+            <form id="createUserForm" class="modal-form">
+                <div class="form-row">
+                    <input type="text" id="newName" placeholder="Full name" autocomplete="name" required />
+                    <input type="tel" id="newPhone" placeholder="Phone number" autocomplete="tel" required />
+                </div>
+
+                <div class="form-row">
+                    <input type="email" id="newEmail" placeholder="Email" autocomplete="email" required />
+                    <input type="date" id="newBirthDate" placeholder="Date of birth" required />
+                </div>
+
+                <div class="form-row">
+                    <input type="password" id="newPassword" placeholder="Password" autocomplete="new-password" required />
+                    <input type="password" id="newPasswordConfirm" placeholder="Confirm password" autocomplete="new-password" required />
+                </div>
+
+                <div class="segmented" role="group" aria-label="Account type">
+                    <button type="button" class="seg-btn active" data-account-type="visitor">Visitor</button>
+                    <button type="button" class="seg-btn" data-account-type="member">Member</button>
+                </div>
+                <input type="hidden" id="newAccountType" value="visitor" />
+
+                <div class="form-row">
+                    <input type="text" id="newHomeClub" placeholder="Home club (required for members)" list="clubList" />
+                    <input type="text" id="newMemberNumber" placeholder="Membership number (optional)" />
+                </div>
+                <datalist id="clubList">
+                    <option value="Umhlali Country Club"></option>
+                    <option value="Durban Country Club"></option>
+                    <option value="Royal Durban Golf Club"></option>
+                    <option value="Mount Edgecombe Country Club"></option>
+                    <option value="Zimbali Country Club"></option>
+                </datalist>
+
+                <div class="form-row">
+                    <input type="text" id="newHandicapSaId" placeholder="HNA SA Player ID (optional)" />
+                    <input type="number" id="newHandicapIndex" placeholder="Handicap Index (optional)" step="0.1" min="0" />
+                </div>
+
+                <div class="form-row">
+                    <select id="newGender">
+                        <option value="">Gender (optional)</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="unknown">Prefer not to say</option>
+                    </select>
+                    <select id="newCategory">
+                        <option value="">Category (optional)</option>
+                        <option value="adult">Adult</option>
+                        <option value="student">Student</option>
+                        <option value="pensioner">Pensioner</option>
+                        <option value="junior">Junior</option>
+                    </select>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" data-close-modal="signupModal">Cancel</button>
+                    <button type="submit">Create account</button>
+                </div>
+
+                <p class="helper-text">
+                    Pro-shop note: Home club and HNA SA Player ID enable future HNA integration and help prevent duplicate profiles.
+                </p>
             </form>
-            <p class="toggle-text">
-                Already have an account?
-                <a href="#" id="showLogin">Login</a>
-            </p>
         </div>
-
     </div>
 
     <script src="script.js"></script>

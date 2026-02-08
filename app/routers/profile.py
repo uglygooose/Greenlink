@@ -12,17 +12,27 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 
 class PlayerProfileUpdate(BaseModel):
     name: str
+    phone: Optional[str] = None
     birth_date: Optional[str] = None  # YYYY-MM-DD format
     handicap_sa_id: Optional[str] = None
     home_course: Optional[str] = None
+    account_type: Optional[str] = None  # member | visitor
+    gender: Optional[str] = None
+    player_category: Optional[str] = None
+    handicap_index: Optional[float] = None
 
 class PlayerProfileResponse(BaseModel):
     id: int
     name: str
     email: str
+    phone: Optional[str] = None
     birth_date: Optional[str] = None
     handicap_sa_id: Optional[str] = None
     home_course: Optional[str] = None
+    account_type: Optional[str] = None
+    gender: Optional[str] = None
+    player_category: Optional[str] = None
+    handicap_index: Optional[float] = None
     age: Optional[int] = None
     handicap_number: Optional[str] = None
     greenlink_id: Optional[str] = None
@@ -46,9 +56,14 @@ def get_my_profile(db: Session = Depends(get_db), current_user = Depends(get_cur
         id=user.id,
         name=user.name,
         email=user.email,
+        phone=getattr(user, "phone", None),
         birth_date=user.birth_date.strftime("%Y-%m-%d") if user.birth_date else None,
         handicap_sa_id=user.handicap_sa_id,
         home_course=user.home_course,
+        account_type=getattr(user, "account_type", None),
+        gender=getattr(user, "gender", None),
+        player_category=getattr(user, "player_category", None),
+        handicap_index=getattr(user, "handicap_index", None),
         age=age,
         handicap_number=user.handicap_number,
         greenlink_id=user.greenlink_id
@@ -64,6 +79,8 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
     
     # Update fields
     user.name = profile_update.name
+    if profile_update.phone is not None:
+        user.phone = (profile_update.phone or "").strip() or None
     if profile_update.birth_date:
         try:
             user.birth_date = datetime.strptime(profile_update.birth_date, "%Y-%m-%d")
@@ -72,6 +89,15 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
     
     user.handicap_sa_id = profile_update.handicap_sa_id
     user.home_course = profile_update.home_course
+    if profile_update.account_type is not None:
+        at = (profile_update.account_type or "").strip().lower() or None
+        user.account_type = at if at in {None, "member", "visitor"} else None
+    if profile_update.gender is not None:
+        user.gender = (profile_update.gender or "").strip() or None
+    if profile_update.player_category is not None:
+        user.player_category = (profile_update.player_category or "").strip() or None
+    if profile_update.handicap_index is not None:
+        user.handicap_index = float(profile_update.handicap_index)
     
     db.commit()
     db.refresh(user)
@@ -86,9 +112,14 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
         id=user.id,
         name=user.name,
         email=user.email,
+        phone=getattr(user, "phone", None),
         birth_date=user.birth_date.strftime("%Y-%m-%d") if user.birth_date else None,
         handicap_sa_id=user.handicap_sa_id,
         home_course=user.home_course,
+        account_type=getattr(user, "account_type", None),
+        gender=getattr(user, "gender", None),
+        player_category=getattr(user, "player_category", None),
+        handicap_index=getattr(user, "handicap_index", None),
         age=age,
         handicap_number=user.handicap_number,
         greenlink_id=user.greenlink_id

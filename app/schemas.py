@@ -25,6 +25,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    # Pricing / segmentation
+    account_type: Optional[str] = None  # member | visitor
     # Optional profile fields (used for reporting + pricing snapshots on bookings)
     handicap_sa_id: Optional[str] = None
     handicap_number: Optional[str] = None
@@ -49,6 +51,8 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     id: int
     role: str
+    phone: Optional[str] = None
+    account_type: Optional[str] = None
     handicap_number: Optional[str]
     greenlink_id: Optional[str]
     handicap_sa_id: Optional[str] = None

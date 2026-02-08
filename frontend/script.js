@@ -1,18 +1,55 @@
 console.log("GreenLink front-end loaded.");
 const API_BASE = window.location.origin;
 
-// TOGGLE BETWEEN LOGIN & SIGNUP
-document.getElementById("showSignup").addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("loginCard").style.display = "none";
-    document.getElementById("signupCard").style.display = "block";
+function openModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+}
+
+function setAccountType(type) {
+    const hidden = document.getElementById("newAccountType");
+    if (hidden) hidden.value = type;
+
+    const isMember = type === "member";
+    const homeClub = document.getElementById("newHomeClub");
+    if (homeClub) {
+        homeClub.required = isMember;
+        homeClub.placeholder = isMember ? "Home club (required)" : "Home club (optional)";
+    }
+}
+
+// UI events
+document.getElementById("openSignup")?.addEventListener("click", () => {
+    openModal("signupModal");
 });
 
-document.getElementById("showLogin").addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("signupCard").style.display = "none";
-    document.getElementById("loginCard").style.display = "block";
+document.querySelectorAll("[data-close-modal]")?.forEach(el => {
+    el.addEventListener("click", () => {
+        const id = el.getAttribute("data-close-modal");
+        if (id) closeModal(id);
+    });
 });
+
+document.querySelectorAll(".seg-btn")?.forEach(btn => {
+    btn.addEventListener("click", () => {
+        document.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        setAccountType(btn.getAttribute("data-account-type") || "visitor");
+    });
+});
+
+setAccountType("visitor");
 
 // LOGIN
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
@@ -59,6 +96,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const name = document.getElementById("newName").value.trim();
     const email = document.getElementById("newEmail").value.trim();
     const password = document.getElementById("newPassword").value;
+    const passwordConfirm = document.getElementById("newPasswordConfirm")?.value || "";
 
     const accountType = (document.getElementById("newAccountType")?.value || "visitor").trim();
     const createMemberProfile = accountType === "member";
@@ -67,12 +105,32 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const gender = document.getElementById("newGender")?.value?.trim() || "";
     const playerCategory = document.getElementById("newCategory")?.value?.trim() || "";
     const handicapSaId = document.getElementById("newHandicapSaId")?.value?.trim() || "";
-    const handicapNumber = document.getElementById("newHandicapNumber")?.value?.trim() || "";
     const handicapIndexRaw = document.getElementById("newHandicapIndex")?.value;
     const homeClub = document.getElementById("newHomeClub")?.value?.trim() || "";
     const birthDate = document.getElementById("newBirthDate")?.value || "";
 
     const handicapIndex = handicapIndexRaw === "" || handicapIndexRaw == null ? null : Number(handicapIndexRaw);
+
+    if (!name || !email || !password) {
+        alert("Please complete name, email, and password.");
+        return;
+    }
+    if (!phone) {
+        alert("Please enter a phone number.");
+        return;
+    }
+    if (!birthDate) {
+        alert("Please enter your date of birth.");
+        return;
+    }
+    if (password !== passwordConfirm) {
+        alert("Passwords do not match.");
+        return;
+    }
+    if (createMemberProfile && !homeClub) {
+        alert("Please select your home club or choose Visitor.");
+        return;
+    }
 
     const res = await fetch(`${API_BASE}/users/`, {
         method: "POST",
@@ -81,6 +139,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
             name,
             email,
             password,
+            account_type: accountType || null,
             create_member_profile: createMemberProfile,
             member_number: memberNumber || null,
             phone: phone || null,
@@ -88,7 +147,6 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
             player_category: playerCategory || null,
             student: playerCategory === "student" ? true : null,
             handicap_sa_id: handicapSaId || null,
-            handicap_number: handicapNumber || null,
             handicap_index: Number.isFinite(handicapIndex) ? handicapIndex : null,
             home_club: homeClub || null,
             birth_date: birthDate || null
@@ -104,27 +162,40 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     }
 
     if (res.ok) {
-        alert("User created! You can now login.");
-        document.getElementById("signupCard").style.display = "none";
-        document.getElementById("loginCard").style.display = "block";
-        document.getElementById("createUserForm").reset();
+        // Auto-login for smoother UX.
+        const loginRes = await fetch(`${API_BASE}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+        });
+
+        const loginRaw = await loginRes.text();
+        let loginData = null;
+        try {
+            loginData = loginRaw ? JSON.parse(loginRaw) : null;
+        } catch {
+            loginData = null;
+        }
+
+        if (loginRes.ok) {
+            localStorage.setItem("token", loginData?.access_token || "");
+            localStorage.setItem("user_role", loginData?.role || "player");
+            closeModal("signupModal");
+            document.getElementById("createUserForm")?.reset();
+
+            if (loginData?.role === "admin") {
+                window.location.href = "/frontend/admin.html";
+            } else {
+                window.location.href = "/frontend/dashboard.html";
+            }
+            return;
+        }
+
+        alert("Account created. Please login.");
+        closeModal("signupModal");
+        document.getElementById("createUserForm")?.reset();
     } else {
         alert("Error: " + (data?.detail || raw || "Could not create user"));
     }
     console.log("Create user response:", data || raw);
 });
-
-// Signup UX: show member fields only when needed.
-const accountTypeSelect = document.getElementById("newAccountType");
-function syncSignupVisibility() {
-    const isMember = (accountTypeSelect?.value || "visitor") === "member";
-    const memberOnly = ["newMemberNumber", "newPhone"];
-    memberOnly.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = isMember ? "block" : "none";
-    });
-}
-if (accountTypeSelect) {
-    accountTypeSelect.addEventListener("change", syncSignupVisibility);
-    syncSignupVisibility();
-}
