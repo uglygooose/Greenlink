@@ -12,6 +12,10 @@ body {
     color: #2c3e50;
 }
 
+.muted {
+    color: #7f8c8d;
+}
+
 .admin-container {
     display: flex;
     height: 100vh;
@@ -316,7 +320,7 @@ body {
     background: white;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    overflow: hidden;
+    overflow-x: auto;
     margin-bottom: 20px;
 }
 
@@ -412,6 +416,55 @@ body {
 /* Charts */
 canvas {
     max-height: 400px;
+}
+
+/* KPI Targets */
+.kpi-subtitle {
+    margin-top: -6px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+.kpi-table-wrap {
+    margin-bottom: 0;
+    box-shadow: none;
+    border: 1px solid #ecf0f1;
+}
+
+.kpi-table th,
+.kpi-table td {
+    padding: 12px 14px;
+    white-space: nowrap;
+}
+
+.kpi-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.kpi-pill.good {
+    background: #e7f4ea;
+    color: #0a6b47;
+    border-color: #0a6b47;
+}
+
+.kpi-pill.warn {
+    background: #fff3cd;
+    color: #856404;
+    border-color: #ffeaa7;
+}
+
+.kpi-pill.bad {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
 }
 
 /* Modal */

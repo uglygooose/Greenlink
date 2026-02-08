@@ -140,6 +140,28 @@
                     </div>
 
                     <div class="dashboard-card full-width">
+                        <h3>Targets vs Actual (Paid)</h3>
+                        <div class="kpi-subtitle">
+                            Paid bookings = checked-in + completed. Targets are derived from annual targets.
+                        </div>
+                        <div class="table-container kpi-table-wrap">
+                            <table class="data-table kpi-table">
+                                <thead>
+                                    <tr>
+                                        <th>Period</th>
+                                        <th>Rounds</th>
+                                        <th>Rounds Target</th>
+                                        <th>Revenue</th>
+                                        <th>Revenue Target</th>
+                                        <th>% to Target</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="kpi-targets-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card full-width">
                         <h3>Monthly Revenue Trend</h3>
                         <canvas id="revenueChart"></canvas>
                     </div>
@@ -174,6 +196,13 @@
                                     <th>ID</th>
                                     <th>Player</th>
                                     <th>Email</th>
+                                    <th>HNA SA ID</th>
+                                    <th>Home Club</th>
+                                    <th>HI</th>
+                                    <th>Cat</th>
+                                    <th>Holes</th>
+                                    <th>Paid</th>
+                                    <th>Req</th>
                                     <th>Price</th>
                                     <th>Status</th>
                                     <th>Time / Date</th>
@@ -220,6 +249,30 @@
                 <section id="revenue" class="page">
                     <div class="page-header">
                         <h2>Revenue Analytics</h2>
+                        <div class="filters">
+                            <div class="tee-toggle revenue-period-toggle" aria-label="Revenue period">
+                                <button class="tee-btn revenue-period-btn active" type="button" data-period="day">Day</button>
+                                <button class="tee-btn revenue-period-btn" type="button" data-period="wtd">WTD</button>
+                                <button class="tee-btn revenue-period-btn" type="button" data-period="mtd">MTD</button>
+                                <button class="tee-btn revenue-period-btn" type="button" data-period="ytd">YTD</button>
+                            </div>
+                            <label for="revenue-anchor-date">Date</label>
+                            <input type="date" id="revenue-anchor-date" />
+                        </div>
+                    </div>
+                    <div class="cashbook-summary">
+                        <div class="summary-stat">
+                            <span>Actual</span>
+                            <strong id="revenue-actual">R0.00</strong>
+                        </div>
+                        <div class="summary-stat">
+                            <span>Target</span>
+                            <strong id="revenue-target">—</strong>
+                        </div>
+                        <div class="summary-stat">
+                            <span>% to Target</span>
+                            <strong id="revenue-pct">—</strong>
+                        </div>
                     </div>
                     <div class="analytics-grid">
                         <div class="dashboard-card">

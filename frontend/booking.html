@@ -605,6 +605,19 @@
         <div class="helper-text" id="player_cart_label">No cart</div>
         <div class="helper-text">Splits automatically when 2 players choose cart (member rate if mixed).</div>
       </div>
+      <div class="form-group">
+        <label>Requirements</label>
+        <div style="display:flex; gap: 14px; flex-wrap: wrap;">
+          <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
+            <input type="checkbox" id="player_push_cart">
+            Push Cart
+          </label>
+          <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
+            <input type="checkbox" id="player_caddy">
+            Caddy
+          </label>
+        </div>
+      </div>
       <div class="price-display" id="modal_price">Select a fee type</div>
       <button class="modal-btn btn-primary" onclick="addPlayer()">Add Player</button>
     </div>
@@ -842,6 +855,8 @@ function openAddPlayerModal() {
   document.getElementById('player_handicap').value = '';
   document.getElementById('player_fee').value = '';
   document.getElementById('player_cart').checked = false;
+  document.getElementById('player_push_cart').checked = false;
+  document.getElementById('player_caddy').checked = false;
   document.getElementById('player_cart_label').textContent = 'No cart';
   document.getElementById('modal_price').textContent = 'Select a fee type';
   selectedPlayerType = 'member';
@@ -953,6 +968,8 @@ async function addPlayer() {
   const feeId = feeSelect.value;
   const price = feeSelect.options[feeSelect.selectedIndex].getAttribute('data-price');
   const wantsCart = Boolean(document.getElementById('player_cart')?.checked);
+  const wantsPushCart = Boolean(document.getElementById('player_push_cart')?.checked);
+  const wantsCaddy = Boolean(document.getElementById('player_caddy')?.checked);
   
   if (!name) {
     alert('Please enter player name');
@@ -998,6 +1015,8 @@ async function addPlayer() {
     handicap: handicap,
     basePrice,
     cart: wantsCart,
+    push_cart: wantsPushCart,
+    caddy: wantsCaddy,
     cartPrice: wantsCart ? cartPrice : 0,
     cartFee,
     price: totalPrice,
@@ -1052,6 +1071,19 @@ function editPlayer(index) {
         </label>
         <div class="helper-text" id="edit_cart_label">${player.cart ? `${player.cartFee || 'Cart'} - R${Number(player.cartPrice || 0).toFixed(0)}` : 'No cart'}</div>
       </div>
+      <div class="form-group">
+        <label>Requirements</label>
+        <div style="display:flex; gap: 14px; flex-wrap: wrap;">
+          <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
+            <input type="checkbox" id="edit_push_cart" ${player.push_cart ? 'checked' : ''}>
+            Push Cart
+          </label>
+          <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
+            <input type="checkbox" id="edit_caddy" ${player.caddy ? 'checked' : ''}>
+            Caddy
+          </label>
+        </div>
+      </div>
     ` : ''}
     
     <div class="price-display" id="edit_price">R${Number(displayPrice || 0).toFixed(0)}</div>
@@ -1076,6 +1108,8 @@ function savePlayer(index) {
   players[index].name = document.getElementById('edit_name').value;
   players[index].email = document.getElementById('edit_email').value;
   players[index].handicap = document.getElementById('edit_handicap').value;
+  players[index].push_cart = Boolean(document.getElementById('edit_push_cart')?.checked);
+  players[index].caddy = Boolean(document.getElementById('edit_caddy')?.checked);
   closeModal('editPlayerModal');
   renderPlayers();
 }
@@ -1213,6 +1247,8 @@ async function confirmBookings() {
           handicap_number: player.handicap || null,
           player_type: player.playerType || null,
           cart: Boolean(player.cart),
+          push_cart: Boolean(player.push_cart),
+          caddy: Boolean(player.caddy),
           fee_category_id: player.feeId
         })
       });

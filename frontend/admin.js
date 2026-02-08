@@ -9,6 +9,7 @@ let selectedTee = "1";
 let selectedHolesView = "18";
 let bookingPeriod = "day";
 let ledgerPeriod = "day";
+let revenuePeriod = "day"; // day | wtd | mtd | ytd
 let golfFeesCache = [];
 let cashbookHasRecords = false;
 let currentBookingDetail = null;
@@ -32,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(updateTime, 1000);
     setupBookingFilters();
     setupLedgerFilters();
+    setupRevenueFilters();
     setupTeeSheetFilters();
     setupTeeBookingModal();
     setupPeopleFilters();
@@ -83,6 +85,31 @@ function statusToClass(status) {
 
 function statusToLabel(status) {
     return String(status || "").replaceAll("_", " ");
+}
+
+function formatCurrencyZAR(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "R0.00";
+    return `R${num.toFixed(2)}`;
+}
+
+function safeNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function formatPct(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "—";
+    return `${(num * 100).toFixed(0)}%`;
+}
+
+function pctPillClass(pct) {
+    const v = Number(pct);
+    if (!Number.isFinite(v)) return "warn";
+    if (v >= 1.0) return "good";
+    if (v >= 0.75) return "warn";
+    return "bad";
 }
 
 // Authentication
@@ -208,6 +235,8 @@ async function loadDashboard() {
         document.getElementById("today-revenue").textContent = data.today_revenue.toFixed(2);
         document.getElementById("week-revenue").textContent = data.week_revenue.toFixed(2);
 
+        renderTargetsTable(data.targets);
+
         // Status bars
         const total = Object.values(data.bookings_by_status).reduce((a, b) => a + b, 0) || 1;
         const statuses = [
@@ -231,6 +260,39 @@ async function loadDashboard() {
     } catch (error) {
         console.error("Failed to load dashboard:", error);
     }
+}
+
+function renderTargetsTable(targets) {
+    const body = document.getElementById("kpi-targets-body");
+    if (!body) return;
+
+    const periods = targets?.periods || {};
+    const order = [
+        { key: "day", label: "Today" },
+        { key: "wtd", label: "Week-to-date" },
+        { key: "mtd", label: "Month-to-date" },
+        { key: "ytd", label: "Year-to-date" }
+    ];
+
+    body.innerHTML = order.map(({ key, label }) => {
+        const p = periods[key] || {};
+        const roundsActual = safeNumber(p.rounds_actual);
+        const roundsTarget = p.rounds_target;
+        const revenueActual = safeNumber(p.revenue_actual);
+        const revenueTarget = p.revenue_target;
+        const pct = revenueTarget ? (revenueActual / safeNumber(revenueTarget)) : null;
+
+        return `
+            <tr>
+                <td><strong>${label}</strong></td>
+                <td>${String(Math.round(roundsActual))}</td>
+                <td>${roundsTarget == null ? "—" : String(Math.round(safeNumber(roundsTarget)))}</td>
+                <td>${formatCurrencyZAR(revenueActual)}</td>
+                <td>${revenueTarget == null ? "—" : formatCurrencyZAR(revenueTarget)}</td>
+                <td>${pct == null ? "—" : `<span class="kpi-pill ${pctPillClass(pct)}">${formatPct(pct)}</span>`}</td>
+            </tr>
+        `;
+    }).join("");
 }
 
 async function loadRevenueChart() {
@@ -416,6 +478,14 @@ function setupLedgerFilters() {
     });
 }
 
+function renderReqPills(booking) {
+    const pills = [];
+    if (booking?.cart) pills.push("Cart");
+    if (booking?.push_cart) pills.push("Push");
+    if (booking?.caddy) pills.push("Caddy");
+    return pills.length ? pills.join(", ") : "—";
+}
+
 async function loadBookings() {
     const token = localStorage.getItem("token");
     const status = document.getElementById("filter-status")?.value;
@@ -442,6 +512,13 @@ async function loadBookings() {
                 <td>#${b.id}</td>
                 <td>${escapeHtml(b.player_name)}</td>
                 <td>${b.player_email ? escapeHtml(b.player_email) : "-"}</td>
+                <td>${b.handicap_sa_id ? escapeHtml(b.handicap_sa_id) : "<span class=\"muted\">Unregistered</span>"}</td>
+                <td>${b.home_club ? escapeHtml(b.home_club) : "-"}</td>
+                <td>${b.handicap_index_at_booking == null ? "-" : Number(b.handicap_index_at_booking).toFixed(1)}</td>
+                <td>${b.player_category ? escapeHtml(b.player_category) : "-"}</td>
+                <td>${b.holes ? escapeHtml(String(b.holes)) : "-"}</td>
+                <td>${b.prepaid === true ? "Yes" : (b.prepaid === false ? "No" : "-")}</td>
+                <td>${renderReqPills(b)}</td>
                 <td>R${b.price.toFixed(2)}</td>
                 <td><span class="status-badge ${statusToClass(b.status)}">${statusToLabel(b.status)}</span></td>
                 <td>${b.tee_time ? formatTimeDateDMY(b.tee_time) : "-"}</td>
@@ -531,6 +608,38 @@ async function viewBookingDetail(bookingId) {
                     <div class="detail-row">
                         <span class="detail-label">Member ID</span>
                         <span class="detail-value">${booking.member_id ? escapeHtml(String(booking.member_id)) : "—"}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">HNA SA ID</span>
+                    <span class="detail-value">${displayValue(booking.handicap_sa_id, "Unregistered")}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Home Club</span>
+                    <span class="detail-value">${displayValue(booking.home_club, "???")}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">HI (Booking)</span>
+                    <span class="detail-value">${booking.handicap_index_at_booking == null ? "???" : escapeHtml(Number(booking.handicap_index_at_booking).toFixed(1))}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Category</span>
+                    <span class="detail-value">${displayValue(booking.player_category, "???")}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Gender</span>
+                    <span class="detail-value">${displayValue(booking.gender, "???")}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Holes</span>
+                    <span class="detail-value">${booking.holes ? escapeHtml(String(booking.holes)) : "???"}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Prepaid</span>
+                    <span class="detail-value">${booking.prepaid === true ? "Yes" : (booking.prepaid === false ? "No" : "???")}</span>
+                    </div>
+                    <div class="detail-row">
+                    <span class="detail-label">Requirements</span>
+                    <span class="detail-value">${renderReqPills({ cart: booking?.requirements?.cart, push_cart: booking?.requirements?.push_cart, caddy: booking?.requirements?.caddy })}</span>
                     </div>
                 </div>
 
@@ -755,6 +864,11 @@ async function loadPlayers() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Handicap</th>
+                <th>HNA SA ID</th>
+                <th>Home Club</th>
+                <th>HI</th>
+                <th>Gender</th>
+                <th>Cat</th>
                 <th>Bookings</th>
                 <th>Total Spent</th>
                 <th>Action</th>
@@ -766,6 +880,11 @@ async function loadPlayers() {
                     <td>${escapeHtml(p.name)}</td>
                     <td>${escapeHtml(p.email)}</td>
                     <td>${p.handicap_number ? escapeHtml(p.handicap_number) : "-"}</td>
+                    <td>${p.handicap_sa_id ? escapeHtml(p.handicap_sa_id) : "<span class=\"muted\">Unregistered</span>"}</td>
+                    <td>${p.home_course ? escapeHtml(p.home_course) : "-"}</td>
+                    <td>${p.handicap_index == null ? "-" : Number(p.handicap_index).toFixed(1)}</td>
+                    <td>${p.gender ? escapeHtml(p.gender) : "-"}</td>
+                    <td>${p.player_category ? escapeHtml(p.player_category) : "-"}</td>
                     <td>${Number(p.bookings_count || 0)}</td>
                     <td>R${Number(p.total_spent || 0).toFixed(2)}</td>
                     <td><button class="btn-view" onclick="viewPlayerDetail(${p.id})">View</button></td>
@@ -820,6 +939,22 @@ async function viewPlayerDetail(playerId) {
             <div class="modal-section">
                 <div class="modal-label">Handicap</div>
                 <div class="modal-value">${player.handicap_number || "Not provided"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">HNA SA ID</div>
+                <div class="modal-value">${player.handicap_sa_id || "Unregistered"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Home Club</div>
+                <div class="modal-value">${player.home_course || "Not set"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Handicap Index</div>
+                <div class="modal-value">${player.handicap_index == null ? "Not set" : Number(player.handicap_index).toFixed(1)}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Gender / Category</div>
+                <div class="modal-value">${(player.gender || "—") + " / " + (player.player_category || "—")}</div>
             </div>
             <div class="modal-section">
                 <div class="modal-label">Current Price</div>
@@ -1109,12 +1244,28 @@ async function loadRevenue() {
     const token = localStorage.getItem("token");
 
     try {
-        const response = await fetch(`${API_BASE}/api/admin/revenue?days=30`, {
+        const anchorDate = document.getElementById("revenue-anchor-date")?.value || new Date().toISOString().split("T")[0];
+        const period = String(revenuePeriod || "day");
+        const url = `${API_BASE}/api/admin/revenue?period=${encodeURIComponent(period)}&anchor_date=${encodeURIComponent(anchorDate)}`;
+
+        const response = await fetch(url, {
             headers: { Authorization: `Bearer ${token}` }
         });
 
         const data = await response.json();
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
+
+        // Summary (paid revenue vs target)
+        const actualPaid = series.paid.reduce((sum, v) => sum + safeNumber(v), 0);
+        const targetRevenue = data.target_revenue;
+        const pct = targetRevenue ? (actualPaid / safeNumber(targetRevenue)) : null;
+
+        const actualEl = document.getElementById("revenue-actual");
+        const targetEl = document.getElementById("revenue-target");
+        const pctEl = document.getElementById("revenue-pct");
+        if (actualEl) actualEl.textContent = formatCurrencyZAR(actualPaid);
+        if (targetEl) targetEl.textContent = targetRevenue == null ? "—" : formatCurrencyZAR(targetRevenue);
+        if (pctEl) pctEl.textContent = pct == null ? "—" : formatPct(pct);
 
         // Daily revenue chart
         const dailyCtx = document.getElementById("dailyRevenueChart");
@@ -1158,6 +1309,28 @@ async function loadRevenue() {
     } catch (error) {
         console.error("Failed to load revenue:", error);
     }
+}
+
+function setupRevenueFilters() {
+    const dateInput = document.getElementById("revenue-anchor-date");
+    const buttons = document.querySelectorAll(".revenue-period-btn");
+
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split("T")[0];
+    }
+
+    dateInput?.addEventListener("change", () => {
+        loadRevenue();
+    });
+
+    buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+            buttons.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            revenuePeriod = btn.dataset.period || "day";
+            loadRevenue();
+        });
+    });
 }
 
 // Tee Sheet
