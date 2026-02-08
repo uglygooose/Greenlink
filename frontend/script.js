@@ -60,20 +60,71 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const email = document.getElementById("newEmail").value.trim();
     const password = document.getElementById("newPassword").value;
 
+    const accountType = (document.getElementById("newAccountType")?.value || "visitor").trim();
+    const createMemberProfile = accountType === "member";
+    const memberNumber = document.getElementById("newMemberNumber")?.value?.trim() || "";
+    const phone = document.getElementById("newPhone")?.value?.trim() || "";
+    const gender = document.getElementById("newGender")?.value?.trim() || "";
+    const playerCategory = document.getElementById("newCategory")?.value?.trim() || "";
+    const handicapSaId = document.getElementById("newHandicapSaId")?.value?.trim() || "";
+    const handicapNumber = document.getElementById("newHandicapNumber")?.value?.trim() || "";
+    const handicapIndexRaw = document.getElementById("newHandicapIndex")?.value;
+    const homeClub = document.getElementById("newHomeClub")?.value?.trim() || "";
+    const birthDate = document.getElementById("newBirthDate")?.value || "";
+
+    const handicapIndex = handicapIndexRaw === "" || handicapIndexRaw == null ? null : Number(handicapIndexRaw);
+
     const res = await fetch(`${API_BASE}/users/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({
+            name,
+            email,
+            password,
+            create_member_profile: createMemberProfile,
+            member_number: memberNumber || null,
+            phone: phone || null,
+            gender: gender || null,
+            player_category: playerCategory || null,
+            student: playerCategory === "student" ? true : null,
+            handicap_sa_id: handicapSaId || null,
+            handicap_number: handicapNumber || null,
+            handicap_index: Number.isFinite(handicapIndex) ? handicapIndex : null,
+            home_club: homeClub || null,
+            birth_date: birthDate || null
+        })
     });
 
-    const data = await res.json();
+    const raw = await res.text();
+    let data = null;
+    try {
+        data = raw ? JSON.parse(raw) : null;
+    } catch {
+        data = null;
+    }
+
     if (res.ok) {
-        alert("✓ User created! You can now login.");
+        alert("User created! You can now login.");
         document.getElementById("signupCard").style.display = "none";
         document.getElementById("loginCard").style.display = "block";
         document.getElementById("createUserForm").reset();
     } else {
-        alert("Error: " + (data.detail || "Could not create user"));
+        alert("Error: " + (data?.detail || raw || "Could not create user"));
     }
-    console.log("Create user response:", data);
+    console.log("Create user response:", data || raw);
 });
+
+// Signup UX: show member fields only when needed.
+const accountTypeSelect = document.getElementById("newAccountType");
+function syncSignupVisibility() {
+    const isMember = (accountTypeSelect?.value || "visitor") === "member";
+    const memberOnly = ["newMemberNumber", "newPhone"];
+    memberOnly.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isMember ? "block" : "none";
+    });
+}
+if (accountTypeSelect) {
+    accountTypeSelect.addEventListener("change", syncSignupVisibility);
+    syncSignupVisibility();
+}

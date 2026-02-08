@@ -41,6 +41,30 @@
                 <input type="text" id="newName" placeholder="Name" required />
                 <input type="email" id="newEmail" placeholder="Email" required />
                 <input type="password" id="newPassword" placeholder="Password" required />
+                <select id="newAccountType">
+                    <option value="visitor">Visitor account</option>
+                    <option value="member">Member account</option>
+                </select>
+                <input type="text" id="newMemberNumber" placeholder="Member number (optional)" />
+                <input type="text" id="newPhone" placeholder="Phone (optional)" />
+                <select id="newGender">
+                    <option value="">Gender (optional)</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="unknown">Prefer not to say</option>
+                </select>
+                <select id="newCategory">
+                    <option value="">Category (optional)</option>
+                    <option value="adult">Adult</option>
+                    <option value="student">Student</option>
+                    <option value="pensioner">Pensioner</option>
+                    <option value="junior">Junior</option>
+                </select>
+                <input type="text" id="newHandicapSaId" placeholder="HNA SA Player ID (optional)" />
+                <input type="text" id="newHandicapNumber" placeholder="Handicap number (optional)" />
+                <input type="number" id="newHandicapIndex" placeholder="Handicap index (optional)" step="0.1" min="0" />
+                <input type="text" id="newHomeClub" placeholder="Home club (optional)" />
+                <input type="date" id="newBirthDate" placeholder="Birth date (optional)" />
                 <button type="submit">Create User</button>
             </form>
             <p class="toggle-text">

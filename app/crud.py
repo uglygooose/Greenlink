@@ -2,6 +2,7 @@ from __future__ import annotations
 # app/crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from datetime import datetime
 from app import models, schemas
 from app.auth import get_password_hash, verify_password, create_access_token
 from app.integrations import handicap_sa
@@ -83,10 +84,62 @@ def create_user(db: Session, user: schemas.UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed = get_password_hash(user.password)
-    db_user = models.User(name=user.name, email=user.email, password=hashed)
+
+    home_club = (getattr(user, "home_club", None) or "").strip() or None
+    gender = (getattr(user, "gender", None) or "").strip() or None
+    player_category = (getattr(user, "player_category", None) or "").strip() or None
+    student_flag = getattr(user, "student", None)
+    if student_flag is None and player_category:
+        student_flag = player_category.lower() == "student"
+
+    db_user = models.User(
+        name=user.name,
+        email=str(user.email).strip().lower(),
+        password=hashed,
+        handicap_sa_id=(getattr(user, "handicap_sa_id", None) or "").strip() or None,
+        handicap_number=(getattr(user, "handicap_number", None) or "").strip() or None,
+        handicap_index=getattr(user, "handicap_index", None),
+        home_course=home_club,  # UI calls this "Home club"
+        gender=gender,
+        player_category=player_category,
+        student=student_flag,
+    )
+
+    birth_date = getattr(user, "birth_date", None)
+    if birth_date:
+        try:
+            db_user.birth_date = datetime.combine(birth_date, datetime.min.time())
+        except Exception:
+            pass
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+
+    # Optional: upsert a "members" row so the pro-shop member search can find them by email.
+    if bool(getattr(user, "create_member_profile", False)) or getattr(user, "member_number", None) or getattr(user, "phone", None):
+        email = str(db_user.email or "").strip().lower()
+        if email:
+            first = (user.name or "").strip().split(" ")[0] if (user.name or "").strip() else "Member"
+            last = (user.name or "").strip().split(" ", 1)[1] if " " in (user.name or "").strip() else "Unknown"
+
+            member = db.query(models.Member).filter(func.lower(models.Member.email) == email).first()
+            if not member:
+                member = models.Member(first_name=first, last_name=last, email=email, active=1)
+                db.add(member)
+
+            member.phone = (getattr(user, "phone", None) or member.phone or "").strip() or None
+            member.member_number = (getattr(user, "member_number", None) or member.member_number or "").strip() or None
+            member.handicap_number = (getattr(user, "handicap_number", None) or member.handicap_number or "").strip() or None
+            member.home_club = (getattr(user, "home_club", None) or member.home_club or "").strip() or None
+            member.handicap_sa_id = (getattr(user, "handicap_sa_id", None) or member.handicap_sa_id or "").strip() or None
+            if getattr(user, "handicap_index", None) is not None:
+                member.handicap_index = float(user.handicap_index)
+            member.gender = gender or member.gender
+            member.player_category = player_category or member.player_category
+            member.student = student_flag if student_flag is not None else member.student
+
+            db.commit()
+
     return db_user
 
 def authenticate_user(db: Session, email: str, password: str):

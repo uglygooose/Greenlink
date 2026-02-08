@@ -48,6 +48,11 @@ def run_auto_migrations(engine) -> None:
         # ----------------------------
         # Users additions
         # ----------------------------
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_sa_id text NULL;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS home_course text NULL;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_number text NULL;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS greenlink_id text NULL;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date timestamptz NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS gender text NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS player_category text NULL;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_index double precision NULL;",
@@ -55,6 +60,11 @@ def run_auto_migrations(engine) -> None:
         # ----------------------------
         # Members additions
         # ----------------------------
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS member_number text NULL;",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS email text NULL;",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS phone text NULL;",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS handicap_number text NULL;",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS home_club text NULL;",
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text NULL;",
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS player_category text NULL;",
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS handicap_index double precision NULL;",
@@ -84,4 +94,3 @@ def run_auto_migrations(engine) -> None:
     with engine.begin() as conn:
         for stmt in statements:
             conn.execute(text(stmt))
-

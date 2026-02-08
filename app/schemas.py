@@ -25,6 +25,20 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    # Optional profile fields (used for reporting + pricing snapshots on bookings)
+    handicap_sa_id: Optional[str] = None
+    handicap_number: Optional[str] = None
+    handicap_index: Optional[float] = None
+    home_club: Optional[str] = None
+    gender: Optional[str] = None
+    player_category: Optional[str] = None  # adult | student | pensioner | junior
+    student: Optional[bool] = None
+    birth_date: Optional[date] = None
+
+    # Optional: create/update a Member profile row for pro-shop member search.
+    create_member_profile: Optional[bool] = False
+    member_number: Optional[str] = None
+    phone: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -41,6 +55,7 @@ class UserResponse(UserBase):
     home_course: Optional[str] = None
     gender: Optional[str] = None
     player_category: Optional[str] = None
+    student: Optional[bool] = None
     handicap_index: Optional[float] = None
 
     model_config = {"from_attributes": True}
