@@ -75,6 +75,7 @@ def run_auto_migrations(engine) -> None:
         # ----------------------------
         # Bookings additions (snapshot + requirements)
         # ----------------------------
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS player_type text NULL;",
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS holes integer NULL;",
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS prepaid boolean NULL;",
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS gender text NULL;",

@@ -105,6 +105,7 @@ class Booking(Base):
     price = Column(Float, default=350.0)  # Default green fee
     status = Column(Enum(BookingStatus), default=BookingStatus.booked)
     # Booking-level attributes (snapshotted at booking time for reporting)
+    player_type = Column(String(30), nullable=True)  # member | visitor | non_affiliated | reciprocity
     holes = Column(Integer, nullable=True)
     prepaid = Column(Boolean, nullable=True)
     gender = Column(String(20), nullable=True)

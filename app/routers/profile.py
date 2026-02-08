@@ -91,7 +91,7 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
     user.home_course = profile_update.home_course
     if profile_update.account_type is not None:
         at = (profile_update.account_type or "").strip().lower() or None
-        user.account_type = at if at in {None, "member", "visitor"} else None
+        user.account_type = at if at in {None, "member", "visitor", "non_affiliated"} else None
     if profile_update.gender is not None:
         user.gender = (profile_update.gender or "").strip() or None
     if profile_update.player_category is not None:

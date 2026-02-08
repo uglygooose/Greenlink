@@ -23,6 +23,15 @@ def _cart_is_paired(notes: str | None) -> bool:
     return "Cart split" in text or "Cart paired" in text or "Cart shared" in text
 
 def _infer_player_type_for_booking(booking: models.Booking) -> str:
+    pt = getattr(booking, "player_type", None)
+    if pt:
+        try:
+            from app.pricing import normalize_player_type
+            n = normalize_player_type(pt)
+            if n:
+                return n
+        except Exception:
+            return str(pt)
     return "member" if getattr(booking, "member_id", None) else "visitor"
 
 def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
@@ -90,7 +99,13 @@ def create_user(db: Session, user: schemas.UserCreate):
     player_category = (getattr(user, "player_category", None) or "").strip() or None
     phone = (getattr(user, "phone", None) or "").strip() or None
     account_type = (getattr(user, "account_type", None) or "").strip().lower() or None
-    if account_type not in {None, "", "member", "visitor"}:
+    if account_type:
+        try:
+            from app.pricing import normalize_player_type
+            account_type = normalize_player_type(account_type)
+        except Exception:
+            pass
+    if account_type not in {None, "member", "visitor", "non_affiliated"}:
         account_type = None
     student_flag = getattr(user, "student", None)
     if student_flag is None and player_category:
@@ -275,6 +290,27 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         except Exception:
             player_category_val = "adult"
 
+    # Snapshot the pricing audience ("member", "visitor", "non_affiliated") so reporting and
+    # reconciliation remain stable even if the user's profile changes later.
+    try:
+        from app.pricing import normalize_player_type
+    except Exception:
+        def normalize_player_type(v):  # type: ignore[misc]
+            return (str(v).strip().lower() if v is not None else None) or None
+
+    player_type_snapshot = normalize_player_type(getattr(booking_in, "player_type", None))
+    if not player_type_snapshot:
+        if resolved_member_id or getattr(booking_in, "member_id", None):
+            player_type_snapshot = "member"
+        elif resolved_user and getattr(resolved_user, "account_type", None):
+            player_type_snapshot = normalize_player_type(getattr(resolved_user, "account_type", None))
+        elif handicap_sa_id or home_club:
+            # Having an HNA SA Player ID or a home club implies affiliation (discounted visitor rate).
+            player_type_snapshot = "visitor"
+        else:
+            # Default: non-affiliated visitor rate.
+            player_type_snapshot = "non_affiliated"
+
     # Fee resolution
     fee_category_id = getattr(booking_in, "fee_category_id", None)
     price = booking_in.price if getattr(booking_in, "price", None) is not None else 350.0
@@ -301,21 +337,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
 
             # Infer player type when possible
             if not player_type:
-                if getattr(booking_in, "member_id", None):
-                    player_type = "member"
-                elif getattr(booking_in, "player_email", None):
-                    member_match = (
-                        db.query(models.Member)
-                        .filter(models.Member.email == booking_in.player_email, models.Member.active == 1)
-                        .first()
-                    )
-                    if member_match:
-                        player_type = "member"
-                    else:
-                        player_type = "visitor"
-                else:
-                    # No way to infer reliably; leave unset so auto-pricing won't pick "gendered member" fees by accident.
-                    player_type = None
+                player_type = player_type_snapshot
 
             # Infer age from birth_date or known user profile
             age = getattr(booking_in, "age", None)
@@ -376,7 +398,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         try:
             cart_player_type = getattr(booking_in, "player_type", None)
             if not cart_player_type:
-                cart_player_type = "member" if resolved_member_id else "visitor"
+                cart_player_type = player_type_snapshot or ("member" if resolved_member_id else "visitor")
 
             holes = int(getattr(booking_in, "holes", None) or 18)
 
@@ -458,13 +480,14 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         player_name=booking_in.player_name,
         player_email=booking_in.player_email,
         club_card=booking_in.club_card,
-        handicap_number=getattr(booking_in, 'handicap_number', None),
-        greenlink_id=getattr(booking_in, 'greenlink_id', None),
+        handicap_number=getattr(booking_in, "handicap_number", None),
+        greenlink_id=getattr(booking_in, "greenlink_id", None),
         handicap_sa_id=handicap_sa_id,
         home_club=home_club,
-        source=getattr(booking_in, 'source', None) or models.BookingSource.proshop,
-        external_provider=getattr(booking_in, 'external_provider', None),
-        external_booking_id=getattr(booking_in, 'external_booking_id', None),
+        player_type=player_type_snapshot,
+        source=getattr(booking_in, "source", None) or models.BookingSource.proshop,
+        external_provider=getattr(booking_in, "external_provider", None),
+        external_booking_id=getattr(booking_in, "external_booking_id", None),
         party_size=party_size,
         fee_category_id=fee_category_id,
         price=price,
@@ -477,7 +500,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
         gender=gender_val,
         player_category=player_category_val,
         handicap_index_at_booking=handicap_index,
-        notes=notes_val
+        notes=notes_val,
     )
     db.add(b)
     db.commit()

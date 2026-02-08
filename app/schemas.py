@@ -163,6 +163,7 @@ class BookingOut(BaseModel):
     player_category: Optional[str] = None
     handicap_index_at_booking: Optional[float] = None
     handicap_index_at_play: Optional[float] = None
+    player_type: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
 

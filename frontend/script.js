@@ -98,8 +98,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     const password = document.getElementById("newPassword").value;
     const passwordConfirm = document.getElementById("newPasswordConfirm")?.value || "";
 
-    const accountType = (document.getElementById("newAccountType")?.value || "visitor").trim();
-    const createMemberProfile = accountType === "member";
+    const accountTypeUi = (document.getElementById("newAccountType")?.value || "visitor").trim();
     const memberNumber = document.getElementById("newMemberNumber")?.value?.trim() || "";
     const phone = document.getElementById("newPhone")?.value?.trim() || "";
     const gender = document.getElementById("newGender")?.value?.trim() || "";
@@ -127,7 +126,19 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
         alert("Passwords do not match.");
         return;
     }
-    if (createMemberProfile && !homeClub) {
+    const homeClubNorm = homeClub.toLowerCase();
+    const isUmhlali = homeClubNorm.includes("umhlali");
+
+    // Map signup choices to pricing audiences:
+    // - "member" => Umhlali member green fee
+    // - "visitor" => affiliated visitor green fee
+    // - "non_affiliated" => non-affiliated visitor green fee
+    const accountType = accountTypeUi === "member" ? (isUmhlali ? "member" : "visitor") : "non_affiliated";
+
+    // Only Umhlali members should create a Member profile row (local member list).
+    const createMemberProfile = accountType === "member";
+
+    if (accountTypeUi === "member" && !homeClub) {
         alert("Please select your home club or choose Visitor.");
         return;
     }

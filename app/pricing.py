@@ -31,11 +31,18 @@ def normalize_player_type(value: Optional[str]) -> Optional[str]:
     value = _normalize_str(value)
     if not value:
         return None
-    if value in {"member", "m"}:
+    # Canonical values in the DB (FeeCategory.audience) are currently:
+    # - "member" (club member)
+    # - "visitor" (affiliated visitor)
+    # - "non_affiliated" (non-affiliated visitor)
+    # Keep these stable, and accept broader UI-friendly aliases.
+    if value in {"member", "m", "club_member", "club member", "home_member", "home member", "umhlali_member", "umhlali member"}:
         return "member"
-    if value in {"visitor", "v", "guest"}:
+    if value in {"visitor", "v", "guest", "affiliated", "affiliated_visitor", "affiliated visitor"}:
         return "visitor"
     if value in {"non_affiliated", "non-affiliated", "non affiliated", "nonaffiliated"}:
+        return "non_affiliated"
+    if value in {"non_affiliated_visitor", "non-affiliated visitor", "non affiliated visitor"}:
         return "non_affiliated"
     if value in {"reciprocity"}:
         return "reciprocity"
@@ -143,14 +150,32 @@ def select_best_fee_from_list(
 
         # Heuristic: when cart fees don't have audience tags populated yet,
         # infer member vs visitor from wording.
-        if ctx.fee_type == FeeType.CART and ctx.player_type:
+        if ctx.player_type:
             desc = (fee.description or "").strip().lower()
-            has_hire = "hire" in desc
             if fee.audience is None:
-                if ctx.player_type == "visitor":
-                    score += 2 if has_hire else 0
-                elif ctx.player_type == "member":
-                    score += 2 if not has_hire else -2
+                # Golf fees: clubs often include "Member", "Affiliated", "Non-affiliated" in the description.
+                if ctx.fee_type == FeeType.GOLF:
+                    is_member = "member" in desc
+                    is_non_aff = ("non-affiliated" in desc) or ("non affiliated" in desc) or ("nonaffiliated" in desc)
+                    is_aff = ("affiliated" in desc) and not is_non_aff
+
+                    if ctx.player_type == "member":
+                        score += 6 if is_member else 0
+                        score -= 4 if (is_aff or is_non_aff) else 0
+                    elif ctx.player_type == "visitor":
+                        score += 6 if is_aff else 0
+                        score -= 4 if is_non_aff else 0
+                    elif ctx.player_type == "non_affiliated":
+                        score += 6 if is_non_aff else 0
+                        score -= 4 if is_aff else 0
+
+                # Cart fees: older tables sometimes encode member vs visitor via "hire" wording.
+                if ctx.fee_type == FeeType.CART:
+                    has_hire = "hire" in desc
+                    if ctx.player_type == "visitor":
+                        score += 2 if has_hire else 0
+                    elif ctx.player_type == "member":
+                        score += 2 if not has_hire else -2
 
         if best_score is None or score > best_score:
             best = fee

@@ -568,13 +568,13 @@
       
       <div class="player-type-selector">
         <div class="type-option selected" onclick="selectPlayerType('member')" id="type-member">
-          <div class="type-name">Member</div>
-        </div>
-        <div class="type-option" onclick="selectPlayerType('guest')" id="type-guest">
-          <div class="type-name">Guest</div>
+          <div class="type-name">Umhlali Member</div>
         </div>
         <div class="type-option" onclick="selectPlayerType('visitor')" id="type-visitor">
-          <div class="type-name">Visitor</div>
+          <div class="type-name">Affiliated Visitor</div>
+        </div>
+        <div class="type-option" onclick="selectPlayerType('non_affiliated')" id="type-non_affiliated">
+          <div class="type-name">Visitor (No HNA)</div>
         </div>
       </div>
       
@@ -646,12 +646,13 @@ const urlParams = new URLSearchParams(window.location.search);
 const teeTimeId = urlParams.get('tee_time_id');
 const teeTimeStr = urlParams.get('tee_time');
 
-let players = [];
-let golfFees = [];
-let selectedPlayerType = 'member';
-let existingBookings = [];
-let modalPricingSeq = 0;
-let bookingSubmitting = false;
+	let players = [];
+	let golfFees = [];
+	let defaultPlayerType = 'visitor';
+	let selectedPlayerType = 'member';
+	let existingBookings = [];
+	let modalPricingSeq = 0;
+	let bookingSubmitting = false;
 
 // Initialize
 async function init() {
@@ -671,9 +672,34 @@ async function init() {
     document.getElementById('holes-info').textContent = '18 Holes';
   }
   
-  await loadFees();
-  await loadExistingBookings();
-  renderPlayers();
+	  await loadMyProfile();
+	  await loadFees();
+	  await loadExistingBookings();
+	  renderPlayers();
+}
+
+async function loadMyProfile() {
+  try {
+    const res = await fetch('/profile/me', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (!res.ok) return;
+    const profile = await res.json();
+
+    const at = String(profile.account_type || '').trim().toLowerCase();
+    if (at === 'member' || at === 'visitor' || at === 'non_affiliated') {
+      defaultPlayerType = at;
+    } else {
+      const home = String(profile.home_course || '').trim().toLowerCase();
+      const hasHna = Boolean(String(profile.handicap_sa_id || '').trim());
+      if (home.includes('umhlali')) defaultPlayerType = 'member';
+      else if (hasHna || home) defaultPlayerType = 'visitor';
+      else defaultPlayerType = 'non_affiliated';
+    }
+
+    selectedPlayerType = defaultPlayerType;
+    updateTypeSelection();
+  } catch (e) {
+    // Non-blocking
+  }
 }
 
 function formatDate(date) {
@@ -859,7 +885,7 @@ function openAddPlayerModal() {
   document.getElementById('player_caddy').checked = false;
   document.getElementById('player_cart_label').textContent = 'No cart';
   document.getElementById('modal_price').textContent = 'Select a fee type';
-  selectedPlayerType = 'member';
+  selectedPlayerType = defaultPlayerType || 'visitor';
   updateTypeSelection();
   updateModalPrice();
   openModal('addPlayerModal');
@@ -872,8 +898,11 @@ function selectPlayerType(type) {
 }
 
 function updateTypeSelection() {
-  document.querySelectorAll('.type-option').forEach(el => el.classList.remove('selected'));
-  document.getElementById('type-' + selectedPlayerType).classList.add('selected');
+  const scope = document.querySelector('#addPlayerModal .player-type-selector');
+  const options = scope ? scope.querySelectorAll('.type-option') : document.querySelectorAll('#addPlayerModal .type-option');
+  options.forEach(el => el.classList.remove('selected'));
+  const active = document.getElementById('type-' + selectedPlayerType);
+  if (active) active.classList.add('selected');
 }
 
 async function suggestGolfFee(playerType) {
@@ -1003,7 +1032,7 @@ async function addPlayer() {
     cartFee = suggestedCart.description || 'Cart';
   }
 
-  const typeMap = { member: 'Member', guest: 'Guest', visitor: 'Visitor' };
+  const typeMap = { member: 'Umhlali Member', visitor: 'Affiliated Visitor', non_affiliated: 'Visitor (No HNA)' };
   const basePrice = parseFloat(resolvedPrice) || 0;
   const totalPrice = basePrice + (wantsCart ? cartPrice : 0);
   
@@ -1034,20 +1063,20 @@ function editPlayer(index) {
   const cartSplitMap = computeCartSplits(players);
   const displayPrice = getDisplayPrice(player, index, cartSplitMap);
   
-  const typeMap = { 'Member': 'member', 'Guest': 'guest', 'Visitor': 'visitor' };
+	  const typeMap = { 'Umhlali Member': 'member', 'Affiliated Visitor': 'visitor', 'Visitor (No HNA)': 'non_affiliated' };
   
   document.getElementById('editPlayerBody').innerHTML = `
-    <div class="player-type-selector">
-      <div class="type-option ${player.type === 'Member' ? 'selected' : ''}" onclick="updateEditType('member', ${index})">
-        <div class="type-name">Member</div>
-      </div>
-      <div class="type-option ${player.type === 'Guest' ? 'selected' : ''}" onclick="updateEditType('guest', ${index})">
-        <div class="type-name">Guest</div>
-      </div>
-      <div class="type-option ${player.type === 'Visitor' ? 'selected' : ''}" onclick="updateEditType('visitor', ${index})">
-        <div class="type-name">Visitor</div>
-      </div>
-    </div>
+	    <div class="player-type-selector">
+	      <div class="type-option ${player.type === 'Umhlali Member' ? 'selected' : ''}" onclick="updateEditType('member', ${index})">
+	        <div class="type-name">Umhlali Member</div>
+	      </div>
+	      <div class="type-option ${player.type === 'Affiliated Visitor' ? 'selected' : ''}" onclick="updateEditType('visitor', ${index})">
+	        <div class="type-name">Affiliated Visitor</div>
+	      </div>
+	      <div class="type-option ${player.type === 'Visitor (No HNA)' ? 'selected' : ''}" onclick="updateEditType('non_affiliated', ${index})">
+	        <div class="type-name">Visitor (No HNA)</div>
+	      </div>
+	    </div>
     
     <div class="form-group">
       <label>Player Name</label>
@@ -1096,12 +1125,12 @@ function editPlayer(index) {
 }
 
 async function updateEditType(type, index) {
-  const typeMap = { member: 'Member', guest: 'Guest', visitor: 'Visitor' };
-  const player = players[index];
-  player.type = typeMap[type];
-  player.playerType = type;
-  await repricePlayer(index);
-  editPlayer(index);
+	  const typeMap = { member: 'Umhlali Member', visitor: 'Affiliated Visitor', non_affiliated: 'Visitor (No HNA)' };
+	  const player = players[index];
+	  player.type = typeMap[type];
+	  player.playerType = type;
+	  await repricePlayer(index);
+	  editPlayer(index);
 }
 
 function savePlayer(index) {
