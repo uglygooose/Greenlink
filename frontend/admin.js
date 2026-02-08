@@ -1393,7 +1393,6 @@ function scrollTeeSheetToNow(dateStr) {
 
 function setupTeeSheetFilters() {
     const dateInput = document.getElementById("tee-sheet-date");
-    const teeButtons = document.querySelectorAll("#tee-times .tee-btn[data-tee]");
     const holesButtons = document.querySelectorAll("#tee-times .holes-btn");
     const searchInput = document.getElementById("tee-sheet-search");
     if (!dateInput) return;
@@ -1405,15 +1404,6 @@ function setupTeeSheetFilters() {
 
     dateInput.addEventListener("change", () => {
         loadTeeTimes();
-    });
-
-    teeButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
-            teeButtons.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            selectedTee = btn.dataset.tee || "all";
-            loadTeeTimes();
-        });
     });
 
     holesButtons.forEach(btn => {

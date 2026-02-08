@@ -978,7 +978,9 @@ canvas {
 
 .tee-sheet-table {
     width: 100%;
-    border-collapse: collapse;
+    /* Sticky headers are unreliable with border-collapse: collapse in some browsers. */
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 14px;
 }
 
@@ -993,7 +995,7 @@ canvas {
     border-bottom: 1px solid #e0e6ed;
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: 10;
 }
 
 .tee-sheet-table td {
@@ -1034,7 +1036,7 @@ canvas {
 
 .tee-sheet-table th.time-col,
 .tee-sheet-table th.tee-col {
-    z-index: 5;
+    z-index: 12;
 }
 
 .tee-sheet-table td.time-col,
