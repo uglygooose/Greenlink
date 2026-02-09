@@ -24,7 +24,8 @@ exit;
 cd /Users/mulweliramufhuhfhi/fastapi_mysql_app
 
 # Start FastAPI server
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+# (Windows tip: prefer `python -m uvicorn ...` so you use the same Python env that has your packages installed.)
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 You should see:
@@ -106,7 +107,7 @@ lsof -i :8000
 kill -9 <PID>
 
 # Try again
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ### Database connection error?
@@ -134,7 +135,7 @@ pip3 install -r requirements.txt
 mysql -u root -p greenlink < migrate_db.sql
 
 # 2. Start server
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 
 # 3. Open browser
 # http://127.0.0.1:8000/frontend/index.html

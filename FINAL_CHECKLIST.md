@@ -83,7 +83,7 @@ Get credentials from: https://accounting.sageone.co.za → Settings → API Keys
 ### 5. Start Server ✅
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 **Expected Output:**
@@ -363,7 +363,7 @@ mysql -u root -p greenlink
 4. [ ] Train staff on system
 
 ### Launch Day
-1. [ ] Start server: `uvicorn app.main:app --reload`
+1. [ ] Start server: `python -m uvicorn app.main:app --reload`
 2. [ ] Monitor server logs
 3. [ ] Test first real booking
 4. [ ] Verify Sage One invoice created

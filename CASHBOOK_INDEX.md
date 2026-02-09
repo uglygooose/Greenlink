@@ -217,7 +217,7 @@ curl -X POST "http://localhost:8000/cashbook/finalize-day"
 pip install -r requirements.txt
 
 # 2. Start the server
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 
 # 3. Test the system
 python test_cashbook.py
@@ -288,7 +288,7 @@ A: See INSTALLATION_SUMMARY.md
 - [ ] Read SYSTEM_READY.txt (1 min)
 - [ ] Read PAYMENT_EXPORT_README.md (5 min)
 - [ ] Run: `pip install -r requirements.txt`
-- [ ] Run: `uvicorn app.main:app --reload`
+- [ ] Run: `python -m uvicorn app.main:app --reload`
 - [ ] Run: `python test_cashbook.py`
 - [ ] Visit: `http://localhost:8000/docs`
 - [ ] Download: `http://localhost:8000/cashbook/export-excel`

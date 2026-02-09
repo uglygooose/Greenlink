@@ -58,7 +58,7 @@ Expected columns:
 - [ ] No database connection errors
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 # Should start without errors on port 8000
 ```
 

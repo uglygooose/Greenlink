@@ -59,7 +59,7 @@ pip3 install requests
 ### Step 5: Start Server
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 Expected output:
@@ -260,7 +260,7 @@ Status: Unpaid
 ls app/fee_models.py
 
 # Restart server
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 ### "No fees in dropdown"

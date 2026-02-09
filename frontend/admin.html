@@ -414,53 +414,115 @@
                     </div>
 
 	                    <div class="dashboard-card accounting-card">
-	                        <h3>Accounting Settings (Demo)</h3>
-	                        <div class="accounting-grid">
-	                            <label for="acct-green-fees">Green Fees GL Account</label>
-	                            <input type="text" id="acct-green-fees" placeholder="e.g. 1000-000" />
+	                        <div class="acct-header">
+	                            <div>
+	                                <h3 class="acct-title">Accounting Setup</h3>
+	                                <div class="acct-subtitle">Per club: upload a Pastel journal export so GreenLink can generate the exact import layout.</div>
+	                            </div>
+	                            <button type="button" class="btn-secondary" id="accounting-settings-toggle" onclick="toggleAccountingSettings()" aria-expanded="true">Hide Settings</button>
+	                        </div>
 
-                            <label for="acct-contra-gl">Cashbook Contra Account</label>
-                            <input type="text" id="acct-contra-gl" placeholder="e.g. 8400/000" />
+	                        <div id="accounting-settings-body">
+	                            <div class="acct-status-row" aria-label="Accounting setup status">
+	                                <span class="acct-pill" id="acct-pill-layout">Layout: missing</span>
+	                                <span class="acct-pill" id="acct-pill-mappings">Mappings: incomplete</span>
+	                                <span class="acct-pill" id="acct-pill-ready">Export: not ready</span>
+	                            </div>
 
-                            <label for="acct-vat-rate">VAT Rate (%)</label>
-                            <input type="number" id="acct-vat-rate" step="0.01" min="0" max="100" />
+	                            <div class="acct-section">
+	                                <div class="acct-section-head">
+	                                    <h4>1) Upload Pastel journal layout</h4>
+	                                    <button class="btn-secondary" type="button" onclick="uploadPastelLayout()">Upload Layout</button>
+	                                </div>
+	                                <div class="acct-section-body">
+	                                    <div class="acct-file-row">
+	                                        <input type="file" id="pastel-layout-file" />
+	                                        <div class="acct-hint">From Pastel: Process → Journals → select journal → Batch → Export. Use the exported CSV as the template for this client.</div>
+	                                        <div class="accounting-note" id="pastel-layout-status"></div>
+	                                    </div>
+	                                    <div id="pastel-layout-details" class="acct-layout-details" aria-live="polite"></div>
+	                                </div>
+	                            </div>
 
-                            <label for="acct-tax-type">Tax Type</label>
-                            <input type="number" id="acct-tax-type" min="0" step="1" placeholder="e.g. 15" />
+	                            <div class="acct-section">
+	                                <div class="acct-section-head">
+	                                    <h4>2) GreenLink settings</h4>
+	                                </div>
+	                                <div class="acct-section-body">
+	                                    <div class="acct-form-grid">
+	                                        <div class="acct-field">
+	                                            <label for="acct-cashbook">Cashbook name</label>
+	                                            <input type="text" id="acct-cashbook" placeholder="e.g. Main Bank" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-vat-rate">VAT rate (%)</label>
+	                                            <input type="number" id="acct-vat-rate" step="0.01" min="0" max="100" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-green-fees">Green fees revenue GL</label>
+	                                            <input type="text" id="acct-green-fees" placeholder="e.g. 1000/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-contra-gl">Cashbook contra GL</label>
+	                                            <input type="text" id="acct-contra-gl" placeholder="e.g. 8400/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-tax-type">Tax type (internal)</label>
+	                                            <input type="number" id="acct-tax-type" min="0" step="1" placeholder="e.g. 15" />
+	                                        </div>
+	                                    </div>
+	                                </div>
+	                            </div>
 
-	                            <label for="acct-cashbook">Cashbook Name</label>
-	                            <input type="text" id="acct-cashbook" placeholder="e.g. Main Bank" />
+	                            <div class="acct-section">
+	                                <div class="acct-section-head">
+	                                    <h4>3) Pastel mappings</h4>
+	                                </div>
+	                                <div class="acct-section-body">
+	                                    <div class="acct-form-grid">
+	                                        <div class="acct-field">
+	                                            <label for="acct-vat-output-gl">Output VAT GL account</label>
+	                                            <input type="text" id="acct-vat-output-gl" placeholder="e.g. 9500/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-pastel-tax-type">Pastel tax type for sales (optional)</label>
+	                                            <input type="text" id="acct-pastel-tax-type" placeholder="e.g. 01" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-debit-card-gl">Debit GL (CARD)</label>
+	                                            <input type="text" id="acct-debit-card-gl" placeholder="e.g. 9450/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-debit-cash-gl">Debit GL (CASH)</label>
+	                                            <input type="text" id="acct-debit-cash-gl" placeholder="e.g. 8100/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-debit-eft-gl">Debit GL (EFT)</label>
+	                                            <input type="text" id="acct-debit-eft-gl" placeholder="e.g. 8400/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-debit-online-gl">Debit GL (ONLINE)</label>
+	                                            <input type="text" id="acct-debit-online-gl" placeholder="e.g. 8410/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-pastel-amount-sign">Pastel amount sign (optional)</label>
+	                                            <select id="acct-pastel-amount-sign">
+	                                                <option value="">Auto / default</option>
+	                                                <option value="debit_positive">Debit is + (recommended)</option>
+	                                                <option value="debit_negative">Debit is -</option>
+	                                            </select>
+	                                        </div>
+	                                    </div>
+	                                    <div class="accounting-note" id="pastel-mappings-status"></div>
+	                                </div>
+	                            </div>
 
-		                            <label for="pastel-layout-file">Pastel Journal Layout CSV</label>
-		                            <input type="file" id="pastel-layout-file" accept=".csv" />
-
-		                            <label for="acct-vat-output-gl">Output VAT GL Account</label>
-		                            <input type="text" id="acct-vat-output-gl" placeholder="e.g. 9500/000" />
-
-		                            <label for="acct-debit-card-gl">Debit GL (CARD)</label>
-		                            <input type="text" id="acct-debit-card-gl" placeholder="e.g. 8400/000" />
-
-		                            <label for="acct-debit-cash-gl">Debit GL (CASH)</label>
-		                            <input type="text" id="acct-debit-cash-gl" placeholder="e.g. 8100/000" />
-
-		                            <label for="acct-debit-eft-gl">Debit GL (EFT)</label>
-		                            <input type="text" id="acct-debit-eft-gl" placeholder="e.g. 8410/000" />
-
-		                            <label for="acct-debit-online-gl">Debit GL (ONLINE)</label>
-		                            <input type="text" id="acct-debit-online-gl" placeholder="e.g. 9450/000" />
-
-		                            <label for="acct-pastel-tax-type">Pastel Tax Type (Optional)</label>
-		                            <input type="text" id="acct-pastel-tax-type" placeholder="e.g. 01" />
-		                        </div>
-		                        <div class="accounting-actions">
-		                            <button class="btn-primary" onclick="saveAccountingSettings()">Save Settings</button>
-		                            <span class="accounting-note" id="acct-save-status"></span>
-		                            <button class="btn-secondary" onclick="uploadPastelLayout()">Upload Pastel Layout</button>
-		                            <span class="accounting-note" id="pastel-layout-status"></span>
-		                            <button class="btn-secondary" onclick="savePastelMappings()">Save Pastel Mappings</button>
-		                            <span class="accounting-note" id="pastel-mappings-status"></span>
-		                        </div>
-		                    </div>
+	                            <div class="acct-footer">
+	                                <button class="btn-primary" type="button" onclick="saveCashbookAccountingSetup()">Save Settings</button>
+	                                <span class="accounting-note" id="acct-save-status"></span>
+	                            </div>
+	                        </div>
+	                    </div>
 
                     <div class="dashboard-card">
                         <h3>Daily Summary</h3>

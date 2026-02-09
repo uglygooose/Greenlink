@@ -13,6 +13,9 @@ let revenuePeriod = "day"; // day | wtd | mtd | ytd
 let golfFeesCache = [];
 let cashbookHasRecords = false;
 let currentBookingDetail = null;
+let cachedPastelLayout = null;
+let cachedPastelMappings = null;
+let accountingSetupListenersInitialized = false;
 let teeBookingState = {
     teeTimeId: null,
     teeTimeIso: null,
@@ -2998,6 +3001,29 @@ document.addEventListener("change", (e) => {
 // Cashbook Functions
 // ========================
 
+function setAccountingSettingsCollapsed(collapsed) {
+    const body = document.getElementById("accounting-settings-body");
+    const btn = document.getElementById("accounting-settings-toggle");
+    if (!body || !btn) return;
+
+    body.style.display = collapsed ? "none" : "";
+    btn.textContent = collapsed ? "Edit Settings" : "Hide Settings";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    localStorage.setItem("accounting_settings_collapsed", collapsed ? "1" : "0");
+}
+
+function toggleAccountingSettings() {
+    const body = document.getElementById("accounting-settings-body");
+    if (!body) return;
+    const isCollapsed = body.style.display === "none";
+    setAccountingSettingsCollapsed(!isCollapsed);
+}
+
+function initAccountingSettingsCollapse() {
+    const stored = localStorage.getItem("accounting_settings_collapsed");
+    if (stored === "1") setAccountingSettingsCollapsed(true);
+}
+
 function initCashbook() {
     // Set today's date as default
     const today = new Date().toISOString().split('T')[0];
@@ -3005,7 +3031,152 @@ function initCashbook() {
     loadCashbookSummary();
     loadCloseStatus();
     loadAccountingSettings();
+    loadPastelLayoutDetails();
     loadPastelMappings();
+    initAccountingSetupListeners();
+    initAccountingSettingsCollapse();
+}
+
+function initAccountingSetupListeners() {
+    if (accountingSetupListenersInitialized) return;
+    accountingSetupListenersInitialized = true;
+
+    const ids = new Set([
+        "acct-vat-output-gl",
+        "acct-debit-card-gl",
+        "acct-debit-cash-gl",
+        "acct-debit-eft-gl",
+        "acct-debit-online-gl",
+        "acct-pastel-tax-type",
+        "acct-pastel-amount-sign"
+    ]);
+
+    document.addEventListener("input", (e) => {
+        const id = e?.target?.id;
+        if (!id || !ids.has(id)) return;
+        updateAccountingSetupStatus();
+    });
+
+    document.addEventListener("change", (e) => {
+        const id = e?.target?.id;
+        if (!id || !ids.has(id)) return;
+        updateAccountingSetupStatus();
+    });
+}
+
+function updateAccountingSetupStatus() {
+    const pillLayout = document.getElementById("acct-pill-layout");
+    const pillMappings = document.getElementById("acct-pill-mappings");
+    const pillReady = document.getElementById("acct-pill-ready");
+
+    const layoutOk = !!(cachedPastelLayout && cachedPastelLayout.configured && cachedPastelLayout.layout);
+    const vatOutput = (document.getElementById("acct-vat-output-gl")?.value || "").trim();
+    const debitAny = ["acct-debit-card-gl", "acct-debit-cash-gl", "acct-debit-eft-gl", "acct-debit-online-gl"]
+        .some((id) => (document.getElementById(id)?.value || "").trim());
+    const mappingsOk = !!vatOutput && debitAny;
+    const readyOk = layoutOk && !!vatOutput;
+
+    if (pillLayout) {
+        pillLayout.textContent = layoutOk ? "Layout: uploaded" : "Layout: missing";
+        pillLayout.className = `acct-pill ${layoutOk ? "good" : "bad"}`;
+    }
+    if (pillMappings) {
+        pillMappings.textContent = mappingsOk ? "Mappings: saved" : "Mappings: incomplete";
+        pillMappings.className = `acct-pill ${mappingsOk ? "good" : "warn"}`;
+    }
+    if (pillReady) {
+        pillReady.textContent = readyOk ? "Export: ready" : "Export: not ready";
+        pillReady.className = `acct-pill ${readyOk ? "good" : "warn"}`;
+    }
+}
+
+function renderPastelLayoutDetails(layout) {
+    const el = document.getElementById("pastel-layout-details");
+    if (!el) return;
+
+    if (!layout) {
+        el.textContent = "No layout uploaded yet.";
+        return;
+    }
+
+    const inferred = layout.inferred || {};
+    const uploadedAt = layout.uploaded_at ? new Date(layout.uploaded_at).toLocaleString() : "—";
+    const fileName = layout.filename || "—";
+    const columns = Array.isArray(layout.columns) ? layout.columns : [];
+    const columnMap = layout.column_map || {};
+
+    const mapRows = Object.entries(columnMap)
+        .filter(([, v]) => !!v)
+        .map(([k, v]) => `<div><strong>${escapeHtml(k)}</strong>: <code>${escapeHtml(String(v))}</code></div>`)
+        .join("");
+
+    const mirrors = Array.isArray(inferred.amount_mirrors) ? inferred.amount_mirrors : [];
+    const mirrorText = mirrors.length ? mirrors.map((m) => `<code>${escapeHtml(String(m))}</code>`).join(" ") : "—";
+
+    const observedTax = Array.isArray(inferred.observed_tax_types) ? inferred.observed_tax_types : [];
+    const observedTaxText = observedTax.length ? observedTax.map((t) => `<code>${escapeHtml(String(t))}</code>`).join(" ") : "—";
+
+    const accountFmt = inferred.account_digits_only ? "Digits only (e.g. 9500000)" : "As entered (e.g. 9500/000)";
+    const signHint = inferred.inferred_amount_sign
+        ? (inferred.inferred_amount_sign === "debit_positive" ? "Debit is +" : "Debit is -")
+        : "—";
+
+    el.innerHTML = `
+        <div><strong>Template:</strong> ${escapeHtml(fileName)} • <strong>Uploaded:</strong> ${escapeHtml(uploadedAt)}</div>
+        <div><strong>Delimiter:</strong> <code>${escapeHtml(String(layout.delimiter || ","))}</code> • <strong>Header row:</strong> ${layout.has_header ? "Yes" : "No"} • <strong>Date format:</strong> <code>${escapeHtml(String(layout.date_format || "auto"))}</code></div>
+        <div><strong>Columns:</strong> ${columns.length} • <strong>Account format:</strong> ${escapeHtml(accountFmt)}</div>
+        <div style="margin-top:8px;"><strong>Detected mapping</strong></div>
+        <div>${mapRows || "<div>—</div>"}</div>
+        <div style="margin-top:8px;"><strong>Tax fields:</strong> flag=${inferred.has_tax_flag ? "yes" : "no"}, amount=${inferred.has_tax_amount ? "yes" : "no"} • <strong>Observed tax types:</strong> ${observedTaxText}</div>
+        <div><strong>Amount mirror columns:</strong> ${mirrorText} • <strong>Inferred sign:</strong> ${escapeHtml(String(signHint))}</div>
+    `;
+}
+
+async function loadPastelLayoutDetails() {
+    const token = localStorage.getItem("token");
+    const detailsEl = document.getElementById("pastel-layout-details");
+
+    try {
+        const res = await fetch(`${API_BASE}/cashbook/pastel-layout`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) {
+            cachedPastelLayout = null;
+            if (detailsEl) detailsEl.textContent = "Failed to load layout.";
+            updateAccountingSetupStatus();
+            return;
+        }
+        const data = await res.json();
+        cachedPastelLayout = data || null;
+
+        if (!data || !data.configured || !data.layout) {
+            renderPastelLayoutDetails(null);
+            updateAccountingSetupStatus();
+            return;
+        }
+
+        renderPastelLayoutDetails(data.layout);
+
+        const inferred = data.layout.inferred || {};
+        const amountSignEl = document.getElementById("acct-pastel-amount-sign");
+        if (amountSignEl && !amountSignEl.value && inferred.inferred_amount_sign) {
+            amountSignEl.value = inferred.inferred_amount_sign;
+        }
+
+        const taxTypeEl = document.getElementById("acct-pastel-tax-type");
+        if (taxTypeEl && !taxTypeEl.value) {
+            const observed = Array.isArray(inferred.observed_tax_types) ? inferred.observed_tax_types : [];
+            const best = observed.find((t) => /^[0-9]{1,3}$/.test(String(t || "").trim()));
+            if (best) taxTypeEl.value = String(best).trim();
+        }
+
+        updateAccountingSetupStatus();
+    } catch (e) {
+        console.error("Failed to load Pastel layout details:", e);
+        cachedPastelLayout = null;
+        if (detailsEl) detailsEl.textContent = "Failed to load layout.";
+        updateAccountingSetupStatus();
+    }
 }
 
 async function loadCashbookSummary() {
@@ -3185,6 +3356,7 @@ async function loadAccountingSettings() {
         if (vatRate) vatRate.value = (data.vat_rate * 100).toFixed(2);
         if (taxType) taxType.value = String(data.tax_type ?? 0);
         if (cashbook) cashbook.value = data.cashbook_name || "";
+        updateAccountingSetupStatus();
     } catch (error) {
         console.error("Failed to load accounting settings:", error);
     }
@@ -3197,7 +3369,6 @@ async function saveAccountingSettings() {
     const vatRateRaw = document.getElementById("acct-vat-rate")?.value || "0";
     const taxType = parseInt(document.getElementById("acct-tax-type")?.value || "0", 10);
     const cashbook = document.getElementById("acct-cashbook")?.value || "";
-    const statusEl = document.getElementById("acct-save-status");
 
     const vatRate = Math.max(0, parseFloat(vatRateRaw) || 0) / 100;
 
@@ -3219,18 +3390,15 @@ async function saveAccountingSettings() {
 
         if (!res.ok) {
             const err = await res.json();
-            if (statusEl) statusEl.textContent = err.detail || "Save failed";
-            return;
+            return { ok: false, message: err.detail || "Save failed" };
         }
 
-        if (statusEl) {
-            statusEl.textContent = "Saved";
-            setTimeout(() => { statusEl.textContent = ""; }, 2000);
-        }
         loadCashbookSummary();
+        updateAccountingSetupStatus();
+        return { ok: true };
     } catch (error) {
         console.error("Failed to save accounting settings:", error);
-        if (statusEl) statusEl.textContent = "Save failed";
+        return { ok: false, message: "Save failed" };
     }
 }
 
@@ -3280,6 +3448,7 @@ async function uploadPastelLayout() {
             statusEl.textContent = "Layout uploaded";
             setTimeout(() => { statusEl.textContent = ""; }, 2500);
         }
+        await loadPastelLayoutDetails();
     } catch (e) {
         console.error("Pastel layout upload failed:", e);
         if (statusEl) statusEl.textContent = "Upload failed";
@@ -3294,7 +3463,11 @@ async function loadPastelMappings() {
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (!data || !data.configured || !data.mappings) return;
+        cachedPastelMappings = data || null;
+        if (!data || !data.configured || !data.mappings) {
+            updateAccountingSetupStatus();
+            return;
+        }
 
         const vatOutput = document.getElementById("acct-vat-output-gl");
         const card = document.getElementById("acct-debit-card-gl");
@@ -3302,16 +3475,19 @@ async function loadPastelMappings() {
         const eft = document.getElementById("acct-debit-eft-gl");
         const online = document.getElementById("acct-debit-online-gl");
         const taxType = document.getElementById("acct-pastel-tax-type");
+        const amountSign = document.getElementById("acct-pastel-amount-sign");
 
         const mappings = data.mappings || {};
         const debit = mappings.debit_gl || {};
 
         if (vatOutput) vatOutput.value = mappings.vat_output_gl || "";
         if (taxType) taxType.value = mappings.tax_type || "";
+        if (amountSign) amountSign.value = mappings.amount_sign || "";
         if (card) card.value = debit.CARD || "";
         if (cash) cash.value = debit.CASH || "";
         if (eft) eft.value = debit.EFT || "";
         if (online) online.value = debit.ONLINE || "";
+        updateAccountingSetupStatus();
     } catch (e) {
         console.error("Failed to load Pastel mappings:", e);
     }
@@ -3327,6 +3503,14 @@ async function savePastelMappings() {
     const eft = document.getElementById("acct-debit-eft-gl")?.value || "";
     const online = document.getElementById("acct-debit-online-gl")?.value || "";
     const taxType = document.getElementById("acct-pastel-tax-type")?.value || "";
+    const amountSign = document.getElementById("acct-pastel-amount-sign")?.value || "";
+
+    if (!vatOutput.trim()) {
+        if (statusEl) statusEl.textContent = "Enter Output VAT GL account";
+        document.getElementById("acct-vat-output-gl")?.focus();
+        updateAccountingSetupStatus();
+        return { ok: false, message: "Enter Output VAT GL account" };
+    }
 
     const debit_gl = {
         CARD: card,
@@ -3347,6 +3531,7 @@ async function savePastelMappings() {
             body: JSON.stringify({
                 vat_output_gl: vatOutput,
                 tax_type: taxType,
+                amount_sign: amountSign,
                 debit_gl
             })
         });
@@ -3362,17 +3547,51 @@ async function savePastelMappings() {
         if (!res.ok) {
             const msg = data?.detail || "Save failed";
             if (statusEl) statusEl.textContent = msg;
-            return;
+            return { ok: false, message: msg };
         }
 
         if (statusEl) {
             statusEl.textContent = "Saved";
             setTimeout(() => { statusEl.textContent = ""; }, 2500);
         }
+        await loadPastelMappings();
+        updateAccountingSetupStatus();
+        return { ok: true };
     } catch (e) {
         console.error("Failed to save Pastel mappings:", e);
         if (statusEl) statusEl.textContent = "Save failed";
+        return { ok: false, message: "Save failed" };
     }
+}
+
+async function saveCashbookAccountingSetup() {
+    const statusEl = document.getElementById("acct-save-status");
+    const mappingsStatusEl = document.getElementById("pastel-mappings-status");
+
+    if (mappingsStatusEl) mappingsStatusEl.textContent = "";
+    if (statusEl) statusEl.textContent = "Saving...";
+
+    const settingsRes = await saveAccountingSettings();
+    if (!settingsRes?.ok) {
+        if (statusEl) statusEl.textContent = settingsRes?.message || "Save failed";
+        return;
+    }
+
+    const mappingsRes = await savePastelMappings();
+    if (!mappingsRes?.ok) {
+        if (statusEl) statusEl.textContent = mappingsRes?.message || "Save failed";
+        return;
+    }
+
+    await Promise.allSettled([loadAccountingSettings(), loadPastelMappings(), loadPastelLayoutDetails()]);
+    updateAccountingSetupStatus();
+
+    if (statusEl) {
+        statusEl.textContent = "Saved";
+        setTimeout(() => { statusEl.textContent = ""; }, 2000);
+    }
+
+    setAccountingSettingsCollapsed(true);
 }
 
 async function loadBookingWindowSettings() {

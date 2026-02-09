@@ -4,7 +4,7 @@
 
 1. **Start FastAPI** (if not already running):
 ```bash
-uvicorn app.main:app --reload
+   python -m uvicorn app.main:app --reload
 ```
 
 2. **Go to Admin URL**:

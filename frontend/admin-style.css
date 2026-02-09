@@ -1440,6 +1440,146 @@ canvas {
     padding: 18px 20px;
 }
 
+.acct-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.acct-title {
+    margin: 0;
+}
+
+.acct-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #7f8c8d;
+    max-width: 720px;
+    line-height: 1.35;
+}
+
+.acct-status-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 0 6px;
+}
+
+.acct-pill {
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #dfe4ea;
+    background: #f8fafb;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.acct-pill.good {
+    border-color: #b8e6c8;
+    background: #ecfbf2;
+    color: #064f32;
+}
+
+.acct-pill.warn {
+    border-color: #f1d3a6;
+    background: #fff7e8;
+    color: #7a4b00;
+}
+
+.acct-pill.bad {
+    border-color: #f0b4b4;
+    background: #fff0f0;
+    color: #8b1f1f;
+}
+
+.acct-section {
+    border: 1px solid #e6ebf0;
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 12px;
+    background: #fff;
+}
+
+.acct-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.acct-section-head h4 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.acct-section-body {
+    margin-top: 12px;
+}
+
+.acct-file-row input[type="file"] {
+    width: 100%;
+}
+
+.acct-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #7f8c8d;
+    line-height: 1.35;
+}
+
+.acct-layout-details {
+    margin-top: 10px;
+    font-size: 12px;
+    background: #f6f8fb;
+    border: 1px dashed #d7dee8;
+    border-radius: 8px;
+    padding: 10px;
+    line-height: 1.45;
+}
+
+.acct-layout-details code {
+    background: rgba(6, 79, 50, 0.08);
+    color: #064f32;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+}
+
+.acct-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px 18px;
+}
+
+.acct-field label {
+    display: block;
+    font-size: 12px;
+    color: #7f8c8d;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.acct-field input,
+.acct-field select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #dfe4ea;
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+}
+
+.acct-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
 .accounting-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

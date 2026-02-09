@@ -141,9 +141,124 @@ def _build_layout_column_map(headers: List[str]) -> dict:
         "account": _best_header_match(headers, "account") or _best_header_match(headers, "gl"),
         "debit": _best_header_match(headers, "debit"),
         "credit": _best_header_match(headers, "credit"),
+        "amount": _best_header_match(headers, "amount") or _best_header_match(headers, "value"),
+        "tax_flag": _best_header_match(headers, "tax", "flag") or _best_header_match(headers, "vat", "flag"),
         "tax_type": _best_header_match(headers, "taxtype") or _best_header_match(headers, "tax", "type"),
         "tax_amount": _best_header_match(headers, "taxamount") or _best_header_match(headers, "tax", "amount"),
     }
+
+
+_DATE_RE = re.compile(r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$")
+_ACCOUNT_RE = re.compile(r"^\d{5,10}$")
+
+
+def _is_date_cell(value: str) -> bool:
+    return bool(_DATE_RE.match(str(value or "").strip()))
+
+
+def _is_account_cell(value: str) -> bool:
+    return bool(_ACCOUNT_RE.match(str(value or "").strip()))
+
+
+def _is_amount_cell(value: str) -> bool:
+    s = str(value or "").strip()
+    if not s:
+        return False
+    # Pastel exports often use dot decimals; require a dot or minus sign to avoid
+    # accidentally treating batch numbers (e.g. "13") as an amount column.
+    if "." not in s and "-" not in s:
+        return False
+    try:
+        Decimal(s)
+        return True
+    except Exception:
+        return False
+
+
+def _guess_headerless_layout_map(headers: List[str], sample_row: List[str]) -> dict:
+    """
+    Best-effort mapping for Pastel Batch->Export files that don't include headers.
+    Uses the first row as a template and maps common fields by position/pattern.
+    """
+    n = len(sample_row)
+    if n != len(headers):
+        headers = [f"COL_{i+1}" for i in range(n)]
+
+    idx_date = next((i for i, v in enumerate(sample_row) if _is_date_cell(v)), None)
+    idx_account = next((i for i, v in enumerate(sample_row) if _is_account_cell(v)), None)
+    idx_amount = next((i for i, v in enumerate(sample_row) if _is_amount_cell(v)), None)
+    idx_tax_flag = None
+    idx_tax_amount = None
+    if idx_amount is not None and (idx_amount + 1) < n:
+        nxt = str(sample_row[idx_amount + 1] or "").strip()
+        if nxt in {"0", "1"}:
+            idx_tax_flag = idx_amount + 1
+            if (idx_amount + 2) < n and _is_amount_cell(sample_row[idx_amount + 2]):
+                idx_tax_amount = idx_amount + 2
+
+    # Description/reference are typically free-text; pick the first meaningful text after account.
+    idx_desc = None
+    idx_ref = None
+    if idx_account is not None:
+        for i in range(idx_account + 1, n):
+            v = str(sample_row[i] or "").strip()
+            if not v:
+                continue
+            if idx_desc is None and any(c.isalpha() for c in v):
+                idx_desc = i
+                continue
+            if idx_desc is not None and idx_ref is None and any(c.isalpha() for c in v):
+                idx_ref = i
+                break
+
+    # Fallbacks for the common Pastel export shape shown by clubs (18 columns):
+    # 1=batch, 2=date, 3=journal, 4=account, 5=desc, 6=ref/type, 7=amount
+    if n >= 7:
+        idx_date = idx_date if idx_date is not None else 1
+        idx_account = idx_account if idx_account is not None else 3
+        idx_desc = idx_desc if idx_desc is not None else 4
+        idx_ref = idx_ref if idx_ref is not None else 5
+        idx_amount = idx_amount if idx_amount is not None else 6
+        if idx_tax_flag is None and n >= 9:
+            idx_tax_flag = 7
+        if idx_tax_amount is None and n >= 9:
+            idx_tax_amount = 8
+
+    # Tax type is often a short code like GOV01; it tends to appear later.
+    idx_tax_type = None
+    for i in range(n - 1, -1, -1):
+        v = str(sample_row[i] or "").strip()
+        if len(v) in {4, 5, 6, 7} and any(c.isalpha() for c in v) and any(c.isdigit() for c in v):
+            idx_tax_type = i
+            break
+
+    def _h(i: int | None) -> str | None:
+        if i is None:
+            return None
+        if 0 <= i < len(headers):
+            return headers[i]
+        return None
+
+    # Pastel commonly displays "Reference" before "Description". In many exports, the first
+    # text column after account is the on-screen Reference, and the next is Description.
+    return {
+        "date": _h(idx_date),
+        "account": _h(idx_account),
+        "reference": _h(idx_desc),
+        "description": _h(idx_ref),
+        "amount": _h(idx_amount),
+        "tax_flag": _h(idx_tax_flag),
+        "tax_type": _h(idx_tax_type),
+        "debit": None,
+        "credit": None,
+        "tax_amount": _h(idx_tax_amount),
+    }
+
+
+def _looks_like_header_row(row: List[str]) -> bool:
+    tokens = ("date", "ref", "reference", "desc", "description", "account", "debit", "credit", "amount", "tax")
+    normalized = ["".join(ch.lower() for ch in str(c or "") if ch.isalnum()) for c in row]
+    return any(any(t in cell for t in tokens) for cell in normalized)
 
 
 @router.get("/pastel-layout")
@@ -180,35 +295,127 @@ async def upload_pastel_layout(
             dialect = sniffer.sniff(sample, delimiters=[",", ";", "|", "\t"])
         except Exception:
             dialect = csv.excel
+        try:
+            has_header = bool(sniffer.has_header(sample))
+        except Exception:
+            has_header = True
 
         reader = csv.reader(StringIO(text), dialect)
         rows: list[list[str]] = []
         for row in reader:
             if row and any(str(cell or "").strip() for cell in row):
                 rows.append([str(cell or "").strip() for cell in row])
-            if len(rows) >= 3:
+            if len(rows) >= 25:
                 break
 
         if not rows:
             raise HTTPException(status_code=400, detail="Empty CSV file")
 
-        headers = rows[0]
-        first_data = rows[1] if len(rows) > 1 else None
+        # csv.Sniffer.has_header is often wrong for Pastel exports. Override if the
+        # "header" row contains obvious data patterns (date/account/amount) and no
+        # header-like tokens.
+        if has_header:
+            first_row = rows[0]
+            if not _looks_like_header_row(first_row) and any(_is_date_cell(v) for v in first_row):
+                has_header = False
+
+        sample_rows: list[list[str]] = []
+        if has_header:
+            headers = rows[0]
+            sample_rows = rows[1:11] if len(rows) > 1 else []
+            first_data = sample_rows[0] if sample_rows else None
+            column_map = _build_layout_column_map(headers)
+        else:
+            # Headerless Pastel exports: treat the first row as a template and build a positional map.
+            first_data = rows[0]
+            headers = [f"COL_{i+1}" for i in range(len(first_data))]
+            column_map = _guess_headerless_layout_map(headers, first_data)
+            sample_rows = rows[:10]
 
         date_col = _best_header_match(headers, "date")
         date_format = None
-        if first_data and date_col and date_col in headers:
-            idx = headers.index(date_col)
+        if first_data and column_map.get("date") and column_map.get("date") in headers:
+            idx = headers.index(column_map.get("date"))
             if idx < len(first_data):
                 date_format = _infer_date_format(first_data[idx])
 
+        # Extra inference to help per-client setups.
+        inferred = {}
+        try:
+            amount_hdr = column_map.get("amount")
+            account_hdr = column_map.get("account")
+            tax_type_hdr = column_map.get("tax_type")
+            tax_flag_hdr = column_map.get("tax_flag")
+            tax_amount_hdr = column_map.get("tax_amount")
+
+            amount_mirrors: list[str] = []
+            account_digits_only = False
+            observed_tax_types: list[str] = []
+            inferred_amount_sign: str | None = None
+
+            if first_data and account_hdr and account_hdr in headers:
+                aidx = headers.index(account_hdr)
+                if aidx < len(first_data):
+                    account_digits_only = _is_account_cell(first_data[aidx])
+
+            if first_data and amount_hdr and amount_hdr in headers:
+                midx = headers.index(amount_hdr)
+                if midx < len(first_data):
+                    amount_val = str(first_data[midx] or "").strip()
+                    for i, v in enumerate(first_data):
+                        if i == midx:
+                            continue
+                        if str(v or "").strip() == amount_val and _is_amount_cell(v) and _is_amount_cell(amount_val):
+                            amount_mirrors.append(headers[i])
+
+            if tax_type_hdr and tax_type_hdr in headers and sample_rows:
+                tidx = headers.index(tax_type_hdr)
+                seen = set()
+                for r in sample_rows:
+                    if tidx >= len(r):
+                        continue
+                    v = str(r[tidx] or "").strip()
+                    if not v:
+                        continue
+                    if v not in seen:
+                        seen.add(v)
+                        observed_tax_types.append(v)
+
+            if amount_hdr and tax_flag_hdr and amount_hdr in headers and tax_flag_hdr in headers and sample_rows:
+                midx = headers.index(amount_hdr)
+                fidx = headers.index(tax_flag_hdr)
+                for r in sample_rows:
+                    if midx >= len(r) or fidx >= len(r):
+                        continue
+                    if str(r[fidx] or "").strip() != "1":
+                        continue
+                    try:
+                        amt = Decimal(str(r[midx]).strip())
+                    except Exception:
+                        continue
+                    inferred_amount_sign = "debit_positive" if amt < 0 else "debit_negative"
+                    break
+
+            inferred = {
+                "amount_mirrors": amount_mirrors,
+                "account_digits_only": account_digits_only,
+                "observed_tax_types": observed_tax_types,
+                "inferred_amount_sign": inferred_amount_sign,
+                "has_tax_flag": bool(tax_flag_hdr and tax_flag_hdr in headers),
+                "has_tax_amount": bool(tax_amount_hdr and tax_amount_hdr in headers),
+            }
+        except Exception:
+            inferred = {}
+
         layout = {
             "delimiter": getattr(dialect, "delimiter", ","),
-            "has_header": True,
+            "has_header": has_header,
             "columns": headers,
             "date_format": date_format,
-            "column_map": _build_layout_column_map(headers),
+            "column_map": column_map,
             "template_row": first_data,
+            "sample_rows": sample_rows,
+            "inferred": inferred,
             "uploaded_at": datetime.utcnow().isoformat(),
             "filename": file.filename or None,
         }
@@ -228,6 +435,7 @@ class PastelJournalMappingsPayload(BaseModel):
     vat_output_gl: Optional[str] = None
     debit_gl: Optional[dict] = None  # e.g. {"CARD":"8400/000","CASH":"8100/000","EFT":"8410/000","ONLINE":"9450/000"}
     tax_type: Optional[str] = None   # Optional (depends on Pastel import layout)
+    amount_sign: Optional[str] = None  # "debit_positive" (default) | "debit_negative"
 
 
 @router.get("/pastel-mappings")
@@ -273,6 +481,12 @@ def update_pastel_mappings(
                 continue
             debit_gl[key] = val or None
         current["debit_gl"] = debit_gl
+
+    if payload.amount_sign is not None:
+        val = str(payload.amount_sign or "").strip().lower()
+        if val and val not in {"debit_positive", "debit_negative"}:
+            raise HTTPException(status_code=400, detail="amount_sign must be 'debit_positive' or 'debit_negative'")
+        current["amount_sign"] = val or None
 
     current["updated_at"] = datetime.utcnow().isoformat()
 
@@ -335,6 +549,26 @@ def _money_str(value: Decimal) -> str:
     return f"{v:.2f}"
 
 
+def _money_str_zero(value: Decimal) -> str:
+    v = _q2(value)
+    if v == 0:
+        return "0"
+    return f"{v:.2f}"
+
+
+def _format_gl_for_layout(gl: str, layout: dict) -> str:
+    """
+    Pastel exports sometimes use digits-only account codes (e.g. 9500000) even
+    if the UI shows 9500/000. When the uploaded template indicates digits-only,
+    we sanitize GLs accordingly.
+    """
+    raw = str(gl or "").strip()
+    inferred = (layout or {}).get("inferred") or {}
+    if inferred.get("account_digits_only"):
+        return re.sub(r"[^0-9]", "", raw)
+    return raw
+
+
 def _clean_text(value: str, max_len: int = 60) -> str:
     raw = (value or "").strip()
     raw = re.sub(r"[^A-Za-z0-9 _\\-]", " ", raw)
@@ -384,7 +618,10 @@ def _require_pastel_mappings(db: Session) -> dict:
 
     vat_gl = (mappings.get("vat_output_gl") or "").strip()
     if not vat_gl:
-        raise HTTPException(status_code=400, detail="Missing VAT output GL account in Pastel mappings.")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing Output VAT GL account in Pastel mappings. Set it in Admin → Cashbook → Output VAT GL Account, then click 'Save Pastel Mappings'.",
+        )
 
     debit_gl = mappings.get("debit_gl") or {}
     if not isinstance(debit_gl, dict):
@@ -821,6 +1058,7 @@ def export_daily_payments_csv(
             "account": account,
             "debit": gross_by_method[method],
             "credit": Decimal("0.00"),
+            "ref": _clean_text(method, max_len=20),
             "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
         })
 
@@ -838,6 +1076,7 @@ def export_daily_payments_csv(
             "account": account,
             "debit": Decimal("0.00"),
             "credit": net_amt,
+            "ref": _clean_text(str(ft).upper(), max_len=20),
             "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
         })
 
@@ -847,6 +1086,7 @@ def export_daily_payments_csv(
             "account": str(vat_output_gl).strip(),
             "debit": Decimal("0.00"),
             "credit": vat_total,
+            "ref": "VAT CONT",
             "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
         })
 
@@ -860,15 +1100,27 @@ def export_daily_payments_csv(
     column_map = layout.get("column_map") or {}
     header_to_idx = {str(h): i for i, h in enumerate(columns)}
 
-    required = ["date", "account", "debit", "credit"]
+    has_debit = bool(column_map.get("debit")) and column_map.get("debit") in header_to_idx
+    has_credit = bool(column_map.get("credit")) and column_map.get("credit") in header_to_idx
+    has_amount = bool(column_map.get("amount")) and column_map.get("amount") in header_to_idx
+
+    required = ["date", "account"]
     for key in required:
         header = column_map.get(key)
         if not header or header not in header_to_idx:
             raise HTTPException(status_code=500, detail=f"Pastel layout missing required column for '{key}'. Re-upload layout CSV.")
 
+    # Layouts typically have either (Debit,Credit) columns or a single signed Amount column.
+    if not ((has_debit and has_credit) or has_amount):
+        raise HTTPException(
+            status_code=500,
+            detail="Pastel layout must include Debit/Credit columns or an Amount column. Re-upload a Batch->Export sample that matches your import layout.",
+        )
+
     date_format = layout.get("date_format")
     date_value = _format_date_for_layout(target_date, date_format)
     delimiter = layout.get("delimiter") or ","
+    has_header = bool(layout.get("has_header", True))
     template_row = layout.get("template_row")
     has_template = isinstance(template_row, list) and len(template_row) == len(columns)
 
@@ -886,26 +1138,109 @@ def export_daily_payments_csv(
             return
         row[idx] = value
 
+    # Some Pastel layouts repeat the signed amount in multiple columns.
+    amount_mirror_headers: list[str] = []
+    try:
+        amount_mirror_headers = list(((layout.get("inferred") or {}).get("amount_mirrors") or []))
+    except Exception:
+        amount_mirror_headers = []
+
+    def _set_amount_mirrors(row: list, value: str) -> None:
+        for h in amount_mirror_headers:
+            idx = header_to_idx.get(str(h))
+            if idx is None:
+                continue
+            if idx < len(row):
+                row[idx] = value
+
     out = StringIO(newline="")
     writer = csv.writer(out, delimiter=delimiter, lineterminator="\r\n")
-    writer.writerow(columns)
+    if has_header:
+        writer.writerow(columns)
 
-    tax_type_value = str((mappings.get("tax_type") or "")).strip()
+    tax_type_sales = str((mappings.get("tax_type") or "")).strip()
+    amount_sign = str((mappings.get("amount_sign") or "")).strip().lower() or "debit_positive"
+    vat_output_gl_fmt = _format_gl_for_layout(str(vat_output_gl or "").strip(), layout) if vat_output_gl else ""
     for line in lines:
         row = _base_row()
         _set(row, "date", date_value)
-        _set(row, "reference", batch_ref)
-        _set(row, "description", line["desc"])
-        _set(row, "account", str(line["account"]))
-        if line["debit"] and _q2(line["debit"]) != 0:
-            _set(row, "debit", _money_str(line["debit"]))
-            _set(row, "credit", "")
+        # Reference/Description
+        if column_map.get("reference") and column_map.get("reference") in header_to_idx:
+            _set(row, "reference", batch_ref if has_header else str(line.get("ref") or batch_ref))
+        if column_map.get("description") and column_map.get("description") in header_to_idx:
+            # If the template already has a short constant description (e.g. "Payment"), keep it.
+            if has_template:
+                d_idx = header_to_idx[column_map.get("description")]
+                existing = str(row[d_idx] or "").strip() if d_idx < len(row) else ""
+                if existing and len(existing) <= 20:
+                    pass
+                else:
+                    _set(row, "description", str(line["desc"]))
+            else:
+                _set(row, "description", str(line["desc"]))
+
+        account_value = _format_gl_for_layout(str(line["account"]), layout)
+        _set(row, "account", account_value)
+
+        # Determine whether this is a revenue line (taxable) vs debit line or VAT control line.
+        is_debit_line = bool(line["debit"] and _q2(line["debit"]) != 0)
+        is_credit_line = bool((not is_debit_line) and line["credit"] and _q2(line["credit"]) != 0)
+        is_vat_control_line = bool(vat_output_gl_fmt) and account_value.strip() == vat_output_gl_fmt
+        is_revenue_line = bool(is_credit_line and not is_vat_control_line)
+        apply_sales_tax = bool(is_revenue_line and tax_type_sales)
+
+        # Amount (or Debit/Credit)
+        amt = None
+        if has_amount:
+            # Signed-amount layout.
+            amt = Decimal("0.00")
+            if is_debit_line:
+                amt = _q2(line["debit"])
+                if amount_sign == "debit_negative":
+                    amt = -amt
+            else:
+                amt = _q2(line["credit"])
+                # Credit is opposite sign to debit.
+                if amount_sign == "debit_positive":
+                    amt = -amt
+                else:
+                    amt = +amt
+            amt_str = _money_str(amt)
+            _set(row, "amount", amt_str)
+            _set_amount_mirrors(row, amt_str)
+            if has_debit:
+                _set(row, "debit", "")
+            if has_credit:
+                _set(row, "credit", "")
         else:
-            _set(row, "debit", "")
-            _set(row, "credit", _money_str(line["credit"]))
-        if tax_type_value:
-            _set(row, "tax_type", tax_type_value)
-        _set(row, "tax_amount", "")
+            # Debit/Credit layout.
+            if is_debit_line:
+                _set(row, "debit", _money_str(line["debit"]))
+                _set(row, "credit", "")
+            else:
+                _set(row, "debit", "")
+                _set(row, "credit", _money_str(line["credit"]))
+
+        # Tax fields (layout-specific).
+        # Many Pastel layouts expect explicit "00"/"01" + numeric zeroes, not blanks.
+        if column_map.get("tax_type") and column_map.get("tax_type") in header_to_idx:
+            _set(row, "tax_type", tax_type_sales if apply_sales_tax else "00")
+
+        if column_map.get("tax_flag") and column_map.get("tax_flag") in header_to_idx:
+            _set(row, "tax_flag", "1" if apply_sales_tax else "0")
+
+        if column_map.get("tax_amount") and column_map.get("tax_amount") in header_to_idx:
+            if apply_sales_tax:
+                # Use the net revenue line amount to compute VAT (net * rate).
+                base_net = _q2(line["credit"]) if is_credit_line else _q2(line["debit"])
+                vat_amt = _q2(base_net * rate) if rate > 0 else Decimal("0.00")
+                # Match sign to the signed amount when available.
+                if amt is not None and amt < 0:
+                    vat_amt = -vat_amt
+                _set(row, "tax_amount", _money_str_zero(vat_amt))
+            else:
+                _set(row, "tax_amount", "0")
+
         writer.writerow(row)
 
     csv_text = out.getvalue()

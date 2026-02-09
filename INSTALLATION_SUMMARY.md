@@ -123,7 +123,7 @@ grep "cashbook" app/main.py
 
 ### Step 3: Start the Server (30 seconds)
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 Server should start without errors on `http://localhost:8000`
@@ -153,7 +153,7 @@ xdg-open test_export.xlsx  # Linux
 ## Quick Start (30 seconds)
 
 1. **Install**: `pip install -r requirements.txt`
-2. **Start**: `uvicorn app.main:app --reload`
+2. **Start**: `python -m uvicorn app.main:app --reload`
 3. **Export**: Visit `http://localhost:8000/cashbook/export-excel`
 
 ## Documentation Reading Order
@@ -235,7 +235,7 @@ tax_type = 1  # 1 = tax included (default)
 ## Testing Checklist
 
 - [ ] `pip install -r requirements.txt` succeeds
-- [ ] `uvicorn app.main:app --reload` starts without errors
+- [ ] `python -m uvicorn app.main:app --reload` starts without errors
 - [ ] `python test_cashbook.py` passes all tests
 - [ ] `http://localhost:8000/docs` shows cashbook endpoints
 - [ ] `/cashbook/daily-summary` returns JSON
@@ -343,7 +343,7 @@ curl "http://localhost:8000/cashbook/export-excel" \
 
 1. **Install**: `pip install -r requirements.txt`
 2. **Test**: `python test_cashbook.py`
-3. **Start**: `uvicorn app.main:app --reload`
+3. **Start**: `python -m uvicorn app.main:app --reload`
 4. **Try**: `curl http://localhost:8000/cashbook/export-excel -o test.xlsx`
 5. **Read**: `PAYMENT_EXPORT_README.md` for overview
 6. **Deploy**: When ready for production
