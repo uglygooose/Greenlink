@@ -499,28 +499,20 @@
 	      padding: 4px 6px 10px;
 	    }
 
-	    body.player .action-btn {
-	      padding: 8px 12px;
-	      border-radius: 12px;
-	      font-size: 12px;
-	      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.06);
-	    }
+		    body.player .action-btn {
+		      padding: 8px 12px;
+		      border-radius: 12px;
+		      font-size: 12px;
+		      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.06);
+		    }
 
-	    /* Players always use the card layout (table is too bulky). */
-	    body.player .table-wrap {
-	      display: none;
-	    }
-
-	    body.player .tee-card-list {
-	      display: flex;
-	      flex-direction: column;
-	      gap: 10px;
-	    }
-
-	    body.player .tee-card {
-	      border-radius: 14px;
-	      padding: 12px 14px;
-	      box-shadow: 0 12px 26px rgba(31, 42, 27, 0.08);
+		    /* Players use the same tee-sheet table layout on desktop.
+		       On smaller screens, the responsive rules below switch to cards. */
+	
+		    body.player .tee-card {
+		      border-radius: 14px;
+		      padding: 12px 14px;
+		      box-shadow: 0 12px 26px rgba(31, 42, 27, 0.08);
 	      display: flex;
 	      align-items: center;
 	      justify-content: space-between;
@@ -1317,12 +1309,10 @@ async function createTeeTimeAt(teeDateTime) {
   return res.ok;
 }
 
-function formatTime(date) {
-  const d = new Date(date);
-  let hours = d.getHours();
-  let minutes = d.getMinutes();
-  return `${hours}:${minutes.toString().padStart(2, '0')}`;
-}
+	function formatTime(date) {
+	  const d = new Date(date);
+	  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+	}
 
 // Format date for display
 function formatDateDisplay(date) {
@@ -1469,11 +1459,11 @@ function viewLater() {
 }
 
 	// Render tee times for selected date
-	function renderTeeTimes() {
-	  const container = document.getElementById('tee_times_list');
-	  
-	  const dateStr = dateToYMD(selectedDate);
-  const dayTeeTimes = (Array.isArray(allTeeTimes) ? allTeeTimes : [])
+		function renderTeeTimes() {
+		  const container = document.getElementById('tee_times_list');
+		  
+		  const dateStr = dateToYMD(selectedDate);
+	  const dayTeeTimes = (Array.isArray(allTeeTimes) ? allTeeTimes : [])
     .slice()
     .sort((a, b) => {
       const ta = new Date(a.tee_time).getTime();
@@ -1481,12 +1471,12 @@ function viewLater() {
       if (ta !== tb) return ta - tb;
       const ha = parseInt(a.hole || '1', 10);
       const hb = parseInt(b.hole || '1', 10);
-      return ha - hb;
-    });
-  
-	  const renderTable = isAdmin; // avoid leaking names/prices in player view
-	  let html = '';
-	  let cardsHtml = '';
+	      return ha - hb;
+	    });
+	  
+		  const renderTable = true;
+		  let html = '';
+		  let cardsHtml = '';
 
   if (dayTeeTimes.length === 0) {
     updatePagerInfo(0, 0);
@@ -1539,24 +1529,31 @@ function viewLater() {
     return;
   }
 
-  const maxStart = Math.max(0, dayTeeTimes.length - PAGE_SIZE);
-  pageStartIndex = Math.min(Math.max(0, pageStartIndex), maxStart);
-  const page = dayTeeTimes.slice(pageStartIndex, pageStartIndex + PAGE_SIZE);
-  updatePagerInfo(dayTeeTimes.length, page.length);
-  
-	  page.forEach(tt => {
-	    const time = formatTime(tt.tee_time);
-	    const teeLabel = tt.hole ? tt.hole : '1';
-	    const bookings = Array.isArray(tt.bookings) ? tt.bookings : [];
-	    const capacity = tt.capacity || 4;
+	  const maxStart = Math.max(0, dayTeeTimes.length - PAGE_SIZE);
+	  pageStartIndex = Math.min(Math.max(0, pageStartIndex), maxStart);
+	  const page = dayTeeTimes.slice(pageStartIndex, pageStartIndex + PAGE_SIZE);
+	  updatePagerInfo(dayTeeTimes.length, page.length);
+	  
+	  let prevTimeKey = null;
+		  page.forEach(tt => {
+		    const dt = new Date(tt.tee_time);
+		    const timeKey = dt.toISOString().slice(0, 16);
+		    const time = formatTime(tt.tee_time);
+		    const repeatedTime = prevTimeKey === timeKey;
+		    prevTimeKey = timeKey;
+		    const timeCell = repeatedTime ? '' : time;
+		    const teeLabel = tt.hole ? tt.hole : '1';
+		    const bookings = Array.isArray(tt.bookings) ? tt.bookings : [];
+		    const bookedCount = bookings.filter(Boolean).length;
+		    const capacity = tt.capacity || 4;
 
-	    if (renderTable) {
-	      html += `
-	        <tr>
-	          <td class="time-col">${time}</td>
-	          <td class="tee-col">${teeLabel}</td>
-	      `;
-	    }
+		    if (renderTable) {
+		      html += `
+		        <tr>
+		          <td class="time-col">${timeCell}</td>
+		          <td class="tee-col">${teeLabel}</td>
+		      `;
+		    }
 
 	    const isPlayerView = !isAdmin;
 	    if (isPlayerView) {
@@ -1612,26 +1609,44 @@ function viewLater() {
 	        continue;
 	      }
 
-	      const booking = bookings[i];
-	      if (booking) {
-	        const status = booking.status || 'booked';
-	        const statusClass = status === 'checked_in' ? 'checked-in' : status === 'no_show' ? 'no-show' : status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'checked-in' : 'booked';
-	        const statusLabel = status.replace('_', ' ');
-	        if (renderTable) {
-	          html += `
-	            <td>
-	              <div class="slot-card ${statusClass}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
-	                <div class="slot-top"><span class="slot-status ${statusClass}">${statusLabel}</span></div>
-	                <div class="slot-name">${booking.player_name}</div>
-	                <div class="slot-meta">R${booking.price}</div>
-	              </div>
-	            </td>
-	          `;
-	        }
-	        if (isPlayerView) {
-	          const tag = (status === 'checked_in' || status === 'completed') ? 'Checked in' : 'Booked';
-	          cardsHtml += `
-	            <button type="button" class="tee-chip booked" disabled>
+		      const booking = bookings[i];
+		      if (booking) {
+		        const status = booking.status || 'booked';
+		        const statusClass = status === 'checked_in' ? 'checked-in' : status === 'no_show' ? 'no-show' : status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'checked-in' : 'booked';
+		        const statusLabel = status.replace('_', ' ');
+		        if (renderTable) {
+		          if (isAdmin) {
+		            html += `
+		              <td>
+		                <div class="slot-card ${statusClass}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
+		                  <div class="slot-top"><span class="slot-status ${statusClass}">${statusLabel}</span></div>
+		                  <div class="slot-name">${booking.player_name}</div>
+		                  <div class="slot-meta">R${booking.price}</div>
+		                </div>
+		              </td>
+		            `;
+		          } else {
+		            const tag = (status === 'checked_in' || status === 'completed')
+		              ? 'Checked in'
+		              : status === 'cancelled'
+		                ? 'Cancelled'
+		                : status === 'no_show'
+		                  ? 'No-show'
+		                  : 'Booked';
+		            html += `
+		              <td>
+		                <div class="slot-card ${statusClass}">
+		                  <div class="slot-name">${tag}</div>
+		                  <div class="slot-meta">${statusLabel}</div>
+		                </div>
+		              </td>
+		            `;
+		          }
+		        }
+		        if (isPlayerView) {
+		          const tag = (status === 'checked_in' || status === 'completed') ? 'Checked in' : 'Booked';
+		          cardsHtml += `
+		            <button type="button" class="tee-chip booked" disabled>
 	              <div class="num">${slotNumber}</div>
 	              <div class="tag">${tag}</div>
 	            </button>
@@ -1676,39 +1691,40 @@ function viewLater() {
 	              </div>
 	            `;
 	          }
-	        } else {
-	          if (renderTable) {
-	            html += `
-	              <td>
-	                <div class="slot-card open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
-	                  <div class="slot-top"><span class="slot-status">Open</span></div>
-	                  <div class="slot-name">Available</div>
-	                  <div class="slot-action">Add player</div>
-	                </div>
-	              </td>
-	            `;
-	          }
-	          if (isPlayerView) {
+		        } else {
+		          if (renderTable) {
+		            const toAdd = Math.max(1, slotNumber - bookedCount);
+		            html += `
+		              <td>
+		                <div class="slot-card open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
+		                  <div class="slot-name">Available</div>
+		                  <div class="slot-action">Add ${toAdd} player${toAdd === 1 ? '' : 's'}</div>
+		                </div>
+		              </td>
+		            `;
+		          }
+		          if (isPlayerView) {
 	            cardsHtml += `
 	              <button type="button" class="tee-chip open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
 	                <div class="num">${slotNumber}</div>
 	                <div class="tag">Open</div>
 	              </button>
 	            `;
-	          } else {
-	            cardsHtml += `
-	              <div class="tee-slot open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
-	                <div>
-	                  <div class="label">Slot ${slotNumber}</div>
-	                  <div class="meta">Available</div>
-	                </div>
-	                <div class="meta">Add player</div>
-	              </div>
-	            `;
-	          }
-	        }
-	      }
-	    }
+		          } else {
+		            const toAdd = Math.max(1, slotNumber - bookedCount);
+		            cardsHtml += `
+		              <div class="tee-slot open" onclick="openBookingForm(${tt.id}, ${slotNumber})">
+		                <div>
+		                  <div class="label">Slot ${slotNumber}</div>
+		                  <div class="meta">Available</div>
+		                </div>
+		                <div class="meta">Add ${toAdd} player${toAdd === 1 ? '' : 's'}</div>
+		              </div>
+		            `;
+		          }
+		        }
+		      }
+		    }
 
 	    if (renderTable) {
 	      html += `</tr>`;

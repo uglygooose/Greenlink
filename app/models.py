@@ -146,6 +146,16 @@ class LedgerEntry(Base):
     pastel_synced = Column(Integer, default=0)
     pastel_transaction_id = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    meta = relationship("LedgerEntryMeta", back_populates="ledger_entry", uselist=False, cascade="all, delete-orphan")
+
+
+class LedgerEntryMeta(Base):
+    __tablename__ = "ledger_entry_meta"
+    ledger_entry_id = Column(Integer, ForeignKey("ledger_entries.id"), primary_key=True)
+    payment_method = Column(String(30), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    ledger_entry = relationship("LedgerEntry", back_populates="meta")
 
 
 class DayClose(Base):

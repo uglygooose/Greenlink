@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Optional
 from app import crud
-from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member, ClubSetting
+from app.models import User, Booking, TeeTime, Round, LedgerEntry, LedgerEntryMeta, DayClose, UserRole, BookingStatus, Member, ClubSetting
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db
 from calendar import isleap
@@ -390,6 +390,9 @@ def undo_bulk_book_tee_sheet(
     if not ids:
         raise HTTPException(status_code=500, detail="Invalid bulk booking rows")
 
+    le_ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id.in_(ids)).all()]
+    if le_ids:
+        db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(le_ids)).delete(synchronize_session=False)
     db.query(LedgerEntry).filter(LedgerEntry.booking_id.in_(ids)).delete(synchronize_session=False)
     db.query(Round).filter(Round.booking_id.in_(ids)).delete(synchronize_session=False)
     db.query(Booking).filter(Booking.id.in_(ids)).delete(synchronize_session=False)
@@ -684,6 +687,11 @@ async def get_booking_detail(
         }
     
     ledger_entries = db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).all()
+    entry_ids = [le.id for le in ledger_entries]
+    meta_by_entry_id = {}
+    if entry_ids:
+        metas = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(entry_ids)).all()
+        meta_by_entry_id = {m.ledger_entry_id: m for m in metas}
 
     fee_category = None
     if booking.fee_category_id:
@@ -731,6 +739,7 @@ async def get_booking_detail(
                 "description": le.description,
                 "amount": float(le.amount),
                 "pastel_synced": bool(le.pastel_synced),
+                "payment_method": getattr(meta_by_entry_id.get(le.id), "payment_method", None),
                 "created_at": le.created_at.isoformat()
             }
             for le in ledger_entries
@@ -740,6 +749,11 @@ async def get_booking_detail(
 
 class BookingStatusUpdate(BaseModel):
     status: str
+    payment_method: Optional[str] = None
+
+
+class BookingPaymentMethodUpdate(BaseModel):
+    payment_method: str
 
 
 @router.put("/bookings/{booking_id}/status")
@@ -766,10 +780,13 @@ async def update_booking_status(
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
 
     if booking.status in paid_statuses:
-        crud.ensure_paid_ledger_entry(db, booking)
+        crud.ensure_paid_ledger_entry(db, booking, payment_method=payload.payment_method)
     else:
         # If a booking is moved back to an unpaid state, remove its payment record.
-        db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete()
+        ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking.id).all()]
+        if ids:
+            db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
+        db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete(synchronize_session=False)
 
     db.commit()
     db.refresh(booking)
@@ -797,13 +814,51 @@ async def delete_booking(
         assert_day_open(db, booking.tee_time.tee_time.date())
 
     # Remove related records
-    db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).delete()
+    ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking_id).all()]
+    if ids:
+        db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
+    db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).delete(synchronize_session=False)
     db.query(Round).filter(Round.booking_id == booking_id).delete()
 
     db.delete(booking)
     db.commit()
 
     return {"status": "success", "booking_id": booking_id}
+
+
+@router.put("/bookings/{booking_id}/payment-method")
+async def update_booking_payment_method(
+    booking_id: int,
+    payload: BookingPaymentMethodUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    ledger_entry = (
+        db.query(LedgerEntry)
+        .filter(LedgerEntry.booking_id == booking_id)
+        .order_by(desc(LedgerEntry.id))
+        .first()
+    )
+    if not ledger_entry:
+        raise HTTPException(status_code=400, detail="Booking has no payment record yet")
+
+    method = (payload.payment_method or "").strip().upper()
+    if method not in {"CARD", "CASH", "EFT", "ONLINE"}:
+        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE")
+
+    meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
+    if meta:
+        meta.payment_method = method
+        meta.updated_at = datetime.utcnow()
+    else:
+        db.add(LedgerEntryMeta(ledger_entry_id=ledger_entry.id, payment_method=method))
+
+    db.commit()
+    return {"status": "success", "booking_id": booking_id, "ledger_entry_id": ledger_entry.id, "payment_method": method}
 
 
 @router.get("/players")

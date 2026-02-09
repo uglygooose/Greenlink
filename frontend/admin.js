@@ -571,6 +571,11 @@ async function viewBookingDetail(bookingId) {
         const ledgerEntries = Array.isArray(booking.ledger_entries) ? booking.ledger_entries : [];
         const exportedEntry = ledgerEntries.find(le => Boolean(le.pastel_synced));
         const exportBatch = exportedEntry?.pastel_transaction_id || "";
+        const existingPaymentMethod = String(ledgerEntries[0]?.payment_method || "").trim().toUpperCase();
+        const paymentMethod = existingPaymentMethod || String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase() || "CARD";
+        const paymentMethodOptions = ["CARD", "CASH", "EFT", "ONLINE"]
+            .map(m => `<option value="${m}" ${paymentMethod === m ? "selected" : ""}>${m}</option>`)
+            .join("");
 
         const checkinLabel = status === "checked_in" ? "Open Round" : "Check In (Paid)";
         const disableCheckin = status === "cancelled" || status === "no_show";
@@ -722,6 +727,15 @@ async function viewBookingDetail(bookingId) {
                         <span class="detail-label">Entries</span>
                         <span class="detail-value">${ledgerEntries.length ? String(ledgerEntries.length) : "0"}</span>
                     </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Payment method</span>
+                        <span class="detail-value">
+                            <select id="booking-payment-method" style="min-width: 120px;">
+                                ${paymentMethodOptions}
+                            </select>
+                            ${ledgerEntries.length ? `<button class="btn-secondary btn-small" type="button" onclick="saveBookingPaymentMethod(${bookingId})">Save</button>` : ""}
+                        </span>
+                    </div>
                     ${ledgerEntries.length ? `
                         <div class="detail-row">
                             <span class="detail-label">Amount</span>
@@ -752,6 +766,13 @@ async function viewBookingDetail(bookingId) {
 
         document.getElementById("modal-body").innerHTML = html;
         document.getElementById("booking-modal").classList.add("show");
+
+        const pm = document.getElementById("booking-payment-method");
+        if (pm) {
+            pm.addEventListener("change", () => {
+                localStorage.setItem("last_payment_method", String(pm.value || "").trim().toUpperCase());
+            });
+        }
     } catch (error) {
         console.error("Failed to load booking detail:", error);
     }
@@ -2075,10 +2096,20 @@ function openBookingDetails(teeTimeId, bookingId) {
     viewBookingDetail(bookingId);
 }
 
+function getSelectedPaymentMethod() {
+    const el = document.getElementById("booking-payment-method");
+    const raw = String(el?.value || "").trim().toUpperCase();
+    if (raw) return raw;
+    return String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase() || "CARD";
+}
+
 async function adminCheckIn(bookingId) {
     const token = localStorage.getItem("token");
     try {
-        const res = await fetch(`${API_BASE}/checkin/${bookingId}`, {
+        const paymentMethod = getSelectedPaymentMethod();
+        localStorage.setItem("last_payment_method", paymentMethod);
+
+        const res = await fetch(`${API_BASE}/checkin/${bookingId}?payment_method=${encodeURIComponent(paymentMethod)}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` }
         });
@@ -2099,13 +2130,19 @@ async function adminCheckIn(bookingId) {
 async function adminSetStatus(bookingId, status) {
     const token = localStorage.getItem("token");
     try {
+        const body = { status };
+        if (status === "completed") {
+            const paymentMethod = getSelectedPaymentMethod();
+            localStorage.setItem("last_payment_method", paymentMethod);
+            body.payment_method = paymentMethod;
+        }
         const res = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}/status`, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`
             },
-            body: JSON.stringify({ status })
+            body: JSON.stringify(body)
         });
         if (!res.ok) {
             alert("Status update failed");
@@ -2117,6 +2154,32 @@ async function adminSetStatus(bookingId, status) {
         loadDashboard();
     } catch (e) {
         alert("Status update failed");
+    }
+}
+
+async function saveBookingPaymentMethod(bookingId) {
+    const token = localStorage.getItem("token");
+    const paymentMethod = getSelectedPaymentMethod();
+    localStorage.setItem("last_payment_method", paymentMethod);
+
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}/payment-method`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ payment_method: paymentMethod })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            alert(err?.detail || "Failed to save payment method");
+            return;
+        }
+        alert("Payment method saved");
+        viewBookingDetail(bookingId);
+    } catch (e) {
+        alert("Failed to save payment method");
     }
 }
 
@@ -2942,6 +3005,7 @@ function initCashbook() {
     loadCashbookSummary();
     loadCloseStatus();
     loadAccountingSettings();
+    loadPastelMappings();
 }
 
 async function loadCashbookSummary() {
@@ -3008,6 +3072,8 @@ async function loadCashbookSummary() {
 async function exportCashbookToCSV() {
     const token = localStorage.getItem("token");
     const dateInput = document.getElementById("cashbook-date").value;
+    const exportBtn = document.getElementById("export-btn");
+    const originalLabel = exportBtn ? exportBtn.textContent : "";
     
     if (!dateInput) {
         alert("Please select a date");
@@ -3015,6 +3081,11 @@ async function exportCashbookToCSV() {
     }
 
     try {
+        if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.textContent = "Building journal...";
+        }
+
         const response = await fetch(`${API_BASE}/cashbook/export-csv?export_date=${dateInput}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
@@ -3022,8 +3093,15 @@ async function exportCashbookToCSV() {
         if (!response.ok) {
             const error = await response.json();
             alert("Error: " + error.detail);
+            if (exportBtn) {
+                exportBtn.disabled = false;
+                exportBtn.textContent = originalLabel || "Export to Sage (CSV)";
+            }
             return;
         }
+
+        const runId = response.headers.get("x-greenlink-runid") || "";
+        const batchRef = response.headers.get("x-greenlink-batchref") || "";
 
         // Create blob and download
         const blob = await response.blob();
@@ -3045,10 +3123,47 @@ async function exportCashbookToCSV() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        alert("Cashbook exported successfully!");
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+        if (exportBtn) exportBtn.textContent = "Waiting for Pastel import...";
+
+        // Poll for desktop-bot result (if configured). If no bot, this will time out quietly.
+        if (runId) {
+            const started = Date.now();
+            const timeoutMs = 120000;
+            while ((Date.now() - started) < timeoutMs) {
+                try {
+                    const statusRes = await fetch(`${API_BASE}/cashbook/export-job-status?export_date=${dateInput}&run_id=${encodeURIComponent(runId)}`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (statusRes.ok) {
+                        const status = await statusRes.json();
+                        const s = String(status?.status || "").toLowerCase();
+                        if (s === "imported") {
+                            alert(`Imported into Pastel${batchRef ? ` (${batchRef})` : ""}`);
+                            break;
+                        }
+                        if (s === "failed") {
+                            alert(status?.message || "Pastel import failed");
+                            break;
+                        }
+                    }
+                } catch {
+                    // ignore poll errors
+                }
+                await sleep(3000);
+            }
+        } else {
+            alert("Journal exported successfully!");
+        }
     } catch (error) {
         console.error("Failed to export cashbook:", error);
         alert("Failed to export cashbook");
+    } finally {
+        if (exportBtn) {
+            exportBtn.disabled = false;
+            exportBtn.textContent = originalLabel || "Export to Sage (CSV)";
+        }
     }
 }
 
@@ -3115,6 +3230,147 @@ async function saveAccountingSettings() {
         loadCashbookSummary();
     } catch (error) {
         console.error("Failed to save accounting settings:", error);
+        if (statusEl) statusEl.textContent = "Save failed";
+    }
+}
+
+async function uploadPastelLayout() {
+    const token = localStorage.getItem("token");
+    const fileInput = document.getElementById("pastel-layout-file");
+    const statusEl = document.getElementById("pastel-layout-status");
+
+    if (!fileInput || !fileInput.files || !fileInput.files.length) {
+        if (statusEl) statusEl.textContent = "Pick a CSV file first";
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file) {
+        if (statusEl) statusEl.textContent = "Pick a CSV file first";
+        return;
+    }
+
+    const form = new FormData();
+    form.append("file", file);
+
+    if (statusEl) statusEl.textContent = "Uploading layout...";
+
+    try {
+        const res = await fetch(`${API_BASE}/cashbook/pastel-layout`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: form
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try {
+            data = raw ? JSON.parse(raw) : null;
+        } catch {
+            data = null;
+        }
+
+        if (!res.ok) {
+            const msg = data?.detail || "Upload failed";
+            if (statusEl) statusEl.textContent = msg;
+            return;
+        }
+
+        if (statusEl) {
+            statusEl.textContent = "Layout uploaded";
+            setTimeout(() => { statusEl.textContent = ""; }, 2500);
+        }
+    } catch (e) {
+        console.error("Pastel layout upload failed:", e);
+        if (statusEl) statusEl.textContent = "Upload failed";
+    }
+}
+
+async function loadPastelMappings() {
+    const token = localStorage.getItem("token");
+    try {
+        const res = await fetch(`${API_BASE}/cashbook/pastel-mappings`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.configured || !data.mappings) return;
+
+        const vatOutput = document.getElementById("acct-vat-output-gl");
+        const card = document.getElementById("acct-debit-card-gl");
+        const cash = document.getElementById("acct-debit-cash-gl");
+        const eft = document.getElementById("acct-debit-eft-gl");
+        const online = document.getElementById("acct-debit-online-gl");
+        const taxType = document.getElementById("acct-pastel-tax-type");
+
+        const mappings = data.mappings || {};
+        const debit = mappings.debit_gl || {};
+
+        if (vatOutput) vatOutput.value = mappings.vat_output_gl || "";
+        if (taxType) taxType.value = mappings.tax_type || "";
+        if (card) card.value = debit.CARD || "";
+        if (cash) cash.value = debit.CASH || "";
+        if (eft) eft.value = debit.EFT || "";
+        if (online) online.value = debit.ONLINE || "";
+    } catch (e) {
+        console.error("Failed to load Pastel mappings:", e);
+    }
+}
+
+async function savePastelMappings() {
+    const token = localStorage.getItem("token");
+    const statusEl = document.getElementById("pastel-mappings-status");
+
+    const vatOutput = document.getElementById("acct-vat-output-gl")?.value || "";
+    const card = document.getElementById("acct-debit-card-gl")?.value || "";
+    const cash = document.getElementById("acct-debit-cash-gl")?.value || "";
+    const eft = document.getElementById("acct-debit-eft-gl")?.value || "";
+    const online = document.getElementById("acct-debit-online-gl")?.value || "";
+    const taxType = document.getElementById("acct-pastel-tax-type")?.value || "";
+
+    const debit_gl = {
+        CARD: card,
+        CASH: cash,
+        EFT: eft,
+        ONLINE: online
+    };
+
+    if (statusEl) statusEl.textContent = "Saving...";
+
+    try {
+        const res = await fetch(`${API_BASE}/cashbook/pastel-mappings`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                vat_output_gl: vatOutput,
+                tax_type: taxType,
+                debit_gl
+            })
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try {
+            data = raw ? JSON.parse(raw) : null;
+        } catch {
+            data = null;
+        }
+
+        if (!res.ok) {
+            const msg = data?.detail || "Save failed";
+            if (statusEl) statusEl.textContent = msg;
+            return;
+        }
+
+        if (statusEl) {
+            statusEl.textContent = "Saved";
+            setTimeout(() => { statusEl.textContent = ""; }, 2500);
+        }
+    } catch (e) {
+        console.error("Failed to save Pastel mappings:", e);
         if (statusEl) statusEl.textContent = "Save failed";
     }
 }

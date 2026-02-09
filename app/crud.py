@@ -46,13 +46,13 @@ def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
     )
     return select_best_fee_category(db, ctx)
 
-def ensure_paid_ledger_entry(db: Session, booking: models.Booking) -> None:
+def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_method: str | None = None) -> models.LedgerEntry | None:
     """
     Ensure a single ledger entry exists once a booking is considered paid.
     Payment is assumed when status is checked_in/completed.
     """
     if not booking or not booking.id:
-        return
+        return None
 
     description = f"Green fee - {booking.player_name}"
     if getattr(booking, "fee_category_id", None):
@@ -72,13 +72,31 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking) -> None:
         description = f"{description} + Caddy"
     amount = float(getattr(booking, "price", None) or 0.0)
 
+    def _upsert_meta(ledger_entry_id: int, method: str) -> None:
+        raw = (method or "").strip().upper()
+        if not raw:
+            return
+        meta = db.query(models.LedgerEntryMeta).filter(models.LedgerEntryMeta.ledger_entry_id == ledger_entry_id).first()
+        if meta:
+            meta.payment_method = raw
+            meta.updated_at = datetime.utcnow()
+            return
+        db.add(models.LedgerEntryMeta(ledger_entry_id=ledger_entry_id, payment_method=raw))
+
     existing = db.query(models.LedgerEntry).filter(models.LedgerEntry.booking_id == booking.id).first()
     if existing:
         existing.description = description
         existing.amount = amount
-        return
+        if payment_method:
+            _upsert_meta(existing.id, payment_method)
+        return existing
 
-    db.add(models.LedgerEntry(booking_id=booking.id, description=description, amount=amount))
+    le = models.LedgerEntry(booking_id=booking.id, description=description, amount=amount)
+    db.add(le)
+    db.flush()
+    if payment_method:
+        _upsert_meta(le.id, payment_method)
+    return le
 
 def is_day_closed(db: Session, target_date):
     if not target_date:
@@ -578,7 +596,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
 def list_bookings_for_tee(db: Session, tee_time_id: int):
     return db.query(models.Booking).filter(models.Booking.tee_time_id == tee_time_id).all()
 
-def checkin_booking(db: Session, booking_id: int):
+def checkin_booking(db: Session, booking_id: int, payment_method: str | None = None):
     b = db.query(models.Booking).get(booking_id)
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -593,7 +611,7 @@ def checkin_booking(db: Session, booking_id: int):
     if b.status != models.BookingStatus.completed:
         b.status = models.BookingStatus.checked_in
 
-    ensure_paid_ledger_entry(db, b)
+    ensure_paid_ledger_entry(db, b, payment_method=payment_method)
     db.commit()
     db.refresh(b)
 

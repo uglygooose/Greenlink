@@ -103,6 +103,7 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE IF EXISTS public.day_closures ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.rounds ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.ledger_entries ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.ledger_entry_meta ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.members ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.tee_times ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.bookings ENABLE ROW LEVEL SECURITY;",

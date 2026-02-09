@@ -1,5 +1,5 @@
 # app/routers/cashbook.py
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,9 +10,13 @@ from io import BytesIO
 import csv
 from io import StringIO
 import os
+import json
+import re
+import uuid
+from decimal import Decimal, ROUND_HALF_UP
 
 from app.auth import get_db, get_current_user
-from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, DayClose, AccountingSetting, User, UserRole
+from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntryMeta, DayClose, AccountingSetting, User, UserRole, ClubSetting
 from app.fee_models import FeeCategory
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -76,16 +80,228 @@ def get_accounting_settings(db: Session) -> AccountingSetting:
     return settings
 
 
+def _upsert_club_setting(db: Session, key: str, value: str) -> None:
+    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    if row:
+        row.value = value
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(ClubSetting(key=key, value=value))
+
+
+def _get_club_setting(db: Session, key: str) -> Optional[str]:
+    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    if not row or row.value is None:
+        return None
+    return str(row.value)
+
+
+def _infer_date_format(sample: str) -> Optional[str]:
+    raw = (sample or "").strip()
+    if not raw:
+        return None
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        return "YYYY-MM-DD"
+    if re.match(r"^\d{2}/\d{2}/\d{4}$", raw):
+        return "DD/MM/YYYY"
+    if re.match(r"^\d{2}/\d{2}/\d{2}$", raw):
+        return "DD/MM/YY"
+    if re.match(r"^\d{4}/\d{2}/\d{2}$", raw):
+        return "YYYY/MM/DD"
+    return None
+
+
+def _best_header_match(headers: List[str], *needles: str) -> Optional[str]:
+    """
+    Return the first header that contains all needle fragments (case-insensitive),
+    preferring exact-ish matches.
+    """
+    normalized = [(h, re.sub(r"[^a-z0-9]+", "", (h or "").strip().lower())) for h in headers]
+    want = [re.sub(r"[^a-z0-9]+", "", (n or "").strip().lower()) for n in needles if n]
+    if not want:
+        return None
+
+    # Exact normalized match
+    for h, n in normalized:
+        if n in want:
+            return h
+
+    # Contains all fragments
+    for h, n in normalized:
+        if all(w in n for w in want):
+            return h
+    return None
+
+
+def _build_layout_column_map(headers: List[str]) -> dict:
+    return {
+        "date": _best_header_match(headers, "date"),
+        "reference": _best_header_match(headers, "ref") or _best_header_match(headers, "reference"),
+        "description": _best_header_match(headers, "desc") or _best_header_match(headers, "description"),
+        "account": _best_header_match(headers, "account") or _best_header_match(headers, "gl"),
+        "debit": _best_header_match(headers, "debit"),
+        "credit": _best_header_match(headers, "credit"),
+        "tax_type": _best_header_match(headers, "taxtype") or _best_header_match(headers, "tax", "type"),
+        "tax_amount": _best_header_match(headers, "taxamount") or _best_header_match(headers, "tax", "amount"),
+    }
+
+
+@router.get("/pastel-layout")
+def get_pastel_layout(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    raw = _get_club_setting(db, "pastel_journal_layout")
+    if not raw:
+        return {"configured": False}
+    try:
+        return {"configured": True, "layout": json.loads(raw)}
+    except Exception:
+        return {"configured": True, "layout_raw": raw}
+
+
+@router.post("/pastel-layout")
+async def upload_pastel_layout(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """
+    Upload a Pastel-exported journal CSV (Batch -> Export) so we can match the import layout exactly.
+    Stores the parsed layout in ClubSetting key: pastel_journal_layout
+    """
+    try:
+        data = await file.read()
+        text = data.decode("utf-8-sig", errors="replace")
+        sample = "\n".join(text.splitlines()[:10])
+
+        sniffer = csv.Sniffer()
+        try:
+            dialect = sniffer.sniff(sample, delimiters=[",", ";", "|", "\t"])
+        except Exception:
+            dialect = csv.excel
+
+        reader = csv.reader(StringIO(text), dialect)
+        rows: list[list[str]] = []
+        for row in reader:
+            if row and any(str(cell or "").strip() for cell in row):
+                rows.append([str(cell or "").strip() for cell in row])
+            if len(rows) >= 3:
+                break
+
+        if not rows:
+            raise HTTPException(status_code=400, detail="Empty CSV file")
+
+        headers = rows[0]
+        first_data = rows[1] if len(rows) > 1 else None
+
+        date_col = _best_header_match(headers, "date")
+        date_format = None
+        if first_data and date_col and date_col in headers:
+            idx = headers.index(date_col)
+            if idx < len(first_data):
+                date_format = _infer_date_format(first_data[idx])
+
+        layout = {
+            "delimiter": getattr(dialect, "delimiter", ","),
+            "has_header": True,
+            "columns": headers,
+            "date_format": date_format,
+            "column_map": _build_layout_column_map(headers),
+            "template_row": first_data,
+            "uploaded_at": datetime.utcnow().isoformat(),
+            "filename": file.filename or None,
+        }
+
+        _upsert_club_setting(db, "pastel_journal_layout", json.dumps(layout))
+        db.commit()
+
+        return {"status": "success", "layout": layout}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PASTEL] Layout upload failed: {str(e)[:240]}")
+        raise HTTPException(status_code=500, detail="Failed to process Pastel layout CSV")
+
+
+class PastelJournalMappingsPayload(BaseModel):
+    vat_output_gl: Optional[str] = None
+    debit_gl: Optional[dict] = None  # e.g. {"CARD":"8400/000","CASH":"8100/000","EFT":"8410/000","ONLINE":"9450/000"}
+    tax_type: Optional[str] = None   # Optional (depends on Pastel import layout)
+
+
+@router.get("/pastel-mappings")
+def get_pastel_mappings(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    raw = _get_club_setting(db, "pastel_journal_mappings")
+    if not raw:
+        return {"configured": False}
+    try:
+        return {"configured": True, "mappings": json.loads(raw)}
+    except Exception:
+        return {"configured": True, "mappings_raw": raw}
+
+
+@router.put("/pastel-mappings")
+def update_pastel_mappings(
+    payload: PastelJournalMappingsPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    raw = _get_club_setting(db, "pastel_journal_mappings")
+    current = {}
+    if raw:
+        try:
+            current = json.loads(raw) or {}
+        except Exception:
+            current = {}
+
+    if payload.vat_output_gl is not None:
+        current["vat_output_gl"] = (payload.vat_output_gl or "").strip() or None
+
+    if payload.tax_type is not None:
+        current["tax_type"] = (payload.tax_type or "").strip() or None
+
+    if payload.debit_gl is not None:
+        debit_gl = {}
+        for k, v in (payload.debit_gl or {}).items():
+            key = str(k or "").strip().upper()
+            val = str(v or "").strip()
+            if not key:
+                continue
+            debit_gl[key] = val or None
+        current["debit_gl"] = debit_gl
+
+    current["updated_at"] = datetime.utcnow().isoformat()
+
+    _upsert_club_setting(db, "pastel_journal_mappings", json.dumps(current))
+    db.commit()
+
+    return {"status": "success", "mappings": current}
+
+
 def get_active_completed_bookings(db: Session, target_date: Optional[date] = None) -> List:
-    """Get all bookings that were checked in or completed on a specific date"""
+    """
+    Get all bookings that were paid on a specific date.
+
+    Accounting rule: the transaction date is the payment date (when the ledger entry was created),
+    not the tee time date.
+    """
     if target_date is None:
         target_date = date.today()
     
-    # Query bookings that were checked in or completed on the target date
-    bookings = db.query(Booking).join(TeeTime).filter(
-        func.date(TeeTime.tee_time) == target_date,
-        Booking.status.in_([BookingStatus.checked_in, BookingStatus.completed])
-    ).all()
+    bookings = (
+        db.query(Booking)
+        .join(LedgerEntry, LedgerEntry.booking_id == Booking.id)
+        .filter(
+            func.date(LedgerEntry.created_at) == target_date,
+            Booking.status.in_([BookingStatus.checked_in, BookingStatus.completed]),
+        )
+        .distinct()
+        .all()
+    )
     
     return bookings
 
@@ -101,7 +317,106 @@ def format_amount(value: float) -> str:
     return text if text else "0"
 
 
-def create_payment_record(booking: Booking, settings: AccountingSetting, batch_id: int = 1) -> PaymentRecord:
+def _q2(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _to_decimal(value) -> Decimal:
+    try:
+        return Decimal(str(value or 0))
+    except Exception:
+        return Decimal("0")
+
+
+def _money_str(value: Decimal) -> str:
+    v = _q2(value)
+    if v == 0:
+        return ""
+    return f"{v:.2f}"
+
+
+def _clean_text(value: str, max_len: int = 60) -> str:
+    raw = (value or "").strip()
+    raw = re.sub(r"[^A-Za-z0-9 _\\-]", " ", raw)
+    raw = re.sub(r"\\s+", " ", raw).strip()
+    if max_len and len(raw) > max_len:
+        raw = raw[:max_len].strip()
+    return raw
+
+
+def _format_date_for_layout(d: date, date_format: Optional[str]) -> str:
+    fmt = (date_format or "").strip().upper()
+    if fmt == "DD/MM/YYYY":
+        return d.strftime("%d/%m/%Y")
+    if fmt == "DD/MM/YY":
+        return d.strftime("%d/%m/%y")
+    if fmt == "YYYY/MM/DD":
+        return d.strftime("%Y/%m/%d")
+    if fmt == "YYYY-MM-DD":
+        return d.strftime("%Y-%m-%d")
+    # Default
+    return d.strftime("%Y-%m-%d")
+
+
+def _require_pastel_layout(db: Session) -> dict:
+    raw = _get_club_setting(db, "pastel_journal_layout")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Pastel journal layout is not configured. Upload the Pastel-exported CSV first.")
+    try:
+        layout = json.loads(raw) or {}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Pastel journal layout is invalid. Re-upload the layout CSV.")
+
+    cols = layout.get("columns") or []
+    if not isinstance(cols, list) or not cols:
+        raise HTTPException(status_code=500, detail="Pastel journal layout is missing columns. Re-upload the layout CSV.")
+    return layout
+
+
+def _require_pastel_mappings(db: Session) -> dict:
+    raw = _get_club_setting(db, "pastel_journal_mappings")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Pastel mappings are not configured. Save VAT + debit GL mappings first.")
+    try:
+        mappings = json.loads(raw) or {}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Pastel mappings are invalid. Re-save mappings.")
+
+    vat_gl = (mappings.get("vat_output_gl") or "").strip()
+    if not vat_gl:
+        raise HTTPException(status_code=400, detail="Missing VAT output GL account in Pastel mappings.")
+
+    debit_gl = mappings.get("debit_gl") or {}
+    if not isinstance(debit_gl, dict):
+        debit_gl = {}
+    mappings["vat_output_gl"] = vat_gl
+    mappings["debit_gl"] = {str(k or "").strip().upper(): str(v or "").strip() for k, v in debit_gl.items()}
+    return mappings
+
+
+def _export_base_dir() -> str:
+    raw = str(os.getenv("GREENLINK_SAGE_EXPORT_DIR", "") or os.getenv("GREENLINK_EXPORT_DIR", "") or "").strip()
+    if raw:
+        return raw
+    return os.path.join(".tmp", "SageExports")
+
+
+def _ensure_export_dirs(base_dir: str) -> dict:
+    ready = os.path.join(base_dir, "Ready")
+    imported = os.path.join(base_dir, "Imported")
+    failed = os.path.join(base_dir, "Failed")
+    archive = os.path.join(base_dir, "Archive")
+    for d in (ready, imported, failed, archive):
+        os.makedirs(d, exist_ok=True)
+    return {"base": base_dir, "ready": ready, "imported": imported, "failed": failed, "archive": archive}
+
+
+def create_payment_record(
+    booking: Booking,
+    settings: AccountingSetting,
+    payment_date: Optional[date] = None,
+    batch_id: int = 1,
+) -> PaymentRecord:
     """Convert a booking to a payment record"""
     tee_time = booking.tee_time
     fee_category = booking.fee_category_id
@@ -114,7 +429,10 @@ def create_payment_record(booking: Booking, settings: AccountingSetting, batch_i
     description = f"Golf Fee - {booking.player_name}"
     
     # Format dates
-    date_obj = tee_time.tee_time if tee_time else datetime.now()
+    if payment_date:
+        date_obj = datetime.combine(payment_date, datetime.min.time())
+    else:
+        date_obj = tee_time.tee_time if tee_time else datetime.now()
     date_str = date_obj.strftime("%d/%m/%Y")
     
     # Period: month number (1-12)
@@ -306,7 +624,7 @@ def get_daily_summary(
     
     # Convert to payment records
     settings = get_accounting_settings(db)
-    records = [create_payment_record(booking, settings) for booking in bookings]
+    records = [create_payment_record(booking, settings, payment_date=target_date) for booking in bookings]
     
     # Calculate totals
     total_payments = sum(r.amount for r in records)
@@ -348,7 +666,7 @@ def export_daily_payments_excel(
     
     # Convert to payment records
     settings = get_accounting_settings(db)
-    records = [create_payment_record(booking, settings) for booking in bookings]
+    records = [create_payment_record(booking, settings, payment_date=target_date) for booking in bookings]
     
     # Create Excel workbook
     excel_file = create_excel_workbook(records, target_date.strftime("%d/%m/%Y"))
@@ -366,9 +684,14 @@ def export_daily_payments_excel(
 @router.get("/export-csv")
 def export_daily_payments_csv(
     export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    force: int = Query(0, description="1 to allow re-export for the same payment date (not recommended)"),
     db: Session = Depends(get_db)
 ):
-    """Export daily payments to CSV file (Sage import)"""
+    """
+    Export a balanced daily VAT journal in the club's Pastel Partner journal import layout.
+
+    Accounting rule: transaction date is the payment date (ledger_entries.created_at), not the tee time date.
+    """
     if export_date:
         try:
             target_date = datetime.strptime(export_date, "%Y-%m-%d").date()
@@ -377,22 +700,324 @@ def export_daily_payments_csv(
     else:
         target_date = date.today()
 
+    settings = get_accounting_settings(db)
+    layout = _require_pastel_layout(db)
+    mappings = _require_pastel_mappings(db)
+
+    # Idempotency: avoid double-posting the same day (unless forced).
+    if not force:
+        exported_count = (
+            db.query(func.count(LedgerEntry.id))
+            .filter(func.date(LedgerEntry.created_at) == target_date, LedgerEntry.pastel_synced == 1)
+            .scalar()
+            or 0
+        )
+        if exported_count:
+            raise HTTPException(status_code=409, detail="This payment date already looks exported. Reopen the day or use force=1.")
+
     try:
-        bookings = get_active_completed_bookings(db, target_date)
+        rows = (
+            db.query(LedgerEntry, Booking, FeeCategory, LedgerEntryMeta)
+            .join(Booking, LedgerEntry.booking_id == Booking.id)
+            .outerjoin(FeeCategory, FeeCategory.id == Booking.fee_category_id)
+            .outerjoin(LedgerEntryMeta, LedgerEntryMeta.ledger_entry_id == LedgerEntry.id)
+            .filter(
+                LedgerEntry.booking_id.isnot(None),
+                func.date(LedgerEntry.created_at) == target_date,
+                Booking.status.in_([BookingStatus.checked_in, BookingStatus.completed]),
+            )
+            .all()
+        )
     except Exception:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
 
-    if not bookings:
+    if not rows:
         raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
 
-    settings = get_accounting_settings(db)
-    records = [create_payment_record(booking, settings) for booking in bookings]
-    csv_content = create_csv_content(records)
+    # Validate payment_method presence.
+    missing_pm = []
+    for le, b, fee_cat, meta in rows:
+        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
+        if not method:
+            missing_pm.append(int(getattr(b, "id", 0) or 0))
+    missing_pm = [bid for bid in missing_pm if bid]
+    if missing_pm:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}"
+        )
 
-    filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.csv"
-    response = StreamingResponse(iter([csv_content.getvalue()]), media_type="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    debit_gl = mappings.get("debit_gl") or {}
+    vat_output_gl = mappings.get("vat_output_gl")
+
+    # Aggregate gross totals.
+    gross_by_method: dict[str, Decimal] = {}
+    gross_by_fee_type: dict[str, Decimal] = {}
+    ledger_entry_ids: list[int] = []
+    booking_ids: list[int] = []
+
+    for le, b, fee_cat, meta in rows:
+        amount = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
+        if amount <= 0:
+            continue
+
+        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
+        fee_type_raw = getattr(fee_cat, "fee_type", None)
+        fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
+
+        gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
+        gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
+
+        if getattr(le, "id", None):
+            ledger_entry_ids.append(int(le.id))
+        if getattr(b, "id", None):
+            booking_ids.append(int(b.id))
+
+    if not gross_by_method:
+        raise HTTPException(status_code=404, detail=f"No positive-value payments found for {target_date}")
+
+    # Validate debit GL mappings for used methods.
+    used_methods = sorted(gross_by_method.keys())
+    missing_debits = [m for m in used_methods if not str(debit_gl.get(m, "") or "").strip()]
+    if missing_debits:
+        raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
+
+    # VAT calculations (inclusive amounts).
+    try:
+        rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
+    except Exception:
+        rate = Decimal("0.15")
+    if rate < 0:
+        rate = Decimal("0")
+
+    vat_by_fee_type: dict[str, Decimal] = {}
+    net_by_fee_type: dict[str, Decimal] = {}
+    for ft, gross in gross_by_fee_type.items():
+        if rate > 0:
+            vat = _q2(gross * (rate / (Decimal("1") + rate)))
+        else:
+            vat = Decimal("0.00")
+        net = _q2(gross - vat)
+        vat_by_fee_type[ft] = vat
+        net_by_fee_type[ft] = net
+
+    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0")))
+    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0")))
+    gross_total = _q2(sum(gross_by_method.values(), Decimal("0")))
+
+    if _q2(net_total + vat_total) != gross_total:
+        raise HTTPException(status_code=500, detail="VAT split does not balance to gross total after rounding.")
+
+    batch_ref = f"GREENLINK_{target_date.strftime('%Y%m%d')}"
+    batch_desc = _clean_text(f"Daily golf takings {target_date.strftime('%Y-%m-%d')}", max_len=60)
+
+    # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
+    lines: list[dict] = []
+    method_order = ["CASH", "CARD", "EFT", "ONLINE"]
+    ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
+    for method in ordered_methods:
+        account = str(debit_gl.get(method) or "").strip()
+        lines.append({
+            "account": account,
+            "debit": gross_by_method[method],
+            "credit": Decimal("0.00"),
+            "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
+        })
+
+    # Revenue credits
+    revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
+    revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}
+    for ft in sorted(net_by_fee_type.keys()):
+        net_amt = net_by_fee_type[ft]
+        if net_amt == 0:
+            continue
+        account = str(revenue_by_fee_type.get(ft) or revenue_gl_default or "").strip()
+        if not account:
+            raise HTTPException(status_code=400, detail=f"Missing revenue GL mapping for fee type '{ft}'.")
+        lines.append({
+            "account": account,
+            "debit": Decimal("0.00"),
+            "credit": net_amt,
+            "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
+        })
+
+    # VAT credit
+    if vat_total != 0:
+        lines.append({
+            "account": str(vat_output_gl).strip(),
+            "debit": Decimal("0.00"),
+            "credit": vat_total,
+            "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
+        })
+
+    debit_sum = _q2(sum((l["debit"] for l in lines), Decimal("0")))
+    credit_sum = _q2(sum((l["credit"] for l in lines), Decimal("0")))
+    if debit_sum != credit_sum:
+        raise HTTPException(status_code=500, detail="Journal is out of balance after rounding.")
+
+    # Render CSV according to stored Pastel layout.
+    columns = layout.get("columns") or []
+    column_map = layout.get("column_map") or {}
+    header_to_idx = {str(h): i for i, h in enumerate(columns)}
+
+    required = ["date", "account", "debit", "credit"]
+    for key in required:
+        header = column_map.get(key)
+        if not header or header not in header_to_idx:
+            raise HTTPException(status_code=500, detail=f"Pastel layout missing required column for '{key}'. Re-upload layout CSV.")
+
+    date_format = layout.get("date_format")
+    date_value = _format_date_for_layout(target_date, date_format)
+    delimiter = layout.get("delimiter") or ","
+    template_row = layout.get("template_row")
+    has_template = isinstance(template_row, list) and len(template_row) == len(columns)
+
+    def _base_row() -> list:
+        if has_template:
+            return [str(x or "") for x in list(template_row)]
+        return ["" for _ in columns]
+
+    def _set(row: list, key: str, value: str) -> None:
+        header = column_map.get(key)
+        if not header:
+            return
+        idx = header_to_idx.get(header)
+        if idx is None:
+            return
+        row[idx] = value
+
+    out = StringIO(newline="")
+    writer = csv.writer(out, delimiter=delimiter, lineterminator="\r\n")
+    writer.writerow(columns)
+
+    tax_type_value = str((mappings.get("tax_type") or "")).strip()
+    for line in lines:
+        row = _base_row()
+        _set(row, "date", date_value)
+        _set(row, "reference", batch_ref)
+        _set(row, "description", line["desc"])
+        _set(row, "account", str(line["account"]))
+        if line["debit"] and _q2(line["debit"]) != 0:
+            _set(row, "debit", _money_str(line["debit"]))
+            _set(row, "credit", "")
+        else:
+            _set(row, "debit", "")
+            _set(row, "credit", _money_str(line["credit"]))
+        if tax_type_value:
+            _set(row, "tax_type", tax_type_value)
+        _set(row, "tax_amount", "")
+        writer.writerow(row)
+
+    csv_text = out.getvalue()
+
+    run_id = uuid.uuid4().hex[:8]
+    base_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}_{run_id}"
+    file_name = f"{base_name}.csv"
+    audit_name = f"{base_name}.audit.json"
+    job_name = f"{base_name}.job.json"
+
+    dirs = _ensure_export_dirs(_export_base_dir())
+    csv_path = os.path.join(dirs["ready"], file_name)
+    audit_path = os.path.join(dirs["ready"], audit_name)
+    job_path = os.path.join(dirs["ready"], job_name)
+
+    try:
+        with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+            f.write(csv_text)
+
+        audit = {
+            "status": "built",
+            "runId": run_id,
+            "date": target_date.strftime("%Y-%m-%d"),
+            "batchRef": batch_ref,
+            "totals": {
+                "gross": float(gross_total),
+                "vat": float(vat_total),
+                "net": float(net_total),
+            },
+            "payment_methods": {k: float(v) for k, v in gross_by_method.items()},
+            "fee_types": {k: float(v) for k, v in gross_by_fee_type.items()},
+            "ledger_entry_count": len(set(ledger_entry_ids)),
+            "booking_count": len(set(booking_ids)),
+            "layout": {
+                "filename": layout.get("filename"),
+                "date_format": layout.get("date_format"),
+                "delimiter": layout.get("delimiter"),
+                "columns": columns,
+            },
+        }
+        with open(audit_path, "w", encoding="utf-8") as f:
+            json.dump(audit, f, indent=2)
+
+        job = {
+            "runId": run_id,
+            "date": target_date.strftime("%Y-%m-%d"),
+            "batchRef": batch_ref,
+            "csv": csv_path,
+            "audit": audit_path,
+        }
+        with open(job_path, "w", encoding="utf-8") as f:
+            json.dump(job, f, indent=2)
+    except Exception as e:
+        print(f"[PASTEL] Failed to write export files: {str(e)[:240]}")
+        raise HTTPException(status_code=500, detail="Failed to write export files")
+
+    # Mark ledger entries as exported (idempotency + audit trail).
+    try:
+        if ledger_entry_ids:
+            db.query(LedgerEntry).filter(LedgerEntry.id.in_(list(set(ledger_entry_ids)))).update(
+                {
+                    LedgerEntry.pastel_synced: 1,
+                    LedgerEntry.pastel_transaction_id: batch_ref,
+                },
+                synchronize_session=False,
+            )
+            db.commit()
+    except Exception as e:
+        print(f"[PASTEL] Failed to mark ledger entries exported: {str(e)[:240]}")
+
+    response = FileResponse(csv_path, media_type="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename={file_name}"
+    response.headers["X-GreenLink-RunId"] = run_id
+    response.headers["X-GreenLink-BatchRef"] = batch_ref
     return response
+
+
+@router.get("/export-job-status")
+def get_export_job_status(
+    export_date: str = Query(..., description="Payment date in YYYY-MM-DD format"),
+    run_id: str = Query(..., description="Run ID returned in X-GreenLink-RunId header"),
+):
+    try:
+        target_date = datetime.strptime(export_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid export_date format. Use YYYY-MM-DD")
+
+    rid = (run_id or "").strip()
+    if not rid or len(rid) > 40:
+        raise HTTPException(status_code=400, detail="Invalid run_id")
+
+    base_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}_{rid}"
+    result_file = f"{base_name}.result.json"
+
+    dirs = _ensure_export_dirs(_export_base_dir())
+    for bucket in ("imported", "failed", "ready"):
+        folder = dirs.get(bucket)
+        if not folder:
+            continue
+        path = os.path.join(folder, result_file)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+        except Exception:
+            data = {"status": "unknown", "message": "Result file unreadable"}
+        data.setdefault("runId", rid)
+        data.setdefault("date", target_date.strftime("%Y-%m-%d"))
+        return data
+
+    return {"status": "pending", "runId": rid, "date": target_date.strftime("%Y-%m-%d")}
 
 
 @router.get("/close-status")
@@ -501,11 +1126,8 @@ def close_day(
     booking_ids = [b.id for b in bookings]
     batch_id = f"GL-{target_date.strftime('%Y%m%d')}-{datetime.utcnow().strftime('%H%M%S')}"
 
-    if booking_ids:
-        ledger_entries = db.query(LedgerEntry).filter(LedgerEntry.booking_id.in_(booking_ids)).all()
-        for le in ledger_entries:
-            le.pastel_synced = 1
-            le.pastel_transaction_id = batch_id
+    # NOTE: Do not mark ledger entries as exported here.
+    # The export job (/cashbook/export-csv) writes the CSV and then marks entries as exported.
 
     filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.csv"
     close = db.query(DayClose).filter(DayClose.close_date == target_date).first()
@@ -626,7 +1248,7 @@ def finalize_day_payments(
     
     # Convert to payment records
     settings = get_accounting_settings(db)
-    records = [create_payment_record(booking, settings) for booking in bookings]
+    records = [create_payment_record(booking, settings, payment_date=target_date) for booking in bookings]
     
     # Calculate totals
     total_payments = sum(r.amount for r in records)
