@@ -3,12 +3,16 @@ from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi import Response
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import ResponseValidationError
+from fastapi.exception_handlers import http_exception_handler
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.requests import Request
 
 from app.database import Base, engine
-from app.routers import users, tee, checkin, scoring, admin, cashbook, profile
+from app.routers import users, tee, checkin, scoring, admin, cashbook, profile, settings
 from app import auth, models, crud, schemas, fee_models
 from app.auth import get_db
 from app.migrations import run_auto_migrations
@@ -17,6 +21,31 @@ from app.migrations import run_auto_migrations
 # Create app instance
 # -----------------------------------------
 app = FastAPI(title="GreenLink MVP")
+
+# -----------------------------------------
+# Global Error Handling (Keep JSON Responses)
+# -----------------------------------------
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
+    # Ensure frontend never gets plain-text "Internal Server Error" on DB issues.
+    print(f"[DB] SQLAlchemy error: {str(exc)[:240]}")
+    return JSONResponse(status_code=503, content={"detail": "Database connection unavailable"})
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_error_handler(request: Request, exc: ResponseValidationError):
+    # Response-model mismatches otherwise become plain-text 500s (hard to debug from JS).
+    print(f"[API] Response validation error: {str(exc)[:240]}")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Keep error responses JSON so the frontend never crashes on `response.json()`.
+    # Preserve FastAPI's HTTPException behavior.
+    if isinstance(exc, HTTPException):
+        return await http_exception_handler(request, exc)
+
+    print(f"[UNHANDLED] {type(exc).__name__}: {str(exc)[:240]}")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # -----------------------------------------
 # CORS Settings
@@ -78,6 +107,7 @@ app.include_router(scoring.router)
 app.include_router(admin.router)
 app.include_router(cashbook.router)
 app.include_router(profile.router)
+app.include_router(settings.router)
 
 # Import and include fees router
 try:

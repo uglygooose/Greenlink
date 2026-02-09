@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 from urllib.parse import quote_plus
@@ -11,28 +11,70 @@ load_dotenv()
 # - MySQL:     mysql+mysqlconnector://user:pass@localhost:3306/greenlink
 # - Supabase:  postgresql+psycopg://postgres:pass@db.<ref>.supabase.co:5432/postgres
 DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL_STRICT = str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"}
 
-if not DATABASE_URL:
-    MYSQL_USER = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD = quote_plus(os.getenv("MYSQL_PASSWORD", ""))
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
-    MYSQL_DB = os.getenv("MYSQL_DB", "greenlink")
+def _build_mysql_url() -> str:
+    mysql_user = os.getenv("MYSQL_USER", "root")
+    mysql_password = quote_plus(os.getenv("MYSQL_PASSWORD", ""))
+    mysql_host = os.getenv("MYSQL_HOST", "localhost")
+    mysql_port = os.getenv("MYSQL_PORT", "3306")
+    mysql_db = os.getenv("MYSQL_DB", "greenlink")
+    return f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}"
 
-    DATABASE_URL = f"mysql+mysqlconnector://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+def _connect_args_for(url: str) -> dict:
+    if not url:
+        return {}
+    if url.startswith("postgresql+psycopg"):
+        # Supabase's PgBouncer pooler (transaction mode) can break when the driver uses
+        # server-side prepared statements (prepared statements are per-connection, but
+        # PgBouncer can swap server connections between transactions).
+        #
+        # psycopg3 uses prepared statements after `prepare_threshold` executions;
+        # disable them entirely by setting it to `None`.
+        return {"prepare_threshold": None}
+    if url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    return {}
 
-connect_args = {}
-# Supabase's PgBouncer pooler (transaction mode) can break when the driver uses
-# server-side prepared statements. psycopg3 enables them by default after a few
-# executions; disable them to avoid 500s on simple queries (e.g. /login).
-if DATABASE_URL and DATABASE_URL.startswith("postgresql+psycopg"):
-    connect_args["prepare_threshold"] = 0
+def _try_engine(url: str):
+    if not url:
+        return None, "empty url"
+    connect_args = _connect_args_for(url)
+    engine = create_engine(
+        url,
+        echo=False,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("select 1"))
+        return engine, None
+    except Exception as e:
+        return None, str(e)[:200]
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    connect_args=connect_args,
-)
+engine = None
+engine_error = None
+
+if DATABASE_URL:
+    engine, engine_error = _try_engine(DATABASE_URL)
+    if engine_error:
+        print(f"[DB] DATABASE_URL connection failed: {engine_error}")
+
+if engine is None and DATABASE_URL and DATABASE_URL_STRICT:
+    raise RuntimeError("DATABASE_URL_STRICT is enabled, refusing to fall back after DATABASE_URL failure.")
+
+if engine is None:
+    mysql_url = _build_mysql_url()
+    engine, engine_error = _try_engine(mysql_url)
+    if engine_error:
+        print(f"[DB] MySQL connection failed: {engine_error}")
+
+if engine is None:
+    sqlite_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./greenlink.dev.db")
+    engine, engine_error = _try_engine(sqlite_url)
+    if engine_error:
+        print(f"[DB] SQLite fallback failed: {engine_error}")
+        raise RuntimeError("Database initialization failed after all fallbacks.")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

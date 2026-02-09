@@ -35,8 +35,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setupLedgerFilters();
     setupRevenueFilters();
     setupTeeSheetFilters();
+    setupTeeManageMenu();
     setupTeeBookingModal();
     setupPeopleFilters();
+    loadBookingWindowSettings();
 });
 
 // Date formatting (DD/MM/YY across admin UI)
@@ -70,6 +72,25 @@ function formatYMDToDMY(value) {
     const m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return value || "-";
     return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
+}
+
+async function fetchJson(url, options) {
+    const res = await fetch(url, options);
+    const raw = await res.text();
+    let data = null;
+    try {
+        data = raw ? JSON.parse(raw) : null;
+    } catch {
+        data = null;
+    }
+    if (!res.ok) {
+        const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : (raw || res.statusText || "Request failed");
+        const err = new Error(msg);
+        err.status = res.status;
+        err.data = data;
+        throw err;
+    }
+    return data;
 }
 
 function statusToClass(status) {
@@ -221,11 +242,9 @@ async function loadDashboard() {
     const token = localStorage.getItem("token");
 
     try {
-        const response = await fetch(`${API_BASE}/api/admin/dashboard`, {
+        const data = await fetchJson(`${API_BASE}/api/admin/dashboard`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const data = await response.json();
 
         document.getElementById("total-bookings").textContent = data.total_bookings;
         document.getElementById("total-players").textContent = data.total_players;
@@ -299,11 +318,9 @@ async function loadRevenueChart() {
     const token = localStorage.getItem("token");
 
     try {
-        const response = await fetch(`${API_BASE}/api/admin/revenue?days=30`, {
+        const data = await fetchJson(`${API_BASE}/api/admin/revenue?days=30`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const data = await response.json();
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
 
         const ctx = document.getElementById("revenueChart");
@@ -500,11 +517,9 @@ async function loadBookings() {
             url += `&start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`;
         }
 
-        const response = await fetch(url, {
+        const data = await fetchJson(url, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const data = await response.json();
 
         const table = document.getElementById("bookings-table");
         table.innerHTML = data.bookings.map(b => `
@@ -543,11 +558,9 @@ async function viewBookingDetail(bookingId) {
     const token = localStorage.getItem("token");
 
     try {
-        const response = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}`, {
+        const booking = await fetchJson(`${API_BASE}/api/admin/bookings/${bookingId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const booking = await response.json();
         currentBookingDetail = booking;
 
         const status = String(booking.status || "");
@@ -795,9 +808,7 @@ async function loadPlayers() {
         }
         if (search) url += `&q=${encodeURIComponent(search)}`;
 
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-
-        const data = await response.json();
+        const data = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } });
 
         if (peopleView === "members") {
             tableHead.innerHTML = `
@@ -914,18 +925,14 @@ async function viewPlayerDetail(playerId) {
     const token = localStorage.getItem("token");
 
     try {
-        const response = await fetch(`${API_BASE}/api/admin/players/${playerId}`, {
+        const player = await fetchJson(`${API_BASE}/api/admin/players/${playerId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const player = await response.json();
         
         // Get price info
-        const priceResponse = await fetch(`${API_BASE}/api/admin/players/${playerId}/price-info`, {
+        const priceInfo = await fetchJson(`${API_BASE}/api/admin/players/${playerId}/price-info`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        
-        const priceInfo = await priceResponse.json();
 
         const html = `
             <div class="modal-section">
@@ -1248,11 +1255,9 @@ async function loadRevenue() {
         const period = String(revenuePeriod || "day");
         const url = `${API_BASE}/api/admin/revenue?period=${encodeURIComponent(period)}&anchor_date=${encodeURIComponent(anchorDate)}`;
 
-        const response = await fetch(url, {
+        const data = await fetchJson(url, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        const data = await response.json();
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
 
         // Summary (paid revenue vs target)
@@ -1340,6 +1345,7 @@ const TEE_DEFAULT_INTERVAL_MIN = 10;
 const TEE_NINE_HOLE_START = "15:00"; // 9-hole view starts later than 18-hole view
 let lastNineAutoGenKey = null;
 let lastFullAutoGenKey = null;
+let lastBulkBookGroupId = null;
 
 function floorToInterval(dateObj, intervalMin) {
     const d = new Date(dateObj);
@@ -1441,6 +1447,198 @@ function setupTeeSheetFilters() {
             applyTeeSheetSearchFilter();
         }
     });
+}
+
+function setupTeeManageMenu() {
+    const btn = document.getElementById("tee-manage-btn");
+    const menu = document.getElementById("tee-manage-menu");
+    if (!btn || !menu) return;
+
+    const closeMenu = () => {
+        menu.classList.remove("show");
+        btn.setAttribute("aria-expanded", "false");
+    };
+
+    const openMenu = () => {
+        menu.classList.add("show");
+        btn.setAttribute("aria-expanded", "true");
+    };
+
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (menu.classList.contains("show")) closeMenu();
+        else openMenu();
+    });
+
+    menu.addEventListener("click", async (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const item = target.closest("button[data-action]");
+        if (!item) return;
+
+        const action = item.getAttribute("data-action") || "";
+        closeMenu();
+
+        if (action === "booking-window") {
+            document.getElementById("booking-window-modal")?.classList.add("show");
+            loadBookingWindowSettings();
+            return;
+        }
+
+        if (action === "bulk-book") {
+            openBulkBookModal();
+            return;
+        }
+
+        if (action === "generate") {
+            const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+            try {
+                const created = await generateDaySheet(dateStr, new Set(), ["1", "10"]);
+                alert(`Generated ${created} tee times`);
+                loadTeeTimes();
+            } catch (err) {
+                alert(err?.message || "Failed to generate tee times");
+            }
+        }
+    });
+
+    document.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!menu.classList.contains("show")) return;
+        if (target.closest("#tee-manage-menu") || target.closest("#tee-manage-btn")) return;
+        closeMenu();
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeMenu();
+    });
+}
+
+function openBulkBookModal() {
+    const modal = document.getElementById("bulk-book-modal");
+    if (!modal) return;
+
+    const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+    const holes = String(selectedHolesView) === "9" ? "9" : "18";
+
+    const dateInput = document.getElementById("bulk-book-date");
+    const holesSelect = document.getElementById("bulk-book-holes");
+    const startInput = document.getElementById("bulk-book-start");
+    const endInput = document.getElementById("bulk-book-end");
+    const slotsInput = document.getElementById("bulk-book-slots");
+    const priceInput = document.getElementById("bulk-book-price");
+    const statusEl = document.getElementById("bulk-book-status");
+    const undoBtn = document.getElementById("bulk-book-undo");
+
+    if (dateInput) dateInput.value = dateStr;
+    if (holesSelect) holesSelect.value = holes;
+    if (startInput) startInput.value = holes === "9" ? TEE_NINE_HOLE_START : TEE_DEFAULT_START;
+    if (endInput) endInput.value = TEE_DEFAULT_END;
+    if (slotsInput) slotsInput.value = String(Math.min(4, Math.max(1, parseInt(String(slotsInput.value || "4"), 10) || 4)));
+    if (priceInput && !priceInput.value) priceInput.value = "0";
+
+    if (statusEl) statusEl.textContent = "";
+    lastBulkBookGroupId = null;
+    if (undoBtn) undoBtn.disabled = true;
+
+    modal.classList.add("show");
+}
+
+async function submitBulkBook() {
+    const token = localStorage.getItem("token");
+    const name = document.getElementById("bulk-book-name")?.value?.trim() || "";
+    const dateStr = document.getElementById("bulk-book-date")?.value || "";
+    const teeVal = document.getElementById("bulk-book-tee")?.value || "all";
+    const holes = parseInt(document.getElementById("bulk-book-holes")?.value || "18", 10);
+    const startTime = document.getElementById("bulk-book-start")?.value || "";
+    const endTime = document.getElementById("bulk-book-end")?.value || "";
+    const slotsPerTime = parseInt(document.getElementById("bulk-book-slots")?.value || "4", 10);
+    const price = Number(document.getElementById("bulk-book-price")?.value || "0");
+
+    const statusEl = document.getElementById("bulk-book-status");
+    const undoBtn = document.getElementById("bulk-book-undo");
+    const runBtn = document.getElementById("bulk-book-run");
+
+    if (!name) {
+        if (statusEl) statusEl.textContent = "Event / group name is required.";
+        return;
+    }
+    if (!dateStr) {
+        if (statusEl) statusEl.textContent = "Date is required.";
+        return;
+    }
+    if (!startTime || !endTime) {
+        if (statusEl) statusEl.textContent = "Start and end times are required.";
+        return;
+    }
+
+    const tees = teeVal === "all" ? ["1", "10"] : [String(teeVal)];
+
+    try {
+        if (statusEl) statusEl.textContent = "Working...";
+        if (runBtn) runBtn.disabled = true;
+
+        const data = await fetchJson(`${API_BASE}/api/admin/tee-sheet/bulk-book`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                date: dateStr,
+                tees,
+                start_time: startTime,
+                end_time: endTime,
+                holes: holes === 9 ? 9 : 18,
+                slots_per_time: Number.isFinite(slotsPerTime) ? slotsPerTime : 4,
+                group_name: name,
+                price: Number.isFinite(price) ? price : 0
+            })
+        });
+
+        const created = Number(data.created || 0) || 0;
+        lastBulkBookGroupId = created > 0 ? (data.group_id || null) : null;
+        if (statusEl) {
+            statusEl.textContent = `Created ${created} bookings${data.group_id ? ` (group ${data.group_id})` : ""}.`;
+        }
+        if (undoBtn) undoBtn.disabled = !lastBulkBookGroupId;
+        loadTeeTimes();
+    } catch (err) {
+        if (statusEl) statusEl.textContent = err?.message || "Bulk booking failed.";
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+async function undoBulkBook() {
+    const token = localStorage.getItem("token");
+    const statusEl = document.getElementById("bulk-book-status");
+    const undoBtn = document.getElementById("bulk-book-undo");
+    const runBtn = document.getElementById("bulk-book-run");
+
+    const gid = String(lastBulkBookGroupId || "").trim();
+    if (!gid) return;
+
+    try {
+        if (statusEl) statusEl.textContent = "Undoing...";
+        if (undoBtn) undoBtn.disabled = true;
+        if (runBtn) runBtn.disabled = true;
+
+        const data = await fetchJson(`${API_BASE}/api/admin/tee-sheet/bulk-book/${encodeURIComponent(gid)}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        lastBulkBookGroupId = null;
+        if (statusEl) statusEl.textContent = `Deleted ${Number(data.deleted || 0)} bookings.`;
+        loadTeeTimes();
+    } catch (err) {
+        if (statusEl) statusEl.textContent = err?.message || "Undo failed.";
+        if (undoBtn) undoBtn.disabled = false;
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
 }
 
 function applyTeeSheetSearchFilter() {
@@ -2917,6 +3115,62 @@ async function saveAccountingSettings() {
         loadCashbookSummary();
     } catch (error) {
         console.error("Failed to save accounting settings:", error);
+        if (statusEl) statusEl.textContent = "Save failed";
+    }
+}
+
+async function loadBookingWindowSettings() {
+    const token = localStorage.getItem("token");
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/booking-window`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const memberInput = document.getElementById("booking-window-member");
+        const affInput = document.getElementById("booking-window-affiliated");
+        const nonAffInput = document.getElementById("booking-window-nonaff");
+        if (memberInput) memberInput.value = data.member_days ?? 14;
+        if (affInput) affInput.value = data.affiliated_days ?? 7;
+        if (nonAffInput) nonAffInput.value = data.non_affiliated_days ?? 5;
+    } catch (error) {
+        console.error("Failed to load booking window settings:", error);
+    }
+}
+
+async function saveBookingWindowSettings() {
+    const token = localStorage.getItem("token");
+    const memberDays = parseInt(document.getElementById("booking-window-member")?.value || "14", 10);
+    const affiliatedDays = parseInt(document.getElementById("booking-window-affiliated")?.value || "7", 10);
+    const nonAffDays = parseInt(document.getElementById("booking-window-nonaff")?.value || "5", 10);
+    const statusEl = document.getElementById("booking-window-status");
+
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/booking-window`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                member_days: Number.isFinite(memberDays) ? memberDays : 14,
+                affiliated_days: Number.isFinite(affiliatedDays) ? affiliatedDays : 7,
+                non_affiliated_days: Number.isFinite(nonAffDays) ? nonAffDays : 5
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            if (statusEl) statusEl.textContent = err.detail || "Save failed";
+            return;
+        }
+
+        if (statusEl) {
+            statusEl.textContent = "Saved";
+            setTimeout(() => { statusEl.textContent = ""; }, 2000);
+        }
+    } catch (error) {
+        console.error("Failed to save booking window settings:", error);
         if (statusEl) statusEl.textContent = "Save failed";
     }
 }

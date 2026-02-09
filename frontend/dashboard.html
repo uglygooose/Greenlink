@@ -2,144 +2,462 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GreenLink Dashboard</title>
-  <link rel="stylesheet" href="/frontend/style.css">
+  <title>GreenLink Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    .profile-section { display: none; }
-    .profile-section.active { display: block; }
-    .alert { padding: 15px; margin: 15px 0; border-radius: 5px; }
-    .alert-warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+    :root {
+      --ucc-olive: #5a7a3a;
+      --ucc-olive-dark: #4e6a31;
+      --ucc-sage: #e6ecd6;
+      --ucc-cream: #f6f4ec;
+      --ucc-orange: #f28c2c;
+      --ucc-ink: #1f2a1b;
+      --ucc-muted: #6c7b66;
+      --ucc-border: #d9dfc9;
+      --ucc-card: #ffffff;
+      --ucc-shadow: 0 10px 26px rgba(31, 42, 27, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+      background: radial-gradient(circle at top, #f6f4ec 0%, #e6ecd6 45%, #f6f4ec 100%);
+      color: var(--ucc-ink);
+    }
+
+    .dash-shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 18px 18px 40px;
+    }
+
+    .dash-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      padding: 18px 22px;
+      background: linear-gradient(135deg, #f6f4ec 0%, #e6ecd6 100%);
+      border: 1px solid var(--ucc-border);
+      border-radius: 18px;
+      box-shadow: var(--ucc-shadow);
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 2px solid var(--ucc-border);
+      object-fit: cover;
+    }
+
+    .brand-kicker {
+      margin: 0;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ucc-muted);
+    }
+
+    .brand-title {
+      margin: 2px 0 0;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      border-radius: 12px;
+      border: 1px solid var(--ucc-border);
+      padding: 10px 16px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn.primary {
+      background: var(--ucc-olive);
+      color: #fff;
+      border-color: var(--ucc-olive);
+    }
+
+    .btn.ghost {
+      background: #fff;
+      color: var(--ucc-olive-dark);
+    }
+
+    .btn.outline {
+      background: transparent;
+      color: var(--ucc-olive-dark);
+    }
+
+    .alert {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      color: #856404;
+      display: none;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .card {
+      background: var(--ucc-card);
+      border: 1px solid var(--ucc-border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--ucc-shadow);
+    }
+
+    .welcome-title {
+      font-size: 20px;
+      margin: 0 0 8px;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #f3f7ea;
+      color: var(--ucc-olive-dark);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .info-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px dashed #e4e8d8;
+      padding-bottom: 6px;
+    }
+
+    .info-item span {
+      color: var(--ucc-muted);
+    }
+
+    .profile-panel {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .profile-panel.active {
+      display: block;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .form-group label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ucc-muted);
+    }
+
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--ucc-border);
+      margin-top: 6px;
+      font-size: 14px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .dash-header {
+        padding: 16px;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header"><h1>Dashboard</h1></div>
-    
-    <!-- Alert if profile incomplete -->
-    <div id="profile_alert" class="alert alert-warning" style="display: none;">
-      <strong>Complete Your Profile</strong> - Please update your profile details (phone, date of birth, and home club) before booking tee times.
-      <button onclick="toggleProfile()" class="btn btn-sm btn-primary" style="float: right;">Update Profile</button>
-    </div>
-
-    <!-- Navigation buttons -->
-    <div class="card p-4 mt-3">
-      <button onclick="toggleProfile()" class="btn btn-info">My Profile</button>
-      <button onclick="goto('tsheet.html')" class="btn btn-primary mt-2">Book Now</button>
-      <button onclick="logout()" class="btn btn-danger mt-2">Logout</button>
-    </div>
-
-    <!-- Player Profile Section -->
-    <div id="profile_section" class="card p-4 mt-4 profile-section">
-      <h3>Player Profile</h3>
-      <form id="profile_form" onsubmit="saveProfile(event)">
-        <div class="form-group mt-3">
-          <label>Full Name</label>
-          <input type="text" id="profile_name" class="form-control" required>
+  <div class="dash-shell">
+    <header class="dash-header">
+      <div class="brand">
+        <img src="/frontend/assets/logo.jpeg" alt="GreenLink" class="brand-logo">
+        <div>
+          <p class="brand-kicker">Umhlali Country Club</p>
+          <h1 class="brand-title">Player Hub</h1>
         </div>
-        <div class="form-group mt-3">
-          <label>Phone Number</label>
-          <input type="tel" id="profile_phone" class="form-control" required>
-        </div>
-        <div class="form-group mt-3">
-          <label>Birth Date</label>
-          <input type="date" id="profile_birth_date" class="form-control" required>
-        </div>
-        <div class="form-group mt-3">
-          <label>HNA SA Player ID (optional)</label>
-          <input type="text" id="profile_handicap_sa_id" class="form-control" placeholder="e.g., 27XXXXXXXX">
-        </div>
-        <div class="form-group mt-3">
-          <label>Home Club</label>
-          <input type="text" id="profile_home_course" class="form-control" placeholder="e.g., Umhlali Country Club" required>
-        </div>
-        <button type="submit" class="btn btn-success mt-4">Save Profile</button>
-        <button type="button" onclick="toggleProfile()" class="btn btn-secondary mt-4 ms-2">Cancel</button>
-      </form>
-    </div>
-
-    <!-- Welcome Card -->
-    <div class="card p-5 mt-5" style="background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; border: none; border-radius: 15px; box-shadow: 0 8px 16px rgba(46, 204, 113, 0.3);">
-      <h2 style="margin-bottom: 30px; font-size: 28px;">Welcome, <span id="user_name" style="font-weight: bold;">Player</span>!</h2>
-      <div style="font-size: 18px; line-height: 2;">
-        <p><strong>Email:</strong> <span id="user_email" style="font-size: 16px;">-</span></p>
-        <p><strong>Phone:</strong> <span id="user_phone" style="font-size: 16px;">-</span></p>
-        <p><strong>Age:</strong> <span id="user_age" style="font-size: 16px;">-</span></p>
-        <p><strong>Handicap SA ID:</strong> <span id="user_handicap_sa" style="font-size: 16px;">-</span></p>
-        <p><strong>Home Club:</strong> <span id="user_home_course" style="font-size: 16px;">-</span></p>
       </div>
+      <div class="header-actions">
+        <button class="btn ghost" onclick="toggleProfile()">Edit Profile</button>
+        <button class="btn primary" onclick="goto('tsheet.html')">Book Tee Time</button>
+        <button class="btn outline" onclick="logout()">Logout</button>
+      </div>
+    </header>
+
+    <div id="profile_alert" class="alert">
+      Complete your profile (phone, date of birth, and home club) to unlock booking.
     </div>
+
+    <section class="cards-grid">
+      <div class="card">
+        <h2 class="welcome-title">Welcome, <span id="user_name">Player</span></h2>
+        <p id="membership_status">Membership: -</p>
+        <div class="chip-row">
+          <div class="chip" id="booking-window-chip">Booking window: --</div>
+          <div class="chip" id="home-club-chip">Home club: --</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Profile Summary</h3>
+        <div class="info-list">
+          <div class="info-item"><span>Email</span><strong id="user_email">-</strong></div>
+          <div class="info-item"><span>Phone</span><strong id="user_phone">-</strong></div>
+          <div class="info-item"><span>Date of Birth</span><strong id="user_birth_date">-</strong></div>
+          <div class="info-item"><span>HNA SA ID</span><strong id="user_handicap_sa">-</strong></div>
+          <div class="info-item"><span>Handicap Index</span><strong id="user_handicap_index">-</strong></div>
+          <div class="info-item"><span>Category</span><strong id="user_category">-</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="profile_section" class="card profile-panel">
+      <h3>Edit Profile</h3>
+      <form id="profile_form" onsubmit="saveProfile(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="profile_name" required>
+          </div>
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" id="profile_phone" required>
+          </div>
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="profile_birth_date" required>
+          </div>
+          <div class="form-group">
+            <label>HNA SA Player ID</label>
+            <input type="text" id="profile_handicap_sa_id" placeholder="Optional">
+          </div>
+          <div class="form-group">
+            <label>Home Club</label>
+            <input type="text" id="profile_home_course" list="clubList" required>
+          </div>
+          <div class="form-group">
+            <label>Handicap Index</label>
+            <input type="number" id="profile_handicap_index" step="0.1" min="0">
+          </div>
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="profile_gender">
+              <option value="">Prefer not to say</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="profile_category">
+              <option value="">Select</option>
+              <option value="adult">Adult</option>
+              <option value="student">Student</option>
+              <option value="pensioner">Pensioner</option>
+              <option value="junior">Junior</option>
+            </select>
+          </div>
+        </div>
+        <datalist id="clubList">
+          <option value="Umhlali Country Club"></option>
+          <option value="Durban Country Club"></option>
+          <option value="Royal Durban Golf Club"></option>
+          <option value="Mount Edgecombe Country Club"></option>
+          <option value="Zimbali Country Club"></option>
+        </datalist>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Save Profile</button>
+          <button type="button" class="btn ghost" onclick="toggleProfile()">Cancel</button>
+        </div>
+      </form>
+    </section>
   </div>
 
 <script>
 const token = localStorage.getItem('token');
+if (!token) window.location.href = '/frontend/index.html';
+
+const typeLabels = {
+  member: 'Umhlali Member',
+  visitor: 'Affiliated Visitor',
+  non_affiliated: 'Visitor (No HNA)'
+};
+
+let cachedProfile = null;
+let bookingWindow = null;
 
 function logout(){ localStorage.removeItem('token'); window.location.href='/frontend/index.html'; }
 function goto(p){ window.location.href='/frontend/'+p; }
 
 function toggleProfile(){
   const section = document.getElementById('profile_section');
-  section.classList.toggle('active');
+  if (section) section.classList.toggle('active');
+}
+
+function inferPlayerType(profile){
+  const at = String(profile?.account_type || '').trim().toLowerCase();
+  if (typeLabels[at]) return at;
+  const home = String(profile?.home_course || '').trim().toLowerCase();
+  const hasHna = Boolean(String(profile?.handicap_sa_id || '').trim());
+  if (home.includes('umhlali')) return 'member';
+  if (hasHna || home) return 'visitor';
+  return 'non_affiliated';
+}
+
+function updateProfileSummary(profile){
+  const playerType = inferPlayerType(profile);
+  document.getElementById('user_name').textContent = profile.name || 'Player';
+  document.getElementById('user_email').textContent = profile.email || '-';
+  document.getElementById('user_phone').textContent = profile.phone || 'Not set';
+  document.getElementById('user_birth_date').textContent = profile.birth_date || 'Not set';
+  document.getElementById('user_handicap_sa').textContent = profile.handicap_sa_id || 'Not set';
+  document.getElementById('user_handicap_index').textContent = profile.handicap_index ?? 'Not set';
+  document.getElementById('user_category').textContent = profile.player_category || 'Not set';
+
+  const membershipLabel = typeLabels[playerType] || 'Visitor';
+  document.getElementById('membership_status').textContent = `Membership: ${membershipLabel}`;
+  document.getElementById('home-club-chip').textContent = `Home club: ${profile.home_course || 'Not set'}`;
+
+  if (!profile.phone || !profile.birth_date || !profile.home_course) {
+    document.getElementById('profile_alert').style.display = 'block';
+  } else {
+    document.getElementById('profile_alert').style.display = 'none';
+  }
+}
+
+function populateForm(profile){
+  document.getElementById('profile_name').value = profile.name || '';
+  document.getElementById('profile_phone').value = profile.phone || '';
+  document.getElementById('profile_birth_date').value = profile.birth_date || '';
+  document.getElementById('profile_handicap_sa_id').value = profile.handicap_sa_id || '';
+  document.getElementById('profile_home_course').value = profile.home_course || '';
+  document.getElementById('profile_handicap_index').value = profile.handicap_index ?? '';
+  document.getElementById('profile_gender').value = profile.gender || '';
+  document.getElementById('profile_category').value = profile.player_category || '';
 }
 
 async function loadUserInfo(){
-  if(!token){ window.location.href='/frontend/index.html'; return; }
-  
-  const res = await fetch('/profile/me', { headers: { 'Authorization': 'Bearer '+token }});
+  const res = await fetch('/profile/me', { headers: { 'Authorization': 'Bearer ' + token }});
   if(!res.ok){ alert('Session invalid'); logout(); return; }
   const profile = await res.json();
-  
-  // Display profile info
-  document.getElementById('user_name').textContent = profile.name;
-  document.getElementById('user_email').textContent = profile.email;
-  document.getElementById('user_phone').textContent = profile.phone || 'Not set';
-  document.getElementById('user_age').textContent = profile.age || 'Not set';
-  document.getElementById('user_handicap_sa').textContent = profile.handicap_sa_id || 'Not set';
-  document.getElementById('user_home_course').textContent = profile.home_course || 'Not set';
-  
-  // Populate form
-  document.getElementById('profile_name').value = profile.name;
-  if(profile.phone) document.getElementById('profile_phone').value = profile.phone;
-  if(profile.birth_date) document.getElementById('profile_birth_date').value = profile.birth_date;
-  if(profile.handicap_sa_id) document.getElementById('profile_handicap_sa_id').value = profile.handicap_sa_id;
-  if(profile.home_course) document.getElementById('profile_home_course').value = profile.home_course;
-  
-  // Show alert if profile incomplete
-  if(!profile.phone || !profile.birth_date || !profile.home_course){
-    document.getElementById('profile_alert').style.display = 'block';
+  cachedProfile = profile;
+  updateProfileSummary(profile);
+  populateForm(profile);
+  updateBookingWindowLabel();
+}
+
+async function loadBookingWindow(){
+  try {
+    const res = await fetch('/settings/booking-window', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (!res.ok) return;
+    bookingWindow = await res.json();
+    updateBookingWindowLabel();
+  } catch (e) {
+    // Non-blocking
+  }
+}
+
+function updateBookingWindowLabel(){
+  const chip = document.getElementById('booking-window-chip');
+  if (!chip) return;
+  const playerType = bookingWindow?.player_type || inferPlayerType(cachedProfile || {});
+  const label = typeLabels[playerType] || 'Visitor';
+  if (bookingWindow?.window_days != null) {
+    chip.textContent = `Booking window: ${bookingWindow.window_days} days (${label})`;
+  } else {
+    chip.textContent = `Booking window: -- (${label})`;
   }
 }
 
 async function saveProfile(e){
   e.preventDefault();
-  
   const profileData = {
     name: document.getElementById('profile_name').value,
     phone: document.getElementById('profile_phone').value,
     birth_date: document.getElementById('profile_birth_date').value,
     handicap_sa_id: document.getElementById('profile_handicap_sa_id').value,
-    home_course: document.getElementById('profile_home_course').value
+    home_course: document.getElementById('profile_home_course').value,
+    handicap_index: document.getElementById('profile_handicap_index').value,
+    gender: document.getElementById('profile_gender').value,
+    player_category: document.getElementById('profile_category').value
   };
-  
+
   const res = await fetch('/profile/me', {
     method: 'PUT',
-    headers: { 
+    headers: {
       'Authorization': 'Bearer '+token,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(profileData)
   });
-  
+
   if(res.ok){
     alert('Profile saved successfully!');
     document.getElementById('profile_section').classList.remove('active');
-    loadUserInfo();
+    await loadUserInfo();
+    await loadBookingWindow();
   } else {
     alert('Error saving profile');
   }
 }
 
-if(!token) window.location.href='/frontend/index.html';
-else loadUserInfo();
+loadUserInfo();
+loadBookingWindow();
 </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 # app/crud.py
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime
 from app import models, schemas
 from app.auth import get_password_hash, verify_password, create_access_token
@@ -203,7 +203,7 @@ def create_tee_time(db: Session, tee_time_iso, hole=None, capacity=4, status="op
 def list_tee_times(db: Session):
     return db.query(models.TeeTime).order_by(models.TeeTime.tee_time).all()
 
-def create_booking(db: Session, booking_in: schemas.BookingCreate):
+def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user: models.User | None = None):
     # Validate tee time exists
     tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == booking_in.tee_time_id).first()
     if not tee_time:
@@ -212,9 +212,44 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
     if is_day_closed(db, tee_time.tee_time.date()):
         raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
 
+    # Enforce player booking window (admins bypass).
+    if current_user is not None:
+        try:
+            from app.booking_rules import get_booking_window_for_user
+            from app.models import UserRole
+
+            if getattr(current_user, "role", None) != UserRole.admin:
+                _, window_days, max_date = get_booking_window_for_user(db, current_user)
+                if tee_time.tee_time.date() > max_date:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Booking window exceeded. You can book up to {window_days} days ahead.",
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            # Do not block bookings if settings are unavailable.
+            pass
+
     # Capacity enforcement
     party_size = booking_in.party_size or 1
-    existing_bookings = db.query(models.Booking).filter(models.Booking.tee_time_id == booking_in.tee_time_id).all()
+    # Cancelled/no-show bookings should not block capacity.
+    occupying_statuses = [
+        models.BookingStatus.booked,
+        models.BookingStatus.checked_in,
+        models.BookingStatus.completed,
+    ]
+    existing_bookings = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.tee_time_id == booking_in.tee_time_id,
+            or_(
+                models.Booking.status.is_(None),
+                models.Booking.status.in_(occupying_statuses),
+            ),
+        )
+        .all()
+    )
     existing_total = sum((b.party_size or 1) for b in existing_bookings)
     if existing_total + party_size > (tee_time.capacity or 4):
         raise HTTPException(status_code=409, detail="Tee time capacity exceeded")
@@ -477,6 +512,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate):
     b = models.Booking(
         tee_time_id=booking_in.tee_time_id,
         member_id=resolved_member_id,
+        created_by_user_id=getattr(current_user, "id", None) if current_user is not None else None,
         player_name=booking_in.player_name,
         player_email=booking_in.player_email,
         club_card=booking_in.club_card,

@@ -103,6 +103,24 @@
       padding: 18px 6px 8px;
     }
 
+    .booking-window-banner {
+      margin: 6px 6px 0;
+      padding: 10px 14px;
+      background: #f3f7ea;
+      border: 1px solid var(--ucc-border);
+      border-radius: 14px;
+      font-size: 13px;
+      color: var(--ucc-olive-dark);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .booking-window-banner span {
+      font-weight: 700;
+    }
+
     .selector-btn {
       flex: 1;
       padding: 16px 18px;
@@ -534,6 +552,11 @@
         <div class="sub-text" id="holes-info"></div>
       </div>
     </div>
+
+    <div class="booking-window-banner">
+      <span id="booking-window-label">Booking window: --</span>
+      <span id="booking-window-range"></span>
+    </div>
     
     <div class="booking-tabs">
       <button class="tab-btn active" onclick="setTab('book')">Book for Players</button>
@@ -641,6 +664,16 @@ const API_PREFIX = '/tsheet';
 const token = localStorage.getItem('token');
 if(!token) location.href='/frontend/index.html';
 
+const typeLabels = {
+  member: 'Umhlali Member',
+  visitor: 'Affiliated Visitor',
+  non_affiliated: 'Visitor (No HNA)'
+};
+
+let bookingWindowDays = 14;
+let bookingWindowType = 'visitor';
+let bookingWindowMaxDate = null;
+
 // Get tee time info from URL params
 const urlParams = new URLSearchParams(window.location.search);
 const teeTimeId = urlParams.get('tee_time_id');
@@ -672,6 +705,15 @@ async function init() {
     document.getElementById('holes-info').textContent = '18 Holes';
   }
   
+	  await loadBookingWindow();
+	  if (bookingWindowMaxDate && teeTimeStr) {
+	    const teeDate = new Date(teeTimeStr);
+	    if (teeDate > bookingWindowMaxDate) {
+	      alert(`This tee time is outside your ${bookingWindowDays}-day booking window.`);
+	      goBack();
+	      return;
+	    }
+	  }
 	  await loadMyProfile();
 	  await loadFees();
 	  await loadExistingBookings();
@@ -696,7 +738,9 @@ async function loadMyProfile() {
     }
 
     selectedPlayerType = defaultPlayerType;
+    bookingWindowType = defaultPlayerType;
     updateTypeSelection();
+    updateBookingWindowBanner();
   } catch (e) {
     // Non-blocking
   }
@@ -707,6 +751,35 @@ function formatDate(date) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const y = String(date.getFullYear()).slice(2);
   return `${d}/${m}/${y}`;
+}
+
+function updateBookingWindowBanner() {
+  const labelEl = document.getElementById('booking-window-label');
+  const rangeEl = document.getElementById('booking-window-range');
+  if (!labelEl || !rangeEl) return;
+  const label = typeLabels[bookingWindowType] || 'Visitor';
+  labelEl.textContent = `Booking window: ${bookingWindowDays} days (${label})`;
+  if (bookingWindowMaxDate) {
+    rangeEl.textContent = `Book through ${formatDate(bookingWindowMaxDate)}`;
+  } else {
+    rangeEl.textContent = '';
+  }
+}
+
+async function loadBookingWindow() {
+  try {
+    const res = await fetch('/settings/booking-window', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (!res.ok) return;
+    const data = await res.json();
+    bookingWindowDays = Number.isFinite(data.window_days) ? data.window_days : bookingWindowDays;
+    bookingWindowType = data.player_type || bookingWindowType;
+    if (data.max_date) {
+      bookingWindowMaxDate = new Date(`${data.max_date}T00:00:00`);
+    }
+    updateBookingWindowBanner();
+  } catch (e) {
+    // Non-blocking
+  }
 }
 
 function formatTime(date) {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GreenLink Admin Dashboard</title>
-    <link rel="stylesheet" href="admin-style.css?v=2026-02-08-04" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-02-08-06" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -298,6 +298,16 @@
                             <label for="tee-sheet-date">Date</label>
                             <input type="date" id="tee-sheet-date" />
                             <input type="text" id="tee-sheet-search" placeholder="Search player / email..." />
+                            <div class="manage-dropdown">
+                                <button class="btn-secondary manage-btn" id="tee-manage-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                                    Manage Tee Sheet <span class="caret">▾</span>
+                                </button>
+                                <div class="manage-menu" id="tee-manage-menu" role="menu" aria-label="Manage Tee Sheet">
+                                    <button type="button" class="manage-item" data-action="generate">Generate Tee Times</button>
+                                    <button type="button" class="manage-item" data-action="bulk-book">Bulk Book / Golf Day...</button>
+                                    <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="tee-sheet-legend">
@@ -535,6 +545,77 @@
         </div>
     </div>
 
-    <script src="admin.js?v=2026-02-08-04"></script>
+    <!-- Modal for booking window settings -->
+    <div id="booking-window-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Booking Window</h2>
+            <p class="muted-text">Controls how far in advance players can book. Admins are not restricted.</p>
+            <div class="booking-window-grid">
+                <label for="booking-window-member">Umhlali Members (days)</label>
+                <input type="number" id="booking-window-member" min="0" max="365" />
+
+                <label for="booking-window-affiliated">Affiliated Visitors (days)</label>
+                <input type="number" id="booking-window-affiliated" min="0" max="365" />
+
+                <label for="booking-window-nonaff">Visitors (No HNA) (days)</label>
+                <input type="number" id="booking-window-nonaff" min="0" max="365" />
+            </div>
+            <div class="booking-window-actions">
+                <button class="btn-primary" type="button" onclick="saveBookingWindowSettings()">Save Booking Window</button>
+                <span class="booking-window-status" id="booking-window-status"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for bulk booking -->
+    <div id="bulk-book-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Bulk Book (Golf Day / Group)</h2>
+            <p class="muted-text">Reserve multiple slots across a time range. This creates placeholder bookings to block the tee sheet.</p>
+
+            <div class="bulk-book-grid">
+                <label for="bulk-book-name">Event / Group Name</label>
+                <input type="text" id="bulk-book-name" placeholder="e.g. Monday Golf Day" />
+
+                <label for="bulk-book-date">Date</label>
+                <input type="date" id="bulk-book-date" />
+
+                <label for="bulk-book-tee">Tee</label>
+                <select id="bulk-book-tee">
+                    <option value="all">Tee 1 + 10</option>
+                    <option value="1">Tee 1</option>
+                    <option value="10">Tee 10</option>
+                </select>
+
+                <label for="bulk-book-holes">Holes</label>
+                <select id="bulk-book-holes">
+                    <option value="18">18 holes</option>
+                    <option value="9">9 holes</option>
+                </select>
+
+                <label for="bulk-book-start">Start Time</label>
+                <input type="time" id="bulk-book-start" step="600" />
+
+                <label for="bulk-book-end">End Time</label>
+                <input type="time" id="bulk-book-end" step="600" />
+
+                <label for="bulk-book-slots">Slots Per Tee Time</label>
+                <input type="number" id="bulk-book-slots" min="1" max="4" value="4" />
+
+                <label for="bulk-book-price">Price Per Player (Optional)</label>
+                <input type="number" id="bulk-book-price" min="0" step="0.01" value="0" />
+            </div>
+
+            <div class="bulk-book-actions">
+                <button class="btn-primary" id="bulk-book-run" type="button" onclick="submitBulkBook()">Bulk Book</button>
+                <button class="btn-secondary" id="bulk-book-undo" type="button" onclick="undoBulkBook()" disabled>Undo</button>
+                <span class="bulk-book-status" id="bulk-book-status"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js?v=2026-02-08-06"></script>
 </body>
 </html>

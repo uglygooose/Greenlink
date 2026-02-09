@@ -12,6 +12,7 @@ from typing import List
 from pydantic import BaseModel
 from app.auth import get_db, get_current_user
 from app import crud, models, schemas
+from app.booking_rules import get_booking_window_for_user
 
 router = APIRouter(prefix="/tsheet", tags=["tsheet"])
 
@@ -58,6 +59,19 @@ def _booking_payload(b: models.Booking) -> dict:
         "notes": getattr(b, "notes", None),
         "created_at": getattr(b, "created_at", None),
     }
+
+def _is_occupying_booking(b: models.Booking) -> bool:
+    """
+    Whether a booking should occupy a tee sheet slot.
+
+    Cancelled/no-show bookings should not block capacity/availability.
+    """
+    try:
+        raw = getattr(b, "status", None)
+        status = str(getattr(raw, "value", raw) or "")
+    except Exception:
+        status = ""
+    return status not in {"cancelled", "no_show"}
 
 @router.post("/create", response_model=schemas.TeeTimeOut)
 def create_tee(tee: schemas.TeeTimeCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -171,8 +185,18 @@ def tee_range(
     start: datetime = Query(..., description="Inclusive range start (ISO datetime)"),
     end: datetime = Query(..., description="Exclusive range end (ISO datetime)"),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     try:
+        # Enforce booking window for non-admins by clamping the range.
+        if getattr(current_user, "role", None) != models.UserRole.admin:
+            _, _, max_date = get_booking_window_for_user(db, current_user)
+            if start.date() > max_date:
+                return []
+            max_end = datetime.combine(max_date + timedelta(days=1), Time(0, 0))
+            if end > max_end:
+                end = max_end
+
         tee_times = (
             db.query(models.TeeTime)
             .options(selectinload(models.TeeTime.bookings))
@@ -190,7 +214,11 @@ def tee_range(
                 "capacity": int(getattr(tt, "capacity", None) or 4),
                 "status": getattr(tt, "status", None) or "open",
                 "bookings": [
-                    _booking_payload(b) for b in sorted(list(tt.bookings or []), key=lambda b: b.id or 0)
+                    _booking_payload(b)
+                    for b in [
+                        b for b in sorted(list(tt.bookings or []), key=lambda b: b.id or 0)
+                        if _is_occupying_booking(b)
+                    ]
                 ],
             }
             for tt in tee_times
@@ -219,7 +247,11 @@ def all_tee(db: Session = Depends(get_db)):
                 "capacity": int(getattr(tt, "capacity", None) or 4),
                 "status": getattr(tt, "status", None) or "open",
                 "bookings": [
-                    _booking_payload(b) for b in sorted(list(tt.bookings or []), key=lambda b: b.id or 0)
+                    _booking_payload(b)
+                    for b in [
+                        b for b in sorted(list(tt.bookings or []), key=lambda b: b.id or 0)
+                        if _is_occupying_booking(b)
+                    ]
                 ],
             }
             for tt in tee_times
@@ -232,8 +264,8 @@ def all_tee(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to load tee sheet")
 
 @router.post("/booking", response_model=schemas.BookingOut)
-def book(b: schemas.BookingCreate, db: Session = Depends(get_db)):
-    return crud.create_booking(db, b)
+def book(b: schemas.BookingCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    return crud.create_booking(db, b, current_user=current_user)
 
 @router.get("/bookings/{tee_id}", response_model=List[schemas.BookingOut])
 def bookings_for_tee(tee_id: int, db: Session = Depends(get_db)):

@@ -6,14 +6,16 @@ All endpoints require admin role
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import String, cast, desc, func, or_, case
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Optional
 from app import crud
-from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member
+from app.models import User, Booking, TeeTime, Round, LedgerEntry, DayClose, UserRole, BookingStatus, Member, ClubSetting
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db
 from calendar import isleap
@@ -141,6 +143,22 @@ def _float_setting(db: Session, key: str, default: float) -> float:
         return float(default)
 
 
+def _int_setting(db: Session, key: str, default: int) -> int:
+    try:
+        return int(_float_setting(db, key, float(default)))
+    except Exception:
+        return int(default)
+
+
+def _upsert_setting(db: Session, key: str, value: int | float | str) -> None:
+    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    if row:
+        row.value = str(value)
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(ClubSetting(key=key, value=str(value)))
+
+
 def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds_target: float | None) -> float | None:
     """
     Derive annual revenue target using a member/visitor mix model.
@@ -167,6 +185,217 @@ def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds
     member_fee = float(_member_green_fee_18(db))
     member_rounds = float(annual_rounds_target) * float(member_round_share)
     return (member_rounds * member_fee) / float(member_revenue_share)
+
+
+class BookingWindowSettings(BaseModel):
+    member_days: int
+    affiliated_days: int
+    non_affiliated_days: int
+
+
+@router.get("/booking-window", response_model=BookingWindowSettings)
+def get_booking_window_settings(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+    return BookingWindowSettings(
+        member_days=_int_setting(db, "booking_window_member_days", 14),
+        affiliated_days=_int_setting(db, "booking_window_affiliated_days", 7),
+        non_affiliated_days=_int_setting(db, "booking_window_non_affiliated_days", 5),
+    )
+
+
+@router.put("/booking-window", response_model=BookingWindowSettings)
+def update_booking_window_settings(payload: BookingWindowSettings, db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+    # Guard rails
+    member_days = max(0, min(365, int(payload.member_days)))
+    affiliated_days = max(0, min(365, int(payload.affiliated_days)))
+    non_affiliated_days = max(0, min(365, int(payload.non_affiliated_days)))
+
+    _upsert_setting(db, "booking_window_member_days", member_days)
+    _upsert_setting(db, "booking_window_affiliated_days", affiliated_days)
+    _upsert_setting(db, "booking_window_non_affiliated_days", non_affiliated_days)
+    db.commit()
+
+    return BookingWindowSettings(
+        member_days=member_days,
+        affiliated_days=affiliated_days,
+        non_affiliated_days=non_affiliated_days,
+    )
+
+def _parse_hhmm(value: str) -> Time:
+    raw = (value or "").strip()
+    parts = raw.split(":")
+    if len(parts) != 2:
+        raise ValueError("invalid time")
+    hh = int(parts[0])
+    mm = int(parts[1])
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+        raise ValueError("invalid time")
+    return Time(hour=hh, minute=mm)
+
+
+class BulkTeeBookingRequest(BaseModel):
+    date: date
+    tees: list[str] = ["1", "10"]
+    start_time: str = "06:30"
+    end_time: str = "16:30"
+    holes: int = 18
+    slots_per_time: int = 4
+    group_name: str
+    price: float = 0.0
+
+
+@router.post("/tee-sheet/bulk-book")
+def bulk_book_tee_sheet(
+    req: BulkTeeBookingRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """
+    Create placeholder bookings across a date/time range.
+    Useful for golf days / group blocks (without needing to click each slot).
+    """
+    assert_day_open(db, req.date)
+
+    group_name = (req.group_name or "").strip()
+    if not group_name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+
+    tees = [str(t).strip() for t in (req.tees or []) if str(t).strip()]
+    if not tees:
+        tees = ["1", "10"]
+
+    try:
+        start_t = _parse_hhmm(req.start_time)
+        end_t = _parse_hhmm(req.end_time)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start_time/end_time (expected HH:MM)")
+
+    start_dt = datetime.combine(req.date, start_t)
+    end_dt = datetime.combine(req.date, end_t)
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="start_time must be <= end_time")
+
+    holes = 9 if int(req.holes or 18) == 9 else 18
+    slots_per_time = max(1, min(4, int(req.slots_per_time or 1)))
+    price = float(req.price or 0.0)
+    if price < 0:
+        raise HTTPException(status_code=400, detail="price must be >= 0")
+
+    group_id = uuid.uuid4().hex[:12]
+
+    tee_times = (
+        db.query(TeeTime)
+        .filter(
+            TeeTime.tee_time >= start_dt,
+            TeeTime.tee_time <= end_dt,
+            cast(TeeTime.hole, String).in_(tees),
+        )
+        .order_by(TeeTime.tee_time.asc(), cast(TeeTime.hole, String).asc())
+        .all()
+    )
+    if not tee_times:
+        raise HTTPException(status_code=404, detail="No tee times found in this range. Generate the tee sheet first.")
+
+    tee_time_ids = [tt.id for tt in tee_times if tt.id]
+    occupying_statuses = [BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed]
+    counts = dict(
+        db.query(Booking.tee_time_id, func.count(Booking.id))
+        .filter(
+            Booking.tee_time_id.in_(tee_time_ids),
+            or_(
+                Booking.status.is_(None),
+                Booking.status.in_(occupying_statuses),
+            ),
+        )
+        .group_by(Booking.tee_time_id)
+        .all()
+    )
+
+    created = 0
+    skipped_full = 0
+    new_rows: list[Booking] = []
+    for tt in tee_times:
+        cap = int(getattr(tt, "capacity", None) or 4)
+        cap = max(1, min(6, cap))
+        existing = int(counts.get(tt.id, 0) or 0)
+        available = max(0, cap - existing)
+        if available <= 0:
+            skipped_full += 1
+            continue
+
+        to_add = min(available, slots_per_time)
+        for _ in range(to_add):
+            created += 1
+            new_rows.append(
+                Booking(
+                    tee_time_id=tt.id,
+                    created_by_user_id=getattr(admin, "id", None),
+                    # Keep the tee sheet clean: show only the event/group name in the slot.
+                    # Group/undo metadata lives on external_provider/external_booking_id.
+                    player_name=group_name,
+                    party_size=1,
+                    price=price,
+                    status=BookingStatus.booked,
+                    holes=holes,
+                    prepaid=False,
+                    external_provider="bulk",
+                    external_booking_id=group_id,
+                    notes=f"Bulk booking: {group_name} (group {group_id})",
+                )
+            )
+
+    if new_rows:
+        db.add_all(new_rows)
+        db.commit()
+
+    return {
+        "group_id": group_id,
+        "created": created,
+        "skipped_full": skipped_full,
+        "tee_times": len(tee_times),
+        "date": str(req.date),
+        "start_time": req.start_time,
+        "end_time": req.end_time,
+        "tees": tees,
+    }
+
+
+@router.delete("/tee-sheet/bulk-book/{group_id}")
+def undo_bulk_book_tee_sheet(
+    group_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    gid = (group_id or "").strip()
+    if not gid:
+        raise HTTPException(status_code=400, detail="group_id is required")
+
+    bookings = (
+        db.query(Booking)
+        .options(selectinload(Booking.tee_time))
+        .filter(Booking.external_provider == "bulk", Booking.external_booking_id == gid)
+        .all()
+    )
+    if not bookings:
+        raise HTTPException(status_code=404, detail="Bulk booking group not found")
+
+    paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
+    if any(b.status in paid_statuses for b in bookings):
+        raise HTTPException(status_code=409, detail="Cannot undo: some bookings are already checked-in/completed.")
+
+    # Respect day close locks.
+    for d in {b.tee_time.tee_time.date() for b in bookings if b.tee_time and b.tee_time.tee_time}:
+        assert_day_open(db, d)
+
+    ids = [b.id for b in bookings if b.id]
+    if not ids:
+        raise HTTPException(status_code=500, detail="Invalid bulk booking rows")
+
+    db.query(LedgerEntry).filter(LedgerEntry.booking_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Round).filter(Round.booking_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Booking).filter(Booking.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+
+    return {"status": "success", "group_id": gid, "deleted": len(ids)}
 
 
 @router.get("/dashboard")
