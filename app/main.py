@@ -104,6 +104,7 @@ def health(db: Session = Depends(get_db)):
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
+            "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
         }
     except SQLAlchemyError as e:
         print(f"[HEALTH] Database error: {str(e)[:200]}")
@@ -116,6 +117,7 @@ def health(db: Session = Depends(get_db)):
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
+            "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
         }
 
 
