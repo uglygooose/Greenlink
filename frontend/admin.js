@@ -3132,6 +3132,105 @@ function renderPastelLayoutDetails(layout) {
     `;
 }
 
+function formatGlFromTemplate(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.includes("/") || raw.includes("-")) return raw;
+    if (/^\d{7}$/.test(raw)) return `${raw.slice(0, 4)}/${raw.slice(4)}`;
+    return raw;
+}
+
+function applyPastelMappingSuggestionsFromLayout(layout) {
+    if (!layout) return;
+
+    const columns = Array.isArray(layout.columns) ? layout.columns : [];
+    const columnMap = layout.column_map || {};
+    const sampleRows = Array.isArray(layout.sample_rows) ? layout.sample_rows : [];
+
+    const accountHeader = columnMap.account;
+    const refHeader = columnMap.reference;
+    const descHeader = columnMap.description;
+
+    const accountIdx = accountHeader ? columns.indexOf(accountHeader) : -1;
+    const refIdx = refHeader ? columns.indexOf(refHeader) : -1;
+    const descIdx = descHeader ? columns.indexOf(descHeader) : -1;
+
+    if (accountIdx < 0 || sampleRows.length === 0) return;
+
+    const getCell = (row, idx) => (idx >= 0 && idx < row.length ? String(row[idx] || "").trim() : "");
+    const toText = (row) => `${getCell(row, refIdx)} ${getCell(row, descIdx)}`.trim().toUpperCase();
+
+    let suggestedVat = "";
+    const suggestedDebit = {};
+
+    const wantMethods = ["CARD", "CASH", "EFT", "ONLINE"];
+
+    for (const row of sampleRows) {
+        if (!Array.isArray(row)) continue;
+        const acct = formatGlFromTemplate(getCell(row, accountIdx));
+        if (!acct) continue;
+        const text = toText(row);
+
+        if (!suggestedVat) {
+            if (/\bVAT\s*CONT\b/.test(text) || /\bVAT\b/.test(text) && /\bCONT\b/.test(text)) {
+                suggestedVat = acct;
+            }
+        }
+
+        for (const method of wantMethods) {
+            if (suggestedDebit[method]) continue;
+            const re = new RegExp(`\\b${method}\\b`, "i");
+            if (re.test(text)) {
+                suggestedDebit[method] = acct;
+            }
+        }
+
+        if (suggestedVat && wantMethods.every((m) => !!suggestedDebit[m] || m === "ONLINE")) {
+            // Stop early once we have the key suggestions; ONLINE may not exist in the template.
+            break;
+        }
+    }
+
+    const vatEl = document.getElementById("acct-vat-output-gl");
+    const cardEl = document.getElementById("acct-debit-card-gl");
+    const cashEl = document.getElementById("acct-debit-cash-gl");
+    const eftEl = document.getElementById("acct-debit-eft-gl");
+    const onlineEl = document.getElementById("acct-debit-online-gl");
+
+    let filledAny = false;
+
+    if (vatEl && !vatEl.value.trim() && suggestedVat) {
+        vatEl.value = suggestedVat;
+        filledAny = true;
+    }
+    if (cardEl && !cardEl.value.trim() && suggestedDebit.CARD) {
+        cardEl.value = suggestedDebit.CARD;
+        filledAny = true;
+    }
+    if (cashEl && !cashEl.value.trim() && suggestedDebit.CASH) {
+        cashEl.value = suggestedDebit.CASH;
+        filledAny = true;
+    }
+    if (eftEl && !eftEl.value.trim() && suggestedDebit.EFT) {
+        eftEl.value = suggestedDebit.EFT;
+        filledAny = true;
+    }
+    if (onlineEl && !onlineEl.value.trim() && suggestedDebit.ONLINE) {
+        onlineEl.value = suggestedDebit.ONLINE;
+        filledAny = true;
+    }
+
+    if (filledAny) {
+        const statusEl = document.getElementById("pastel-mappings-status");
+        if (statusEl && !statusEl.textContent) {
+            statusEl.textContent = "Auto-filled mappings from the uploaded Pastel template — review and click Save Settings.";
+            setTimeout(() => {
+                if (statusEl.textContent?.startsWith("Auto-filled mappings")) statusEl.textContent = "";
+            }, 6000);
+        }
+    }
+}
+
 async function loadPastelLayoutDetails() {
     const token = localStorage.getItem("token");
     const detailsEl = document.getElementById("pastel-layout-details");
@@ -3166,10 +3265,14 @@ async function loadPastelLayoutDetails() {
         const taxTypeEl = document.getElementById("acct-pastel-tax-type");
         if (taxTypeEl && !taxTypeEl.value) {
             const observed = Array.isArray(inferred.observed_tax_types) ? inferred.observed_tax_types : [];
-            const best = observed.find((t) => /^[0-9]{1,3}$/.test(String(t || "").trim()));
+            // Prefer a numeric tax type if present (e.g. "01"), otherwise fall back to the first observed non-empty code (e.g. "GOV01").
+            const numeric = observed.find((t) => /^[0-9]{1,3}$/.test(String(t || "").trim()));
+            const firstNonEmpty = observed.find((t) => String(t || "").trim().length > 0);
+            const best = numeric || firstNonEmpty;
             if (best) taxTypeEl.value = String(best).trim();
         }
 
+        applyPastelMappingSuggestionsFromLayout(data.layout);
         updateAccountingSetupStatus();
     } catch (e) {
         console.error("Failed to load Pastel layout details:", e);
@@ -3206,6 +3309,8 @@ async function loadCashbookSummary() {
         document.getElementById("summary-count").textContent = data.transaction_count;
         document.getElementById("summary-amount").textContent = `R${data.total_payments.toFixed(2)}`;
         document.getElementById("summary-tax").textContent = `R${data.total_tax.toFixed(2)}`;
+
+        loadCashbookJournalPreview();
 
         // Populate payment records
         const table = document.getElementById("cashbook-records");
@@ -3335,6 +3440,81 @@ async function exportCashbookToCSV() {
             exportBtn.disabled = false;
             exportBtn.textContent = originalLabel || "Export to Sage (CSV)";
         }
+    }
+}
+
+async function loadCashbookJournalPreview() {
+    const token = localStorage.getItem("token");
+    const dateInput = document.getElementById("cashbook-date")?.value;
+    const statusEl = document.getElementById("cashbook-journal-preview-status");
+    const tbody = document.getElementById("cashbook-journal-preview-body");
+
+    if (!tbody) return;
+
+    if (!dateInput) {
+        if (statusEl) statusEl.textContent = "";
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Select a date to preview the journal</td></tr>`;
+        return;
+    }
+
+    if (statusEl) statusEl.textContent = "Building preview...";
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Loading…</td></tr>`;
+
+    try {
+        const res = await fetch(`${API_BASE}/cashbook/export-preview?export_date=${dateInput}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try {
+            data = raw ? JSON.parse(raw) : null;
+        } catch {
+            data = null;
+        }
+
+        if (!res.ok) {
+            const msg = data?.detail || "Preview failed";
+            if (statusEl) statusEl.textContent = msg;
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">${escapeHtml(msg)}</td></tr>`;
+            return;
+        }
+
+        const lines = Array.isArray(data?.journal_lines) ? data.journal_lines : [];
+        if (!lines.length) {
+            if (statusEl) statusEl.textContent = "No lines to preview";
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No lines to preview</td></tr>`;
+            return;
+        }
+
+        const totals = data?.totals || {};
+        if (statusEl) {
+            const gross = Number(totals.gross ?? 0).toFixed(2);
+            const vat = Number(totals.vat ?? 0).toFixed(2);
+            const net = Number(totals.net ?? 0).toFixed(2);
+            statusEl.textContent = `Batch ${data.batchRef || ""} • Gross R${gross} • VAT R${vat} • Net R${net}`;
+        }
+
+        const fmtMoney = (v) => {
+            const s = String(v ?? "").trim();
+            if (!s) return "";
+            return `R${s}`;
+        };
+
+        tbody.innerHTML = lines.map((l) => `
+            <tr>
+                <td>${escapeHtml(l.account || "")}</td>
+                <td>${escapeHtml(l.reference || "")}</td>
+                <td>${escapeHtml(l.description || "")}</td>
+                <td>${escapeHtml(fmtMoney(l.amount || l.debit || l.credit || ""))}</td>
+                <td>${escapeHtml(l.tax_type || "")}</td>
+                <td>${escapeHtml(fmtMoney(l.tax_amount || ""))}</td>
+            </tr>
+        `).join("");
+    } catch (e) {
+        console.error("Failed to load journal preview:", e);
+        if (statusEl) statusEl.textContent = "Preview failed";
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Preview failed</td></tr>`;
     }
 }
 

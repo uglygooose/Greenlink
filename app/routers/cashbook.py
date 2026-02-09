@@ -981,7 +981,11 @@ def export_daily_payments_csv(
     if missing_pm:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}"
+            detail=(
+                f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
+                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE) "
+                "or backfill test data locally."
+            )
         )
 
     debit_gl = mappings.get("debit_gl") or {}
@@ -1020,6 +1024,8 @@ def export_daily_payments_csv(
         raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
 
     # VAT calculations (inclusive amounts).
+    # Use transaction-level rounding, then aggregate. This matches the on-screen daily summary
+    # and avoids 0.01 drift from rounding only at the total level.
     try:
         rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
     except Exception:
@@ -1027,19 +1033,25 @@ def export_daily_payments_csv(
     if rate < 0:
         rate = Decimal("0")
 
-    vat_by_fee_type: dict[str, Decimal] = {}
-    net_by_fee_type: dict[str, Decimal] = {}
-    for ft, gross in gross_by_fee_type.items():
+    vat_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
+    net_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
+
+    for le, b, fee_cat, meta in rows:
+        gross = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
+        if gross <= 0:
+            continue
+        fee_type_raw = getattr(fee_cat, "fee_type", None)
+        ft = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
         if rate > 0:
             vat = _q2(gross * (rate / (Decimal("1") + rate)))
         else:
             vat = Decimal("0.00")
         net = _q2(gross - vat)
-        vat_by_fee_type[ft] = vat
-        net_by_fee_type[ft] = net
+        vat_by_fee_type[ft] = _q2(vat_by_fee_type.get(ft, Decimal("0.00")) + vat)
+        net_by_fee_type[ft] = _q2(net_by_fee_type.get(ft, Decimal("0.00")) + net)
 
-    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0")))
-    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0")))
+    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0.00")))
+    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0.00")))
     gross_total = _q2(sum(gross_by_method.values(), Decimal("0")))
 
     if _q2(net_total + vat_total) != gross_total:
@@ -1078,6 +1090,7 @@ def export_daily_payments_csv(
             "credit": net_amt,
             "ref": _clean_text(str(ft).upper(), max_len=20),
             "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
+            "vat": vat_by_fee_type.get(ft, Decimal("0.00")),
         })
 
     # VAT credit
@@ -1123,8 +1136,37 @@ def export_daily_payments_csv(
     has_header = bool(layout.get("has_header", True))
     template_row = layout.get("template_row")
     has_template = isinstance(template_row, list) and len(template_row) == len(columns)
+    sample_rows = layout.get("sample_rows") or []
+    has_samples = isinstance(sample_rows, list) and bool(sample_rows)
+
+    # Pastel "Batch -> Export" templates are great for column order, but the first data row can
+    # contain row-specific values (e.g. project/tax codes) that should NOT be cloned onto every
+    # exported row. To avoid import errors, only keep values that appear constant across the
+    # sampled rows; everything else starts blank unless we explicitly set it via column_map.
+    constant_template: list[str | None] = [None for _ in columns]
+    if has_template and has_samples:
+        try:
+            # Only consider rows that match the column count.
+            rows_for_constants = [r for r in sample_rows if isinstance(r, list) and len(r) == len(columns)]
+            if rows_for_constants:
+                for i in range(len(columns)):
+                    vals = [str(r[i] or "").strip() for r in rows_for_constants]
+                    if not vals:
+                        continue
+                    first = vals[0]
+                    if first and all(v == first for v in vals[1:]):
+                        # Preserve original formatting from template_row (not stripped).
+                        constant_template[i] = str(template_row[i] or "")
+        except Exception:
+            constant_template = [None for _ in columns]
 
     def _base_row() -> list:
+        if has_template and any(v is not None for v in constant_template):
+            row = ["" for _ in columns]
+            for i, v in enumerate(constant_template):
+                if v is not None and i < len(row):
+                    row[i] = v
+            return row
         if has_template:
             return [str(x or "") for x in list(template_row)]
         return ["" for _ in columns]
@@ -1159,6 +1201,7 @@ def export_daily_payments_csv(
         writer.writerow(columns)
 
     tax_type_sales = str((mappings.get("tax_type") or "")).strip()
+    tax_type_sales_is_numeric = bool(tax_type_sales) and tax_type_sales.isdigit()
     amount_sign = str((mappings.get("amount_sign") or "")).strip().lower() or "debit_positive"
     vat_output_gl_fmt = _format_gl_for_layout(str(vat_output_gl or "").strip(), layout) if vat_output_gl else ""
     for line in lines:
@@ -1224,16 +1267,25 @@ def export_daily_payments_csv(
         # Tax fields (layout-specific).
         # Many Pastel layouts expect explicit "00"/"01" + numeric zeroes, not blanks.
         if column_map.get("tax_type") and column_map.get("tax_type") in header_to_idx:
-            _set(row, "tax_type", tax_type_sales if apply_sales_tax else "00")
+            if apply_sales_tax and tax_type_sales:
+                _set(row, "tax_type", tax_type_sales)
+            else:
+                # If the configured sales tax "type" looks numeric (e.g. "01"), non-tax lines
+                # typically use "00". If it looks like an alphanumeric code (e.g. "GOV01"),
+                # keep non-tax lines blank to avoid triggering validation on unrelated fields
+                # in some Pastel layouts.
+                _set(row, "tax_type", "00" if tax_type_sales_is_numeric else "")
 
         if column_map.get("tax_flag") and column_map.get("tax_flag") in header_to_idx:
             _set(row, "tax_flag", "1" if apply_sales_tax else "0")
 
         if column_map.get("tax_amount") and column_map.get("tax_amount") in header_to_idx:
             if apply_sales_tax:
-                # Use the net revenue line amount to compute VAT (net * rate).
-                base_net = _q2(line["credit"]) if is_credit_line else _q2(line["debit"])
-                vat_amt = _q2(base_net * rate) if rate > 0 else Decimal("0.00")
+                # Prefer per-line VAT (aggregated with transaction-level rounding), else fall back.
+                vat_amt = _q2(_to_decimal(line.get("vat", 0) or 0))
+                if vat_amt == 0:
+                    base_net = _q2(line["credit"]) if is_credit_line else _q2(line["debit"])
+                    vat_amt = _q2(base_net * rate) if rate > 0 else Decimal("0.00")
                 # Match sign to the signed amount when available.
                 if amt is not None and amt < 0:
                     vat_amt = -vat_amt
@@ -1257,7 +1309,9 @@ def export_daily_payments_csv(
     job_path = os.path.join(dirs["ready"], job_name)
 
     try:
-        with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+        # Pastel's import is sensitive to UTF-8 BOM in the first field (e.g. "Period"),
+        # so write plain UTF-8 without BOM.
+        with open(csv_path, "w", encoding="utf-8", newline="") as f:
             f.write(csv_text)
 
         audit = {
@@ -1316,6 +1370,369 @@ def export_daily_payments_csv(
     response.headers["X-GreenLink-RunId"] = run_id
     response.headers["X-GreenLink-BatchRef"] = batch_ref
     return response
+
+
+@router.get("/export-preview")
+def export_daily_payments_preview(
+    export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    db: Session = Depends(get_db),
+):
+    """
+    Preview the daily Pastel journal (no file write, no DB flags updated).
+
+    Uses the same logic as /export-csv so the UI can show a "what will import" preview.
+    """
+    if export_date:
+        try:
+            target_date = datetime.strptime(export_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date.today()
+
+    settings = get_accounting_settings(db)
+    layout = _require_pastel_layout(db)
+    mappings = _require_pastel_mappings(db)
+
+    try:
+        rows = (
+            db.query(LedgerEntry, Booking, FeeCategory, LedgerEntryMeta)
+            .join(Booking, LedgerEntry.booking_id == Booking.id)
+            .outerjoin(FeeCategory, FeeCategory.id == Booking.fee_category_id)
+            .outerjoin(LedgerEntryMeta, LedgerEntryMeta.ledger_entry_id == LedgerEntry.id)
+            .filter(
+                LedgerEntry.booking_id.isnot(None),
+                func.date(LedgerEntry.created_at) == target_date,
+                Booking.status.in_([BookingStatus.checked_in, BookingStatus.completed]),
+            )
+            .all()
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
+
+    # Reuse the exporter path by building the same aggregated journal lines.
+    # We do this inline to avoid changing existing behavior of /export-csv.
+
+    # Validate payment_method presence.
+    missing_pm = []
+    for le, b, fee_cat, meta in rows:
+        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
+        if not method:
+            missing_pm.append(int(getattr(b, "id", 0) or 0))
+    missing_pm = [bid for bid in missing_pm if bid]
+    if missing_pm:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
+                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE) "
+                "or backfill test data locally."
+            ),
+        )
+
+    debit_gl = mappings.get("debit_gl") or {}
+    vat_output_gl = mappings.get("vat_output_gl")
+
+    # Aggregate gross totals.
+    gross_by_method: dict[str, Decimal] = {}
+    gross_by_fee_type: dict[str, Decimal] = {}
+
+    for le, b, fee_cat, meta in rows:
+        amount = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
+        if amount <= 0:
+            continue
+
+        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
+        fee_type_raw = getattr(fee_cat, "fee_type", None)
+        fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
+
+        gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
+        gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
+
+    if not gross_by_method:
+        raise HTTPException(status_code=404, detail=f"No positive-value payments found for {target_date}")
+
+    # Validate debit GL mappings for used methods.
+    used_methods = sorted(gross_by_method.keys())
+    missing_debits = [m for m in used_methods if not str(debit_gl.get(m, "") or "").strip()]
+    if missing_debits:
+        raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
+
+    # VAT calculations (inclusive amounts) – transaction-level rounding then aggregate.
+    try:
+        rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
+    except Exception:
+        rate = Decimal("0.15")
+    if rate < 0:
+        rate = Decimal("0")
+
+    vat_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
+    net_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
+
+    for le, b, fee_cat, meta in rows:
+        gross = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
+        if gross <= 0:
+            continue
+        fee_type_raw = getattr(fee_cat, "fee_type", None)
+        ft = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
+        if rate > 0:
+            vat = _q2(gross * (rate / (Decimal("1") + rate)))
+        else:
+            vat = Decimal("0.00")
+        net = _q2(gross - vat)
+        vat_by_fee_type[ft] = _q2(vat_by_fee_type.get(ft, Decimal("0.00")) + vat)
+        net_by_fee_type[ft] = _q2(net_by_fee_type.get(ft, Decimal("0.00")) + net)
+
+    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0.00")))
+    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0.00")))
+    gross_total = _q2(sum(gross_by_method.values(), Decimal("0")))
+
+    if _q2(net_total + vat_total) != gross_total:
+        raise HTTPException(status_code=500, detail="VAT split does not balance to gross total after rounding.")
+
+    batch_ref = f"GREENLINK_{target_date.strftime('%Y%m%d')}"
+    batch_desc = _clean_text(f"Daily golf takings {target_date.strftime('%Y-%m-%d')}", max_len=60)
+
+    # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
+    lines: list[dict] = []
+    method_order = ["CASH", "CARD", "EFT", "ONLINE"]
+    ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
+    for method in ordered_methods:
+        account = str(debit_gl.get(method) or "").strip()
+        lines.append({
+            "account": account,
+            "debit": gross_by_method[method],
+            "credit": Decimal("0.00"),
+            "ref": _clean_text(method, max_len=20),
+            "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
+        })
+
+    revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
+    revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}
+    for ft in sorted(net_by_fee_type.keys()):
+        net_amt = net_by_fee_type[ft]
+        if net_amt == 0:
+            continue
+        account = str(revenue_by_fee_type.get(ft) or revenue_gl_default or "").strip()
+        if not account:
+            raise HTTPException(status_code=400, detail=f"Missing revenue GL mapping for fee type '{ft}'.")
+        lines.append({
+            "account": account,
+            "debit": Decimal("0.00"),
+            "credit": net_amt,
+            "ref": _clean_text(str(ft).upper(), max_len=20),
+            "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
+            "vat": vat_by_fee_type.get(ft, Decimal("0.00")),
+        })
+
+    if not str(vat_output_gl or "").strip():
+        raise HTTPException(status_code=400, detail="Missing VAT output GL account in Pastel mappings.")
+
+    if vat_total != 0:
+        lines.append({
+            "account": str(vat_output_gl).strip(),
+            "debit": Decimal("0.00"),
+            "credit": vat_total,
+            "ref": "VAT CONT",
+            "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
+        })
+
+    debit_sum = _q2(sum((l["debit"] for l in lines), Decimal("0")))
+    credit_sum = _q2(sum((l["credit"] for l in lines), Decimal("0")))
+    if debit_sum != credit_sum:
+        raise HTTPException(status_code=500, detail="Journal is out of balance after rounding.")
+
+    # Render CSV rows for an exact preview (matches file output).
+    columns = layout.get("columns") or []
+    column_map = layout.get("column_map") or {}
+    header_to_idx = {str(h): i for i, h in enumerate(columns)}
+
+    has_amount = bool(column_map.get("amount")) and column_map.get("amount") in header_to_idx
+    has_debit = bool(column_map.get("debit")) and column_map.get("debit") in header_to_idx
+    has_credit = bool(column_map.get("credit")) and column_map.get("credit") in header_to_idx
+
+    date_format = layout.get("date_format")
+    date_value = _format_date_for_layout(target_date, date_format)
+    delimiter = layout.get("delimiter") or ","
+    has_header = bool(layout.get("has_header", True))
+    template_row = layout.get("template_row")
+    has_template = isinstance(template_row, list) and len(template_row) == len(columns)
+    sample_rows = layout.get("sample_rows") or []
+    has_samples = isinstance(sample_rows, list) and bool(sample_rows)
+
+    constant_template: list[str | None] = [None for _ in columns]
+    if has_template and has_samples:
+        try:
+            rows_for_constants = [r for r in sample_rows if isinstance(r, list) and len(r) == len(columns)]
+            if rows_for_constants:
+                for i in range(len(columns)):
+                    vals = [str(r[i] or "").strip() for r in rows_for_constants]
+                    if not vals:
+                        continue
+                    first = vals[0]
+                    if first and all(v == first for v in vals[1:]):
+                        constant_template[i] = str(template_row[i] or "")
+        except Exception:
+            constant_template = [None for _ in columns]
+
+    def _base_row() -> list:
+        if has_template and any(v is not None for v in constant_template):
+            row = ["" for _ in columns]
+            for i, v in enumerate(constant_template):
+                if v is not None and i < len(row):
+                    row[i] = v
+            return row
+        if has_template:
+            return [str(x or "") for x in list(template_row)]
+        return ["" for _ in columns]
+
+    def _set(row: list, key: str, value: str) -> None:
+        header = column_map.get(key)
+        if not header:
+            return
+        idx = header_to_idx.get(header)
+        if idx is None:
+            return
+        row[idx] = value
+
+    amount_mirror_headers: list[str] = []
+    try:
+        amount_mirror_headers = list(((layout.get("inferred") or {}).get("amount_mirrors") or []))
+    except Exception:
+        amount_mirror_headers = []
+
+    def _set_amount_mirrors(row: list, value: str) -> None:
+        for h in amount_mirror_headers:
+            idx = header_to_idx.get(str(h))
+            if idx is None:
+                continue
+            if idx < len(row):
+                row[idx] = value
+
+    out = StringIO(newline="")
+    writer = csv.writer(out, delimiter=delimiter, lineterminator="\r\n")
+    rendered_rows: list[list[str]] = []
+    if has_header:
+        writer.writerow(columns)
+        rendered_rows.append([str(c or "") for c in columns])
+
+    tax_type_sales = str((mappings.get("tax_type") or "")).strip()
+    tax_type_sales_is_numeric = bool(tax_type_sales) and tax_type_sales.isdigit()
+    amount_sign = str((mappings.get("amount_sign") or "")).strip().lower() or "debit_positive"
+    vat_output_gl_fmt = _format_gl_for_layout(str(vat_output_gl or "").strip(), layout) if vat_output_gl else ""
+
+    for line in lines:
+        row = _base_row()
+        _set(row, "date", date_value)
+        if column_map.get("reference") and column_map.get("reference") in header_to_idx:
+            _set(row, "reference", batch_ref if has_header else str(line.get("ref") or batch_ref))
+        if column_map.get("description") and column_map.get("description") in header_to_idx:
+            if has_template:
+                d_idx = header_to_idx[column_map.get("description")]
+                existing = str(row[d_idx] or "").strip() if d_idx < len(row) else ""
+                if existing and len(existing) <= 20:
+                    pass
+                else:
+                    _set(row, "description", str(line["desc"]))
+            else:
+                _set(row, "description", str(line["desc"]))
+
+        account_value = _format_gl_for_layout(str(line["account"]), layout)
+        _set(row, "account", account_value)
+
+        is_debit_line = bool(line["debit"] and _q2(line["debit"]) != 0)
+        is_credit_line = bool((not is_debit_line) and line["credit"] and _q2(line["credit"]) != 0)
+        is_vat_control_line = bool(vat_output_gl_fmt) and account_value.strip() == vat_output_gl_fmt
+        is_revenue_line = bool(is_credit_line and not is_vat_control_line)
+        apply_sales_tax = bool(is_revenue_line and tax_type_sales)
+
+        amt = None
+        if has_amount:
+            amt = Decimal("0.00")
+            if is_debit_line:
+                amt = _q2(line["debit"])
+                if amount_sign == "debit_negative":
+                    amt = -amt
+            else:
+                amt = _q2(line["credit"])
+                if amount_sign == "debit_positive":
+                    amt = -amt
+                else:
+                    amt = +amt
+            amt_str = _money_str(amt)
+            _set(row, "amount", amt_str)
+            _set_amount_mirrors(row, amt_str)
+            if has_debit:
+                _set(row, "debit", "")
+            if has_credit:
+                _set(row, "credit", "")
+        else:
+            if is_debit_line:
+                _set(row, "debit", _money_str(line["debit"]))
+                _set(row, "credit", "")
+            else:
+                _set(row, "debit", "")
+                _set(row, "credit", _money_str(line["credit"]))
+
+        if column_map.get("tax_type") and column_map.get("tax_type") in header_to_idx:
+            if apply_sales_tax and tax_type_sales:
+                _set(row, "tax_type", tax_type_sales)
+            else:
+                _set(row, "tax_type", "00" if tax_type_sales_is_numeric else "")
+
+        if column_map.get("tax_flag") and column_map.get("tax_flag") in header_to_idx:
+            _set(row, "tax_flag", "1" if apply_sales_tax else "0")
+
+        if column_map.get("tax_amount") and column_map.get("tax_amount") in header_to_idx:
+            if apply_sales_tax:
+                vat_amt = _q2(_to_decimal(line.get("vat", 0) or 0))
+                if vat_amt == 0:
+                    base_net = _q2(line["credit"]) if is_credit_line else _q2(line["debit"])
+                    vat_amt = _q2(base_net * rate) if rate > 0 else Decimal("0.00")
+                if amt is not None and amt < 0:
+                    vat_amt = -vat_amt
+                _set(row, "tax_amount", _money_str_zero(vat_amt))
+            else:
+                _set(row, "tax_amount", "0")
+
+        writer.writerow(row)
+        rendered_rows.append([str(x or "") for x in row])
+
+    preview_lines: list[dict] = []
+    for row in rendered_rows[1 if has_header else 0 :]:
+        def _get(key: str) -> str:
+            header = column_map.get(key)
+            if not header:
+                return ""
+            idx = header_to_idx.get(header)
+            if idx is None or idx >= len(row):
+                return ""
+            return str(row[idx] or "").strip()
+
+        preview_lines.append(
+            {
+                "date": _get("date"),
+                "account": _get("account"),
+                "reference": _get("reference"),
+                "description": _get("description"),
+                "amount": _get("amount"),
+                "debit": _get("debit"),
+                "credit": _get("credit"),
+                "tax_type": _get("tax_type"),
+                "tax_flag": _get("tax_flag"),
+                "tax_amount": _get("tax_amount"),
+            }
+        )
+
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "batchRef": batch_ref,
+        "totals": {"gross": float(gross_total), "net": float(net_total), "vat": float(vat_total)},
+        "journal_lines": preview_lines,
+    }
 
 
 @router.get("/export-job-status")

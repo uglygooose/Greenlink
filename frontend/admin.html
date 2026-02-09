@@ -436,7 +436,7 @@
 	                                </div>
 	                                <div class="acct-section-body">
 	                                    <div class="acct-file-row">
-	                                        <input type="file" id="pastel-layout-file" />
+	                                        <input type="file" id="pastel-layout-file" accept=".csv,.txt" />
 	                                        <div class="acct-hint">From Pastel: Process → Journals → select journal → Batch → Export. Use the exported CSV as the template for this client.</div>
 	                                        <div class="accounting-note" id="pastel-layout-status"></div>
 	                                    </div>
@@ -524,10 +524,10 @@
 	                        </div>
 	                    </div>
 
-                    <div class="dashboard-card">
-                        <h3>Daily Summary</h3>
-                        <div class="cashbook-summary" id="cashbook-summary">
-                            <div class="summary-stat">
+	                    <div class="dashboard-card">
+	                        <h3>Daily Summary</h3>
+	                        <div class="cashbook-summary" id="cashbook-summary">
+	                            <div class="summary-stat">
                                 <span>Date</span>
                                 <span id="summary-date">-</span>
                             </div>
@@ -542,13 +542,35 @@
                             <div class="summary-stat">
                                 <span>Total Tax (VAT)</span>
                                 <span id="summary-tax">R0.00</span>
-                            </div>
-                        </div>
-                    </div>
+	                            </div>
+	                        </div>
+	                    </div>
 
-                    <div class="table-container">
-                        <h3>Payment Records</h3>
-                        <table class="data-table">
+	                    <div class="dashboard-card">
+	                        <h3>Journal Preview (Pastel Import)</h3>
+	                        <div class="accounting-note" id="cashbook-journal-preview-status"></div>
+	                        <div class="table-container" style="margin-top:10px;">
+	                            <table class="data-table">
+	                                <thead>
+	                                    <tr>
+	                                        <th>Account</th>
+	                                        <th>Reference</th>
+	                                        <th>Description</th>
+	                                        <th>Amount</th>
+	                                        <th>Tax Type</th>
+	                                        <th>Tax Amount</th>
+	                                    </tr>
+	                                </thead>
+	                                <tbody id="cashbook-journal-preview-body">
+	                                    <tr><td colspan="6" style="text-align:center;">Load a date to preview the journal</td></tr>
+	                                </tbody>
+	                            </table>
+	                        </div>
+	                    </div>
+
+	                    <div class="table-container">
+	                        <h3>Payment Records</h3>
+	                        <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>Period</th>
