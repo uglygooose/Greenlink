@@ -80,6 +80,19 @@ def health(db: Session = Depends(get_db)):
     """
     Lightweight health check for Render/Supabase debugging.
     """
+    demo_seed_admin = str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"}
+    demo_admin_present = None
+    if demo_seed_admin:
+        try:
+            from sqlalchemy import func
+
+            demo_email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@greenlink.com").strip().lower()
+            demo_admin_present = bool(
+                db.query(models.User.id).filter(func.lower(models.User.email) == demo_email).first()
+            )
+        except Exception:
+            demo_admin_present = None
+
     try:
         db.execute(text("select 1"))
         return {
@@ -89,7 +102,8 @@ def health(db: Session = Depends(get_db)):
             "db_driver": (DB_INFO or {}).get("driver"),
             "has_database_url": bool(os.getenv("DATABASE_URL")),
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
-            "demo_seed_admin": str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"},
+            "demo_seed_admin": demo_seed_admin,
+            "demo_admin_present": demo_admin_present,
         }
     except SQLAlchemyError as e:
         print(f"[HEALTH] Database error: {str(e)[:200]}")
@@ -100,7 +114,8 @@ def health(db: Session = Depends(get_db)):
             "db_driver": (DB_INFO or {}).get("driver"),
             "has_database_url": bool(os.getenv("DATABASE_URL")),
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
-            "demo_seed_admin": str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"},
+            "demo_seed_admin": demo_seed_admin,
+            "demo_admin_present": demo_admin_present,
         }
 
 
