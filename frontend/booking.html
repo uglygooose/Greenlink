@@ -632,14 +632,16 @@
         <label>Requirements</label>
         <div style="display:flex; gap: 14px; flex-wrap: wrap;">
           <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
-            <input type="checkbox" id="player_push_cart">
+            <input type="checkbox" id="player_push_cart" onchange="updateModalPrice()">
             Push Cart
           </label>
           <label class="toggle" style="display:flex; align-items:center; gap: 8px;">
-            <input type="checkbox" id="player_caddy">
+            <input type="checkbox" id="player_caddy" onchange="updateModalPrice()">
             Caddy
           </label>
         </div>
+        <div class="helper-text" id="player_push_cart_label">—</div>
+        <div class="helper-text" id="player_caddy_label">—</div>
       </div>
       <div class="price-display" id="modal_price">Select a fee type</div>
       <button class="modal-btn btn-primary" onclick="addPlayer()">Add Player</button>
@@ -881,7 +883,9 @@ function getDisplayPrice(player, index, cartSplitMap) {
   const base = parseFloat(player.basePrice ?? player.price) || 0;
   const cartInfo = cartSplitMap.get(index);
   const cart = player.cart ? (cartInfo?.charge ?? (parseFloat(player.cartPrice) || 0)) : 0;
-  return base + cart;
+  const push = player.push_cart ? (parseFloat(player.pushCartPrice) || 0) : 0;
+  const caddy = player.caddy ? (parseFloat(player.caddyPrice) || 0) : 0;
+  return base + cart + push + caddy;
 }
 
 function renderPlayers() {
@@ -1023,12 +1027,60 @@ async function suggestCartFee(playerType) {
   }
 }
 
+async function suggestPushCartFee(playerType) {
+  try {
+    const res = await fetch('/fees/suggest/push-cart', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        tee_time_id: parseInt(teeTimeId),
+        player_type: playerType,
+        holes: 18
+      })
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('Push cart fee suggestion failed:', e);
+    return null;
+  }
+}
+
+async function suggestCaddyFee(playerType) {
+  try {
+    const res = await fetch('/fees/suggest/caddy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        tee_time_id: parseInt(teeTimeId),
+        player_type: playerType,
+        holes: 18
+      })
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('Caddy fee suggestion failed:', e);
+    return null;
+  }
+}
+
 async function updateModalPrice() {
   const seq = ++modalPricingSeq;
   const select = document.getElementById('player_fee');
   const option = select.options[select.selectedIndex];
   const price = option.getAttribute('data-price');
   const cartChecked = Boolean(document.getElementById('player_cart')?.checked);
+  const pushCartChecked = Boolean(document.getElementById('player_push_cart')?.checked);
+  const caddyChecked = Boolean(document.getElementById('player_caddy')?.checked);
 
   let basePrice = price ? parseFloat(price) : null;
   if (basePrice === null) {
@@ -1052,8 +1104,39 @@ async function updateModalPrice() {
 
   document.getElementById('player_cart_label').textContent = cartLabel;
 
+  let pushCartPrice = 0;
+  let pushCartLabel = '—';
+  if (pushCartChecked) {
+    const suggestedPush = await suggestPushCartFee(selectedPlayerType);
+    if (seq !== modalPricingSeq) return;
+    if (suggestedPush) {
+      pushCartPrice = parseFloat(suggestedPush.price) || 0;
+      pushCartLabel = `${suggestedPush.description} - R${Number(pushCartPrice).toFixed(0)}`;
+    } else {
+      pushCartLabel = 'Push cart pricing unavailable';
+    }
+  }
+
+  let caddyPrice = 0;
+  let caddyLabel = '—';
+  if (caddyChecked) {
+    const suggestedCaddy = await suggestCaddyFee(selectedPlayerType);
+    if (seq !== modalPricingSeq) return;
+    if (suggestedCaddy) {
+      caddyPrice = parseFloat(suggestedCaddy.price) || 0;
+      caddyLabel = `${suggestedCaddy.description} - R${Number(caddyPrice).toFixed(0)}`;
+    } else {
+      caddyLabel = 'Caddy pricing unavailable';
+    }
+  }
+
+  const pushLabelEl = document.getElementById('player_push_cart_label');
+  if (pushLabelEl) pushLabelEl.textContent = pushCartLabel;
+  const caddyLabelEl = document.getElementById('player_caddy_label');
+  if (caddyLabelEl) caddyLabelEl.textContent = caddyLabel;
+
   if (basePrice !== null) {
-    const total = (parseFloat(basePrice) || 0) + (parseFloat(cartPrice) || 0);
+    const total = (parseFloat(basePrice) || 0) + (parseFloat(cartPrice) || 0) + (parseFloat(pushCartPrice) || 0) + (parseFloat(caddyPrice) || 0);
     document.getElementById('modal_price').textContent = `R${total.toFixed(0)}`;
   } else if (cartChecked && cartPrice > 0) {
     document.getElementById('modal_price').textContent = `Auto pricing + Cart (adds R${Number(cartPrice).toFixed(0)})`;
@@ -1105,9 +1188,33 @@ async function addPlayer() {
     cartFee = suggestedCart.description || 'Cart';
   }
 
+  let pushCartPrice = 0;
+  let pushCartFee = null;
+  if (wantsPushCart) {
+    const suggestedPush = await suggestPushCartFee(selectedPlayerType);
+    if (!suggestedPush) {
+      alert('Push cart pricing unavailable right now. Please try again or disable push cart.');
+      return;
+    }
+    pushCartPrice = parseFloat(suggestedPush.price) || 0;
+    pushCartFee = suggestedPush.description || 'Push Cart';
+  }
+
+  let caddyPrice = 0;
+  let caddyFee = null;
+  if (wantsCaddy) {
+    const suggestedCaddy = await suggestCaddyFee(selectedPlayerType);
+    if (!suggestedCaddy) {
+      alert('Caddy pricing unavailable right now. Please try again or disable caddy.');
+      return;
+    }
+    caddyPrice = parseFloat(suggestedCaddy.price) || 0;
+    caddyFee = suggestedCaddy.description || 'Caddy';
+  }
+
   const typeMap = { member: 'Umhlali Member', visitor: 'Affiliated Visitor', non_affiliated: 'Visitor (No HNA)' };
   const basePrice = parseFloat(resolvedPrice) || 0;
-  const totalPrice = basePrice + (wantsCart ? cartPrice : 0);
+  const totalPrice = basePrice + (wantsCart ? cartPrice : 0) + (wantsPushCart ? pushCartPrice : 0) + (wantsCaddy ? caddyPrice : 0);
   
   players.push({
     name: name,
@@ -1121,6 +1228,10 @@ async function addPlayer() {
     caddy: wantsCaddy,
     cartPrice: wantsCart ? cartPrice : 0,
     cartFee,
+    pushCartPrice: wantsPushCart ? pushCartPrice : 0,
+    pushCartFee,
+    caddyPrice: wantsCaddy ? caddyPrice : 0,
+    caddyFee,
     price: totalPrice,
     feeId: resolvedFeeId,
     autoFee: isAutoFee,
@@ -1206,12 +1317,13 @@ async function updateEditType(type, index) {
 	  editPlayer(index);
 }
 
-function savePlayer(index) {
+async function savePlayer(index) {
   players[index].name = document.getElementById('edit_name').value;
   players[index].email = document.getElementById('edit_email').value;
   players[index].handicap = document.getElementById('edit_handicap').value;
   players[index].push_cart = Boolean(document.getElementById('edit_push_cart')?.checked);
   players[index].caddy = Boolean(document.getElementById('edit_caddy')?.checked);
+  await repricePlayer(index);
   closeModal('editPlayerModal');
   renderPlayers();
 }
@@ -1243,7 +1355,35 @@ async function repricePlayer(index) {
     player.cartFee = null;
   }
 
-  player.price = (parseFloat(player.basePrice) || 0) + (player.cart ? (parseFloat(player.cartPrice) || 0) : 0);
+  // Refresh push cart if selected.
+  if (player.push_cart) {
+    const suggestedPush = await suggestPushCartFee(player.playerType);
+    if (suggestedPush) {
+      player.pushCartPrice = parseFloat(suggestedPush.price) || 0;
+      player.pushCartFee = suggestedPush.description || 'Push Cart';
+    }
+  } else {
+    player.pushCartPrice = 0;
+    player.pushCartFee = null;
+  }
+
+  // Refresh caddy if selected.
+  if (player.caddy) {
+    const suggestedCaddy = await suggestCaddyFee(player.playerType);
+    if (suggestedCaddy) {
+      player.caddyPrice = parseFloat(suggestedCaddy.price) || 0;
+      player.caddyFee = suggestedCaddy.description || 'Caddy';
+    }
+  } else {
+    player.caddyPrice = 0;
+    player.caddyFee = null;
+  }
+
+  player.price =
+    (parseFloat(player.basePrice) || 0) +
+    (player.cart ? (parseFloat(player.cartPrice) || 0) : 0) +
+    (player.push_cart ? (parseFloat(player.pushCartPrice) || 0) : 0) +
+    (player.caddy ? (parseFloat(player.caddyPrice) || 0) : 0);
   renderPlayers();
 
   const priceEl = document.getElementById('edit_price');
@@ -1266,7 +1406,10 @@ async function toggleEditCart(index) {
   if (!wantsCart) {
     player.cartPrice = 0;
     player.cartFee = null;
-    player.price = (parseFloat(player.basePrice) || parseFloat(player.price) || 0);
+    player.price =
+      (parseFloat(player.basePrice) || parseFloat(player.price) || 0) +
+      (player.push_cart ? (parseFloat(player.pushCartPrice) || 0) : 0) +
+      (player.caddy ? (parseFloat(player.caddyPrice) || 0) : 0);
     renderPlayers();
     const priceEl = document.getElementById('edit_price');
     if (priceEl) priceEl.textContent = `R${Number(player.price || 0).toFixed(0)}`;
@@ -1288,7 +1431,11 @@ async function toggleEditCart(index) {
 
   player.cartPrice = parseFloat(suggestedCart.price) || 0;
   player.cartFee = suggestedCart.description || 'Cart';
-  player.price = (parseFloat(player.basePrice) || 0) + player.cartPrice;
+  player.price =
+    (parseFloat(player.basePrice) || 0) +
+    player.cartPrice +
+    (player.push_cart ? (parseFloat(player.pushCartPrice) || 0) : 0) +
+    (player.caddy ? (parseFloat(player.caddyPrice) || 0) : 0);
 
   renderPlayers();
   const priceEl = document.getElementById('edit_price');

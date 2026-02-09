@@ -417,8 +417,13 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     cancelled_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.cancelled).scalar() or 0
     no_show_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.no_show).scalar() or 0
     
-    # Total revenue
-    total_revenue = db.query(func.sum(Booking.price)).filter(Booking.status.in_(paid_statuses)).scalar() or 0.0
+    # Total revenue (cashbook basis = payment date / ledger entries)
+    total_revenue = (
+        db.query(func.sum(LedgerEntry.amount))
+        .filter(LedgerEntry.booking_id.isnot(None))
+        .scalar()
+        or 0.0
+    )
     
     # Completed rounds (admin expectation = bookings marked completed)
     completed_rounds = completed_count
@@ -436,21 +441,19 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
         or 0
     )
     
-    # Today's revenue
+    # Today's revenue (payment date)
     today_revenue = (
-        db.query(func.sum(Booking.price))
-        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
-        .filter(func.date(TeeTime.tee_time) == today, Booking.status.in_(paid_statuses))
+        db.query(func.sum(LedgerEntry.amount))
+        .filter(LedgerEntry.booking_id.isnot(None), func.date(LedgerEntry.created_at) == today)
         .scalar()
         or 0.0
     )
     
-    # Last 7 days revenue
+    # Last 7 days revenue (payment date)
     week_ago = datetime.utcnow() - timedelta(days=7)
     week_revenue = (
-        db.query(func.sum(Booking.price))
-        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
-        .filter(TeeTime.tee_time >= week_ago, Booking.status.in_(paid_statuses))
+        db.query(func.sum(LedgerEntry.amount))
+        .filter(LedgerEntry.booking_id.isnot(None), LedgerEntry.created_at >= week_ago)
         .scalar()
         or 0.0
     )
@@ -458,7 +461,8 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     # KPI targets vs actuals (Day/WTD/MTD/YTD)
     anchor = datetime.utcnow().date()
     year = int(anchor.year)
-    paid_statuses_set = [BookingStatus.checked_in, BookingStatus.completed]
+    # NOTE: For accounting, the transaction date is when the booking is marked paid/checked-in
+    # (ledger_entries.created_at), not the tee time date.
 
     # Default targets (can be overridden via kpi_targets table):
     # - Rounds: 35,000/year (client target)
@@ -470,23 +474,21 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
         revenue = (
-            db.query(func.sum(Booking.price))
-            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            db.query(func.sum(LedgerEntry.amount))
             .filter(
-                func.date(TeeTime.tee_time) >= start_d,
-                func.date(TeeTime.tee_time) <= end_d,
-                Booking.status.in_(paid_statuses_set),
+                LedgerEntry.booking_id.isnot(None),
+                func.date(LedgerEntry.created_at) >= start_d,
+                func.date(LedgerEntry.created_at) <= end_d,
             )
             .scalar()
             or 0.0
         )
         rounds = (
-            db.query(func.count(Booking.id))
-            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            db.query(func.count(LedgerEntry.id))
             .filter(
-                func.date(TeeTime.tee_time) >= start_d,
-                func.date(TeeTime.tee_time) <= end_d,
-                Booking.status.in_(paid_statuses_set),
+                LedgerEntry.booking_id.isnot(None),
+                func.date(LedgerEntry.created_at) >= start_d,
+                func.date(LedgerEntry.created_at) <= end_d,
             )
             .scalar()
             or 0
@@ -1249,44 +1251,41 @@ async def get_revenue_analytics(
         end_date_exclusive = datetime.combine(end_d + timedelta(days=1), datetime.min.time())
         period_days = (end_d - start_d).days + 1
     else:
-        # Backwards compatible "last N days" mode (based on booking created_at).
+        # "Last N days" mode (use tee-time date for bookings, payment date for ledger).
         start_date = datetime.utcnow() - timedelta(days=days)
         end_date_exclusive = None
         elapsed_days = None
         period_days = days
     
-    # Daily revenue
+    # Daily booked revenue (tee-time date)
     daily_revenue_query = db.query(
-        func.date(Booking.created_at).label("date"),
+        func.date(TeeTime.tee_time).label("date"),
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("bookings")
-    ).filter(Booking.created_at >= start_date)
+    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.tee_time >= start_date)
 
     if end_date_exclusive is not None:
-        daily_revenue_query = daily_revenue_query.filter(Booking.created_at < end_date_exclusive)
+        daily_revenue_query = daily_revenue_query.filter(TeeTime.tee_time < end_date_exclusive)
 
     daily_revenue = (
-        daily_revenue_query.group_by(func.date(Booking.created_at))
-        .order_by(func.date(Booking.created_at))
+        daily_revenue_query.group_by(func.date(TeeTime.tee_time))
+        .order_by(func.date(TeeTime.tee_time))
         .all()
     )
 
-    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    # Daily paid revenue (payment date / ledger entry date)
     daily_paid_revenue_query = db.query(
-        func.date(Booking.created_at).label("date"),
-        func.sum(Booking.price).label("amount"),
-        func.count(Booking.id).label("bookings")
-    ).filter(
-        Booking.created_at >= start_date,
-        Booking.status.in_(paid_statuses)
-    )
+        func.date(LedgerEntry.created_at).label("date"),
+        func.sum(LedgerEntry.amount).label("amount"),
+        func.count(LedgerEntry.id).label("bookings")
+    ).filter(LedgerEntry.booking_id.isnot(None), LedgerEntry.created_at >= start_date)
 
     if end_date_exclusive is not None:
-        daily_paid_revenue_query = daily_paid_revenue_query.filter(Booking.created_at < end_date_exclusive)
+        daily_paid_revenue_query = daily_paid_revenue_query.filter(LedgerEntry.created_at < end_date_exclusive)
 
     daily_paid_revenue = (
-        daily_paid_revenue_query.group_by(func.date(Booking.created_at))
-        .order_by(func.date(Booking.created_at))
+        daily_paid_revenue_query.group_by(func.date(LedgerEntry.created_at))
+        .order_by(func.date(LedgerEntry.created_at))
         .all()
     )
     
@@ -1295,10 +1294,10 @@ async def get_revenue_analytics(
         Booking.status,
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("count")
-    ).filter(Booking.created_at >= start_date)
+    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.tee_time >= start_date)
 
     if end_date_exclusive is not None:
-        status_revenue_query = status_revenue_query.filter(Booking.created_at < end_date_exclusive)
+        status_revenue_query = status_revenue_query.filter(TeeTime.tee_time < end_date_exclusive)
 
     status_revenue = status_revenue_query.group_by(Booking.status).all()
 
@@ -1438,22 +1437,34 @@ async def get_admin_summary(
     # Basic stats
     total_players = db.query(func.count(User.id)).filter(User.role == UserRole.player).scalar() or 0
     total_bookings = db.query(func.count(Booking.id)).scalar() or 0
-    total_revenue = db.query(func.sum(Booking.price)).scalar() or 0.0
+    total_revenue = (
+        db.query(func.sum(LedgerEntry.amount))
+        .filter(LedgerEntry.booking_id.isnot(None))
+        .scalar()
+        or 0.0
+    )
     completed_rounds = db.query(func.count(Round.id)).filter(Round.closed == 1).scalar() or 0
     
     # This month
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     month_bookings = db.query(func.count(Booking.id)).filter(Booking.created_at >= month_start).scalar() or 0
-    month_revenue = db.query(func.sum(Booking.price)).filter(Booking.created_at >= month_start).scalar() or 0.0
+    month_revenue = (
+        db.query(func.sum(LedgerEntry.amount))
+        .filter(LedgerEntry.booking_id.isnot(None), LedgerEntry.created_at >= month_start)
+        .scalar()
+        or 0.0
+    )
     
     # Top players by spending
     top_players = db.query(
         User.name,
         User.email,
-        func.count(Booking.id).label("bookings"),
-        func.sum(Booking.price).label("total_spent")
+        func.count(LedgerEntry.id).label("bookings"),
+        func.sum(LedgerEntry.amount).label("total_spent")
     ).join(
         Booking, User.email == Booking.player_email
+    ).join(
+        LedgerEntry, LedgerEntry.booking_id == Booking.id
     ).group_by(
         User.email
     ).order_by(

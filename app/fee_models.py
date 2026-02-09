@@ -5,6 +5,8 @@ import enum
 class FeeType(str, enum.Enum):
     GOLF = "golf"
     CART = "cart"
+    PUSH_CART = "push_cart"
+    CADDY = "caddy"
     COMPETITION = "competition"
     DRIVING_RANGE = "driving_range"
     OTHER = "other"

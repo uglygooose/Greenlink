@@ -2324,6 +2324,110 @@ async function suggestCartForRow(row) {
     }
 }
 
+async function suggestPushCartForRow(row) {
+    const token = localStorage.getItem("token");
+    const checked = Boolean(row.querySelector('input[data-field="push_cart"]')?.checked);
+    const label = row.querySelector("[data-row-push-cart-label]");
+
+    if (!checked) {
+        row.dataset.pushCartPrice = "0";
+        row.dataset.pushCartLabel = "Push Cart";
+        if (label) label.textContent = "—";
+        updateBookingTotals();
+        return;
+    }
+
+    const typeSelect = row.querySelector('select[data-field="player_type"]');
+    const playerType = typeSelect?.value || "visitor";
+
+    try {
+        const res = await fetch("/fees/suggest/push-cart", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                tee_time_id: teeBookingState.teeTimeId,
+                player_type: playerType,
+                holes: teeBookingState.holes || 18
+            })
+        });
+
+        if (!res.ok) {
+            row.dataset.pushCartPrice = "0";
+            row.dataset.pushCartLabel = "Push cart pricing unavailable";
+            if (label) label.textContent = "Push cart pricing unavailable";
+            updateBookingTotals();
+            return;
+        }
+
+        const suggested = await res.json();
+        row.dataset.pushCartPrice = String(suggested.price || 0);
+        row.dataset.pushCartLabel = suggested.description || "Push Cart";
+        if (label) label.textContent = `${row.dataset.pushCartLabel} (R${Number(suggested.price || 0).toFixed(0)})`;
+        updateBookingTotals();
+    } catch (e) {
+        console.error("Push cart suggestion failed:", e);
+        row.dataset.pushCartPrice = "0";
+        row.dataset.pushCartLabel = "Push cart pricing failed";
+        if (label) label.textContent = "Push cart pricing failed";
+        updateBookingTotals();
+    }
+}
+
+async function suggestCaddyForRow(row) {
+    const token = localStorage.getItem("token");
+    const checked = Boolean(row.querySelector('input[data-field="caddy"]')?.checked);
+    const label = row.querySelector("[data-row-caddy-label]");
+
+    if (!checked) {
+        row.dataset.caddyPrice = "0";
+        row.dataset.caddyLabel = "Caddy";
+        if (label) label.textContent = "—";
+        updateBookingTotals();
+        return;
+    }
+
+    const typeSelect = row.querySelector('select[data-field="player_type"]');
+    const playerType = typeSelect?.value || "visitor";
+
+    try {
+        const res = await fetch("/fees/suggest/caddy", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                tee_time_id: teeBookingState.teeTimeId,
+                player_type: playerType,
+                holes: teeBookingState.holes || 18
+            })
+        });
+
+        if (!res.ok) {
+            row.dataset.caddyPrice = "0";
+            row.dataset.caddyLabel = "Caddy pricing unavailable";
+            if (label) label.textContent = "Caddy pricing unavailable";
+            updateBookingTotals();
+            return;
+        }
+
+        const suggested = await res.json();
+        row.dataset.caddyPrice = String(suggested.price || 0);
+        row.dataset.caddyLabel = suggested.description || "Caddy";
+        if (label) label.textContent = `${row.dataset.caddyLabel} (R${Number(suggested.price || 0).toFixed(0)})`;
+        updateBookingTotals();
+    } catch (e) {
+        console.error("Caddy suggestion failed:", e);
+        row.dataset.caddyPrice = "0";
+        row.dataset.caddyLabel = "Caddy pricing failed";
+        if (label) label.textContent = "Caddy pricing failed";
+        updateBookingTotals();
+    }
+}
+
 async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount, desiredTotal) {
     teeBookingState = {
         teeTimeId,
@@ -2458,6 +2562,8 @@ function addBookingRow() {
                     <label class="req-toggle"><input type="checkbox" data-field="caddy">Caddy</label>
                 </div>
                 <div class="cart-fee-label" data-row-cart-label>—</div>
+                <div class="cart-fee-label" data-row-push-cart-label>—</div>
+                <div class="cart-fee-label" data-row-caddy-label>—</div>
             </div>
         </div>
     `;
@@ -2465,6 +2571,10 @@ function addBookingRow() {
     updateTeeBookingAddingCount();
     row.dataset.cartPrice = "0";
     row.dataset.cartLabel = "Cart";
+    row.dataset.pushCartPrice = "0";
+    row.dataset.pushCartLabel = "Push Cart";
+    row.dataset.caddyPrice = "0";
+    row.dataset.caddyLabel = "Caddy";
     suggestFeeForRow(row);
     updateBookingTotals();
 }
@@ -2519,8 +2629,12 @@ function updateBookingTotals() {
     rows.forEach(row => {
         const select = row.querySelector('select[data-field="fee"]');
         const cartChecked = Boolean(row.querySelector('input[data-field="cart"]')?.checked);
+        const pushCartChecked = Boolean(row.querySelector('input[data-field="push_cart"]')?.checked);
+        const caddyChecked = Boolean(row.querySelector('input[data-field="caddy"]')?.checked);
         const priceTag = row.querySelector('[data-row-price]');
         const cartLabel = row.querySelector('[data-row-cart-label]');
+        const pushCartLabel = row.querySelector('[data-row-push-cart-label]');
+        const caddyLabel = row.querySelector('[data-row-caddy-label]');
         let price = 0;
         if (select && select.value) {
             const option = select.options[select.selectedIndex];
@@ -2530,7 +2644,9 @@ function updateBookingTotals() {
         }
         const cartInfo = cartSplitMap.get(row);
         const cartPrice = cartChecked ? (cartInfo?.charge ?? parseFloat(row.dataset.cartPrice || "0")) : 0;
-        const rowTotal = price + cartPrice;
+        const pushCartPrice = pushCartChecked ? (parseFloat(row.dataset.pushCartPrice || "0") || 0) : 0;
+        const caddyPrice = caddyChecked ? (parseFloat(row.dataset.caddyPrice || "0") || 0) : 0;
+        const rowTotal = price + cartPrice + pushCartPrice + caddyPrice;
         if (priceTag) priceTag.textContent = `R${rowTotal.toFixed(0)}`;
         total += rowTotal;
 
@@ -2545,6 +2661,28 @@ function updateBookingTotals() {
                 const isSplit = originalCart > 0 && cartPrice < originalCart;
                 const memberRate = cartInfo?.memberRate ? " member rate" : "";
                 cartLabel.textContent = `${baseLabel} (R${Number(cartPrice || 0).toFixed(0)})${isSplit ? " split" : ""}${memberRate}`;
+            }
+        }
+
+        if (pushCartLabel) {
+            if (!pushCartChecked) {
+                pushCartLabel.textContent = "—";
+            } else if (String(row.dataset.pushCartLabel || "").toLowerCase().includes("unavailable")) {
+                pushCartLabel.textContent = row.dataset.pushCartLabel || "Push cart pricing unavailable";
+            } else {
+                const baseLabel = row.dataset.pushCartLabel || "Push Cart";
+                pushCartLabel.textContent = `${baseLabel} (R${Number(pushCartPrice || 0).toFixed(0)})`;
+            }
+        }
+
+        if (caddyLabel) {
+            if (!caddyChecked) {
+                caddyLabel.textContent = "—";
+            } else if (String(row.dataset.caddyLabel || "").toLowerCase().includes("unavailable")) {
+                caddyLabel.textContent = row.dataset.caddyLabel || "Caddy pricing unavailable";
+            } else {
+                const baseLabel = row.dataset.caddyLabel || "Caddy";
+                caddyLabel.textContent = `${baseLabel} (R${Number(caddyPrice || 0).toFixed(0)})`;
             }
         }
     });
@@ -2562,6 +2700,12 @@ document.addEventListener("change", (e) => {
         }
         if (row.querySelector("input[data-field='cart']")?.checked) {
             suggestCartForRow(row);
+        }
+        if (row.querySelector("input[data-field='push_cart']")?.checked) {
+            suggestPushCartForRow(row);
+        }
+        if (row.querySelector("input[data-field='caddy']")?.checked) {
+            suggestCaddyForRow(row);
         }
     }
 
@@ -2582,6 +2726,14 @@ document.addEventListener("change", (e) => {
 
     if (e.target.matches("input[data-field='cart']")) {
         suggestCartForRow(row);
+    }
+
+    if (e.target.matches("input[data-field='push_cart']")) {
+        suggestPushCartForRow(row);
+    }
+
+    if (e.target.matches("input[data-field='caddy']")) {
+        suggestCaddyForRow(row);
     }
 });
 

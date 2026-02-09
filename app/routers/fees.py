@@ -42,6 +42,22 @@ def get_cart_fees(db: Session = Depends(get_db)):
         FeeCategory.active == 1
     ).all()
 
+@router.get("/push-cart", response_model=List[FeeResponse])
+def get_push_cart_fees(db: Session = Depends(get_db)):
+    """Get all push cart fees"""
+    return db.query(FeeCategory).filter(
+        FeeCategory.fee_type == FeeType.PUSH_CART,
+        FeeCategory.active == 1
+    ).all()
+
+@router.get("/caddy", response_model=List[FeeResponse])
+def get_caddy_fees(db: Session = Depends(get_db)):
+    """Get all caddy fees"""
+    return db.query(FeeCategory).filter(
+        FeeCategory.fee_type == FeeType.CADDY,
+        FeeCategory.active == 1
+    ).all()
+
 @router.get("/code/{code}", response_model=FeeResponse)
 def get_fee_by_code(code: int, db: Session = Depends(get_db)):
     """Get fee category by code"""
@@ -147,6 +163,92 @@ def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db)):
             status_code=404,
             detail={
                 "message": "No matching cart fee found for the given details.",
+                "context": {
+                    "player_type": player_type,
+                    "holes": holes,
+                    "tee_time": tee_time.tee_time.isoformat(),
+                },
+            },
+        )
+
+    return fee
+
+
+class AddOnFeeSuggestRequest(BaseModel):
+    tee_time_id: int
+    player_type: str
+    holes: int | None = None
+
+
+@router.post("/suggest/push-cart", response_model=FeeResponse)
+def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)):
+    """
+    Suggest a push cart fee based on booking details.
+    """
+    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
+    if not tee_time:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Tee time not found")
+
+    holes = int(req.holes or 18)
+    player_type = normalize_player_type(req.player_type)
+
+    ctx = PricingContext(
+        fee_type=FeeType.PUSH_CART,
+        tee_time=tee_time.tee_time,
+        player_type=player_type,
+        holes=holes,
+    )
+
+    fee = select_best_fee_category(db, ctx)
+    if not fee:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "No matching push cart fee found for the given details.",
+                "context": {
+                    "player_type": player_type,
+                    "holes": holes,
+                    "tee_time": tee_time.tee_time.isoformat(),
+                },
+            },
+        )
+
+    return fee
+
+
+@router.post("/suggest/caddy", response_model=FeeResponse)
+def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)):
+    """
+    Suggest a caddy fee based on booking details.
+    """
+    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
+    if not tee_time:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Tee time not found")
+
+    holes = int(req.holes or 18)
+    player_type = normalize_player_type(req.player_type)
+
+    ctx = PricingContext(
+        fee_type=FeeType.CADDY,
+        tee_time=tee_time.tee_time,
+        player_type=player_type,
+        holes=holes,
+    )
+
+    fee = select_best_fee_category(db, ctx)
+    if not fee:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "No matching caddy fee found for the given details.",
                 "context": {
                     "player_type": player_type,
                     "holes": holes,

@@ -25,6 +25,35 @@ def run_auto_migrations(engine) -> None:
 
     statements: list[str] = [
         # ----------------------------
+        # Enum extensions (fee_type)
+        # ----------------------------
+        # Adding enum values is not covered by `create_all()` and would otherwise break
+        # when the Python enum is extended.
+        """
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fee_type') THEN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'fee_type' AND e.enumlabel = 'push_cart'
+            ) THEN
+              ALTER TYPE fee_type ADD VALUE 'push_cart';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'fee_type' AND e.enumlabel = 'caddy'
+            ) THEN
+              ALTER TYPE fee_type ADD VALUE 'caddy';
+            END IF;
+          END IF;
+        END $$;
+        """,
+        # ----------------------------
         # Targets + settings tables
         # ----------------------------
         """

@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
+import os
 
 from app.database import Base, engine, DB_SOURCE, DB_INFO
 from app.routers import users, tee, checkin, scoring, admin, cashbook, profile, settings
@@ -81,10 +82,82 @@ def health(db: Session = Depends(get_db)):
     """
     try:
         db.execute(text("select 1"))
-        return {"ok": True, "db": "ok", "db_source": DB_SOURCE, "db_driver": (DB_INFO or {}).get("driver")}
+        return {
+            "ok": True,
+            "db": "ok",
+            "db_source": DB_SOURCE,
+            "db_driver": (DB_INFO or {}).get("driver"),
+            "has_database_url": bool(os.getenv("DATABASE_URL")),
+            "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
+            "demo_seed_admin": str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"},
+        }
     except SQLAlchemyError as e:
         print(f"[HEALTH] Database error: {str(e)[:200]}")
-        return {"ok": False, "db": "error", "db_source": DB_SOURCE, "db_driver": (DB_INFO or {}).get("driver")}
+        return {
+            "ok": False,
+            "db": "error",
+            "db_source": DB_SOURCE,
+            "db_driver": (DB_INFO or {}).get("driver"),
+            "has_database_url": bool(os.getenv("DATABASE_URL")),
+            "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
+            "demo_seed_admin": str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"},
+        }
+
+
+def _seed_demo_admin_if_enabled() -> None:
+    """
+    Optional safety net for demo hosts (e.g., Render) that are accidentally running on
+    an ephemeral SQLite fallback DB.
+
+    This is opt-in via env vars so we don't silently create weak credentials on real deployments.
+    """
+
+    enabled = str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"}
+    if not enabled:
+        return
+
+    email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@greenlink.com").strip().lower()
+    password = os.getenv("DEMO_ADMIN_PASSWORD") or "123"
+    name = (os.getenv("DEMO_ADMIN_NAME") or "Admin").strip() or "Admin"
+    # For SQLite demo hosts (e.g., Render fallback), default to resetting each start so
+    # the "standard demo" credentials stay predictable.
+    force_reset = (
+        str(os.getenv("DEMO_ADMIN_FORCE_RESET", "")).strip().lower() in {"1", "true", "yes"}
+        or DB_SOURCE == "SQLITE"
+    )
+
+    if not email or "@" not in email or not str(password):
+        print("[DEMO_ADMIN] Skipped: invalid DEMO_ADMIN_EMAIL/DEMO_ADMIN_PASSWORD.")
+        return
+
+    from sqlalchemy import func
+    from app.auth import get_password_hash
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+        if not user:
+            user = models.User(
+                name=name,
+                email=email,
+                password=get_password_hash(password),
+                role=models.UserRole.admin,
+            )
+            db.add(user)
+            db.commit()
+            print(f"[DEMO_ADMIN] Created demo admin user: {email} (db_source={DB_SOURCE}).")
+            return
+
+        if force_reset:
+            user.password = get_password_hash(password)
+            user.role = models.UserRole.admin
+            db.commit()
+            print(f"[DEMO_ADMIN] Reset demo admin password: {email} (db_source={DB_SOURCE}).")
+    except Exception as e:
+        print(f"[DEMO_ADMIN] Seed failed: {type(e).__name__}: {str(e)[:160]}")
+    finally:
+        db.close()
 
 # -----------------------------------------
 # Database initialization
@@ -93,6 +166,7 @@ try:
     Base.metadata.create_all(bind=engine)
     run_auto_migrations(engine)
     print("[DB] Database connected successfully")
+    _seed_demo_admin_if_enabled()
 except Exception as e:
     print(f"[DB] Warning: Could not connect to database: {str(e)[:100]}")
     print("[DB] System will run in offline mode (no data persistence)")

@@ -46,6 +46,30 @@ def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
     )
     return select_best_fee_category(db, ctx)
 
+def _select_push_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
+    from app.fee_models import FeeType
+    from app.pricing import PricingContext, normalize_player_type, select_best_fee_category
+
+    ctx = PricingContext(
+        fee_type=FeeType.PUSH_CART,
+        tee_time=tee_time,
+        player_type=normalize_player_type(player_type),
+        holes=holes,
+    )
+    return select_best_fee_category(db, ctx)
+
+def _select_caddy_fee(db: Session, tee_time, player_type: str, holes: int = 18):
+    from app.fee_models import FeeType
+    from app.pricing import PricingContext, normalize_player_type, select_best_fee_category
+
+    ctx = PricingContext(
+        fee_type=FeeType.CADDY,
+        tee_time=tee_time,
+        player_type=normalize_player_type(player_type),
+        holes=holes,
+    )
+    return select_best_fee_category(db, ctx)
+
 def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_method: str | None = None) -> models.LedgerEntry | None:
     """
     Ensure a single ledger entry exists once a booking is considered paid.
@@ -501,9 +525,11 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                 paired_original_price = float(paired_original_fee.price or 0.0)
 
                 if target_cart_price > 0:
+                    paired_charge = target_cart_price / 2
                     paired_booking.price = float(paired_booking.price or 0.0) - paired_original_price + (target_cart_price / 2)
                     paired_booking.notes = _append_note(paired_booking.notes, "Cart split (1/2)")
                     paired_booking.notes = _append_note(paired_booking.notes, "Cart paired")
+                    paired_booking.notes = _append_note(paired_booking.notes, f"Cart amount: {paired_charge:.2f}")
                     if pair_uses_member_rate:
                         paired_booking.notes = _append_note(paired_booking.notes, "Cart rate: member")
                     if paired_booking.status in (models.BookingStatus.checked_in, models.BookingStatus.completed):
@@ -513,11 +539,13 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                     cart_note = f"Cart: {target_cart_fee.description}"
                     cart_note = _append_note(cart_note, "Cart split (1/2)")
                     cart_note = _append_note(cart_note, "Cart paired")
+                    cart_note = _append_note(cart_note, f"Cart amount: {cart_charge:.2f}")
                     if pair_uses_member_rate:
                         cart_note = _append_note(cart_note, "Cart rate: member")
 
             if cart_charge == cart_fee_price:
                 cart_note = _append_note(cart_note, "Cart single")
+                cart_note = _append_note(cart_note, f"Cart amount: {cart_charge:.2f}")
 
             price = float(price or 0.0) + float(cart_charge or 0.0)
             notes_val = _append_note(notes_val, cart_note)
@@ -525,6 +553,54 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             raise
         except Exception as e:
             print(f"[CART] Auto-cart skipped: {str(e)[:120]}")
+
+    # Optional push cart add-on (auto-selected) when requested and no explicit total price was provided.
+    push_cart_requested = bool(getattr(booking_in, "push_cart", False))
+    if push_cart_requested and getattr(booking_in, "price", None) is None:
+        try:
+            push_player_type = getattr(booking_in, "player_type", None) or player_type_snapshot or ("member" if resolved_member_id else "visitor")
+            holes = int(getattr(booking_in, "holes", None) or 18)
+
+            push_fee = _select_push_cart_fee(db, tee_time.tee_time, push_player_type, holes=holes)
+            if not push_fee:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unable to auto-select a push cart fee. Disable push cart or choose a manual total price.",
+                )
+
+            push_charge = float(push_fee.price or 0.0)
+            if push_charge:
+                price = float(price or 0.0) + float(push_charge)
+            notes_val = _append_note(notes_val, f"Push cart: {push_fee.description}")
+            notes_val = _append_note(notes_val, f"Push cart amount: {push_charge:.2f}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[PUSH_CART] Auto-push-cart skipped: {str(e)[:120]}")
+
+    # Optional caddy add-on (auto-selected) when requested and no explicit total price was provided.
+    caddy_requested = bool(getattr(booking_in, "caddy", False))
+    if caddy_requested and getattr(booking_in, "price", None) is None:
+        try:
+            caddy_player_type = getattr(booking_in, "player_type", None) or player_type_snapshot or ("member" if resolved_member_id else "visitor")
+            holes = int(getattr(booking_in, "holes", None) or 18)
+
+            caddy_fee = _select_caddy_fee(db, tee_time.tee_time, caddy_player_type, holes=holes)
+            if not caddy_fee:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unable to auto-select a caddy fee. Disable caddy or choose a manual total price.",
+                )
+
+            caddy_charge = float(caddy_fee.price or 0.0)
+            if caddy_charge:
+                price = float(price or 0.0) + float(caddy_charge)
+            notes_val = _append_note(notes_val, f"Caddy: {caddy_fee.description}")
+            notes_val = _append_note(notes_val, f"Caddy amount: {caddy_charge:.2f}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[CADDY] Auto-caddy skipped: {str(e)[:120]}")
      
     status = models.BookingStatus.checked_in if prepaid else models.BookingStatus.booked
 
