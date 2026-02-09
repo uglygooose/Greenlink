@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
 
-from app.database import Base, engine
+from app.database import Base, engine, DB_SOURCE, DB_INFO
 from app.routers import users, tee, checkin, scoring, admin, cashbook, profile, settings
 from app import auth, models, crud, schemas, fee_models
 from app.auth import get_db
@@ -81,10 +81,10 @@ def health(db: Session = Depends(get_db)):
     """
     try:
         db.execute(text("select 1"))
-        return {"ok": True, "db": "ok"}
+        return {"ok": True, "db": "ok", "db_source": DB_SOURCE, "db_driver": (DB_INFO or {}).get("driver")}
     except SQLAlchemyError as e:
         print(f"[HEALTH] Database error: {str(e)[:200]}")
-        return {"ok": False, "db": "error"}
+        return {"ok": False, "db": "error", "db_source": DB_SOURCE, "db_driver": (DB_INFO or {}).get("driver")}
 
 # -----------------------------------------
 # Database initialization

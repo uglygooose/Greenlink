@@ -182,7 +182,8 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(models.User).filter(models.User.email == email).first()
+    normalized_email = (email or "").strip().lower()
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token({

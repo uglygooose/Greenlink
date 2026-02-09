@@ -13,6 +13,18 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATABASE_URL_STRICT = str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"}
 
+def _engine_info(engine) -> dict:
+    try:
+        url = engine.url
+        return {
+            "driver": getattr(url, "drivername", None),
+            "host": getattr(url, "host", None),
+            "port": getattr(url, "port", None),
+            "database": getattr(url, "database", None),
+        }
+    except Exception:
+        return {"driver": None, "host": None, "port": None, "database": None}
+
 def _build_mysql_url() -> str:
     mysql_user = os.getenv("MYSQL_USER", "root")
     mysql_password = quote_plus(os.getenv("MYSQL_PASSWORD", ""))
@@ -55,11 +67,14 @@ def _try_engine(url: str):
 
 engine = None
 engine_error = None
+DB_SOURCE = None  # "DATABASE_URL" | "MYSQL" | "SQLITE"
 
 if DATABASE_URL:
     engine, engine_error = _try_engine(DATABASE_URL)
     if engine_error:
         print(f"[DB] DATABASE_URL connection failed: {engine_error}")
+    else:
+        DB_SOURCE = "DATABASE_URL"
 
 if engine is None and DATABASE_URL and DATABASE_URL_STRICT:
     raise RuntimeError("DATABASE_URL_STRICT is enabled, refusing to fall back after DATABASE_URL failure.")
@@ -69,6 +84,8 @@ if engine is None:
     engine, engine_error = _try_engine(mysql_url)
     if engine_error:
         print(f"[DB] MySQL connection failed: {engine_error}")
+    else:
+        DB_SOURCE = "MYSQL"
 
 if engine is None:
     sqlite_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./greenlink.dev.db")
@@ -76,5 +93,15 @@ if engine is None:
     if engine_error:
         print(f"[DB] SQLite fallback failed: {engine_error}")
         raise RuntimeError("Database initialization failed after all fallbacks.")
+    DB_SOURCE = "SQLITE"
+
+DB_INFO = _engine_info(engine)
+if DATABASE_URL and DB_SOURCE != "DATABASE_URL":
+    print(f"[DB] Using fallback database (source={DB_SOURCE}).")
+    print("[DB] Hint: set DATABASE_URL_STRICT=1 to disable fallbacks after DATABASE_URL failure.")
+print(
+    f"[DB] Active database: source={DB_SOURCE} driver={DB_INFO.get('driver')} "
+    f"host={DB_INFO.get('host')} port={DB_INFO.get('port')} db={DB_INFO.get('database')}"
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

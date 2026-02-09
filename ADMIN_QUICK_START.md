@@ -16,6 +16,10 @@ http://127.0.0.1:8000/frontend/admin.html
    - Email: `admin@greenlink.com`
    - Password: Your admin password
 
+If you suddenly get a `401 Invalid credentials`:
+- Check `http://127.0.0.1:8000/health` and confirm `db_source` is what you expect (e.g. `DATABASE_URL`, not a fallback DB).
+- Reset the password locally: `python reset_user_password.py admin@greenlink.com`
+
 ## What You Can See
 
 ### Dashboard (📊)
