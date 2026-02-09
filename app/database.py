@@ -13,6 +13,34 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATABASE_URL_STRICT = str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"}
 
+def _normalize_database_url(url: str | None) -> str | None:
+    """
+    Render/Supabase often provides Postgres URLs as:
+      - postgres://...
+      - postgresql://...
+
+    SQLAlchemy's default driver for those schemes is typically psycopg2, but this
+    project uses psycopg3 (installed via `psycopg[binary]`).
+
+    Normalize to `postgresql+psycopg://...` so deployments don't fail with
+    `ModuleNotFoundError: No module named 'psycopg2'`.
+    """
+    if not url:
+        return url
+    raw = url.strip()
+    if not raw:
+        return raw
+    # If a driver is already specified (e.g., postgresql+psycopg), leave it alone.
+    if raw.startswith("postgresql+"):
+        return raw
+    if raw.startswith("postgres://"):
+        return "postgresql+psycopg://" + raw[len("postgres://") :]
+    if raw.startswith("postgresql://"):
+        return "postgresql+psycopg://" + raw[len("postgresql://") :]
+    return raw
+
+DATABASE_URL = _normalize_database_url(DATABASE_URL)
+
 def _engine_info(engine) -> dict:
     try:
         url = engine.url
