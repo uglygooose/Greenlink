@@ -258,6 +258,16 @@ def main(argv: list[str]) -> int:
     p.add_argument("--include-historical-days", type=int, default=3, help="Also seed payment dates N days back.")
     p.add_argument("--include-future-tee-days", type=int, default=14, help="Create some future tee times paid on the payment date.")
     p.add_argument("--seed-count", type=int, default=12, help="How many paid bookings to create for the main payment date.")
+    p.add_argument(
+        "--seed-tee-dates",
+        help="Comma-separated tee sheet dates to seed BOOKED bookings for (YYYY-MM-DD,YYYY-MM-DD). Example: 2026-02-10,2026-02-11",
+    )
+    p.add_argument(
+        "--seed-tee-bookings-per-date",
+        type=int,
+        default=8,
+        help="How many BOOKED bookings to create per tee date (tee sheet visibility).",
+    )
     p.add_argument("--backfill-missing-payment-methods", action="store_true", help="Backfill missing LedgerEntryMeta.payment_method for recent ledger entries.")
     p.add_argument("--backfill-days", type=int, default=60, help="How far back to backfill (days).")
     p.add_argument("--backfill-default", default="CARD", help="Default payment method used for backfill.")
@@ -283,9 +293,20 @@ def main(argv: list[str]) -> int:
 
     random.shuffle(scenarios)
 
-    created = 0
+    created_paid = 0
+    created_booked = 0
     created_keys: list[str] = []
     fee_ids: dict[str, int | None] = {}
+
+    tee_dates: list[date] = []
+    if args.seed_tee_dates:
+        raw_dates = [d.strip() for d in str(args.seed_tee_dates).split(",") if d.strip()]
+        for raw in raw_dates:
+            try:
+                tee_dates.append(datetime.strptime(raw, "%Y-%m-%d").date())
+            except ValueError:
+                print(f"Invalid --seed-tee-dates value '{raw}'. Use YYYY-MM-DD.", file=sys.stderr)
+                return 2
 
     with SessionLocal() as db:
         # Ensure some fee categories exist for variety (only if fee table is present).
@@ -300,8 +321,78 @@ def main(argv: list[str]) -> int:
 
         db.commit()
 
+        def seed_booked_for_tee_date(d: date, n: int) -> None:
+            """
+            Seed BOOKED (not paid) future bookings so the tee sheet shows occupied slots.
+            These should not create ledger entries.
+            """
+            nonlocal created_booked
+            n = max(1, int(n))
+            base_times = [
+                _dt(d, 7, 30),
+                _dt(d, 7, 40),
+                _dt(d, 7, 50),
+                _dt(d, 8, 0),
+                _dt(d, 8, 10),
+                _dt(d, 8, 20),
+                _dt(d, 8, 30),
+                _dt(d, 8, 40),
+                _dt(d, 8, 50),
+                _dt(d, 9, 0),
+            ]
+            player_types = ["member", "visitor", "non_affiliated"]
+
+            for i in range(n):
+                hole = "1" if i % 2 == 0 else "10"
+                tee_when = base_times[i % len(base_times)]
+                tt = _get_or_create_tee_time(db, tee_when, hole)
+
+                pt = player_types[i % len(player_types)]
+                is_member = pt == "member"
+                member_id = (m1.id if i % 2 == 0 else m2.id) if is_member else None
+
+                name = f"Demo {pt.title()} {d.strftime('%m/%d')} #{i+1}"
+                email = f"seed.tsheet.{pt}.{d.strftime('%Y%m%d')}.{i+1}@example.com"
+                seed_key = f"TSHEET_BOOKED_{d.strftime('%Y%m%d')}_{hole}_{i+1}"
+
+                existing = (
+                    db.query(models.Booking)
+                    .filter(models.Booking.external_provider == "seed", models.Booking.external_booking_id == seed_key)
+                    .first()
+                )
+                if existing:
+                    continue
+
+                b = models.Booking(
+                    tee_time_id=tt.id,
+                    member_id=member_id,
+                    created_by_user_id=None,
+                    player_name=name,
+                    player_email=email,
+                    club_card=None,
+                    handicap_number=None,
+                    greenlink_id=None,
+                    source=models.BookingSource.proshop if not member_id else models.BookingSource.member,
+                    external_provider="seed",
+                    external_booking_id=seed_key,
+                    party_size=1,
+                    fee_category_id=fee_ids.get("golf"),
+                    price=float(350.0 if pt == "member" else 450.0),
+                    status=models.BookingStatus.booked,
+                    player_type=pt,
+                    holes=18,
+                    prepaid=False,
+                    cart=bool(i % 5 == 0),
+                    push_cart=bool(i % 7 == 0),
+                    caddy=bool(i % 9 == 0),
+                    notes=f"Seeded future BOOKED booking for tee sheet ({seed_key})",
+                    created_at=_utcnow_naive(),
+                )
+                db.add(b)
+                created_booked += 1
+
         def seed_for_payment_date(d: date, n: int) -> None:
-            nonlocal created
+            nonlocal created_paid
             base_payment_dt = _dt(d, 12, 0)
             tee_day_today = d
             tee_day_future = d + timedelta(days=max(1, int(args.include_future_tee_days)))
@@ -341,7 +432,7 @@ def main(argv: list[str]) -> int:
                     payment_dt=payment_dt,
                     seed_key=seed_key,
                 )
-                created += 1
+                created_paid += 1
                 created_keys.append(seed_key)
 
                 # Add a couple of non-paid bookings (should not export).
@@ -397,6 +488,10 @@ def main(argv: list[str]) -> int:
             d = pay_date - timedelta(days=j + 1)
             seed_for_payment_date(d, max(2, int(args.seed_count // 3)))
 
+        # Seed future tee-sheet visibility bookings for specific dates.
+        for d in tee_dates:
+            seed_booked_for_tee_date(d, int(args.seed_tee_bookings_per_date))
+
         # Commit seeding first so the backfill run works on a clean, consistent DB state.
         db.commit()
 
@@ -409,7 +504,9 @@ def main(argv: list[str]) -> int:
             )
             db.commit()
 
-    print(f"Seed complete: created/updated {created} paid booking(s).")
+    print(f"Seed complete: created/updated {created_paid} paid booking(s).")
+    if created_booked:
+        print(f"Also seeded {created_booked} future BOOKED tee-sheet booking(s).")
     if created_keys:
         print(f"Example seed key: {created_keys[0]}")
     print(f"Try exporting payment date: {pay_date.strftime('%Y-%m-%d')}")
