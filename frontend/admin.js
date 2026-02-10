@@ -325,11 +325,23 @@ async function loadRevenueChart() {
             headers: { Authorization: `Bearer ${token}` }
         });
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
+        const dailyRequired = data?.daily_revenue_required;
+        const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
 
         const ctx = document.getElementById("revenueChart");
         if (window.revenueChartInstance && typeof window.revenueChartInstance.destroy === "function") {
             window.revenueChartInstance.destroy();
         }
+
+        const targetDataset = dailyRequiredValue == null ? null : {
+            label: "Target (Required / Day)",
+            data: series.labels.map(() => dailyRequiredValue),
+            borderColor: "#e53935",
+            backgroundColor: "rgba(229, 57, 53, 0.08)",
+            borderDash: [6, 6],
+            pointRadius: 0,
+            tension: 0
+        };
 
         window.revenueChartInstance = new Chart(ctx, {
             type: "line",
@@ -349,7 +361,8 @@ async function loadRevenueChart() {
                         borderColor: "#1e88e5",
                         backgroundColor: "rgba(30, 136, 229, 0.1)",
                         tension: 0.4
-                    }
+                    },
+                    ...(targetDataset ? [targetDataset] : [])
                 ]
             },
             options: {
@@ -1299,6 +1312,8 @@ async function loadRevenue() {
         // Daily revenue chart
         const dailyCtx = document.getElementById("dailyRevenueChart");
         if (window.dailyChart) window.dailyChart.destroy();
+        const dailyRequired = data?.daily_revenue_required;
+        const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
 
         window.dailyChart = new Chart(dailyCtx, {
             type: "bar",
@@ -1314,10 +1329,27 @@ async function loadRevenue() {
                         label: "Paid Revenue (R)",
                         data: series.paid,
                         backgroundColor: "rgba(30, 136, 229, 0.65)"
-                    }
+                    },
+                    ...(dailyRequiredValue == null ? [] : [{
+                        type: "line",
+                        label: "Target (Required / Day)",
+                        data: series.labels.map(() => dailyRequiredValue),
+                        borderColor: "#e53935",
+                        backgroundColor: "rgba(229, 57, 53, 0.08)",
+                        borderDash: [6, 6],
+                        pointRadius: 0,
+                        tension: 0,
+                        yAxisID: "y"
+                    }])
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: true }
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
         });
 
         // Status revenue chart

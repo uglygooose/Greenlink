@@ -1308,12 +1308,15 @@ async def get_revenue_analytics(
         annual_revenue_target = _derive_annual_revenue_target_from_mix(db, year, float(annual_rounds_target))
 
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
-    
+    daily_required = (float(annual_revenue_target) / float(_days_in_year(year))) if annual_revenue_target is not None else None
+	    
     return {
         "period_days": int(period_days or days),
         "period": (period or "").lower().strip() or None,
         "anchor_date": anchor.isoformat(),
         "target_revenue": derived_target,
+        "annual_revenue_target": annual_revenue_target,
+        "daily_revenue_required": daily_required,
         "daily_revenue": [
             {
                 "date": str(dr[0]),
