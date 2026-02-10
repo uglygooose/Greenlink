@@ -46,9 +46,27 @@ def run_auto_migrations(engine) -> None:
               SELECT 1
               FROM pg_enum e
               JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'fee_type' AND e.enumlabel = 'PUSH_CART'
+            ) THEN
+              ALTER TYPE fee_type ADD VALUE 'PUSH_CART';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
               WHERE t.typname = 'fee_type' AND e.enumlabel = 'caddy'
             ) THEN
               ALTER TYPE fee_type ADD VALUE 'caddy';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'fee_type' AND e.enumlabel = 'CADDY'
+            ) THEN
+              ALTER TYPE fee_type ADD VALUE 'CADDY';
             END IF;
           END IF;
         END $$;

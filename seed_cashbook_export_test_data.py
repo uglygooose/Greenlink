@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -94,6 +95,70 @@ def _get_or_create_fee_category(
     db.flush()
     return int(fc.id)
 
+def _ensure_fee_type_enum_values(db: Session) -> None:
+    """
+    Supabase/Postgres demo hardening:
+    Older DBs may have a `fee_type` enum missing newer values (or only have lowercase variants).
+    Add any missing values in an idempotent way so seeding doesn't fail.
+    """
+    try:
+        bind = db.get_bind()
+        dialect = str(getattr(getattr(bind, "dialect", None), "name", "") or "").lower()
+        if dialect not in {"postgresql", "postgres"}:
+            return
+
+        db.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fee_type') THEN
+                    IF NOT EXISTS (
+                      SELECT 1
+                      FROM pg_enum e
+                      JOIN pg_type t ON t.oid = e.enumtypid
+                      WHERE t.typname = 'fee_type' AND e.enumlabel = 'push_cart'
+                    ) THEN
+                      ALTER TYPE fee_type ADD VALUE 'push_cart';
+                    END IF;
+
+                    IF NOT EXISTS (
+                      SELECT 1
+                      FROM pg_enum e
+                      JOIN pg_type t ON t.oid = e.enumtypid
+                      WHERE t.typname = 'fee_type' AND e.enumlabel = 'PUSH_CART'
+                    ) THEN
+                      ALTER TYPE fee_type ADD VALUE 'PUSH_CART';
+                    END IF;
+
+                    IF NOT EXISTS (
+                      SELECT 1
+                      FROM pg_enum e
+                      JOIN pg_type t ON t.oid = e.enumtypid
+                      WHERE t.typname = 'fee_type' AND e.enumlabel = 'caddy'
+                    ) THEN
+                      ALTER TYPE fee_type ADD VALUE 'caddy';
+                    END IF;
+
+                    IF NOT EXISTS (
+                      SELECT 1
+                      FROM pg_enum e
+                      JOIN pg_type t ON t.oid = e.enumtypid
+                      WHERE t.typname = 'fee_type' AND e.enumlabel = 'CADDY'
+                    ) THEN
+                      ALTER TYPE fee_type ADD VALUE 'CADDY';
+                    END IF;
+                  END IF;
+                END $$;
+                """
+            )
+        )
+        # Important: commit enum changes before inserting rows that might use the new values.
+        db.commit()
+    except Exception:
+        # Best-effort: if the DB user can't alter enums, we'll fail later on insert with a clearer error.
+        pass
+
 
 def _get_or_create_tee_time(db: Session, when: datetime, hole: str) -> models.TeeTime:
     existing = (
@@ -123,6 +188,10 @@ def _seed_booking_with_payment(
     holes: int,
     payment_method: str,
     payment_dt: datetime,
+    cart: bool = False,
+    push_cart: bool = False,
+    caddy: bool = False,
+    notes: str | None = None,
     seed_key: str,
 ) -> tuple[models.Booking, models.LedgerEntry]:
     # Idempotency: use external_provider/id to avoid duplicates on re-run.
@@ -135,6 +204,14 @@ def _seed_booking_with_payment(
         .first()
     )
     if existing:
+        # Keep seeded records up to date (price/add-ons/notes) across re-runs.
+        existing.price = float(price)
+        existing.cart = bool(cart)
+        existing.push_cart = bool(push_cart)
+        existing.caddy = bool(caddy)
+        if notes:
+            existing.notes = notes
+
         le = db.query(models.LedgerEntry).filter(models.LedgerEntry.booking_id == existing.id).first()
         if not le:
             le = models.LedgerEntry(booking_id=existing.id, description="Seed payment", amount=price, created_at=payment_dt)
@@ -174,10 +251,10 @@ def _seed_booking_with_payment(
         home_club="Test Club",
         handicap_index_at_booking=None,
         handicap_index_at_play=None,
-        cart=False,
-        push_cart=False,
-        caddy=False,
-        notes=f"Seeded booking for export testing ({seed_key})",
+        cart=bool(cart),
+        push_cart=bool(push_cart),
+        caddy=bool(caddy),
+        notes=(notes or f"Seeded booking for export testing ({seed_key})"),
         created_at=_utcnow_naive(),
     )
     db.add(b)
@@ -268,6 +345,8 @@ def main(argv: list[str]) -> int:
         default=8,
         help="How many BOOKED bookings to create per tee date (tee sheet visibility).",
     )
+    p.add_argument("--caddy-price", type=float, default=200.0, help="Suggested caddy add-on price (ZAR).")
+    p.add_argument("--push-cart-price", type=float, default=50.0, help="Suggested push cart add-on price (ZAR).")
     p.add_argument("--backfill-missing-payment-methods", action="store_true", help="Backfill missing LedgerEntryMeta.payment_method for recent ledger entries.")
     p.add_argument("--backfill-days", type=int, default=60, help="How far back to backfill (days).")
     p.add_argument("--backfill-default", default="CARD", help="Default payment method used for backfill.")
@@ -309,11 +388,20 @@ def main(argv: list[str]) -> int:
                 return 2
 
     with SessionLocal() as db:
+        _ensure_fee_type_enum_values(db)
+
         # Ensure some fee categories exist for variety (only if fee table is present).
         fee_ids["golf"] = _get_or_create_fee_category(db, 9001, "Seed: Green Fee (Golf)", 350.0, "golf", audience="visitor", holes=18)
         fee_ids["cart"] = _get_or_create_fee_category(db, 9002, "Seed: Cart Hire", 120.0, "cart", audience="visitor", holes=18)
         fee_ids["competition"] = _get_or_create_fee_category(db, 9003, "Seed: Competition Fee", 200.0, "competition", audience="visitor", holes=18)
         fee_ids["other"] = _get_or_create_fee_category(db, 9004, "Seed: Other", 80.0, "other", audience="visitor", holes=9)
+        # Add-ons (used by /fees/suggest/push-cart and /fees/suggest/caddy)
+        fee_ids["push_cart"] = _get_or_create_fee_category(
+            db, 9005, "Seed: Push Cart", float(args.push_cart_price), "push_cart", audience="visitor", holes=18
+        )
+        fee_ids["caddy"] = _get_or_create_fee_category(
+            db, 9006, "Seed: Caddy", float(args.caddy_price), "caddy", audience="visitor", holes=18
+        )
 
         # Seed some members.
         m1 = _get_or_create_member(db, "M-1001", "Alice", "Member", "alice.member@example.com")
@@ -363,6 +451,20 @@ def main(argv: list[str]) -> int:
                 if existing:
                     continue
 
+                wants_cart = bool(i % 5 == 0)
+                wants_push = bool(i % 7 == 0)
+                wants_caddy = bool(i % 9 == 0)
+
+                base_price = float(350.0 if pt == "member" else 450.0)
+                add_on = (float(args.push_cart_price) if wants_push else 0.0) + (float(args.caddy_price) if wants_caddy else 0.0)
+                total_price = base_price + add_on
+
+                notes = f"Seeded future BOOKED booking for tee sheet ({seed_key})"
+                if wants_push:
+                    notes = f"{notes}\nPush cart amount: {float(args.push_cart_price):.2f}"
+                if wants_caddy:
+                    notes = f"{notes}\nCaddy amount: {float(args.caddy_price):.2f}"
+
                 b = models.Booking(
                     tee_time_id=tt.id,
                     member_id=member_id,
@@ -377,15 +479,15 @@ def main(argv: list[str]) -> int:
                     external_booking_id=seed_key,
                     party_size=1,
                     fee_category_id=fee_ids.get("golf"),
-                    price=float(350.0 if pt == "member" else 450.0),
+                    price=float(total_price),
                     status=models.BookingStatus.booked,
                     player_type=pt,
                     holes=18,
                     prepaid=False,
-                    cart=bool(i % 5 == 0),
-                    push_cart=bool(i % 7 == 0),
-                    caddy=bool(i % 9 == 0),
-                    notes=f"Seeded future BOOKED booking for tee sheet ({seed_key})",
+                    cart=bool(wants_cart),
+                    push_cart=bool(wants_push),
+                    caddy=bool(wants_caddy),
+                    notes=notes,
                     created_at=_utcnow_naive(),
                 )
                 db.add(b)
@@ -417,6 +519,18 @@ def main(argv: list[str]) -> int:
                 payment_dt = base_payment_dt + timedelta(minutes=i)
 
                 seed_key = f"CASHBOOK_EXPORT_{d.strftime('%Y%m%d')}_{i+1}_{sc.label}"
+
+                wants_push = bool(i % 6 == 0)
+                wants_caddy = bool(i % 4 == 0)
+                add_on = (float(args.push_cart_price) if wants_push else 0.0) + (float(args.caddy_price) if wants_caddy else 0.0)
+                total_price = float(sc.price) + add_on
+
+                notes = f"Seeded booking for export testing ({seed_key})"
+                if wants_push:
+                    notes = f"{notes}\nPush cart amount: {float(args.push_cart_price):.2f}"
+                if wants_caddy:
+                    notes = f"{notes}\nCaddy amount: {float(args.caddy_price):.2f}"
+
                 b, le = _seed_booking_with_payment(
                     db,
                     tee_time=tt,
@@ -425,11 +539,15 @@ def main(argv: list[str]) -> int:
                     member_id=member_id,
                     player_type=player_type,
                     fee_category_id=fee_category_id,
-                    price=sc.price,
+                    price=total_price,
                     booking_status=sc.status,
                     holes=sc.holes,
                     payment_method=method,
                     payment_dt=payment_dt,
+                    cart=(sc.fee_type == "cart"),
+                    push_cart=wants_push,
+                    caddy=wants_caddy,
+                    notes=notes,
                     seed_key=seed_key,
                 )
                 created_paid += 1
