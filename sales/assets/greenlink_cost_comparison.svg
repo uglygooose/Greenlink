@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" role="img" aria-label="Illustrative monthly cost comparison">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .axis { stroke: #d7e0dc; stroke-width: 2; }
+      .tick { stroke: #e7eeeb; stroke-width: 1; }
+      .label { font: 14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; fill: #4b5b56; }
+      .title { font: 16px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-weight: 700; fill: #123a2f; }
+      .note { font: 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; fill: #4b5b56; }
+      .barA { fill: #0f6b4f; }
+      .barB { fill: #1c8b67; }
+      .barC { fill: #cfe8df; stroke: #0f6b4f; stroke-width: 1; }
+      .barText { font: 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; fill: #0b1b16; font-weight: 600; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="900" height="380" />
+
+  <text class="title" x="24" y="32">Illustrative monthly cost comparison</text>
+  <text class="note" x="24" y="54">GreenLink pricing in ZAR; competitor range shown for tee sheet software only (USD $99–$399+ per month).</text>
+
+  <!-- Chart area -->
+  <g transform="translate(24,70)">
+    <!-- axis -->
+    <line class="axis" x1="0" y1="260" x2="852" y2="260"/>
+
+    <!-- y ticks (0 to 15k) -->
+    <!-- Scale: 15,000 => 240px -->
+    <!-- ticks every 3,000 -->
+    <g>
+      <line class="tick" x1="0" y1="260" x2="852" y2="260"/>
+      <text class="label" x="0" y="286">R0</text>
+
+      <line class="tick" x1="0" y1="212" x2="852" y2="212"/>
+      <text class="label" x="0" y="206">R3k</text>
+
+      <line class="tick" x1="0" y1="164" x2="852" y2="164"/>
+      <text class="label" x="0" y="158">R6k</text>
+
+      <line class="tick" x1="0" y1="116" x2="852" y2="116"/>
+      <text class="label" x="0" y="110">R9k</text>
+
+      <line class="tick" x1="0" y1="68" x2="852" y2="68"/>
+      <text class="label" x="0" y="62">R12k</text>
+
+      <line class="tick" x1="0" y1="20" x2="852" y2="20"/>
+      <text class="label" x="0" y="14">R15k</text>
+    </g>
+
+    <!-- Bars -->
+    <!-- Option B: 9,500 -> height 152px -->
+    <g transform="translate(150,0)">
+      <rect class="barB" x="0" y="108" width="180" height="152" rx="10"/>
+      <text class="barText" x="0" y="290">GreenLink Option B</text>
+      <text class="label" x="0" y="310">R9,500 / month</text>
+    </g>
+
+    <!-- Option A: 12,500 -> height 200px -->
+    <g transform="translate(390,0)">
+      <rect class="barA" x="0" y="60" width="180" height="200" rx="10"/>
+      <text class="barText" x="0" y="290">GreenLink Option A</text>
+      <text class="label" x="0" y="310">R12,500 / month</text>
+    </g>
+
+    <!-- Competitor tee sheet range: show band (illustrative, not converted to ZAR) -->
+    <g transform="translate(630,0)">
+      <rect class="barC" x="0" y="132" width="180" height="128" rx="10"/>
+      <text class="barText" x="0" y="290">Typical tee sheet SaaS</text>
+      <text class="label" x="0" y="310">USD $99–$399+ / month</text>
+    </g>
+
+    <text class="note" x="150" y="344">Note: competitor bar shows subscription range for tee sheet software only; does not include local Pastel automation or HNA compliance.</text>
+  </g>
+</svg>
+

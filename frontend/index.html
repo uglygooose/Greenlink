@@ -3,36 +3,49 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
     <title>GreenLink - Pro Shop Portal</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="login.css" />
 </head>
 <body>
 
-    <!-- Background overlay -->
-    <div class="overlay"></div>
+    <div class="bg" aria-hidden="true"></div>
 
-    <div class="container fade-in">
+    <div class="auth-shell">
+        <header class="brand-card">
+            <img
+                src="assets/logo.jpeg"
+                alt="GreenLink"
+                class="brand-logo"
+                decoding="async"
+            />
+            <h1 class="brand-title">GreenLink</h1>
+            <p class="brand-subtitle">Bookings → Check-in → Scoring → Ledger</p>
+        </header>
 
-        <!-- Header / Branding -->
-        <div class="header-card fade-in-slow">
-            <img src="assets/logo.jpeg" alt="GreenLink Logo" class="logo" />
-            <h1>GreenLink</h1>
-            <p>Bookings -> Check-in -> Scoring -> Ledger</p>
-        </div>
+        <main class="auth-card" id="loginCard">
+            <h2 class="auth-title">Sign in</h2>
+            <p class="auth-subtitle">Use your GreenLink account to continue.</p>
 
-        <!-- Login Card -->
-        <div class="card fade-in" id="loginCard">
-            <h2>Login</h2>
-            <form id="loginForm">
-                <input type="email" id="loginEmail" placeholder="Email" required />
-                <input type="password" id="loginPassword" placeholder="Password" required />
-                <button type="submit">Login</button>
+            <form id="loginForm" class="auth-form">
+                <div class="field">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" name="email" autocomplete="email" placeholder="you@example.com" required />
+                </div>
+
+                <div class="field">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" name="password" autocomplete="current-password" placeholder="Your password" required />
+                </div>
+
+                <button type="submit" class="btn-primary">Sign in</button>
             </form>
-            <div class="card-actions">
-                <button type="button" class="btn-secondary" id="openSignup">Create account</button>
-            </div>
-        </div>
 
+            <div class="card-actions">
+                <span class="muted">New here?</span>
+                <button type="button" class="btn-link" id="openSignup">Create account</button>
+            </div>
+        </main>
     </div>
 
     <!-- Create account modal -->
@@ -41,7 +54,7 @@
         <div class="modal-panel">
             <div class="modal-header">
                 <h2 id="signupTitle">Create Account</h2>
-                <button type="button" class="modal-close" aria-label="Close" data-close-modal="signupModal">x</button>
+                <button type="button" class="modal-close" aria-label="Close" data-close-modal="signupModal">×</button>
             </div>
 
             <form id="createUserForm" class="modal-form">
@@ -111,6 +124,6 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js" defer></script>
 </body>
 </html>
