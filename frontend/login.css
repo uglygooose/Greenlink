@@ -202,6 +202,16 @@ button[type="submit"]:active {
   transform: translateY(0);
 }
 
+button:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-link:focus-visible,
+.modal-close:focus-visible,
+.seg-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 6px var(--ring), 0 18px 46px rgba(0, 0, 0, 0.32);
+}
+
 .btn-secondary,
 .modal-actions button[type="button"] {
   border-radius: 14px;
