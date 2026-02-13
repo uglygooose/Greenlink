@@ -14,12 +14,18 @@
     <div class="auth-shell">
         <header class="brand-card">
             <div class="brand-mark">
-                <img
-                    src="assets/logo.jpeg"
-                    alt="GreenLink"
-                    class="brand-logo"
-                    decoding="async"
-                />
+                <div class="brand-frame">
+                    <picture>
+                        <source srcset="assets/logo.png" type="image/png" />
+                        <img
+                            src="assets/logo.jpeg"
+                            alt="GreenLink"
+                            class="brand-logo"
+                            decoding="async"
+                            fetchpriority="high"
+                        />
+                    </picture>
+                </div>
             </div>
         </header>
 

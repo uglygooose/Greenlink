@@ -3,14 +3,14 @@
 :root {
   /* Classic club palette: deep green + cream + muted gold */
   --bg: #06110c;
-  --card: rgba(7, 20, 14, 0.58);
-  --card-border: rgba(246, 241, 229, 0.16);
+  --card: rgba(7, 20, 14, 0.62);
+  --card-border: rgba(246, 241, 229, 0.14);
   --text: rgba(246, 241, 229, 0.95);
   --muted: rgba(246, 241, 229, 0.72);
   --gold: rgba(212, 175, 55, 0.9);
   --shadow: 0 22px 70px rgba(0, 0, 0, 0.45);
-  --ring: rgba(212, 175, 55, 0.22);
-  --primary-1: #1aa85b;
+  --ring: rgba(212, 175, 55, 0.24);
+  --primary-1: #19a35a;
   --primary-2: #006747;
   --danger: #ff4d4d;
   --radius: 18px;
@@ -48,19 +48,20 @@ body {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(1000px 600px at 15% 15%, rgba(0, 103, 71, 0.55), transparent 62%),
-    radial-gradient(900px 600px at 85% 15%, rgba(212, 175, 55, 0.18), transparent 58%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.68), rgba(0, 0, 0, 0.6));
+    radial-gradient(1100px 700px at 16% 18%, rgba(0, 103, 71, 0.58), transparent 64%),
+    radial-gradient(900px 620px at 84% 16%, rgba(212, 175, 55, 0.18), transparent 58%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.62));
   backdrop-filter: blur(5px);
 }
 
 .auth-shell {
   position: relative;
   z-index: 1;
-  width: min(980px, 100%);
+  width: min(1120px, 100%);
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: 18px;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
 }
 
 .brand-card,
@@ -71,6 +72,7 @@ body {
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  min-height: 520px;
 }
 
 .brand-card {
@@ -81,36 +83,61 @@ body {
   justify-content: center;
   align-items: center;
   text-align: center;
-  background-image:
-    radial-gradient(circle at 12px 12px, rgba(246, 241, 229, 0.08) 2px, transparent 2.5px);
-  background-size: 24px 24px;
+  background:
+    radial-gradient(circle at 12px 12px, rgba(246, 241, 229, 0.055) 1.7px, transparent 2.2px),
+    radial-gradient(1200px 800px at 20% 10%, rgba(25, 163, 90, 0.22), transparent 62%),
+    linear-gradient(180deg, rgba(6, 20, 12, 0.72), rgba(6, 20, 12, 0.52));
+  background-size: 22px 22px, auto, auto;
 }
 
 .brand-mark {
   width: 100%;
   display: grid;
   place-items: center;
-  padding: 18px 18px;
-  border-radius: 16px;
-  background: rgba(246, 241, 229, 0.92);
-  border: 1px solid rgba(246, 241, 229, 0.22);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  padding: 44px 44px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(246, 241, 229, 0.92), rgba(234, 228, 214, 0.9));
+  border: 1px solid rgba(246, 241, 229, 0.24);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+}
+
+.brand-frame {
+  width: 100%;
+  max-width: 760px;
+  display: grid;
+  place-items: center;
+  padding: 30px 30px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 14px 34px rgba(0, 0, 0, 0.18);
 }
 
 .brand-logo {
-  width: min(560px, 100%);
+  display: block;
+  width: min(520px, 100%);
   height: auto;
   border-radius: 10px;
 }
 
 .auth-card {
-  padding: 30px;
+  padding: 38px 38px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background:
+    radial-gradient(1000px 700px at 100% 0%, rgba(212, 175, 55, 0.08), transparent 58%),
+    linear-gradient(180deg, rgba(6, 20, 12, 0.76), rgba(6, 20, 12, 0.54));
 }
 
 .auth-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 28px;
+  font-weight: 900;
   letter-spacing: -0.2px;
+  font-family: Georgia, "Times New Roman", Times, serif;
 }
 
 .auth-subtitle {
@@ -130,8 +157,9 @@ body {
   display: block;
   margin-bottom: 7px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
-  letter-spacing: 0.3px;
+  color: rgba(246, 241, 229, 0.78);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 }
 
 input,
@@ -140,8 +168,8 @@ select {
   border: 1px solid rgba(246, 241, 229, 0.18);
   background: rgba(246, 241, 229, 0.92);
   color: rgba(0, 0, 0, 0.86);
-  border-radius: 14px;
-  padding: 14px 14px;
+  border-radius: 18px;
+  padding: 16px 18px;
   font-size: 15px;
   outline: none;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -164,9 +192,9 @@ select:focus {
 button[type="submit"] {
   width: 100%;
   border: 0;
-  border-radius: 14px;
-  padding: 14px 14px;
-  font-size: 15px;
+  border-radius: 18px;
+  padding: 16px 18px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.2px;
   color: white;
@@ -243,7 +271,7 @@ button:focus-visible,
   justify-content: center;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 18px;
 }
 
 .muted {
@@ -273,7 +301,7 @@ body.modal-open {
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(6px);
 }
 
@@ -282,8 +310,10 @@ body.modal-open {
   width: min(900px, calc(100% - 28px));
   max-height: min(86vh, 920px);
   overflow: auto;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(900px 700px at 100% 0%, rgba(212, 175, 55, 0.08), transparent 58%),
+    linear-gradient(180deg, rgba(6, 20, 12, 0.82), rgba(6, 20, 12, 0.62));
+  border: 1px solid rgba(246, 241, 229, 0.14);
   border-radius: 22px;
   padding: 20px 20px 16px;
   box-shadow: 0 26px 90px rgba(0, 0, 0, 0.55);
@@ -303,6 +333,7 @@ body.modal-open {
   margin: 0;
   font-size: 18px;
   letter-spacing: -0.2px;
+  font-family: Georgia, "Times New Roman", Times, serif;
 }
 
 .modal-close {
@@ -393,16 +424,23 @@ RESPONSIVENESS + MOTION
   .auth-shell {
     grid-template-columns: 1fr;
   }
+  .brand-card,
+  .auth-card {
+    min-height: 0;
+  }
   .brand-card {
     padding: 28px;
     text-align: center;
     align-items: center;
   }
   .brand-mark {
-    padding: 16px 16px;
+    padding: 28px 22px;
+  }
+  .brand-frame {
+    padding: 22px 18px;
   }
   .auth-card {
-    padding: 24px;
+    padding: 26px;
   }
 }
 
