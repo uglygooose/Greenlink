@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.fee_models import FeeCategory, FeeType
 
@@ -36,7 +37,7 @@ def normalize_player_type(value: Optional[str]) -> Optional[str]:
     # - "visitor" (affiliated visitor)
     # - "non_affiliated" (non-affiliated visitor)
     # Keep these stable, and accept broader UI-friendly aliases.
-    if value in {"member", "m", "club_member", "club member", "home_member", "home member", "umhlali_member", "umhlali member"}:
+    if value in {"member", "m", "club_member", "club member", "home_member", "home member", "host_member", "host member"}:
         return "member"
     if value in {"visitor", "v", "guest", "affiliated", "affiliated_visitor", "affiliated visitor"}:
         return "visitor"
@@ -204,4 +205,7 @@ def select_best_fee_category(db: Session, ctx: PricingContext) -> Optional[FeeCa
         FeeCategory.active == 1,
         FeeCategory.fee_type == ctx.fee_type,
     )
+    club_id = getattr(db, "info", {}).get("club_id") or None
+    if club_id:
+        query = query.filter(or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)))
     return select_best_fee_from_list(query.all(), ctx)

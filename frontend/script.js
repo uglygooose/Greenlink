@@ -1,5 +1,16 @@
 console.log("GreenLink front-end loaded.");
 const API_BASE = window.location.origin;
+let clubConfig = null;
+
+async function ensureClubConfig() {
+    if (clubConfig) return clubConfig;
+    try {
+        clubConfig = await window.Greenlink?.loadClubConfig?.();
+    } catch {
+        clubConfig = null;
+    }
+    return clubConfig;
+}
 
 function openModal(id) {
     const modal = document.getElementById(id);
@@ -51,6 +62,12 @@ document.querySelectorAll(".seg-btn")?.forEach(btn => {
 
 setAccountType("visitor");
 
+// Apply club branding + datalist options.
+(async () => {
+    const cfg = await ensureClubConfig();
+    if (cfg) window.Greenlink?.applyClubBranding?.(cfg);
+})();
+
 // LOGIN
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -77,7 +94,8 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         localStorage.setItem('user_role', data?.role || 'player');
         
         // Redirect based on role
-        if (data?.role === 'admin') {
+        const role = data?.role || 'player';
+        if (role === 'admin' || role === 'club_staff' || role === 'super_admin') {
             window.location.href = '/frontend/admin.html';
         } else {
             window.location.href = '/frontend/dashboard.html';
@@ -92,6 +110,14 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
 // CREATE USER
 document.getElementById("createUserForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    const cfg = await ensureClubConfig();
+    const labels = cfg?.labels || {};
+    const urlParams = new URLSearchParams(window.location.search || "");
+    const rawClub = (urlParams.get("club") || "").trim();
+    const qsClubId = (urlParams.get("club_id") || urlParams.get("clubId") || "").trim() || (/^\d+$/.test(rawClub) ? rawClub : "");
+    const qsClubSlug = (urlParams.get("club_slug") || urlParams.get("clubSlug") || "").trim() || (!/^\d+$/.test(rawClub) ? rawClub : "");
+    const cfgSlug = (cfg?.club_slug || "").trim();
 
     const name = document.getElementById("newName").value.trim();
     const email = document.getElementById("newEmail").value.trim();
@@ -126,24 +152,36 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
         alert("Passwords do not match.");
         return;
     }
-    const homeClubNorm = homeClub.toLowerCase();
-    const isUmhlali = homeClubNorm.includes("umhlali");
-
-    // Map signup choices to pricing audiences:
-    // - "member" => Umhlali member green fee
-    // - "visitor" => affiliated visitor green fee
-    // - "non_affiliated" => non-affiliated visitor green fee
-    const accountType = accountTypeUi === "member" ? (isUmhlali ? "member" : "visitor") : "non_affiliated";
-
-    // Only Umhlali members should create a Member profile row (local member list).
-    const createMemberProfile = accountType === "member";
 
     if (accountTypeUi === "member" && !homeClub) {
         alert("Please select your home club or choose Visitor.");
         return;
     }
 
-    const res = await fetch(`${API_BASE}/users/`, {
+    const qp = new URLSearchParams();
+    if (qsClubId) qp.set("club_id", qsClubId);
+    else if (qsClubSlug) qp.set("club_slug", qsClubSlug);
+    else if (cfgSlug) qp.set("club_slug", cfgSlug);
+
+    // Map signup choices to pricing audiences:
+    // - "member" => host-club member green fee (only if home club matches configured keywords)
+    // - "visitor" => affiliated visitor green fee
+    // - "non_affiliated" => non-affiliated visitor green fee
+    let accountType = "non_affiliated";
+    let createMemberProfile = false;
+
+    if (accountTypeUi === "member") {
+        const isHomeMember = window.Greenlink?.homeClubIsMember?.(homeClub, cfg) || false;
+        accountType = isHomeMember ? "member" : "visitor";
+        createMemberProfile = isHomeMember;
+
+        if (!isHomeMember) {
+            alert(`Your home club does not match ${cfg?.club_name || "this club"}. We'll create your profile as ${labels?.visitor || "Affiliated Visitor"} instead.`);
+        }
+    }
+
+    const createUrl = qp.toString() ? `${API_BASE}/users/?${qp.toString()}` : `${API_BASE}/users/`;
+    const res = await fetch(createUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -194,7 +232,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
             closeModal("signupModal");
             document.getElementById("createUserForm")?.reset();
 
-            if (loginData?.role === "admin") {
+            if (loginData?.role === "admin" || loginData?.role === "club_staff" || loginData?.role === "super_admin") {
                 window.location.href = "/frontend/admin.html";
             } else {
                 window.location.href = "/frontend/dashboard.html";

@@ -1,11 +1,27 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Enum, Float, Text, Boolean, BigInteger
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 from app.database import Base
 
+_SQLITE_BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
+
 class UserRole(str, enum.Enum):
+    super_admin = "super_admin"
     admin = "admin"
     club_staff = "club_staff"
     player = "player"
@@ -21,6 +37,17 @@ class PlayerCategory(str, enum.Enum):
     pensioner = "pensioner"
     junior = "junior"
 
+class Club(Base):
+    __tablename__ = "clubs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    slug = Column(String(80), nullable=True, unique=True, index=True)
+    active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    users = relationship("User", back_populates="club")
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -28,6 +55,7 @@ class User(Base):
     email = Column(String(200), unique=True, index=True, nullable=False)
     password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.player)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     account_type = Column(String(20), nullable=True)  # member | visitor (used for pricing defaults)
     handicap_number = Column(String(50), nullable=True)
@@ -40,14 +68,21 @@ class User(Base):
     student = Column(Boolean, nullable=True)
     handicap_index = Column(Float, nullable=True)
 
+    club = relationship("Club", back_populates="users")
 
 class Member(Base):
     __tablename__ = "members"
+    __table_args__ = (
+        UniqueConstraint("club_id", "member_number", name="uq_members_club_member_number"),
+        UniqueConstraint("club_id", "email", name="uq_members_club_email"),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
-    member_number = Column(String(50), unique=True, nullable=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    member_number = Column(String(50), nullable=True)
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)
-    email = Column(String(200), unique=True, nullable=True)
+    email = Column(String(200), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     handicap_number = Column(String(50), nullable=True)
     home_club = Column(String(120), nullable=True)
@@ -63,6 +98,7 @@ class Member(Base):
 class TeeTime(Base):
     __tablename__ = "tee_times"
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     tee_time = Column(DateTime, nullable=False, index=True)
     hole = Column(String(10), nullable=True)
     capacity = Column(Integer, default=4)
@@ -89,6 +125,7 @@ class BookingSource(str, enum.Enum):
 class Booking(Base):
     __tablename__ = "bookings"
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     tee_time_id = Column(Integer, ForeignKey("tee_times.id"))
     member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -100,6 +137,11 @@ class Booking(Base):
     source = Column(Enum(BookingSource), default=BookingSource.proshop)
     external_provider = Column(String(50), nullable=True)
     external_booking_id = Column(String(100), nullable=True)
+    # External identifiers for mirroring during parallel runs.
+    # - external_booking_id: upstream booking/group reference
+    # - external_row_id: unique per-player/line item in upstream export (for idempotent imports)
+    external_group_id = Column(String(100), nullable=True)
+    external_row_id = Column(String(140), nullable=True)
     party_size = Column(Integer, default=1)
     fee_category_id = Column(Integer, ForeignKey("fee_categories.id"), nullable=True)
     price = Column(Float, default=350.0)  # Default green fee
@@ -119,6 +161,9 @@ class Booking(Base):
     push_cart = Column(Boolean, nullable=True)
     caddy = Column(Boolean, nullable=True)
     notes = Column(Text, nullable=True)
+    mirrored_at = Column(DateTime, nullable=True)
+    capacity_conflict = Column(Boolean, nullable=True)
+    import_batch_id = Column(BigInteger, ForeignKey("import_batches.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tee_time = relationship("TeeTime", back_populates="bookings")
@@ -140,6 +185,7 @@ class Round(Base):
 class LedgerEntry(Base):
     __tablename__ = "ledger_entries"
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
     description = Column(String(255))
     amount = Column(Float, default=0.0)
@@ -160,8 +206,10 @@ class LedgerEntryMeta(Base):
 
 class DayClose(Base):
     __tablename__ = "day_closures"
+    __table_args__ = (UniqueConstraint("club_id", "close_date", name="uq_day_closures_club_date"),)
     id = Column(Integer, primary_key=True, index=True)
-    close_date = Column(Date, unique=True, index=True, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    close_date = Column(Date, index=True, nullable=False)
     status = Column(String(20), default="closed")  # closed/reopened
     closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     closed_at = Column(DateTime, default=datetime.utcnow)
@@ -176,6 +224,7 @@ class DayClose(Base):
 class AccountingSetting(Base):
     __tablename__ = "accounting_settings"
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     green_fees_gl = Column(String(50), default="1000-000")
     cashbook_contra_gl = Column(String(50), default="8400/000")
     vat_rate = Column(Float, default=0.15)
@@ -186,7 +235,11 @@ class AccountingSetting(Base):
 
 class KpiTarget(Base):
     __tablename__ = "kpi_targets"
-    id = Column(BigInteger, primary_key=True, index=True)
+    __table_args__ = (UniqueConstraint("club_id", "year", "metric", name="uq_kpi_targets_club_year_metric"),)
+    # SQLite only auto-increments when the PK type is exactly INTEGER (rowid alias).
+    # Use an Integer variant on SQLite so local/dev DBs can insert targets/import batches/revenue rows.
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     year = Column(Integer, nullable=False, index=True)
     metric = Column(String(50), nullable=False, index=True)  # "revenue" | "rounds" (extendable)
     annual_target = Column(Float, nullable=False)
@@ -196,6 +249,37 @@ class KpiTarget(Base):
 
 class ClubSetting(Base):
     __tablename__ = "club_settings"
+    club_id = Column(Integer, ForeignKey("clubs.id"), primary_key=True)
     key = Column(String(200), primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    kind = Column(String(50), nullable=False, index=True)  # bookings | revenue | members
+    source = Column(String(50), nullable=True, index=True)  # pub | bowls | golfscape | hna | etc.
+    file_name = Column(String(255), nullable=True)
+    sha256 = Column(String(64), nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow, index=True)
+    rows_total = Column(Integer, default=0)
+    rows_inserted = Column(Integer, default=0)
+    rows_updated = Column(Integer, default=0)
+    rows_failed = Column(Integer, default=0)
+    notes = Column(Text, nullable=True)
+
+
+class RevenueTransaction(Base):
+    __tablename__ = "revenue_transactions"
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    source = Column(String(50), nullable=False, index=True)  # pub | bowls | golf | other
+    transaction_date = Column(Date, nullable=False, index=True)
+    external_id = Column(String(140), nullable=True, index=True)
+    description = Column(String(255), nullable=True)
+    category = Column(String(100), nullable=True)
+    amount = Column(Float, default=0.0)
+    import_batch_id = Column(BigInteger, ForeignKey("import_batches.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

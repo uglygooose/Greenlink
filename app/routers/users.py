@@ -1,5 +1,5 @@
-# app/routers/users.py
-from fastapi import APIRouter, Depends
+﻿# app/routers/users.py
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 from sqlalchemy.orm import Session
 from app.auth import get_current_user, get_db
@@ -7,14 +7,57 @@ from app import crud, schemas, models
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+
+def _resolve_signup_club_id(db: Session, club_id: int | None, club_slug: str | None) -> int | None:
+    resolved_id: int | None = None
+
+    if club_id is not None:
+        try:
+            cid = int(club_id)
+        except Exception:
+            cid = 0
+        if cid > 0:
+            row = db.query(models.Club).filter(models.Club.id == cid, models.Club.active == 1).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Club not found")
+            resolved_id = int(row.id)
+
+    if resolved_id is None and club_slug:
+        slug = str(club_slug or "").strip().lower()
+        if slug:
+            row = db.query(models.Club).filter(models.Club.slug == slug, models.Club.active == 1).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Club not found")
+            resolved_id = int(row.id)
+
+    if resolved_id is None:
+        clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
+        if len(clubs) == 1:
+            resolved_id = int(clubs[0].id)
+        elif len(clubs) == 0:
+            # Fresh DB (no clubs yet) â€” allow creating an account without a club assignment.
+            resolved_id = None
+        else:
+            raise HTTPException(status_code=400, detail="club_id or club_slug is required")
+
+    return resolved_id
+
+
 @router.post("/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return crud.create_user(db, user)
+def create_user(
+    user: schemas.UserCreate,
+    club_id: int | None = Query(None),
+    club_slug: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    resolved_club_id = _resolve_signup_club_id(db, club_id=club_id, club_slug=club_slug)
+    return crud.create_user(db, user, club_id=resolved_club_id)
 
 @router.get("/", response_model=List[schemas.UserResponse])
 def list_users(db: Session = Depends(get_db), current=Depends(get_current_user)):
-    # keep it auth-protected
-    return db.query(models.User).all()
+    if getattr(current, "role", None) != models.UserRole.super_admin:
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return db.query(models.User).order_by(models.User.id.asc()).all()
 
 @router.get("/me", response_model=schemas.UserResponse)
 def get_current_user_info(current_user: models.User = Depends(get_current_user)):

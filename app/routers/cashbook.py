@@ -18,15 +18,16 @@ from decimal import Decimal, ROUND_HALF_UP
 from app.auth import get_db, get_current_user
 from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntryMeta, DayClose, AccountingSetting, User, UserRole, ClubSetting
 from app.fee_models import FeeCategory
+from app.tenancy import get_active_club_id
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-router = APIRouter(prefix="/cashbook", tags=["cashbook"])
+router = APIRouter(prefix="/cashbook", tags=["cashbook"], dependencies=[Depends(get_active_club_id)])
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.admin:
+    if current_user.role not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
@@ -70,10 +71,14 @@ class AccountingSettingsPayload(BaseModel):
 
 
 def get_accounting_settings(db: Session) -> AccountingSetting:
+    club_id = getattr(db, "info", {}).get("club_id")
+    if not club_id:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
     settings = db.query(AccountingSetting).first()
     if settings:
         return settings
-    settings = AccountingSetting()
+    settings = AccountingSetting(club_id=int(club_id))
     db.add(settings)
     db.commit()
     db.refresh(settings)
@@ -81,12 +86,16 @@ def get_accounting_settings(db: Session) -> AccountingSetting:
 
 
 def _upsert_club_setting(db: Session, key: str, value: str) -> None:
+    club_id = getattr(db, "info", {}).get("club_id")
+    if not club_id:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
     row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
     if row:
         row.value = value
         row.updated_at = datetime.utcnow()
     else:
-        db.add(ClubSetting(key=key, value=value))
+        db.add(ClubSetting(club_id=int(club_id), key=key, value=value))
 
 
 def _get_club_setting(db: Session, key: str) -> Optional[str]:
@@ -1859,6 +1868,10 @@ def close_day(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
     if close_date:
         try:
             target_date = datetime.strptime(close_date, "%Y-%m-%d").date()
@@ -1893,6 +1906,7 @@ def close_day(
         close.auto_push = 1 if auto_push else 0
     else:
         close = DayClose(
+            club_id=club_id,
             close_date=target_date,
             status="closed",
             closed_by_user_id=admin.id,

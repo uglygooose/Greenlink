@@ -13,10 +13,12 @@ from starlette.requests import Request
 import os
 
 from app.database import Base, engine, DB_SOURCE, DB_INFO
-from app.routers import users, tee, checkin, scoring, admin, cashbook, profile, settings
+from app.routers import users, tee, checkin, scoring, admin, cashbook, profile, settings, imports, public, super_admin
 from app import auth, models, crud, schemas, fee_models
 from app.auth import get_db
 from app.migrations import run_auto_migrations
+from app.demo_seed import seed_demo_if_enabled
+from app.bootstrap_seed import bootstrap_seed_if_enabled
 
 # -----------------------------------------
 # Create app instance
@@ -102,6 +104,8 @@ def health(db: Session = Depends(get_db)):
             "db_driver": (DB_INFO or {}).get("driver"),
             "has_database_url": bool(os.getenv("DATABASE_URL")),
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
+            "prefer_local_db": str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"},
+            "force_sqlite": str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"},
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
             "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
@@ -115,6 +119,8 @@ def health(db: Session = Depends(get_db)):
             "db_driver": (DB_INFO or {}).get("driver"),
             "has_database_url": bool(os.getenv("DATABASE_URL")),
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
+            "prefer_local_db": str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"},
+            "force_sqlite": str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"},
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
             "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
@@ -183,7 +189,9 @@ try:
     Base.metadata.create_all(bind=engine)
     run_auto_migrations(engine)
     print("[DB] Database connected successfully")
+    bootstrap_seed_if_enabled()
     _seed_demo_admin_if_enabled()
+    seed_demo_if_enabled()
 except Exception as e:
     print(f"[DB] Warning: Could not connect to database: {str(e)[:100]}")
     print("[DB] System will run in offline mode (no data persistence)")
@@ -196,9 +204,12 @@ app.include_router(tee.router)
 app.include_router(checkin.router)
 app.include_router(scoring.router)
 app.include_router(admin.router)
+app.include_router(imports.router)
 app.include_router(cashbook.router)
 app.include_router(profile.router)
 app.include_router(settings.router)
+app.include_router(public.router)
+app.include_router(super_admin.router)
 
 # Import and include fees router
 try:

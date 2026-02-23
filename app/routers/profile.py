@@ -142,15 +142,41 @@ def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get
     
     # Get fees matching player's age
     from app.fee_models import FeeCategory
-    fees = (
-        db.query(FeeCategory)
-        .filter(
-            FeeCategory.active == 1,
-            or_(FeeCategory.min_age == None, FeeCategory.min_age <= age),
-            or_(FeeCategory.max_age == None, FeeCategory.max_age >= age),
-        )
-        .all()
+    club_id = getattr(user, "club_id", None)
+    q = db.query(FeeCategory).filter(
+        FeeCategory.active == 1,
+        or_(FeeCategory.min_age == None, FeeCategory.min_age <= age),
+        or_(FeeCategory.max_age == None, FeeCategory.max_age >= age),
     )
+    if club_id is not None:
+        try:
+            cid = int(club_id)
+        except Exception:
+            cid = 0
+        if cid > 0:
+            from sqlalchemy import or_ as sa_or
+
+            q = q.filter(sa_or(FeeCategory.club_id == cid, FeeCategory.club_id == None))
+
+    fees = q.all()
+
+    # Prefer club-specific overrides over global rows for the same code.
+    by_code = {}
+    for f in fees:
+        try:
+            code = int(getattr(f, "code", None))
+        except Exception:
+            continue
+        if getattr(f, "club_id", None) is None:
+            by_code.setdefault(code, f)
+        else:
+            try:
+                if int(getattr(f, "club_id")) == int(club_id):
+                    by_code[code] = f
+            except Exception:
+                continue
+
+    fees = [by_code[k] for k in sorted(by_code.keys())]
     
     # Hide prices from players - they only see fee descriptions
     return [{"id": f.id, "code": f.code, "description": f.description} for f in fees]

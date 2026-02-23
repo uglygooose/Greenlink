@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Enum
+from sqlalchemy import Column, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
 from app.database import Base
 import enum
 
@@ -19,9 +19,11 @@ class FeeCategory(Base):
     Optional "filter" columns support automatic fee selection based on booking details.
     """
     __tablename__ = "fee_categories"
+    __table_args__ = (UniqueConstraint("club_id", "code", name="uq_fee_categories_club_code"),)
     
     id = Column(Integer, primary_key=True, index=True)
-    code = Column(Integer, unique=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    code = Column(Integer, index=True)
     description = Column(String(500), nullable=False)
     price = Column(Float, nullable=False)
     # Use a stable enum type name so Postgres migrations (e.g., Supabase) can define it predictably.

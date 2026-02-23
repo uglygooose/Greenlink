@@ -93,6 +93,50 @@ def run_auto_migrations(engine) -> None:
         );
         """,
         # ----------------------------
+        # Imports + external revenue (parallel test)
+        # ----------------------------
+        """
+        CREATE TABLE IF NOT EXISTS import_batches (
+          id bigserial PRIMARY KEY,
+          kind text NOT NULL,
+          source text NULL,
+          file_name text NULL,
+          sha256 text NULL,
+          imported_at timestamptz NOT NULL DEFAULT now(),
+          rows_total integer NOT NULL DEFAULT 0,
+          rows_inserted integer NOT NULL DEFAULT 0,
+          rows_updated integer NOT NULL DEFAULT 0,
+          rows_failed integer NOT NULL DEFAULT 0,
+          notes text NULL
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS import_batches_kind_source_idx
+          ON import_batches (kind, source, imported_at DESC);
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS revenue_transactions (
+          id bigserial PRIMARY KEY,
+          source text NOT NULL,
+          transaction_date date NOT NULL,
+          external_id text NULL,
+          description text NULL,
+          category text NULL,
+          amount double precision NOT NULL DEFAULT 0,
+          import_batch_id bigint NULL REFERENCES import_batches(id) ON DELETE SET NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS revenue_transactions_source_date_idx
+          ON revenue_transactions (source, transaction_date);
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS revenue_transactions_source_external_id_uniq
+          ON revenue_transactions (source, external_id)
+          WHERE external_id IS NOT NULL;
+        """,
+        # ----------------------------
         # Users additions
         # ----------------------------
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone text NULL;",
@@ -134,6 +178,17 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cart boolean NULL;",
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS push_cart boolean NULL;",
         "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS caddy boolean NULL;",
+        # External mirroring fields
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_group_id text NULL;",
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_row_id text NULL;",
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS mirrored_at timestamptz NULL;",
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS capacity_conflict boolean NULL;",
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS import_batch_id bigint NULL;",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS bookings_external_row_uniq
+          ON bookings (external_provider, external_row_id)
+          WHERE external_provider IS NOT NULL AND external_row_id IS NOT NULL;
+        """,
         # ----------------------------
         # Tee times additions
         # ----------------------------
@@ -157,6 +212,8 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.kpi_targets ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.club_settings ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.import_batches ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.revenue_transactions ENABLE ROW LEVEL SECURITY;",
     ]
 
     with engine.begin() as conn:

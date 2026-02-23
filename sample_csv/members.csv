@@ -1,0 +1,4 @@
+member_number,first_name,last_name,email,phone,handicap_number,home_club
+M0001,Alex,Mokoena,alex.mokoena@example.com,0820000001,12345,Umhlali CC
+M0002,Sam,Naidoo,sam.naidoo@example.com,0820000002,23456,Umhlali CC
+M0003,Jordan,Smith,jordan.smith@example.com,0820000003,34567,Umhlali CC

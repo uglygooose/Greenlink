@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
   <link rel="shortcut icon" href="assets/favicon.png?v=2" />
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
+  <script src="club-config.js"></script>
   <style>
     :root {
       --ucc-olive: #5a7a3a;
@@ -231,9 +232,9 @@
   <div class="dash-shell">
     <header class="dash-header">
       <div class="brand">
-        <img src="/frontend/assets/logo.jpeg" alt="GreenLink" class="brand-logo">
+        <img src="/frontend/assets/logo.png" alt="Club Logo" class="brand-logo" data-club-logo>
         <div>
-          <p class="brand-kicker">Umhlali Country Club</p>
+          <p class="brand-kicker">GreenLink</p>
           <h1 class="brand-title">Player Hub</h1>
         </div>
       </div>
@@ -318,11 +319,6 @@
           </div>
         </div>
         <datalist id="clubList">
-          <option value="Umhlali Country Club"></option>
-          <option value="Durban Country Club"></option>
-          <option value="Royal Durban Golf Club"></option>
-          <option value="Mount Edgecombe Country Club"></option>
-          <option value="Zimbali Country Club"></option>
         </datalist>
         <div class="form-actions">
           <button type="submit" class="btn primary">Save Profile</button>
@@ -336,8 +332,9 @@
 const token = localStorage.getItem('token');
 if (!token) window.location.href = '/frontend/index.html';
 
-const typeLabels = {
-  member: 'Umhlali Member',
+let clubConfig = null;
+let typeLabels = {
+  member: 'Member',
   visitor: 'Affiliated Visitor',
   non_affiliated: 'Visitor (No HNA)'
 };
@@ -358,7 +355,7 @@ function inferPlayerType(profile){
   if (typeLabels[at]) return at;
   const home = String(profile?.home_course || '').trim().toLowerCase();
   const hasHna = Boolean(String(profile?.handicap_sa_id || '').trim());
-  if (home.includes('umhlali')) return 'member';
+  if (window.Greenlink?.homeClubIsMember?.(home, clubConfig)) return 'member';
   if (hasHna || home) return 'visitor';
   return 'non_affiliated';
 }
@@ -460,8 +457,16 @@ async function saveProfile(e){
   }
 }
 
-loadUserInfo();
-loadBookingWindow();
+(async () => {
+  try {
+    clubConfig = await window.Greenlink?.loadClubConfig?.();
+    if (clubConfig?.labels) typeLabels = { ...typeLabels, ...clubConfig.labels };
+    if (clubConfig) window.Greenlink?.applyClubBranding?.(clubConfig);
+  } catch {}
+
+  await loadUserInfo();
+  await loadBookingWindow();
+})();
 </script>
 </body>
 </html>

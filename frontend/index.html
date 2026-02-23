@@ -10,6 +10,7 @@
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
     <link rel="stylesheet" href="login.css" />
+    <script src="club-config.js"></script>
 </head>
 <body>
 
@@ -22,9 +23,10 @@
                     <picture>
                         <source srcset="assets/logo.png" type="image/png" />
                         <img
-                            src="assets/logo.jpeg"
+                            src="assets/logo.png"
                             alt="GreenLink"
                             class="brand-logo"
+                            data-club-logo
                             decoding="async"
                             fetchpriority="high"
                         />
@@ -94,11 +96,6 @@
                     <input type="text" id="newMemberNumber" placeholder="Membership number (optional)" />
                 </div>
                 <datalist id="clubList">
-                    <option value="Umhlali Country Club"></option>
-                    <option value="Durban Country Club"></option>
-                    <option value="Royal Durban Golf Club"></option>
-                    <option value="Mount Edgecombe Country Club"></option>
-                    <option value="Zimbali Country Club"></option>
                 </datalist>
 
                 <div class="form-row">

@@ -1,14 +1,23 @@
-# app/routers/fees.py
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from typing import List
-from app.auth import get_db
-from app import models
-from app.fee_models import FeeCategory, FeeType
-from pydantic import BaseModel
+﻿# app/routers/fees.py
 from datetime import date
+from typing import List
 
-from app.pricing import PricingContext, compute_age, normalize_gender, normalize_player_type, select_best_fee_category
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from app import models
+from app.auth import get_db
+from app.fee_models import FeeCategory, FeeType
+from app.pricing import (
+    PricingContext,
+    compute_age,
+    normalize_gender,
+    normalize_player_type,
+    select_best_fee_category,
+)
+from app.tenancy import get_active_club_id
 
 router = APIRouter(prefix="/fees", tags=["fees"])
 
@@ -21,52 +30,94 @@ class FeeResponse(BaseModel):
     
     model_config = {"from_attributes": True}
 
+
+def _fees_for_club(db: Session, club_id: int, fee_type: FeeType | None = None) -> list[FeeCategory]:
+    """
+    Return active fee categories for a club, including global defaults (club_id IS NULL),
+    while preferring club-specific overrides when both exist for the same `code`.
+    """
+    q = db.query(FeeCategory).filter(FeeCategory.active == 1)
+    if fee_type is not None:
+        q = q.filter(FeeCategory.fee_type == fee_type)
+
+    q = q.filter(or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)))
+    rows = q.order_by(FeeCategory.code.asc(), FeeCategory.id.asc()).all()
+
+    # Prefer overrides for this club over global rows.
+    by_code: dict[int, FeeCategory] = {}
+    for row in rows:
+        try:
+            code = int(getattr(row, "code", None))
+        except Exception:
+            continue
+
+        row_club = getattr(row, "club_id", None)
+        if row_club is None:
+            by_code.setdefault(code, row)
+        elif int(row_club) == int(club_id):
+            by_code[code] = row
+
+    return [by_code[k] for k in sorted(by_code.keys())]
+
+
 @router.get("/", response_model=List[FeeResponse])
-def get_all_fees(db: Session = Depends(get_db)):
+def get_all_fees(db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get all active fee categories"""
-    return db.query(FeeCategory).filter(FeeCategory.active == 1).all()
+    return _fees_for_club(db, club_id)
 
 @router.get("/golf", response_model=List[FeeResponse])
-def get_golf_fees(db: Session = Depends(get_db)):
+def get_golf_fees(db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get all golf fee categories"""
-    return db.query(FeeCategory).filter(
-        FeeCategory.fee_type == FeeType.GOLF,
-        FeeCategory.active == 1
-    ).all()
+    return _fees_for_club(db, club_id, fee_type=FeeType.GOLF)
 
 @router.get("/cart", response_model=List[FeeResponse])
-def get_cart_fees(db: Session = Depends(get_db)):
+def get_cart_fees(db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get all cart hire fees"""
-    return db.query(FeeCategory).filter(
-        FeeCategory.fee_type == FeeType.CART,
-        FeeCategory.active == 1
-    ).all()
+    return _fees_for_club(db, club_id, fee_type=FeeType.CART)
 
 @router.get("/push-cart", response_model=List[FeeResponse])
-def get_push_cart_fees(db: Session = Depends(get_db)):
+def get_push_cart_fees(db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get all push cart fees"""
-    return db.query(FeeCategory).filter(
-        FeeCategory.fee_type == FeeType.PUSH_CART,
-        FeeCategory.active == 1
-    ).all()
+    return _fees_for_club(db, club_id, fee_type=FeeType.PUSH_CART)
 
 @router.get("/caddy", response_model=List[FeeResponse])
-def get_caddy_fees(db: Session = Depends(get_db)):
+def get_caddy_fees(db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get all caddy fees"""
-    return db.query(FeeCategory).filter(
-        FeeCategory.fee_type == FeeType.CADDY,
-        FeeCategory.active == 1
-    ).all()
+    return _fees_for_club(db, club_id, fee_type=FeeType.CADDY)
 
 @router.get("/code/{code}", response_model=FeeResponse)
-def get_fee_by_code(code: int, db: Session = Depends(get_db)):
+def get_fee_by_code(code: int, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get fee category by code"""
-    return db.query(FeeCategory).filter(FeeCategory.code == code).first()
+    rows = (
+        db.query(FeeCategory)
+        .filter(
+            FeeCategory.active == 1,
+            FeeCategory.code == int(code),
+            or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)),
+        )
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Fee category not found")
+
+    for row in rows:
+        row_club = getattr(row, "club_id", None)
+        if row_club is not None and int(row_club) == int(club_id):
+            return row
+
+    return rows[0]
 
 @router.get("/{fee_id}", response_model=FeeResponse)
-def get_fee_by_id(fee_id: int, db: Session = Depends(get_db)):
+def get_fee_by_id(fee_id: int, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """Get fee category by ID"""
-    return db.query(FeeCategory).filter(FeeCategory.id == fee_id).first()
+    row = db.query(FeeCategory).filter(FeeCategory.id == int(fee_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Fee category not found")
+
+    row_club = getattr(row, "club_id", None)
+    if row_club is not None and int(row_club) != int(club_id):
+        raise HTTPException(status_code=404, detail="Fee category not found")
+    return row
 
 
 class GolfFeeSuggestRequest(BaseModel):
@@ -79,15 +130,13 @@ class GolfFeeSuggestRequest(BaseModel):
 
 
 @router.post("/suggest/golf", response_model=FeeResponse)
-def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db)):
+def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """
     Suggest a single best-matching golf fee based on booking details.
     Useful for UIs that want "auto pricing" but still want to display the price before booking.
     """
     tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
     if not tee_time:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Tee time not found")
 
     holes = int(req.holes or 18)
@@ -109,8 +158,6 @@ def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db)):
 
     fee = select_best_fee_category(db, ctx)
     if not fee:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
             detail={
@@ -135,14 +182,12 @@ class CartFeeSuggestRequest(BaseModel):
 
 
 @router.post("/suggest/cart", response_model=FeeResponse)
-def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db)):
+def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """
     Suggest a cart hire fee based on booking details (member/visitor + weekday/weekend + holes).
     """
     tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
     if not tee_time:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Tee time not found")
 
     holes = int(req.holes or 18)
@@ -157,8 +202,6 @@ def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db)):
 
     fee = select_best_fee_category(db, ctx)
     if not fee:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
             detail={
@@ -181,14 +224,12 @@ class AddOnFeeSuggestRequest(BaseModel):
 
 
 @router.post("/suggest/push-cart", response_model=FeeResponse)
-def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)):
+def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """
     Suggest a push cart fee based on booking details.
     """
     tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
     if not tee_time:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Tee time not found")
 
     holes = int(req.holes or 18)
@@ -203,8 +244,6 @@ def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get
 
     fee = select_best_fee_category(db, ctx)
     if not fee:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
             detail={
@@ -221,14 +260,12 @@ def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get
 
 
 @router.post("/suggest/caddy", response_model=FeeResponse)
-def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)):
+def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db), club_id: int = Depends(get_active_club_id)):
     """
     Suggest a caddy fee based on booking details.
     """
     tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
     if not tee_time:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Tee time not found")
 
     holes = int(req.holes or 18)
@@ -243,8 +280,6 @@ def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)
 
     fee = select_best_fee_category(db, ctx)
     if not fee:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
             detail={

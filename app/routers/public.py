@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user, get_db
+from app.club_config import club_config_response
+from app.models import Club, User
+
+router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@router.get("/club")
+def get_club_profile(
+    club_id: int | None = Query(None),
+    club_slug: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Unauthenticated, read-only metadata for branding + label mapping.
+
+    If multiple clubs exist, callers should provide `club_id` or `club_slug`.
+    """
+    resolved_id: int | None = None
+    if club_id and club_id > 0:
+        resolved_id = int(club_id)
+    elif club_slug:
+        row = db.query(Club).filter(Club.slug == club_slug, Club.active == 1).first()
+        if row:
+            resolved_id = int(row.id)
+
+    if resolved_id is None:
+        clubs = db.query(Club).filter(Club.active == 1).order_by(Club.id.asc()).all()
+        if len(clubs) == 1:
+            resolved_id = int(clubs[0].id)
+        elif len(clubs) == 0:
+            # Fresh DB: return defaults (no club-specific settings).
+            return club_config_response(db, club_id=None)
+        else:
+            raise HTTPException(status_code=400, detail="club_id or club_slug is required")
+
+    return club_config_response(db, club_id=resolved_id)
+
+
+@router.get("/club/me")
+def get_my_club_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    club_id = getattr(current_user, "club_id", None)
+    if not club_id:
+        return club_config_response(db, club_id=None)
+    return club_config_response(db, club_id=int(club_id))

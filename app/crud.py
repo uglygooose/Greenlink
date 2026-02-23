@@ -8,6 +8,12 @@ from app.auth import get_password_hash, verify_password, create_access_token
 from app.integrations import handicap_sa
 from fastapi import HTTPException
 
+def _require_club_id(db: Session) -> int:
+    club_id = getattr(db, "info", {}).get("club_id") or None
+    if not club_id:
+        raise HTTPException(status_code=400, detail="club_id is required")
+    return int(club_id)
+
 def _append_note(notes: str | None, line: str) -> str:
     if not notes:
         return line
@@ -115,7 +121,12 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
             _upsert_meta(existing.id, payment_method)
         return existing
 
-    le = models.LedgerEntry(booking_id=booking.id, description=description, amount=amount)
+    le = models.LedgerEntry(
+        club_id=getattr(booking, "club_id", None),
+        booking_id=booking.id,
+        description=description,
+        amount=amount,
+    )
     db.add(le)
     db.flush()
     if payment_method:
@@ -125,12 +136,17 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
 def is_day_closed(db: Session, target_date):
     if not target_date:
         return False
+    club_id = getattr(db, "info", {}).get("club_id") or None
+    if not club_id:
+        # Legacy/local scripts that don't scope a club shouldn't hard-block.
+        return False
     return db.query(models.DayClose).filter(
+        models.DayClose.club_id == int(club_id),
         models.DayClose.close_date == target_date,
         models.DayClose.status == "closed"
     ).first() is not None
 
-def create_user(db: Session, user: schemas.UserCreate):
+def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = None):
     existing = db.query(models.User).filter(models.User.email == user.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -153,10 +169,19 @@ def create_user(db: Session, user: schemas.UserCreate):
     if student_flag is None and player_category:
         student_flag = player_category.lower() == "student"
 
+    resolved_club_id = None
+    if club_id is not None:
+        try:
+            cid = int(club_id)
+        except Exception:
+            cid = 0
+        resolved_club_id = cid if cid > 0 else None
+
     db_user = models.User(
         name=user.name,
         email=str(user.email).strip().lower(),
         password=hashed,
+        club_id=resolved_club_id,
         phone=phone,
         account_type=account_type,
         handicap_sa_id=(getattr(user, "handicap_sa_id", None) or "").strip() or None,
@@ -185,9 +210,12 @@ def create_user(db: Session, user: schemas.UserCreate):
             first = (user.name or "").strip().split(" ")[0] if (user.name or "").strip() else "Member"
             last = (user.name or "").strip().split(" ", 1)[1] if " " in (user.name or "").strip() else "Unknown"
 
-            member = db.query(models.Member).filter(func.lower(models.Member.email) == email).first()
+            member_query = db.query(models.Member).filter(func.lower(models.Member.email) == email)
+            if resolved_club_id is not None:
+                member_query = member_query.filter(models.Member.club_id == int(resolved_club_id))
+            member = member_query.first()
             if not member:
-                member = models.Member(first_name=first, last_name=last, email=email, active=1)
+                member = models.Member(club_id=resolved_club_id, first_name=first, last_name=last, email=email, active=1)
                 db.add(member)
 
             member.phone = (getattr(user, "phone", None) or member.phone or "").strip() or None
@@ -210,6 +238,19 @@ def authenticate_user(db: Session, email: str, password: str):
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Backfill: older player accounts may not have a club_id yet.
+    # If there's exactly one active club, assign it automatically so players can book.
+    if getattr(user, "role", None) != models.UserRole.super_admin and not getattr(user, "club_id", None):
+        try:
+            clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
+            if len(clubs) == 1:
+                user.club_id = int(clubs[0].id)
+                db.commit()
+        except Exception:
+            # Non-blocking: login should still work even if assignment fails.
+            pass
+
     token = create_access_token({
         "sub": user.email,
         "role": user.role
@@ -222,10 +263,12 @@ def authenticate_user(db: Session, email: str, password: str):
 
 # tee-time / booking crud
 def create_tee_time(db: Session, tee_time_iso, hole=None, capacity=4, status="open"):
+    club_id = _require_club_id(db)
     if is_day_closed(db, tee_time_iso.date()):
         raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
 
     existing = db.query(models.TeeTime).filter(
+        models.TeeTime.club_id == club_id,
         models.TeeTime.tee_time == tee_time_iso,
         models.TeeTime.hole == hole
     ).first()
@@ -233,6 +276,7 @@ def create_tee_time(db: Session, tee_time_iso, hole=None, capacity=4, status="op
         return existing
 
     tt = models.TeeTime(
+        club_id=club_id,
         tee_time=tee_time_iso,
         hole=hole,
         capacity=capacity,
@@ -244,11 +288,22 @@ def create_tee_time(db: Session, tee_time_iso, hole=None, capacity=4, status="op
     return tt
 
 def list_tee_times(db: Session):
-    return db.query(models.TeeTime).order_by(models.TeeTime.tee_time).all()
+    club_id = _require_club_id(db)
+    return (
+        db.query(models.TeeTime)
+        .filter(models.TeeTime.club_id == club_id)
+        .order_by(models.TeeTime.tee_time)
+        .all()
+    )
 
 def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user: models.User | None = None):
+    club_id = _require_club_id(db)
     # Validate tee time exists
-    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == booking_in.tee_time_id).first()
+    tee_time = (
+        db.query(models.TeeTime)
+        .filter(models.TeeTime.id == booking_in.tee_time_id, models.TeeTime.club_id == club_id)
+        .first()
+    )
     if not tee_time:
         raise HTTPException(status_code=404, detail="Tee time not found")
 
@@ -261,7 +316,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             from app.booking_rules import get_booking_window_for_user
             from app.models import UserRole
 
-            if getattr(current_user, "role", None) != UserRole.admin:
+            if getattr(current_user, "role", None) not in {UserRole.super_admin, UserRole.admin, UserRole.club_staff}:
                 _, window_days, max_date = get_booking_window_for_user(db, current_user)
                 if tee_time.tee_time.date() > max_date:
                     raise HTTPException(
@@ -306,7 +361,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             resolved_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
             member_match = (
                 db.query(models.Member)
-                .filter(func.lower(models.Member.email) == email, models.Member.active == 1)
+                .filter(models.Member.club_id == club_id, func.lower(models.Member.email) == email, models.Member.active == 1)
                 .first()
             )
             if member_match:
@@ -314,7 +369,11 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
 
     # Validate member if provided/resolved
     if resolved_member_id:
-        member = db.query(models.Member).filter(models.Member.id == resolved_member_id).first()
+        member = (
+            db.query(models.Member)
+            .filter(models.Member.id == resolved_member_id, models.Member.club_id == club_id)
+            .first()
+        )
         if not member:
             raise HTTPException(status_code=404, detail="Member not found")
     else:
@@ -605,6 +664,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     status = models.BookingStatus.checked_in if prepaid else models.BookingStatus.booked
 
     b = models.Booking(
+        club_id=club_id,
         tee_time_id=booking_in.tee_time_id,
         member_id=resolved_member_id,
         created_by_user_id=getattr(current_user, "id", None) if current_user is not None else None,
@@ -657,6 +717,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
 
         # Create ledger entry with actual price
         le = models.LedgerEntry(
+            club_id=club_id,
             booking_id=b.id,
             description=fee_description,
             amount=b.price
@@ -671,10 +732,16 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     return b
 
 def list_bookings_for_tee(db: Session, tee_time_id: int):
-    return db.query(models.Booking).filter(models.Booking.tee_time_id == tee_time_id).all()
+    club_id = _require_club_id(db)
+    return (
+        db.query(models.Booking)
+        .filter(models.Booking.club_id == club_id, models.Booking.tee_time_id == tee_time_id)
+        .all()
+    )
 
 def checkin_booking(db: Session, booking_id: int, payment_method: str | None = None):
-    b = db.query(models.Booking).get(booking_id)
+    club_id = _require_club_id(db)
+    b = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.club_id == club_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
 
@@ -716,7 +783,12 @@ def checkin_booking(db: Session, booking_id: int, payment_method: str | None = N
     return {"booking": b, "round": r, "handicap_sa": handicap_result}
 
 def submit_scores(db: Session, booking_id: int, scores_json: str):
-    b = db.query(models.Booking).get(booking_id)
+    club_id = _require_club_id(db)
+    b = (
+        db.query(models.Booking)
+        .filter(models.Booking.id == booking_id, models.Booking.club_id == club_id)
+        .first()
+    )
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
     

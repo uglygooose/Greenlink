@@ -7,6 +7,7 @@ All endpoints require admin role
 from __future__ import annotations
 
 import uuid
+import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
@@ -15,18 +16,49 @@ from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Optional
 from app import crud
-from app.models import User, Booking, TeeTime, Round, LedgerEntry, LedgerEntryMeta, DayClose, UserRole, BookingStatus, Member, ClubSetting
+from app.models import (
+    User,
+    Booking,
+    TeeTime,
+    Round,
+    LedgerEntry,
+    LedgerEntryMeta,
+    DayClose,
+    UserRole,
+    BookingStatus,
+    Member,
+    ClubSetting,
+    ImportBatch,
+    RevenueTransaction,
+)
 from app.fee_models import FeeCategory, FeeType
-from app.auth import get_current_user, get_db
+from app.auth import get_current_user, get_db, get_password_hash
 from calendar import isleap
+from app.club_config import club_config_response
+from app.tenancy import get_active_club_id
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(get_active_club_id)],
+)
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     """Verify current user is admin"""
-    if current_user.role != UserRole.admin:
+    if current_user.role not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+def verify_staff(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Pro shop staff access (admin + club_staff).
+
+    Used for operational endpoints needed during the 30-day parallel (mirror) test.
+    """
+    if current_user.role not in {UserRole.super_admin, UserRole.admin, UserRole.club_staff}:
+        raise HTTPException(status_code=403, detail="Staff access required")
     return current_user
 
 
@@ -74,7 +106,14 @@ def _period_window(period: str, anchor: date) -> tuple[date, date, int]:
 def _annual_target(db: Session, year: int, metric: str, default: float | None = None) -> float | None:
     try:
         from app.models import KpiTarget
-        row = db.query(KpiTarget).filter(KpiTarget.year == year, KpiTarget.metric == metric).first()
+        club_id = db.info.get("club_id")
+        if not club_id:
+            return default
+        row = (
+            db.query(KpiTarget)
+            .filter(KpiTarget.club_id == int(club_id), KpiTarget.year == year, KpiTarget.metric == metric)
+            .first()
+        )
         if row and row.annual_target is not None:
             return float(row.annual_target)
     except Exception:
@@ -101,23 +140,25 @@ def _member_green_fee_18(db: Session) -> float:
     If fees aren't loaded, fall back to a sensible demo default.
     """
     try:
-        fee = db.query(FeeCategory).filter(FeeCategory.code == 1).first()
+        club_id = db.info.get("club_id")
+        fee_q = db.query(FeeCategory).filter(FeeCategory.code == 1)
+        if club_id:
+            fee_q = fee_q.filter(or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)))
+        fee = fee_q.first()
         if fee and getattr(fee, "price", None) is not None:
             return float(fee.price)
 
         # Otherwise: any member golf fee for 18 holes without a restricted day kind.
-        fee = (
-            db.query(FeeCategory)
-            .filter(
-                FeeCategory.active == 1,
-                FeeCategory.fee_type == FeeType.GOLF,
-                FeeCategory.audience == "member",
-                FeeCategory.holes == 18,
-                FeeCategory.day_kind.is_(None),
-            )
-            .order_by(FeeCategory.priority.desc(), FeeCategory.code.asc())
-            .first()
+        q = db.query(FeeCategory).filter(
+            FeeCategory.active == 1,
+            FeeCategory.fee_type == FeeType.GOLF,
+            FeeCategory.audience == "member",
+            FeeCategory.holes == 18,
+            FeeCategory.day_kind.is_(None),
         )
+        if club_id:
+            q = q.filter(or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)))
+        fee = q.order_by(FeeCategory.priority.desc(), FeeCategory.code.asc()).first()
         if fee and getattr(fee, "price", None) is not None:
             return float(fee.price)
     except Exception:
@@ -132,7 +173,10 @@ def _float_setting(db: Session, key: str, default: float) -> float:
     try:
         from app.models import ClubSetting
 
-        row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+        club_id = db.info.get("club_id")
+        if not club_id:
+            return float(default)
+        row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
         if not row:
             return float(default)
         raw = (row.value or "").strip()
@@ -151,12 +195,15 @@ def _int_setting(db: Session, key: str, default: int) -> int:
 
 
 def _upsert_setting(db: Session, key: str, value: int | float | str) -> None:
-    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    club_id = db.info.get("club_id")
+    if not club_id:
+        raise HTTPException(status_code=400, detail="club_id is required")
+    row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
     if row:
         row.value = str(value)
         row.updated_at = datetime.utcnow()
     else:
-        db.add(ClubSetting(key=key, value=str(value)))
+        db.add(ClubSetting(club_id=int(club_id), key=key, value=str(value)))
 
 
 def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds_target: float | None) -> float | None:
@@ -194,7 +241,11 @@ class BookingWindowSettings(BaseModel):
 
 
 @router.get("/booking-window", response_model=BookingWindowSettings)
-def get_booking_window_settings(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+def get_booking_window_settings(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
     return BookingWindowSettings(
         member_days=_int_setting(db, "booking_window_member_days", 14),
         affiliated_days=_int_setting(db, "booking_window_affiliated_days", 7),
@@ -203,7 +254,12 @@ def get_booking_window_settings(db: Session = Depends(get_db), admin: User = Dep
 
 
 @router.put("/booking-window", response_model=BookingWindowSettings)
-def update_booking_window_settings(payload: BookingWindowSettings, db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+def update_booking_window_settings(
+    payload: BookingWindowSettings,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
     # Guard rails
     member_days = max(0, min(365, int(payload.member_days)))
     affiliated_days = max(0, min(365, int(payload.affiliated_days)))
@@ -219,6 +275,73 @@ def update_booking_window_settings(payload: BookingWindowSettings, db: Session =
         affiliated_days=affiliated_days,
         non_affiliated_days=non_affiliated_days,
     )
+
+
+class ClubProfileSettings(BaseModel):
+    club_name: str | None = None
+    club_slug: str | None = None
+    logo_url: str | None = None
+    currency_symbol: str | None = None
+    member_label: str | None = None
+    visitor_label: str | None = None
+    non_affiliated_label: str | None = None
+    home_club_keywords: list[str] | None = None
+    suggested_home_clubs: list[str] | None = None
+
+
+@router.get("/club-profile")
+def get_club_profile_settings(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    # Admin-visible view of the current club config, sourced from club_settings/env/defaults.
+    return club_config_response(db, club_id=club_id)
+
+
+@router.put("/club-profile")
+def update_club_profile_settings(
+    payload: ClubProfileSettings,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    """
+    Update club profile settings used for branding + membership detection.
+
+    Stored in `club_settings` so each club deployment can be configured without code changes.
+    """
+    if payload.club_name is not None:
+        name = str(payload.club_name).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="club_name cannot be empty")
+        _upsert_setting(db, "club_name", name)
+    if payload.club_slug is not None:
+        _upsert_setting(db, "club_slug", str(payload.club_slug).strip() or "")
+    if payload.logo_url is not None:
+        _upsert_setting(db, "club_logo_url", str(payload.logo_url).strip() or "")
+    if payload.currency_symbol is not None:
+        _upsert_setting(db, "club_currency_symbol", str(payload.currency_symbol).strip() or "")
+
+    if payload.member_label is not None:
+        _upsert_setting(db, "club_member_label", str(payload.member_label).strip() or "")
+    if payload.visitor_label is not None:
+        _upsert_setting(db, "club_visitor_label", str(payload.visitor_label).strip() or "")
+    if payload.non_affiliated_label is not None:
+        _upsert_setting(db, "club_non_affiliated_label", str(payload.non_affiliated_label).strip() or "")
+
+    if payload.home_club_keywords is not None:
+        keywords = [str(v or "").strip() for v in payload.home_club_keywords]
+        keywords = [v for v in keywords if v]
+        _upsert_setting(db, "club_home_club_keywords", json.dumps(keywords))
+
+    if payload.suggested_home_clubs is not None:
+        clubs = [str(v or "").strip() for v in payload.suggested_home_clubs]
+        clubs = [v for v in clubs if v]
+        _upsert_setting(db, "club_suggested_home_clubs", json.dumps(clubs))
+
+    db.commit()
+    return club_config_response(db, club_id=club_id)
 
 def _parse_hhmm(value: str) -> Time:
     raw = (value or "").strip()
@@ -247,7 +370,7 @@ class BulkTeeBookingRequest(BaseModel):
 def bulk_book_tee_sheet(
     req: BulkTeeBookingRequest,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     """
     Create placeholder bookings across a date/time range.
@@ -281,6 +404,10 @@ def bulk_book_tee_sheet(
         raise HTTPException(status_code=400, detail="price must be >= 0")
 
     group_id = uuid.uuid4().hex[:12]
+
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
 
     tee_times = (
         db.query(TeeTime)
@@ -327,8 +454,9 @@ def bulk_book_tee_sheet(
             created += 1
             new_rows.append(
                 Booking(
+                    club_id=club_id,
                     tee_time_id=tt.id,
-                    created_by_user_id=getattr(admin, "id", None),
+                    created_by_user_id=getattr(staff, "id", None),
                     # Keep the tee sheet clean: show only the event/group name in the slot.
                     # Group/undo metadata lives on external_provider/external_booking_id.
                     player_name=group_name,
@@ -363,7 +491,7 @@ def bulk_book_tee_sheet(
 def undo_bulk_book_tee_sheet(
     group_id: str,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     gid = (group_id or "").strip()
     if not gid:
@@ -402,61 +530,157 @@ def undo_bulk_book_tee_sheet(
 
 
 @router.get("/dashboard")
-async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+async def get_dashboard_stats(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
     """Get main dashboard statistics"""
     
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
 
     # Total bookings
-    total_bookings = db.query(func.count(Booking.id)).scalar() or 0
+    total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
     
     # Bookings by status
-    booked_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.booked).scalar() or 0
-    checked_in_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.checked_in).scalar() or 0
-    completed_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.completed).scalar() or 0
-    cancelled_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.cancelled).scalar() or 0
-    no_show_count = db.query(func.count(Booking.id)).filter(Booking.status == BookingStatus.no_show).scalar() or 0
+    booked_count = (
+        db.query(func.count(Booking.id))
+        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.booked)
+        .scalar()
+        or 0
+    )
+    checked_in_count = (
+        db.query(func.count(Booking.id))
+        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.checked_in)
+        .scalar()
+        or 0
+    )
+    completed_count = (
+        db.query(func.count(Booking.id))
+        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.completed)
+        .scalar()
+        or 0
+    )
+    cancelled_count = (
+        db.query(func.count(Booking.id))
+        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.cancelled)
+        .scalar()
+        or 0
+    )
+    no_show_count = (
+        db.query(func.count(Booking.id))
+        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.no_show)
+        .scalar()
+        or 0
+    )
     
-    # Total revenue (cashbook basis = payment date / ledger entries)
+    # Total golf revenue (cashbook basis = payment date / ledger entries)
     total_revenue = (
         db.query(func.sum(LedgerEntry.amount))
-        .filter(LedgerEntry.booking_id.isnot(None))
+        .filter(LedgerEntry.club_id == club_id, LedgerEntry.booking_id.isnot(None))
         .scalar()
         or 0.0
     )
+
+    # Total other revenue (mirrored via daily CSV imports).
+    # Keep non-blocking so older DBs without the table can still load the dashboard.
+    try:
+        other_total_revenue = (
+            db.query(func.sum(RevenueTransaction.amount))
+            .filter(RevenueTransaction.club_id == club_id)
+            .scalar()
+            or 0.0
+        )
+    except Exception:
+        other_total_revenue = 0.0
     
     # Completed rounds (admin expectation = bookings marked completed)
     completed_rounds = completed_count
     
     # Registered players
-    total_players = db.query(func.count(User.id)).filter(User.role == UserRole.player).scalar() or 0
+    total_players = (
+        db.query(func.count(User.id))
+        .filter(User.role == UserRole.player, User.club_id == club_id)
+        .scalar()
+        or 0
+    )
+
+    # Members (imported club membership list)
+    total_members = (
+        db.query(func.count(Member.id))
+        .filter(Member.club_id == club_id, Member.active == 1)
+        .scalar()
+        or 0
+    )
     
     # Today's bookings
     today = datetime.utcnow().date()
     today_bookings = (
         db.query(func.count(Booking.id))
         .join(TeeTime, Booking.tee_time_id == TeeTime.id)
-        .filter(func.date(TeeTime.tee_time) == today)
+        .filter(TeeTime.club_id == club_id, func.date(TeeTime.tee_time) == today)
         .scalar()
         or 0
     )
     
-    # Today's revenue (payment date)
+    # Today's golf revenue (payment date)
     today_revenue = (
         db.query(func.sum(LedgerEntry.amount))
-        .filter(LedgerEntry.booking_id.isnot(None), func.date(LedgerEntry.created_at) == today)
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+            func.date(LedgerEntry.created_at) == today,
+        )
         .scalar()
         or 0.0
     )
+
+    # Today's other revenue (transaction date)
+    try:
+        today_other_revenue = (
+            db.query(func.sum(RevenueTransaction.amount))
+            .filter(RevenueTransaction.club_id == club_id, RevenueTransaction.transaction_date == today)
+            .scalar()
+            or 0.0
+        )
+    except Exception:
+        today_other_revenue = 0.0
     
-    # Last 7 days revenue (payment date)
+    # Last 7 days golf revenue (payment date)
     week_ago = datetime.utcnow() - timedelta(days=7)
     week_revenue = (
         db.query(func.sum(LedgerEntry.amount))
-        .filter(LedgerEntry.booking_id.isnot(None), LedgerEntry.created_at >= week_ago)
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+            LedgerEntry.created_at >= week_ago,
+        )
         .scalar()
         or 0.0
     )
+
+    # Last 7 days other revenue (transaction date)
+    try:
+        week_other_revenue = (
+            db.query(func.sum(RevenueTransaction.amount))
+            .filter(RevenueTransaction.transaction_date >= (today - timedelta(days=6)))
+            .scalar()
+            or 0.0
+        )
+    except Exception:
+        week_other_revenue = 0.0
+
+    # Import freshness (best-effort; OK if tables not present on older DBs)
+    imports = {}
+    try:
+        last_rev = db.query(ImportBatch).filter(ImportBatch.kind == "revenue").order_by(desc(ImportBatch.imported_at)).first()
+        last_bookings = db.query(ImportBatch).filter(ImportBatch.kind == "bookings").order_by(desc(ImportBatch.imported_at)).first()
+        imports = {
+            "revenue": last_rev.imported_at.isoformat() if last_rev and last_rev.imported_at else None,
+            "bookings": last_bookings.imported_at.isoformat() if last_bookings and last_bookings.imported_at else None,
+        }
+    except Exception:
+        imports = {}
     
     # KPI targets vs actuals (Day/WTD/MTD/YTD)
     anchor = datetime.utcnow().date()
@@ -512,9 +736,17 @@ async def get_dashboard_stats(db: Session = Depends(get_db), admin: User = Depen
     return {
         "total_bookings": total_bookings,
         "total_players": total_players,
-        "total_revenue": float(total_revenue),
-        "today_revenue": float(today_revenue),
-        "week_revenue": float(week_revenue),
+        "total_members": total_members,
+        "golf_revenue_total": float(total_revenue),
+        "golf_revenue_today": float(today_revenue),
+        "golf_revenue_week": float(week_revenue),
+        "other_revenue_total": float(other_total_revenue),
+        "other_revenue_today": float(today_other_revenue),
+        "other_revenue_week": float(week_other_revenue),
+        "total_revenue": float(total_revenue) + float(other_total_revenue),
+        "today_revenue": float(today_revenue) + float(today_other_revenue),
+        "week_revenue": float(week_revenue) + float(week_other_revenue),
+        "imports": imports,
         "bookings_by_status": {
             "booked": booked_count,
             "checked_in": checked_in_count,
@@ -586,7 +818,7 @@ async def get_all_bookings(
     period: Optional[str] = None,  # day | week | month
     anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    staff: User = Depends(verify_staff)
 ):
     """Get all bookings with filters"""
     
@@ -668,7 +900,7 @@ async def get_all_bookings(
 async def get_booking_detail(
     booking_id: int,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    staff: User = Depends(verify_staff)
 ):
     """Get detailed booking information"""
     
@@ -697,7 +929,11 @@ async def get_booking_detail(
 
     fee_category = None
     if booking.fee_category_id:
-        fee_cat = db.query(FeeCategory).filter(FeeCategory.id == booking.fee_category_id).first()
+        club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+        fee_q = db.query(FeeCategory).filter(FeeCategory.id == booking.fee_category_id)
+        if club_id > 0:
+            fee_q = fee_q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
+        fee_cat = fee_q.first()
         if fee_cat:
             fee_category = {
                 "id": fee_cat.id,
@@ -763,7 +999,7 @@ async def update_booking_status(
     booking_id: int,
     payload: BookingStatusUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    staff: User = Depends(verify_staff)
 ):
     """Update booking status (admin quick actions)"""
 
@@ -833,7 +1069,7 @@ async def update_booking_payment_method(
     booking_id: int,
     payload: BookingPaymentMethodUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
@@ -869,7 +1105,7 @@ async def get_all_players(
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    staff: User = Depends(verify_staff)
 ):
     """Get all registered players"""
 
@@ -972,7 +1208,7 @@ async def get_members(
     limit: int = 50,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     """List member profiles (with basic booking stats)."""
 
@@ -1063,13 +1299,218 @@ async def get_members(
     }
 
 
+class MemberUpsertPayload(BaseModel):
+    member_number: str | None = None
+    first_name: str
+    last_name: str
+    email: str | None = None
+    phone: str | None = None
+    handicap_number: str | None = None
+    home_club: str | None = None
+    gender: str | None = None
+    player_category: str | None = None
+    student: bool | None = None
+    handicap_index: float | None = None
+    handicap_sa_id: str | None = None
+    active: bool | None = True
+
+
+@router.post("/members")
+async def create_member(
+    payload: MemberUpsertPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    first = (payload.first_name or "").strip()
+    last = (payload.last_name or "").strip()
+    if not first or not last:
+        raise HTTPException(status_code=400, detail="first_name and last_name are required")
+
+    email = (payload.email or "").strip().lower() or None
+    phone = (payload.phone or "").strip() or None
+    member_number = (payload.member_number or "").strip() or None
+    handicap_number = (payload.handicap_number or "").strip() or None
+    home_club = (payload.home_club or "").strip() or None
+    gender = (payload.gender or "").strip() or None
+    player_category = (payload.player_category or "").strip() or None
+    handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
+
+    row = Member(
+        club_id=club_id,
+        member_number=member_number,
+        first_name=first,
+        last_name=last,
+        email=email,
+        phone=phone,
+        handicap_number=handicap_number,
+        home_club=home_club,
+        active=1 if bool(payload.active) else 0,
+        gender=gender,
+        player_category=player_category,
+        student=payload.student,
+        handicap_index=float(payload.handicap_index) if payload.handicap_index is not None else None,
+        handicap_sa_id=handicap_sa_id,
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        msg = str(getattr(e, "orig", e) or "")[:180]
+        raise HTTPException(status_code=409, detail=f"Member create failed (duplicate?): {msg}")
+
+    db.refresh(row)
+    return {"status": "success", "member_id": row.id}
+
+
+@router.put("/members/{member_id}")
+async def update_member(
+    member_id: int,
+    payload: MemberUpsertPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    row = db.query(Member).filter(Member.id == int(member_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    first = (payload.first_name or "").strip()
+    last = (payload.last_name or "").strip()
+    if not first or not last:
+        raise HTTPException(status_code=400, detail="first_name and last_name are required")
+
+    row.first_name = first
+    row.last_name = last
+    row.member_number = (payload.member_number or "").strip() or None
+    row.email = (payload.email or "").strip().lower() or None
+    row.phone = (payload.phone or "").strip() or None
+    row.handicap_number = (payload.handicap_number or "").strip() or None
+    row.home_club = (payload.home_club or "").strip() or None
+    row.gender = (payload.gender or "").strip() or None
+    row.player_category = (payload.player_category or "").strip() or None
+    row.student = payload.student
+    row.handicap_index = float(payload.handicap_index) if payload.handicap_index is not None else None
+    row.handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
+    if payload.active is not None:
+        row.active = 1 if bool(payload.active) else 0
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        msg = str(getattr(e, "orig", e) or "")[:180]
+        raise HTTPException(status_code=409, detail=f"Member update failed (duplicate?): {msg}")
+
+    return {"status": "success"}
+
+
+@router.get("/members/{member_id}")
+async def get_member_detail(
+    member_id: int,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    """
+    Member profile view (the imported club membership list).
+
+    This is distinct from "players" (registered user accounts).
+    """
+    member = db.query(Member).filter(Member.id == int(member_id)).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    linked_account = None
+    email = (getattr(member, "email", None) or "").strip().lower()
+    if email:
+        acct = (
+            db.query(User)
+            .filter(func.lower(User.email) == email, User.role == UserRole.player)
+            .first()
+        )
+        if acct:
+            linked_account = {
+                "id": acct.id,
+                "name": acct.name,
+                "email": acct.email,
+                "handicap_sa_id": getattr(acct, "handicap_sa_id", None),
+                "handicap_index": float(getattr(acct, "handicap_index", None)) if getattr(acct, "handicap_index", None) is not None else None,
+            }
+
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+
+    stats = (
+        db.query(
+            func.count(Booking.id).label("bookings_count"),
+            func.coalesce(
+                func.sum(case((Booking.status.in_(paid_statuses), Booking.price), else_=0.0)),
+                0.0,
+            ).label("total_spent"),
+            func.max(TeeTime.tee_time).label("last_seen"),
+        )
+        .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(Booking.member_id == member.id)
+        .first()
+    )
+
+    bookings = (
+        db.query(Booking)
+        .options(selectinload(Booking.tee_time))
+        .filter(Booking.member_id == member.id)
+        .order_by(desc(Booking.created_at))
+        .limit(15)
+        .all()
+    )
+
+    return {
+        "member": {
+            "id": member.id,
+            "member_number": member.member_number,
+            "first_name": member.first_name,
+            "last_name": member.last_name,
+            "name": f"{member.first_name} {member.last_name}".strip(),
+            "email": member.email,
+            "phone": member.phone,
+            "handicap_number": member.handicap_number,
+            "handicap_sa_id": getattr(member, "handicap_sa_id", None),
+            "handicap_index": float(getattr(member, "handicap_index", None)) if getattr(member, "handicap_index", None) is not None else None,
+            "home_club": member.home_club,
+            "gender": getattr(member, "gender", None),
+            "player_category": getattr(member, "player_category", None),
+            "student": bool(getattr(member, "student", False)) if getattr(member, "student", None) is not None else None,
+            "active": bool(member.active),
+        },
+        "linked_account": linked_account,
+        "stats": {
+            "bookings_count": int(getattr(stats, "bookings_count", 0) or 0),
+            "total_spent": float(getattr(stats, "total_spent", 0.0) or 0.0),
+            "last_seen": getattr(stats, "last_seen", None).isoformat() if getattr(stats, "last_seen", None) else None,
+        },
+        "recent_bookings": [
+            {
+                "id": b.id,
+                "tee_time": b.tee_time.tee_time.isoformat() if b.tee_time and b.tee_time.tee_time else None,
+                "status": b.status,
+                "holes": b.holes,
+                "price": float(b.price or 0.0),
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+            }
+            for b in bookings
+        ],
+    }
+
+
 @router.get("/guests")
 async def get_guest_players(
     skip: int = 0,
     limit: int = 50,
     q: Optional[str] = None,
+    guest_type: Optional[str] = None,  # all | affiliated | non_affiliated
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     """Aggregate non-member bookings into guest profiles."""
 
@@ -1094,6 +1535,13 @@ async def get_guest_players(
         .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
         .filter(Booking.member_id.is_(None))
     )
+
+    gt = (guest_type or "").strip().lower()
+    if gt in {"affiliated", "affiliate", "visitor"}:
+        # Treat NULL as "visitor" for legacy bookings.
+        query = query.filter(or_(Booking.player_type.is_(None), Booking.player_type.in_(["visitor", "reciprocity"])))
+    elif gt in {"non_affiliated", "non-affiliated", "nonaffiliated"}:
+        query = query.filter(Booking.player_type == "non_affiliated")
 
     if q:
         needle = q.strip().lower()
@@ -1141,7 +1589,7 @@ async def get_guest_players(
 async def get_player_detail(
     player_id: int,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    staff: User = Depends(verify_staff)
 ):
     """Get detailed player information with booking history"""
     
@@ -1189,7 +1637,7 @@ async def search_members(
     q: str,
     limit: int = 10,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    staff: User = Depends(verify_staff),
 ):
     """Search members for quick booking (pro shop)."""
 
@@ -1234,13 +1682,190 @@ async def search_members(
     }
 
 
+@router.get("/staff")
+async def get_staff_users(
+    skip: int = 0,
+    limit: int = 50,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    """
+    List staff accounts for the current club (admins + club_staff).
+
+    Note: "Super admin" users are global and are managed via /api/super.
+    """
+    query = db.query(User).filter(User.role.in_([UserRole.admin, UserRole.club_staff]))
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like)))
+
+    total = query.count()
+    rows = query.order_by(func.lower(User.role).asc(), func.lower(User.name).asc()).offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "staff": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": u.role,
+            }
+            for u in rows
+        ],
+    }
+
+
+class StaffUpsertPayload(BaseModel):
+    name: str
+    email: str
+    password: str | None = None
+    role: str = "club_staff"  # club_staff only (admin managed by super admin)
+    force_reset: bool | None = False
+
+
+def _parse_staff_role_for_club_admin(raw: str | None) -> UserRole:
+    r = (raw or "").strip().lower()
+    if r in {"club_staff", "staff", "proshop"}:
+        return UserRole.club_staff
+    # Only super admins should create/promote admins.
+    raise HTTPException(status_code=400, detail="role must be 'club_staff'")
+
+
+def _find_user_by_email_global(db: Session, email: str) -> User | None:
+    """
+    Lookup a user by email without tenant scoping.
+
+    The admin router sets `db.info["club_id"]`, and the tenant scoping hook applies
+    `User.club_id == club_id` automatically on SELECTs. For uniqueness checks we must
+    query globally (email is unique across all clubs).
+    """
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        return None
+
+    had_scope = "club_id" in getattr(db, "info", {})
+    saved_scope = getattr(db, "info", {}).get("club_id")
+    if had_scope:
+        db.info.pop("club_id", None)
+    try:
+        return db.query(User).filter(func.lower(User.email) == normalized).first()
+    finally:
+        if had_scope:
+            db.info["club_id"] = saved_scope
+
+
+@router.post("/staff")
+async def create_staff_user_for_club(
+    payload: StaffUpsertPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    email = (payload.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="valid email is required")
+    name = (payload.name or "").strip() or email
+
+    role = _parse_staff_role_for_club_admin(payload.role)
+
+    existing = _find_user_by_email_global(db, email)
+    if existing:
+        if existing.role == UserRole.super_admin:
+            raise HTTPException(status_code=409, detail="Cannot modify super admin user")
+        if existing.role == UserRole.admin:
+            raise HTTPException(status_code=409, detail="Admin users are managed by Super Admin")
+
+        existing_club_id = int(getattr(existing, "club_id", 0) or 0)
+        if existing_club_id and existing_club_id != int(club_id):
+            raise HTTPException(status_code=409, detail="User exists in another club")
+
+        # Legacy: player accounts created before multi-club may have no club_id.
+        if not existing_club_id and existing.role == UserRole.player and bool(payload.force_reset):
+            existing.club_id = int(club_id)
+            existing_club_id = int(club_id)
+
+        if existing_club_id != int(club_id):
+            raise HTTPException(status_code=409, detail="User exists but is not assigned to this club")
+        if existing.role not in {UserRole.club_staff, UserRole.player}:
+            raise HTTPException(status_code=409, detail="User exists with a non-staff role")
+        if not bool(payload.force_reset):
+            raise HTTPException(status_code=409, detail="User already exists (set force_reset=true to update)")
+
+        existing.name = name
+        existing.role = role
+        if payload.password:
+            existing.password = get_password_hash(payload.password)
+        db.commit()
+        db.refresh(existing)
+        return {"status": "success", "user_id": existing.id}
+
+    if not payload.password:
+        raise HTTPException(status_code=400, detail="password is required for new staff users")
+
+    u = User(
+        name=name,
+        email=email,
+        password=get_password_hash(payload.password),
+        role=role,
+        club_id=club_id,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return {"status": "success", "user_id": u.id}
+
+
+@router.put("/staff/{user_id}")
+async def update_staff_user_for_club(
+    user_id: int,
+    payload: StaffUpsertPayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == UserRole.super_admin:
+        raise HTTPException(status_code=409, detail="Cannot modify super admin user")
+    if user.role == UserRole.admin:
+        raise HTTPException(status_code=409, detail="Admin users are managed by Super Admin")
+    if user.role != UserRole.club_staff:
+        raise HTTPException(status_code=409, detail="Only club_staff users can be modified here")
+    if int(getattr(user, "club_id", 0) or 0) != int(club_id):
+        raise HTTPException(status_code=403, detail="Cannot edit another club's staff")
+
+    user.name = (payload.name or "").strip() or user.name
+    # Do not allow role changes beyond club_staff here.
+    user.role = _parse_staff_role_for_club_admin(payload.role)
+    if payload.password:
+        user.password = get_password_hash(payload.password)
+
+    # email changes are risky (linking + auth); disallow in club admin UI for now.
+    if (payload.email or "").strip() and (payload.email or "").strip().lower() != str(user.email or "").lower():
+        raise HTTPException(status_code=400, detail="email cannot be changed; create a new staff user instead")
+
+    db.commit()
+    return {"status": "success"}
+
+
 @router.get("/revenue")
 async def get_revenue_analytics(
     days: int = 30,
     period: Optional[str] = None,  # day | wtd | mtd | ytd
     anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
 ):
     """Get revenue analytics for last N days or a named period ending at anchor_date."""
 
@@ -1262,7 +1887,11 @@ async def get_revenue_analytics(
         func.date(TeeTime.tee_time).label("date"),
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("bookings")
-    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.tee_time >= start_date)
+    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(
+        TeeTime.club_id == club_id,
+        Booking.club_id == club_id,
+        TeeTime.tee_time >= start_date,
+    )
 
     if end_date_exclusive is not None:
         daily_revenue_query = daily_revenue_query.filter(TeeTime.tee_time < end_date_exclusive)
@@ -1278,7 +1907,11 @@ async def get_revenue_analytics(
         func.date(LedgerEntry.created_at).label("date"),
         func.sum(LedgerEntry.amount).label("amount"),
         func.count(LedgerEntry.id).label("bookings")
-    ).filter(LedgerEntry.booking_id.isnot(None), LedgerEntry.created_at >= start_date)
+    ).filter(
+        LedgerEntry.club_id == club_id,
+        LedgerEntry.booking_id.isnot(None),
+        LedgerEntry.created_at >= start_date,
+    )
 
     if end_date_exclusive is not None:
         daily_paid_revenue_query = daily_paid_revenue_query.filter(LedgerEntry.created_at < end_date_exclusive)
@@ -1288,6 +1921,29 @@ async def get_revenue_analytics(
         .order_by(func.date(LedgerEntry.created_at))
         .all()
     )
+
+    # Daily other revenue (mirrored CSV; transaction_date). Keep non-blocking for older DBs.
+    other_daily_revenue = []
+    try:
+        other_daily_query = db.query(
+            RevenueTransaction.transaction_date.label("date"),
+            func.sum(RevenueTransaction.amount).label("amount"),
+            func.count(RevenueTransaction.id).label("transactions"),
+        ).filter(
+            RevenueTransaction.club_id == club_id,
+            RevenueTransaction.transaction_date >= start_date.date(),
+        )
+
+        if end_date_exclusive is not None:
+            other_daily_query = other_daily_query.filter(RevenueTransaction.transaction_date < end_date_exclusive.date())
+
+        other_daily_revenue = (
+            other_daily_query.group_by(RevenueTransaction.transaction_date)
+            .order_by(RevenueTransaction.transaction_date)
+            .all()
+        )
+    except Exception:
+        other_daily_revenue = []
     
     # Revenue by booking status
     status_revenue_query = db.query(
@@ -1309,6 +1965,25 @@ async def get_revenue_analytics(
 
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     daily_required = (float(annual_revenue_target) / float(_days_in_year(year))) if annual_revenue_target is not None else None
+
+    other_by_stream = []
+    try:
+        other_stream_query = db.query(
+            RevenueTransaction.source,
+            func.sum(RevenueTransaction.amount).label("amount"),
+            func.count(RevenueTransaction.id).label("transactions"),
+        ).filter(RevenueTransaction.transaction_date >= start_date.date())
+
+        if end_date_exclusive is not None:
+            other_stream_query = other_stream_query.filter(RevenueTransaction.transaction_date < end_date_exclusive.date())
+
+        other_by_stream = (
+            other_stream_query.group_by(RevenueTransaction.source)
+            .order_by(desc(func.sum(RevenueTransaction.amount)))
+            .all()
+        )
+    except Exception:
+        other_by_stream = []
 	    
     return {
         "period_days": int(period_days or days),
@@ -1332,6 +2007,18 @@ async def get_revenue_analytics(
                 "bookings": dr[2]
             }
             for dr in daily_paid_revenue
+        ],
+        "daily_other_revenue": [
+            {
+                "date": str(dr[0]),
+                "amount": float(dr[1]) if dr[1] else 0.0,
+                "transactions": int(dr[2] or 0),
+            }
+            for dr in other_daily_revenue
+        ],
+        "other_revenue_by_stream": [
+            {"stream": str(r[0] or ""), "amount": float(r[1] or 0.0), "transactions": int(r[2] or 0)}
+            for r in other_by_stream
         ],
         "revenue_by_status": [
             {
@@ -1536,8 +2223,12 @@ async def get_fee_categories(
     admin: User = Depends(verify_admin)
 ):
     """Get all available fee categories for pricing players"""
-    
-    categories = db.query(FeeCategory).filter(FeeCategory.active == 1).all()
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    q = db.query(FeeCategory).filter(FeeCategory.active == 1)
+    if club_id > 0:
+        q = q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
+
+    categories = q.all()
     
     return [
         {
@@ -1559,6 +2250,8 @@ async def update_player_price(
     admin: User = Depends(verify_admin)
 ):
     """Update a player's fee/price"""
+
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     
     player = db.query(User).filter(User.id == player_id, User.role == UserRole.player).first()
     
@@ -1571,7 +2264,10 @@ async def update_player_price(
     
     # Update based on input
     if price_update.fee_category_id:
-        fee_category = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id).first()
+        fee_q = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id)
+        if club_id > 0:
+            fee_q = fee_q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
+        fee_category = fee_q.first()
         if not fee_category:
             raise HTTPException(status_code=404, detail="Fee category not found")
         
@@ -1634,6 +2330,8 @@ async def get_player_price_info(
     admin: User = Depends(verify_admin)
 ):
     """Get price info for a specific player (admin only)"""
+
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     
     player = db.query(User).filter(User.id == player_id, User.role == UserRole.player).first()
     
@@ -1654,7 +2352,10 @@ async def get_player_price_info(
         current_price = latest.price
         
         if latest.fee_category_id:
-            fee_cat = db.query(FeeCategory).filter(FeeCategory.id == latest.fee_category_id).first()
+            fee_q = db.query(FeeCategory).filter(FeeCategory.id == latest.fee_category_id)
+            if club_id > 0:
+                fee_q = fee_q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
+            fee_cat = fee_q.first()
             if fee_cat:
                 current_fee_category = {
                     "id": fee_cat.id,
@@ -1689,6 +2390,8 @@ async def update_booking_price(
     admin: User = Depends(verify_admin)
 ):
     """Update price for a specific booking (admin only)"""
+
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     
@@ -1704,7 +2407,10 @@ async def update_booking_price(
     
     # Update based on input
     if price_update.fee_category_id:
-        fee_category = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id).first()
+        fee_q = db.query(FeeCategory).filter(FeeCategory.id == price_update.fee_category_id)
+        if club_id > 0:
+            fee_q = fee_q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
+        fee_category = fee_q.first()
         if not fee_category:
             raise HTTPException(status_code=404, detail="Fee category not found")
         

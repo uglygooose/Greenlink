@@ -1,0 +1,4 @@
+transaction_date,amount,external_id,category,description
+2026-02-20,450.00,PUB-0001,Bar,Bar sales - lunch
+2026-02-20,210.00,PUB-0002,Kitchen,Kitchen sales - snacks
+2026-02-21,120.00,PUB-0003,Bar,Bar sales - evening

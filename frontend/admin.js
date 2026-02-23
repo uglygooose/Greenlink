@@ -1,10 +1,12 @@
 // Admin Dashboard JavaScript
 
 const API_BASE = window.location.origin;
+let currentUserRole = null;
 let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
-let peopleView = "players"; // players | members | guests
+let peopleView = "members"; // members | guests | staff
+let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
 let bookingPeriod = "day";
@@ -25,23 +27,133 @@ let teeBookingState = {
     prepaid: false
 };
 let teeBookingSubmitting = false;
+let currentActivePage = "dashboard";
+let superAdminClubsCache = [];
+let authFetchInstalled = false;
+let currentMemberDetail = null;
+
+function installAuthFetch() {
+    if (authFetchInstalled) return;
+    authFetchInstalled = true;
+
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = (input, init) => {
+        const token = localStorage.getItem("token");
+        if (!token) return originalFetch(input, init);
+
+        let url = "";
+        if (typeof input === "string") url = input;
+        else if (input && typeof input.url === "string") url = input.url;
+
+        try {
+            const resolved = new URL(url, window.location.origin);
+            if (resolved.origin !== window.location.origin) {
+                return originalFetch(input, init);
+            }
+        } catch {
+            // If URL parsing fails, fall back to raw fetch.
+            return originalFetch(input, init);
+        }
+
+        const nextInit = init ? { ...init } : {};
+        const headers = new Headers(nextInit.headers || {});
+        if (!headers.has("Authorization")) {
+            headers.set("Authorization", `Bearer ${token}`);
+        }
+
+        const activeClubId = localStorage.getItem("active_club_id");
+        if (currentUserRole === "super_admin" && activeClubId && !headers.has("X-Club-Id")) {
+            headers.set("X-Club-Id", String(activeClubId));
+        }
+
+        nextInit.headers = headers;
+        return originalFetch(input, nextInit);
+    };
+}
+
+function showToast(message, type = "info", title = null, timeoutMs = 3200) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+
+    const safeType = ["success", "info", "error"].includes(type) ? type : "info";
+    const heading = title || (safeType === "success" ? "Done" : safeType === "error" ? "Problem" : "Info");
+
+    const toast = document.createElement("div");
+    toast.className = `toast ${safeType}`;
+
+    const dot = document.createElement("div");
+    dot.className = "dot";
+
+    const body = document.createElement("div");
+
+    const t = document.createElement("div");
+    t.className = "title";
+    t.textContent = String(heading);
+
+    const msg = document.createElement("div");
+    msg.className = "msg";
+    msg.textContent = String(message || "");
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "btn-dismiss";
+    dismissBtn.textContent = "Dismiss";
+
+    const dismiss = () => {
+        if (!toast.isConnected) return;
+        toast.remove();
+    };
+    dismissBtn.addEventListener("click", dismiss);
+
+    actions.appendChild(dismissBtn);
+    body.appendChild(t);
+    body.appendChild(msg);
+    body.appendChild(actions);
+
+    toast.appendChild(dot);
+    toast.appendChild(body);
+    container.appendChild(toast);
+
+    if (timeoutMs && timeoutMs > 0) {
+        setTimeout(dismiss, timeoutMs);
+    }
+}
+
+function toastSuccess(msg, title = null) { showToast(msg, "success", title, 2600); }
+function toastInfo(msg, title = null) { showToast(msg, "info", title, 3200); }
+function toastError(msg, title = null) { showToast(msg, "error", title, 5600); }
 
 // Initialize
-document.addEventListener("DOMContentLoaded", () => {
-    checkAuth();
+document.addEventListener("DOMContentLoaded", async () => {
+    installAuthFetch();
+    const role = await checkAuth();
+    if (!role) return;
+
     setupNavigation();
-    loadDashboard();
     setupCloseModals();
     updateTime();
     setInterval(updateTime, 1000);
+
+    // Operational pages (admin + club_staff)
     setupBookingFilters();
-    setupLedgerFilters();
-    setupRevenueFilters();
     setupTeeSheetFilters();
     setupTeeManageMenu();
     setupTeeBookingModal();
     setupPeopleFilters();
-    loadBookingWindowSettings();
+
+    if (role === "admin" || role === "super_admin") {
+        setupLedgerFilters();
+        setupRevenueFilters();
+        setupRevenueImport();
+        loadBookingWindowSettings();
+        loadDashboard();
+    } else {
+        applyStaffMode(role);
+    }
 });
 
 // Date formatting (DD/MM/YY across admin UI)
@@ -142,7 +254,7 @@ async function checkAuth() {
     if (!token) {
         console.error("No token found");
         window.location.href = "index.html";
-        return;
+        return null;
     }
 
     // Get user info
@@ -155,24 +267,199 @@ async function checkAuth() {
             console.error("User fetch failed:", response.status);
             localStorage.removeItem("token");
             window.location.href = "index.html";
-            return;
+            return null;
         }
 
         const user = await response.json();
         console.log("User:", user);
+        currentUserRole = user.role || null;
         
-        // Check if admin
-        if (user.role !== "admin") {
-            console.error("Not admin user");
-            alert("Admin access required. Your role is: " + user.role);
+        // Check if admin, super admin, or pro shop staff
+        if (user.role !== "admin" && user.role !== "club_staff" && user.role !== "super_admin") {
+            console.error("Not admin/staff user");
+            alert("Admin/staff access required. Your role is: " + user.role);
             window.location.href = "index.html";
-            return;
+            return null;
         }
         
         document.getElementById("admin-name").textContent = user.name;
-        console.log("Admin access granted");
+
+        if (user.role === "super_admin") {
+            await initSuperAdminContext();
+        }
+        console.log("Admin/staff access granted");
+        return user.role;
     } catch (error) {
         console.error("Auth check failed:", error);
+        return null;
+    }
+}
+
+function applyStaffMode(role) {
+    if (role !== "club_staff") return;
+
+    // Limit sidebar to operational pages for pro shop staff.
+    const allowed = new Set(["bookings", "tee-times", "players"]);
+    document.querySelectorAll(".nav-item[data-page]").forEach(item => {
+        const page = item.getAttribute("data-page");
+        if (!allowed.has(page)) {
+            item.style.display = "none";
+        }
+    });
+
+    // Hide staff management view for club_staff.
+    document.querySelectorAll("#players .people-btn[data-view=\"staff\"]").forEach(el => {
+        el.style.display = "none";
+    });
+
+    // Default to the tee sheet for staff.
+    const teeNav = document.querySelector('.nav-item[data-page="tee-times"]');
+    if (teeNav) {
+        document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+        teeNav.classList.add("active");
+        showPage("tee-times");
+        loadTeeTimes();
+    }
+
+    // Hide admin-only import actions for staff (admin can still use them).
+    document.querySelectorAll('#tee-manage-menu [data-action="import-members"]').forEach(el => {
+        el.style.display = "none";
+    });
+    document.querySelectorAll('button[onclick="openImportLog()"]').forEach(el => {
+        el.style.display = "none";
+    });
+}
+
+async function initSuperAdminContext() {
+    const nav = document.getElementById("nav-super-admin");
+    if (nav) nav.style.display = "";
+
+    const clubSwitcher = document.getElementById("club-switcher");
+    const staffClub = document.getElementById("super-staff-club");
+
+    try {
+        const clubs = await fetchJson(`${API_BASE}/api/super/clubs`);
+        superAdminClubsCache = Array.isArray(clubs) ? clubs : [];
+    } catch (e) {
+        console.error("Failed to load clubs:", e);
+        alert("Super admin: failed to load clubs");
+        return;
+    }
+
+    const activeClubs = superAdminClubsCache.filter(c => (c && (c.active === 1 || c.active === true)));
+    if (!activeClubs.length) {
+        alert("No active clubs found. Create a club first.");
+        return;
+    }
+
+    let activeClubId = localStorage.getItem("active_club_id");
+    const isValid = (id) => activeClubs.some(c => String(c.id) === String(id));
+    if (!activeClubId || !isValid(activeClubId)) {
+        activeClubId = String(activeClubs[0].id);
+        localStorage.setItem("active_club_id", activeClubId);
+    }
+
+    const optionHtml = activeClubs
+        .map(c => `<option value="${c.id}">${c.name} (#${c.id})</option>`)
+        .join("");
+
+    if (clubSwitcher) {
+        clubSwitcher.innerHTML = optionHtml;
+        clubSwitcher.value = String(activeClubId);
+        clubSwitcher.style.display = "inline-block";
+        clubSwitcher.onchange = () => {
+            localStorage.setItem("active_club_id", String(clubSwitcher.value));
+            window.location.reload();
+        };
+    }
+
+    if (staffClub) {
+        staffClub.innerHTML = optionHtml;
+        staffClub.value = String(activeClubId);
+    }
+}
+
+async function superCreateClub() {
+    const name = (document.getElementById("super-club-name")?.value || "").trim();
+    const slug = (document.getElementById("super-club-slug")?.value || "").trim();
+    const status = document.getElementById("super-club-status");
+    if (status) status.textContent = "";
+
+    if (!name) {
+        if (status) status.textContent = "Club name is required";
+        return;
+    }
+
+    try {
+        await fetchJson(`${API_BASE}/api/super/clubs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, slug: slug || null, active: true })
+        });
+        if (status) status.textContent = "Club created";
+        await initSuperAdminContext();
+        await superRefreshStaff();
+    } catch (e) {
+        console.error("Create club failed:", e);
+        if (status) status.textContent = e?.message || "Create club failed";
+    }
+}
+
+async function superCreateStaff() {
+    const name = (document.getElementById("super-staff-name")?.value || "").trim();
+    const email = (document.getElementById("super-staff-email")?.value || "").trim();
+    const password = (document.getElementById("super-staff-password")?.value || "").trim();
+    const role = (document.getElementById("super-staff-role")?.value || "").trim();
+    const clubId = (document.getElementById("super-staff-club")?.value || "").trim();
+    const status = document.getElementById("super-staff-status");
+    if (status) status.textContent = "";
+
+    if (!name || !email || !password || !role || !clubId) {
+        if (status) status.textContent = "Name, email, password, role and club are required";
+        return;
+    }
+
+    try {
+        await fetchJson(`${API_BASE}/api/super/staff`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name,
+                email,
+                password,
+                role,
+                club_id: Number(clubId),
+                force_reset: true
+            })
+        });
+        if (status) status.textContent = "User created/updated";
+        await superRefreshStaff();
+    } catch (e) {
+        console.error("Create staff failed:", e);
+        if (status) status.textContent = e?.message || "Create user failed";
+    }
+}
+
+async function superRefreshStaff() {
+    const body = document.getElementById("super-staff-table");
+    if (!body) return;
+    body.innerHTML = "";
+
+    try {
+        const rows = await fetchJson(`${API_BASE}/api/super/staff`);
+        const list = Array.isArray(rows) ? rows : [];
+        body.innerHTML = list.map(u => (
+            `<tr>
+                <td>${u.id}</td>
+                <td>${(u.name || "").replaceAll("<", "&lt;")}</td>
+                <td>${(u.email || "").replaceAll("<", "&lt;")}</td>
+                <td>${u.role}</td>
+                <td>${u.club_id ?? ""}</td>
+            </tr>`
+        )).join("");
+    } catch (e) {
+        console.error("Failed to load staff:", e);
+        body.innerHTML = `<tr><td colspan="5">Failed to load staff</td></tr>`;
     }
 }
 
@@ -218,6 +505,10 @@ function setupNavigation() {
                 case "cashbook":
                     initCashbook();
                     break;
+                case "super-admin":
+                    initSuperAdminContext();
+                    superRefreshStaff();
+                    break;
             }
         });
     });
@@ -226,16 +517,18 @@ function setupNavigation() {
 function showPage(pageName) {
     document.querySelectorAll(".page").forEach(page => page.classList.remove("active"));
     document.getElementById(pageName).classList.add("active");
+    currentActivePage = pageName;
 
     // Update title
     const titles = {
         dashboard: "Dashboard",
         bookings: "Bookings",
-        players: "Players",
+        players: "People",
         revenue: "Revenue Analytics",
         "tee-times": "Tee Sheet",
         ledger: "Ledger",
-        cashbook: "Cashbook Export"
+        cashbook: "Cashbook Export",
+        "super-admin": "Super Admin"
     };
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
 }
@@ -250,12 +543,22 @@ async function loadDashboard() {
         });
 
         document.getElementById("total-bookings").textContent = data.total_bookings;
-        document.getElementById("total-players").textContent = data.total_players;
+        document.getElementById("total-members").textContent = data.total_members ?? data.total_players;
         document.getElementById("total-revenue").textContent = data.total_revenue.toFixed(2);
         document.getElementById("completed-rounds").textContent = data.completed_rounds;
         document.getElementById("today-bookings").textContent = data.today_bookings;
         document.getElementById("today-revenue").textContent = data.today_revenue.toFixed(2);
         document.getElementById("week-revenue").textContent = data.week_revenue.toFixed(2);
+
+        // Import freshness (parallel mirror run)
+        const lastBookingsEl = document.getElementById("last-bookings-import");
+        const lastRevenueEl = document.getElementById("last-revenue-import");
+        const hintEl = document.getElementById("import-log-hint");
+        const lastBookings = data?.imports?.bookings || null;
+        const lastRevenue = data?.imports?.revenue || null;
+        if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
+        if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
+        if (hintEl) hintEl.textContent = "Use Tee Sheet → Manage Tee Sheet to import bookings, and Revenue → Import Revenue CSV for other streams.";
 
         renderTargetsTable(data.targets);
 
@@ -324,7 +627,7 @@ async function loadRevenueChart() {
         const data = await fetchJson(`${API_BASE}/api/admin/revenue?days=30`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
+        const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
         const dailyRequired = data?.daily_revenue_required;
         const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
 
@@ -398,23 +701,30 @@ function ymdToDate(dateStr) {
     return new Date(y, m - 1, d);
 }
 
-function mergeRevenueSeries(bookedSeries, paidSeries) {
+function mergeRevenueSeries(bookedSeries, paidSeries, otherSeries) {
     const map = new Map();
     (bookedSeries || []).forEach(item => {
         if (!item?.date) return;
-        map.set(item.date, { booked: Number(item.amount || 0), paid: 0 });
+        map.set(item.date, { booked: Number(item.amount || 0), paid: 0, other: 0 });
     });
     (paidSeries || []).forEach(item => {
         if (!item?.date) return;
-        const existing = map.get(item.date) || { booked: 0, paid: 0 };
+        const existing = map.get(item.date) || { booked: 0, paid: 0, other: 0 };
         existing.paid = Number(item.amount || 0);
+        map.set(item.date, existing);
+    });
+    (otherSeries || []).forEach(item => {
+        if (!item?.date) return;
+        const existing = map.get(item.date) || { booked: 0, paid: 0, other: 0 };
+        existing.other = Number(item.amount || 0);
         map.set(item.date, existing);
     });
     const labels = Array.from(map.keys()).sort((a, b) => new Date(a) - new Date(b));
     return {
         labels,
         booked: labels.map(d => map.get(d)?.booked ?? 0),
-        paid: labels.map(d => map.get(d)?.paid ?? 0)
+        paid: labels.map(d => map.get(d)?.paid ?? 0),
+        other: labels.map(d => map.get(d)?.other ?? 0),
     };
 }
 
@@ -553,7 +863,7 @@ async function loadBookings() {
                 <td>R${b.price.toFixed(2)}</td>
                 <td><span class="status-badge ${statusToClass(b.status)}">${statusToLabel(b.status)}</span></td>
                 <td>${b.tee_time ? formatTimeDateDMY(b.tee_time) : "-"}</td>
-                <td>${b.has_round ? (b.round_completed ? "Closed ✓" : "Open") : "Not started"}</td>
+                <td>${b.has_round ? (b.round_completed ? "Closed" : "Open") : "Not started"}</td>
                 <td>${formatDateDMY(b.created_at)}</td>
                 <td><button class="btn-view" onclick="viewBookingDetail(${b.id})">View</button></td>
             </tr>
@@ -601,6 +911,8 @@ async function viewBookingDetail(bookingId) {
         const disableCancel = status === "cancelled";
         const disableReopen = status === "booked";
 
+        const allowAdminOnly = currentUserRole === "admin";
+
         const feeLabel = booking.fee_category
             ? booking.fee_category.description
             : (booking.fee_category_id ? `Fee #${booking.fee_category_id}` : "Auto / Custom");
@@ -610,7 +922,7 @@ async function viewBookingDetail(bookingId) {
                 <div>
                     <div class="booking-detail-title">${displayValue(booking.player_name, "Booking")}</div>
                     <div class="booking-detail-sub">
-                        Booking #${booking.id} • ${booking.tee_time ? formatTimeDateDMY(booking.tee_time) : "No tee time"}
+                        Booking #${booking.id} - ${booking.tee_time ? formatTimeDateDMY(booking.tee_time) : "No tee time"}
                     </div>
                 </div>
                 <div class="booking-detail-badges">
@@ -647,30 +959,30 @@ async function viewBookingDetail(bookingId) {
                     <span class="detail-label">HNA SA ID</span>
                     <span class="detail-value">${displayValue(booking.handicap_sa_id, "Unregistered")}</span>
                     </div>
-                    <div class="detail-row">
-                    <span class="detail-label">Home Club</span>
-                    <span class="detail-value">${displayValue(booking.home_club, "???")}</span>
-                    </div>
-                    <div class="detail-row">
-                    <span class="detail-label">HI (Booking)</span>
-                    <span class="detail-value">${booking.handicap_index_at_booking == null ? "???" : escapeHtml(Number(booking.handicap_index_at_booking).toFixed(1))}</span>
-                    </div>
-                    <div class="detail-row">
-                    <span class="detail-label">Category</span>
-                    <span class="detail-value">${displayValue(booking.player_category, "???")}</span>
-                    </div>
-                    <div class="detail-row">
-                    <span class="detail-label">Gender</span>
-                    <span class="detail-value">${displayValue(booking.gender, "???")}</span>
-                    </div>
-                    <div class="detail-row">
-                    <span class="detail-label">Holes</span>
-                    <span class="detail-value">${booking.holes ? escapeHtml(String(booking.holes)) : "???"}</span>
-                    </div>
-                    <div class="detail-row">
-                    <span class="detail-label">Prepaid</span>
-                    <span class="detail-value">${booking.prepaid === true ? "Yes" : (booking.prepaid === false ? "No" : "???")}</span>
-                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">Home Club</span>
+	                    <span class="detail-value">${displayValue(booking.home_club, "—")}</span>
+	                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">HI (Booking)</span>
+	                    <span class="detail-value">${booking.handicap_index_at_booking == null ? "—" : escapeHtml(Number(booking.handicap_index_at_booking).toFixed(1))}</span>
+	                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">Category</span>
+	                    <span class="detail-value">${displayValue(booking.player_category, "—")}</span>
+	                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">Gender</span>
+	                    <span class="detail-value">${displayValue(booking.gender, "—")}</span>
+	                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">Holes</span>
+	                    <span class="detail-value">${booking.holes ? escapeHtml(String(booking.holes)) : "—"}</span>
+	                    </div>
+	                    <div class="detail-row">
+	                    <span class="detail-label">Prepaid</span>
+	                    <span class="detail-value">${booking.prepaid === true ? "Yes" : (booking.prepaid === false ? "No" : "—")}</span>
+	                    </div>
                     <div class="detail-row">
                     <span class="detail-label">Requirements</span>
                     <span class="detail-value">${renderReqPills({ cart: booking?.requirements?.cart, push_cart: booking?.requirements?.push_cart, caddy: booking?.requirements?.caddy })}</span>
@@ -691,9 +1003,11 @@ async function viewBookingDetail(bookingId) {
                         <span class="detail-label">Notes</span>
                         <span class="detail-value" style="white-space: pre-line;">${displayValue(booking.notes, "—")}</span>
                     </div>
-                    <div style="margin-top: 10px;">
-                        <button class="btn-edit" onclick="openEditBookingPriceModal(${bookingId})">Edit Price</button>
-                    </div>
+	                    ${allowAdminOnly ? `
+	                    <div style="margin-top: 10px;">
+	                        <button class="btn-edit" onclick="openEditBookingPriceModal(${bookingId})">Edit Price</button>
+	                    </div>
+	                    ` : ""}
                     <div class="detail-row" style="margin-top: 12px;">
                         <span class="detail-label">Created</span>
                         <span class="detail-value">${booking.created_at ? formatDateTimeDMY(booking.created_at) : "—"}</span>
@@ -732,7 +1046,7 @@ async function viewBookingDetail(bookingId) {
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Tip</span>
-                            <span class="detail-value">Use “${checkinLabel}”</span>
+                            <span class="detail-value">Use "${checkinLabel}"</span>
                         </div>
                     `}
                 </div>
@@ -773,10 +1087,10 @@ async function viewBookingDetail(bookingId) {
             <div class="booking-detail-actions">
                 <button class="btn-success" onclick="adminCheckIn(${bookingId})" ${disableCheckin ? "disabled" : ""}>${checkinLabel}</button>
                 <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'completed')" ${disableComplete ? "disabled" : ""}>Mark Completed</button>
-                <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'booked')" ${disableReopen ? "disabled" : ""}>Reopen</button>
+                ${allowAdminOnly ? `<button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'booked')" ${disableReopen ? "disabled" : ""}>Reopen</button>` : ""}
                 <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'no_show')" ${disableNoShow ? "disabled" : ""}>No-show</button>
                 <button class="btn-cancel" onclick="adminSetStatus(${bookingId}, 'cancelled')" ${disableCancel ? "disabled" : ""}>Cancel</button>
-                <button class="btn-cancel" onclick="adminDeleteBooking(${bookingId})">Remove</button>
+                ${allowAdminOnly ? `<button class="btn-cancel" onclick="adminDeleteBooking(${bookingId})">Remove</button>` : ""}
             </div>
         `;
 
@@ -799,19 +1113,43 @@ function setupPeopleFilters() {
     const buttons = document.querySelectorAll("#players .people-btn");
     const title = document.getElementById("people-title");
     const searchInput = document.getElementById("people-search");
+    const guestFilter = document.getElementById("guest-type-filter");
+    const addBtn = document.getElementById("people-add-btn");
     if (!buttons.length) return;
 
     const updateTitle = () => {
         if (!title) return;
-        title.textContent = peopleView === "members" ? "Members" : peopleView === "guests" ? "Guest Players" : "Registered Players";
+        title.textContent = peopleView === "members" ? "Members" : peopleView === "guests" ? "Guests" : "Staff";
+        if (guestFilter) {
+            guestFilter.style.display = peopleView === "guests" ? "" : "none";
+        }
+        if (addBtn) {
+            const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
+            if (!canEdit) {
+                addBtn.style.display = "none";
+            } else if (peopleView === "members") {
+                addBtn.textContent = "Add Member";
+                addBtn.style.display = "";
+            } else if (peopleView === "staff") {
+                addBtn.textContent = "Add Staff";
+                addBtn.style.display = "";
+            } else {
+                addBtn.style.display = "none";
+            }
+        }
     };
 
     buttons.forEach(btn => {
         btn.addEventListener("click", () => {
             buttons.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
-            peopleView = btn.dataset.view || "players";
+            peopleView = btn.dataset.view || "members";
             currentPlayersPage = 1;
+
+            // Reset horizontal scroll when switching between wide tables (members) and narrow ones (staff).
+            const tableWrap = document.querySelector("#players .table-container");
+            if (tableWrap) tableWrap.scrollLeft = 0;
+
             updateTitle();
             loadPlayers();
         });
@@ -826,6 +1164,20 @@ function setupPeopleFilters() {
         }, 250);
     });
 
+    guestFilter?.addEventListener("change", () => {
+        guestTypeFilter = String(guestFilter.value || "all");
+        currentPlayersPage = 1;
+        loadPlayers();
+    });
+
+    addBtn?.addEventListener("click", () => {
+        if (peopleView === "members") {
+            openMemberEditModal(null);
+        } else if (peopleView === "staff") {
+            openStaffEditModal(null);
+        }
+    });
+
     updateTitle();
 }
 
@@ -837,11 +1189,16 @@ async function loadPlayers() {
     if (!tableHead || !tableBody) return;
 
     try {
-        let url = `${API_BASE}/api/admin/players?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
+        let url = `${API_BASE}/api/admin/members?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         if (peopleView === "members") {
             url = `${API_BASE}/api/admin/members?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         } else if (peopleView === "guests") {
             url = `${API_BASE}/api/admin/guests?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
+            if (guestTypeFilter && guestTypeFilter !== "all") {
+                url += `&guest_type=${encodeURIComponent(guestTypeFilter)}`;
+            }
+        } else if (peopleView === "staff") {
+            url = `${API_BASE}/api/admin/staff?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         }
         if (search) url += `&q=${encodeURIComponent(search)}`;
 
@@ -852,10 +1209,13 @@ async function loadPlayers() {
                 <th>Name</th>
                 <th>Member #</th>
                 <th>Email</th>
+                <th>Phone</th>
                 <th>Handicap</th>
                 <th>Bookings</th>
                 <th>Total Spent</th>
                 <th>Active</th>
+                <th>Last Seen</th>
+                <th>Action</th>
             `;
 
             const members = Array.isArray(data.members) ? data.members : [];
@@ -863,18 +1223,21 @@ async function loadPlayers() {
                 <tr>
                     <td>${escapeHtml(m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim())}</td>
                     <td>${m.member_number ? escapeHtml(m.member_number) : "-"}</td>
-                    <td>${m.email ? escapeHtml(m.email) : "-"}</td>
+                    <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</td>
+                    <td>${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</td>
                     <td>${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</td>
                     <td>${Number(m.bookings_count || 0)}</td>
                     <td>R${Number(m.total_spent || 0).toFixed(2)}</td>
-                    <td>${m.active ? "✓" : "—"}</td>
+                    <td>${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</td>
+                    <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "-"}</td>
+                    <td><button class="btn-view" onclick="viewMemberDetail(${m.id})">View</button></td>
                 </tr>
             `).join("");
 
             if (!members.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="7" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
+                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
                     </tr>
                 `;
             }
@@ -904,6 +1267,37 @@ async function loadPlayers() {
                 tableBody.innerHTML = `
                     <tr>
                         <td colspan="6" style="text-align:center; color:#7f8c8d; padding: 18px;">No guests found.</td>
+                    </tr>
+                `;
+            }
+        } else if (peopleView === "staff") {
+            tableHead.innerHTML = `
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Action</th>
+            `;
+
+            const staff = Array.isArray(data.staff) ? data.staff : [];
+            tableBody.innerHTML = staff.map(s => `
+                <tr>
+                    <td>${escapeHtml(s.name || "-")}</td>
+                    <td>${s.email ? `<a href="mailto:${encodeURIComponent(String(s.email))}">${escapeHtml(s.email)}</a>` : "-"}</td>
+                    <td>${escapeHtml(String(s.role || "-"))}</td>
+                    <td>${
+                        (currentUserRole === "admin" || currentUserRole === "super_admin")
+                            ? (String(s.role || "").toLowerCase() === "club_staff"
+                                ? `<button class="btn-view" onclick="openStaffEditModal(${s.id})">Edit</button>`
+                                : `<span class="muted">Super Admin only</span>`)
+                            : ""
+                    }</td>
+                </tr>
+            `).join("");
+
+            if (!staff.length) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
                     </tr>
                 `;
             }
@@ -942,7 +1336,7 @@ async function loadPlayers() {
             if (!players.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="6" style="text-align:center; color:#7f8c8d; padding: 18px;">No players found.</td>
+                        <td colspan="11" style="text-align:center; color:#7f8c8d; padding: 18px;">No accounts found.</td>
                     </tr>
                 `;
             }
@@ -1003,7 +1397,7 @@ async function viewPlayerDetail(playerId) {
             <div class="modal-section">
                 <div class="modal-label">Current Price</div>
                 <div class="modal-value">R${priceInfo.current_price ? priceInfo.current_price.toFixed(2) : "N/A"}</div>
-                <button class="btn-edit" onclick="openEditPriceModal(${playerId}, '${player.name}')">Edit Price</button>
+                ${currentUserRole === "admin" ? `<button class="btn-edit" onclick="openEditPriceModal(${playerId}, '${player.name}')">Edit Price</button>` : ""}
             </div>
             <div class="modal-section">
                 <div class="modal-label">Total Spent</div>
@@ -1151,7 +1545,7 @@ async function openEditBookingPriceModal(bookingId) {
 
         const html = `
             <div class="modal-section">
-                <button class="btn-secondary btn-small" type="button" onclick="viewBookingDetail(${bookingId})">← Back</button>
+                <button class="btn-secondary btn-small" type="button" onclick="viewBookingDetail(${bookingId})">Back</button>
                 <h2 style="margin-top: 12px;">Edit Booking Price</h2>
             </div>
             <div class="modal-section">
@@ -1268,14 +1662,14 @@ async function saveBookingPrice(bookingId, overridePayload = null) {
             return;
         }
 
-        alert(result.message);
+        toastSuccess(result.message || "Saved price");
         document.getElementById("booking-modal").classList.remove("show");
         loadBookings();
-        loadTeeTimes();
+        loadTeeTimes({ preserveScroll: true });
         loadDashboard();
     } catch (error) {
         console.error("Failed to save booking price:", error);
-        alert("Failed to save booking price");
+        toastError("Failed to save booking price");
     }
 }
 
@@ -1295,17 +1689,23 @@ async function loadRevenue() {
         const data = await fetchJson(url, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue);
+        const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
 
         // Summary (paid revenue vs target)
         const actualPaid = series.paid.reduce((sum, v) => sum + safeNumber(v), 0);
+        const actualOther = (series.other || []).reduce((sum, v) => sum + safeNumber(v), 0);
+        const combinedActual = actualPaid + actualOther;
         const targetRevenue = data.target_revenue;
         const pct = targetRevenue ? (actualPaid / safeNumber(targetRevenue)) : null;
 
         const actualEl = document.getElementById("revenue-actual");
+        const golfEl = document.getElementById("revenue-golf-paid");
+        const otherEl = document.getElementById("revenue-other");
         const targetEl = document.getElementById("revenue-target");
         const pctEl = document.getElementById("revenue-pct");
-        if (actualEl) actualEl.textContent = formatCurrencyZAR(actualPaid);
+        if (golfEl) golfEl.textContent = formatCurrencyZAR(actualPaid);
+        if (otherEl) otherEl.textContent = formatCurrencyZAR(actualOther);
+        if (actualEl) actualEl.textContent = formatCurrencyZAR(combinedActual);
         if (targetEl) targetEl.textContent = targetRevenue == null ? "—" : formatCurrencyZAR(targetRevenue);
         if (pctEl) pctEl.textContent = pct == null ? "—" : formatPct(pct);
 
@@ -1329,6 +1729,11 @@ async function loadRevenue() {
                         label: "Paid Revenue (R)",
                         data: series.paid,
                         backgroundColor: "rgba(30, 136, 229, 0.65)"
+                    },
+                    {
+                        label: "Other Revenue (R)",
+                        data: series.other,
+                        backgroundColor: "rgba(242, 140, 44, 0.65)"
                     },
                     ...(dailyRequiredValue == null ? [] : [{
                         type: "line",
@@ -1367,6 +1772,28 @@ async function loadRevenue() {
             },
             options: { responsive: true, maintainAspectRatio: true }
         });
+
+        const otherBody = document.getElementById("other-revenue-streams-body");
+        if (otherBody) {
+            const rows = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
+            if (!rows.length) {
+                otherBody.innerHTML = `
+                    <tr class="empty-row">
+                        <td colspan="3">
+                            <div class="empty-state">No imported revenue yet. Use “Import Revenue CSV” above.</div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                otherBody.innerHTML = rows.map(r => `
+                    <tr>
+                        <td>${escapeHtml(String(r.stream || ""))}</td>
+                        <td>${escapeHtml(formatCurrencyZAR(r.amount || 0))}</td>
+                        <td>${escapeHtml(String(r.transactions ?? 0))}</td>
+                    </tr>
+                `).join("");
+            }
+        }
     } catch (error) {
         console.error("Failed to load revenue:", error);
     }
@@ -1391,6 +1818,65 @@ function setupRevenueFilters() {
             revenuePeriod = btn.dataset.period || "day";
             loadRevenue();
         });
+    });
+}
+
+function setupRevenueImport() {
+    const btn = document.getElementById("revenue-import-btn");
+    if (!btn) return;
+
+    btn.addEventListener("click", async () => {
+        const token = localStorage.getItem("token");
+        const stream = (document.getElementById("revenue-import-stream")?.value || "other").trim();
+        const fileInput = document.getElementById("revenue-import-file");
+        const statusEl = document.getElementById("revenue-import-status");
+
+        const file = fileInput?.files?.[0];
+        if (!file) {
+            alert("Please choose a CSV file to import.");
+            return;
+        }
+
+        btn.disabled = true;
+        if (statusEl) statusEl.textContent = "Importing...";
+
+        try {
+            const form = new FormData();
+            form.append("file", file);
+
+            const res = await fetch(`${API_BASE}/api/admin/imports/revenue-csv?stream=${encodeURIComponent(stream)}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+                body: form
+            });
+
+            const raw = await res.text();
+            let data = null;
+            try {
+                data = raw ? JSON.parse(raw) : null;
+            } catch {
+                data = null;
+            }
+
+            if (!res.ok) {
+                const msg = data?.detail || raw || "Import failed";
+                throw new Error(msg);
+            }
+
+            if (statusEl) {
+                statusEl.textContent = `Imported: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
+            }
+
+            loadRevenue();
+            loadDashboard();
+        } catch (e) {
+            console.error("Revenue import failed:", e);
+            if (statusEl) statusEl.textContent = "";
+            alert(`Revenue import failed: ${e?.message || e}`);
+        } finally {
+            btn.disabled = false;
+            if (fileInput) fileInput.value = "";
+        }
     });
 }
 
@@ -1503,6 +1989,8 @@ function setupTeeSheetFilters() {
             applyTeeSheetSearchFilter();
         }
     });
+
+    setupTeeSheetDragDrop();
 }
 
 function setupTeeManageMenu() {
@@ -1543,6 +2031,16 @@ function setupTeeManageMenu() {
 
         if (action === "bulk-book") {
             openBulkBookModal();
+            return;
+        }
+
+        if (action === "import-bookings") {
+            openBookingsImportModal();
+            return;
+        }
+
+        if (action === "import-members") {
+            openMembersImportModal();
             return;
         }
 
@@ -1599,6 +2097,191 @@ function openBulkBookModal() {
     if (undoBtn) undoBtn.disabled = true;
 
     modal.classList.add("show");
+}
+
+function openBookingsImportModal() {
+    const modal = document.getElementById("import-bookings-modal");
+    if (!modal) return;
+
+    const fileInput = document.getElementById("import-bookings-file");
+    const statusEl = document.getElementById("import-bookings-status");
+    const runBtn = document.getElementById("import-bookings-run");
+
+    if (fileInput) fileInput.value = "";
+    if (statusEl) statusEl.textContent = "";
+    if (runBtn) runBtn.disabled = false;
+
+    modal.classList.add("show");
+}
+
+async function submitBookingsImport() {
+    const token = localStorage.getItem("token");
+    const provider = (document.getElementById("import-bookings-provider")?.value || "").trim();
+    const fileInput = document.getElementById("import-bookings-file");
+    const statusEl = document.getElementById("import-bookings-status");
+    const runBtn = document.getElementById("import-bookings-run");
+
+    const file = fileInput?.files?.[0];
+    if (!provider) {
+        alert("Please select a provider.");
+        return;
+    }
+    if (!file) {
+        alert("Please choose a CSV file to import.");
+        return;
+    }
+
+    if (runBtn) runBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Importing...";
+
+    try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${API_BASE}/api/admin/imports/bookings-csv?provider=${encodeURIComponent(provider)}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: form
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+
+        if (!res.ok) {
+            const msg = data?.detail || raw || "Import failed";
+            throw new Error(msg);
+        }
+
+        if (statusEl) {
+            statusEl.textContent = `Imported: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
+        }
+
+        toastSuccess(statusEl?.textContent || "Bookings imported");
+        loadTeeTimes({ preserveScroll: true });
+        if (currentActivePage === "bookings") loadBookings();
+        if (currentActivePage === "dashboard") loadDashboard();
+    } catch (e) {
+        console.error("Bookings import failed:", e);
+        if (statusEl) statusEl.textContent = "";
+        toastError(`Bookings import failed: ${e?.message || e}`);
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+function openMembersImportModal() {
+    const modal = document.getElementById("import-members-modal");
+    if (!modal) return;
+
+    const fileInput = document.getElementById("import-members-file");
+    const statusEl = document.getElementById("import-members-status");
+    const runBtn = document.getElementById("import-members-run");
+
+    if (fileInput) fileInput.value = "";
+    if (statusEl) statusEl.textContent = "";
+    if (runBtn) runBtn.disabled = false;
+
+    modal.classList.add("show");
+}
+
+async function submitMembersImport() {
+    const token = localStorage.getItem("token");
+    const fileInput = document.getElementById("import-members-file");
+    const statusEl = document.getElementById("import-members-status");
+    const runBtn = document.getElementById("import-members-run");
+
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        alert("Please choose a CSV file to import.");
+        return;
+    }
+
+    if (runBtn) runBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Importing...";
+
+    try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${API_BASE}/api/admin/imports/members-csv`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: form
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+
+        if (!res.ok) {
+            const msg = data?.detail || raw || "Import failed";
+            throw new Error(msg);
+        }
+
+        if (statusEl) {
+            statusEl.textContent = `Imported: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
+        }
+    } catch (e) {
+        console.error("Members import failed:", e);
+        if (statusEl) statusEl.textContent = "";
+        alert(`Members import failed: ${e?.message || e}`);
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+async function openImportLog() {
+    const token = localStorage.getItem("token");
+    const modal = document.getElementById("import-log-modal");
+    const tbody = document.getElementById("import-log-body");
+    if (!modal || !tbody) return;
+
+    modal.classList.add("show");
+    tbody.innerHTML = `
+        <tr class="empty-row">
+            <td colspan="8">
+                <div class="empty-state">Loading imports...</div>
+            </td>
+        </tr>
+    `;
+
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/imports?limit=25`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const imports = Array.isArray(data?.imports) ? data.imports : [];
+        if (!imports.length) {
+            tbody.innerHTML = `
+                <tr class="empty-row">
+                    <td colspan="8">
+                        <div class="empty-state">No imports yet.</div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = imports.map(row => `
+            <tr>
+                <td>${escapeHtml(formatDateTimeDMY(row.imported_at))}</td>
+                <td>${escapeHtml(String(row.kind || ""))}</td>
+                <td>${escapeHtml(String(row.source || ""))}</td>
+                <td>${escapeHtml(String(row.file_name || ""))}</td>
+                <td>${escapeHtml(String(row.rows_total ?? 0))}</td>
+                <td>${escapeHtml(String(row.rows_inserted ?? 0))}</td>
+                <td>${escapeHtml(String(row.rows_updated ?? 0))}</td>
+                <td>${escapeHtml(String(row.rows_failed ?? 0))}</td>
+            </tr>
+        `).join("");
+    } catch (e) {
+        console.error("Failed to load import log:", e);
+        tbody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="8">
+                    <div class="empty-state">Failed to load import log.</div>
+                </td>
+            </tr>
+        `;
+    }
 }
 
 async function submitBulkBook() {
@@ -1659,9 +2342,11 @@ async function submitBulkBook() {
             statusEl.textContent = `Created ${created} bookings${data.group_id ? ` (group ${data.group_id})` : ""}.`;
         }
         if (undoBtn) undoBtn.disabled = !lastBulkBookGroupId;
-        loadTeeTimes();
+        toastSuccess(`Created ${created} booking${created === 1 ? "" : "s"}.`);
+        loadTeeTimes({ preserveScroll: true });
     } catch (err) {
         if (statusEl) statusEl.textContent = err?.message || "Bulk booking failed.";
+        toastError(err?.message || "Bulk booking failed.");
     } finally {
         if (runBtn) runBtn.disabled = false;
     }
@@ -1688,10 +2373,12 @@ async function undoBulkBook() {
 
         lastBulkBookGroupId = null;
         if (statusEl) statusEl.textContent = `Deleted ${Number(data.deleted || 0)} bookings.`;
-        loadTeeTimes();
+        toastInfo(`Deleted ${Number(data.deleted || 0)} bookings.`);
+        loadTeeTimes({ preserveScroll: true });
     } catch (err) {
         if (statusEl) statusEl.textContent = err?.message || "Undo failed.";
         if (undoBtn) undoBtn.disabled = false;
+        toastError(err?.message || "Undo failed.");
     } finally {
         if (runBtn) runBtn.disabled = false;
     }
@@ -1871,6 +2558,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
 
     const groupByTime = String(selectedTee) === "all";
     let prevTimeKey = null;
+    const allowDetails = currentUserRole === "admin" || currentUserRole === "club_staff";
 
     const html = [];
     for (const tt of dayTeeTimes) {
@@ -1905,12 +2593,22 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
             const booking = bookings[i];
             if (booking) {
                 const status = booking.status || "booked";
-                const statusClass = status === "checked_in" ? "checked-in" : status === "no_show" ? "no-show" : status === "cancelled" ? "cancelled" : status === "completed" ? "checked-in" : "booked";
+                const statusClass =
+                    status === "checked_in" ? "checked-in" :
+                    status === "no_show" ? "no-show" :
+                    status === "cancelled" ? "cancelled" :
+                    status === "completed" ? "completed" :
+                    "booked";
                 const statusLabel = statusToLabel(status);
                 const search = `${booking.player_name || ""} ${booking.player_email || ""}`.trim();
                 cells.push(`
                     <td>
-                        <div class="slot-card ${statusClass}" data-search="${escapeHtml(search)}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
+                        <div class="slot-card ${statusClass}"
+                             data-search="${escapeHtml(search)}"
+                             data-booking-id="${escapeHtml(String(booking.id))}"
+                             data-tee-time-id="${escapeHtml(String(tt.id))}"
+                             draggable="true"
+                             ${allowDetails ? `onclick="openBookingDetails(${tt.id}, ${booking.id})"` : ""}>
                             <div class="slot-top">
                                 <span class="slot-status">${escapeHtml(statusLabel)}</span>
                                 <span class="slot-price">R${Number(booking.price || 0).toFixed(0)}</span>
@@ -1935,7 +2633,9 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 } else {
                     cells.push(`
                         <td>
-                            <div class="slot-card open" onclick="openBookingFormAdmin(${tt.id}, '${tt.tee_time}', '${teeLabel}', ${capacity}, ${bookings.length}, ${slotNumber})">
+                            <div class="slot-card open"
+                                 data-tee-time-id="${escapeHtml(String(tt.id))}"
+                                 onclick="openBookingFormAdmin(${tt.id}, '${tt.tee_time}', '${teeLabel}', ${capacity}, ${bookings.length}, ${slotNumber})">
                                 <div class="slot-name">Available</div>
                                 <div class="slot-action">Add ${toAdd} player${toAdd === 1 ? "" : "s"}</div>
                             </div>
@@ -1957,13 +2657,223 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
     tbody.innerHTML = html.join("");
 }
 
-async function loadTeeTimes() {
+let teeDragBookingId = null;
+let teeDragFromTeeTimeId = null;
+let teeDragInit = false;
+let teeSuppressClicksUntil = 0;
+
+function setupTeeSheetDragDrop() {
+    if (teeDragInit) return;
+    teeDragInit = true;
+
+    const tbody = document.getElementById("admin-tee-sheet-body");
+    if (!tbody) return;
+
+    const wrap = document.querySelector(".tee-sheet-table-wrap");
+    let dragScrollRaf = null;
+
+    const autoScrollWrap = (clientY) => {
+        if (!(wrap instanceof HTMLElement)) return;
+        const rect = wrap.getBoundingClientRect();
+        const edge = 56;
+        const speed = 18;
+        const distTop = clientY - rect.top;
+        const distBottom = rect.bottom - clientY;
+        let delta = 0;
+        if (distTop >= 0 && distTop < edge) delta = -speed;
+        else if (distBottom >= 0 && distBottom < edge) delta = speed;
+        if (!delta) return;
+        if (dragScrollRaf) cancelAnimationFrame(dragScrollRaf);
+        dragScrollRaf = requestAnimationFrame(() => {
+            wrap.scrollTop = Math.max(0, wrap.scrollTop + delta);
+        });
+    };
+
+    tbody.addEventListener("dragstart", (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const card = target.closest(".slot-card[data-booking-id]");
+        if (!card) return;
+
+        const bookingId = card.getAttribute("data-booking-id");
+        const fromTeeTimeId = card.getAttribute("data-tee-time-id");
+        if (!bookingId || !fromTeeTimeId) return;
+
+        teeDragBookingId = bookingId;
+        teeDragFromTeeTimeId = fromTeeTimeId;
+
+        try {
+            e.dataTransfer?.setData("text/plain", `booking:${bookingId}`);
+            e.dataTransfer.effectAllowed = "move";
+        } catch {}
+
+        card.classList.add("dragging");
+        document.body.classList.add("drag-active");
+    });
+
+    tbody.addEventListener("dragend", (e) => {
+        const target = e.target;
+        if (target instanceof HTMLElement) {
+            target.closest(".slot-card")?.classList.remove("dragging");
+        }
+        document.querySelectorAll(".slot-card.drop-hover").forEach(el => el.classList.remove("drop-hover"));
+        document.body.classList.remove("drag-active");
+        teeDragBookingId = null;
+        teeDragFromTeeTimeId = null;
+    });
+
+    tbody.addEventListener("dragover", (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const drop = target.closest(".slot-card.open[data-tee-time-id]");
+        if (!drop) {
+            autoScrollWrap(e.clientY);
+            return;
+        }
+
+        e.preventDefault();
+        autoScrollWrap(e.clientY);
+        document.querySelectorAll(".slot-card.drop-hover").forEach(el => el.classList.remove("drop-hover"));
+        drop.classList.add("drop-hover");
+    });
+
+    tbody.addEventListener("dragleave", (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const drop = target.closest(".slot-card.open[data-tee-time-id]");
+        if (!drop) return;
+        drop.classList.remove("drop-hover");
+    });
+
+    tbody.addEventListener("drop", async (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const drop = target.closest(".slot-card.open[data-tee-time-id]");
+        if (!drop) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        drop.classList.remove("drop-hover");
+
+        const toTeeTimeId = drop.getAttribute("data-tee-time-id");
+        if (!toTeeTimeId) return;
+
+        let bookingId = teeDragBookingId;
+        try {
+            const payload = e.dataTransfer?.getData("text/plain") || "";
+            if (payload.startsWith("booking:")) bookingId = payload.slice("booking:".length);
+        } catch {}
+
+        if (!bookingId) return;
+        if (teeDragFromTeeTimeId && String(teeDragFromTeeTimeId) === String(toTeeTimeId)) return;
+
+        try {
+            await moveBookingToTeeTime(bookingId, toTeeTimeId);
+            teeSuppressClicksUntil = Date.now() + 900;
+            await loadTeeTimes({ preserveScroll: true });
+            toastSuccess("Booking moved");
+            if (currentActivePage === "bookings") loadBookings();
+            if (currentActivePage === "dashboard") loadDashboard();
+        } catch (err) {
+            toastError(err?.message || "Move failed");
+        }
+    });
+
+    // Prevent the drop from also triggering the open-slot click.
+    tbody.addEventListener("click", (e) => {
+        if (Date.now() < teeSuppressClicksUntil) {
+            const target = e.target;
+            if (target instanceof HTMLElement && target.closest(".slot-card")) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }
+    }, true);
+}
+
+async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/tsheet/bookings/${encodeURIComponent(String(bookingId))}/move`, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ to_tee_time_id: Number(toTeeTimeId) })
+    });
+
+    const raw = await res.text();
+    let data = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+    if (!res.ok) {
+        const msg = data?.detail || raw || "Move failed";
+        throw new Error(msg);
+    }
+    return data;
+}
+
+let lastTeeSheetDateStr = null;
+
+function captureWrapAnchor(wrap) {
+    if (!(wrap instanceof HTMLElement)) return null;
+    const tbody = document.getElementById("admin-tee-sheet-body");
+    if (!(tbody instanceof HTMLElement)) return { scrollTop: wrap.scrollTop };
+
+    const rows = Array.from(tbody.querySelectorAll("tr[data-tee-time-iso]"));
+    if (!rows.length) return { scrollTop: wrap.scrollTop };
+
+    const wrapRect = wrap.getBoundingClientRect();
+    for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        // First row whose top is at/after the wrap top (with small tolerance)
+        if (rect.bottom >= wrapRect.top + 8) {
+            const iso = row.getAttribute("data-tee-time-iso");
+            return {
+                scrollTop: wrap.scrollTop,
+                anchorIso: iso,
+                anchorOffsetPx: rect.top - wrapRect.top
+            };
+        }
+    }
+    return { scrollTop: wrap.scrollTop };
+}
+
+function restoreWrapAnchor(wrap, anchor) {
+    if (!(wrap instanceof HTMLElement) || !anchor) return;
+    const tbody = document.getElementById("admin-tee-sheet-body");
+    if (!(tbody instanceof HTMLElement)) {
+        if (Number.isFinite(anchor.scrollTop)) wrap.scrollTop = anchor.scrollTop;
+        return;
+    }
+
+    if (anchor.anchorIso) {
+        const row = tbody.querySelector(`tr[data-tee-time-iso="${CSS.escape(String(anchor.anchorIso))}"]`);
+        if (row instanceof HTMLElement) {
+            const wrapRect = wrap.getBoundingClientRect();
+            const rowRect = row.getBoundingClientRect();
+            const delta = rowRect.top - wrapRect.top - (Number(anchor.anchorOffsetPx) || 0);
+            wrap.scrollTop = Math.max(0, wrap.scrollTop + delta);
+            return;
+        }
+    }
+
+    if (Number.isFinite(anchor.scrollTop)) {
+        wrap.scrollTop = anchor.scrollTop;
+    }
+}
+
+async function loadTeeTimes(options = {}) {
     const token = localStorage.getItem("token");
     const dateInput = document.getElementById("tee-sheet-date");
     const tbody = document.getElementById("admin-tee-sheet-body");
     if (!dateInput || !tbody) return;
 
     const dateStr = dateInput.value || new Date().toISOString().split("T")[0];
+    const preserveScroll = Boolean(options.preserveScroll);
+    const wrap = document.querySelector(".tee-sheet-table-wrap");
+    const anchor = preserveScroll ? captureWrapAnchor(wrap) : null;
+
     tbody.innerHTML = `
         <tr class="empty-row">
             <td colspan="6">
@@ -1972,10 +2882,12 @@ async function loadTeeTimes() {
         </tr>
     `;
 
-    // Avoid "starting mid-day" when switching dates after scrolling today's sheet.
-    // Today's view will auto-scroll back down after data loads.
-    const wrap = document.querySelector(".tee-sheet-table-wrap");
-    if (wrap) wrap.scrollTop = 0;
+    const dateChanged = lastTeeSheetDateStr !== dateStr;
+    lastTeeSheetDateStr = dateStr;
+    if (wrap && dateChanged && !preserveScroll) {
+        // Avoid "starting mid-day" when switching dates after scrolling today's sheet.
+        wrap.scrollTop = 0;
+    }
 
     try {
         const start = `${dateStr}T00:00:00`;
@@ -2056,7 +2968,7 @@ async function loadTeeTimes() {
                 lastFullAutoGenKey = fullKey;
                 const created = await generateTeeSheetRange(dateStr, ["1", "10"], TEE_DEFAULT_START, TEE_DEFAULT_END);
                 if (created && created > 0) {
-                    return loadTeeTimes();
+                    return loadTeeTimes(options);
                 }
             }
         }
@@ -2066,7 +2978,7 @@ async function loadTeeTimes() {
                 const created = await generateDaySheetWindow(dateStr, existingKeys, ["1", "10"], TEE_NINE_HOLE_START, TEE_DEFAULT_END);
                 if (created && created > 0) {
                     lastNineAutoGenKey = `${dateStr}|all|9`;
-                    return loadTeeTimes();
+                    return loadTeeTimes(options);
                 }
                 renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
                 scrollTeeSheetToNow(dateStr);
@@ -2074,7 +2986,7 @@ async function loadTeeTimes() {
                 return;
             }
             await generateDaySheet(dateStr, existingKeys, ["1", "10"]);
-            return loadTeeTimes();
+            return loadTeeTimes(options);
         }
 
         if (dayTeeTimes.length === 0) {
@@ -2084,7 +2996,7 @@ async function loadTeeTimes() {
                     const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
                     if (created && created > 0) {
                         lastNineAutoGenKey = nineKey;
-                        return loadTeeTimes();
+                        return loadTeeTimes(options);
                     }
                 }
                 renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
@@ -2093,7 +3005,7 @@ async function loadTeeTimes() {
                 return;
             }
             await generateDaySheet(dateStr, existingKeys, teeListForView);
-            return loadTeeTimes();
+            return loadTeeTimes(options);
         }
 
         if (filteredTeeTimes.length === 0 && isNineView) {
@@ -2102,14 +3014,20 @@ async function loadTeeTimes() {
                 const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
                 if (created && created > 0) {
                     lastNineAutoGenKey = nineKey;
-                    return loadTeeTimes();
+                    return loadTeeTimes(options);
                 }
             }
             renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
         } else {
             renderTeeSheetRows(filteredTeeTimes, dateStr);
         }
-        scrollTeeSheetToNow(dateStr);
+        const todayStr = new Date().toISOString().split("T")[0];
+        const shouldAutoScrollNow = !preserveScroll && dateStr === todayStr;
+        if (shouldAutoScrollNow) {
+            scrollTeeSheetToNow(dateStr);
+        } else if (wrap && preserveScroll) {
+            restoreWrapAnchor(wrap, anchor);
+        }
         applyTeeSheetSearchFilter();
     } catch (error) {
         console.error("Failed to load tee sheet:", error);
@@ -2150,15 +3068,16 @@ async function adminCheckIn(bookingId) {
         });
         if (!res.ok) {
             const msg = await res.text();
-            alert(msg || "Check-in failed");
+            toastError(msg || "Check-in failed");
             return;
         }
         document.getElementById("booking-modal").classList.remove("show");
-        loadTeeTimes();
+        loadTeeTimes({ preserveScroll: true });
         loadBookings();
         loadDashboard();
+        toastSuccess("Checked in");
     } catch (e) {
-        alert("Check-in failed");
+        toastError("Check-in failed");
     }
 }
 
@@ -2180,15 +3099,16 @@ async function adminSetStatus(bookingId, status) {
             body: JSON.stringify(body)
         });
         if (!res.ok) {
-            alert("Status update failed");
+            toastError("Status update failed");
             return;
         }
         document.getElementById("booking-modal").classList.remove("show");
-        loadTeeTimes();
+        loadTeeTimes({ preserveScroll: true });
         loadBookings();
         loadDashboard();
+        toastSuccess(`Status: ${statusToLabel(status)}`);
     } catch (e) {
-        alert("Status update failed");
+        toastError("Status update failed");
     }
 }
 
@@ -2227,26 +3147,383 @@ async function adminDeleteBooking(bookingId) {
             headers: { Authorization: `Bearer ${token}` }
         });
         if (!res.ok) {
-            alert("Delete failed");
+            toastError("Delete failed");
             return;
         }
         document.getElementById("booking-modal").classList.remove("show");
-        loadTeeTimes();
+        loadTeeTimes({ preserveScroll: true });
         loadBookings();
         loadDashboard();
+        toastInfo("Booking removed");
     } catch (e) {
-        alert("Delete failed");
+        toastError("Delete failed");
     }
 }
 
 async function loadGolfFees() {
     if (golfFeesCache.length) return golfFeesCache;
     const token = localStorage.getItem("token");
-    const res = await fetch("/fees/golf", { headers: { Authorization: `Bearer ${token}` } });
-    if (res.ok) {
-        golfFeesCache = await res.json();
+    try {
+        const all = await fetchJson(`${API_BASE}/api/admin/fee-categories`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const list = Array.isArray(all) ? all : [];
+        golfFeesCache = list.filter(f => String(f.fee_type || "").toLowerCase() === "golf");
+    } catch {
+        golfFeesCache = [];
     }
     return golfFeesCache;
+}
+
+async function viewMemberDetail(memberId) {
+    const token = localStorage.getItem("token");
+
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/members/${memberId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        currentMemberDetail = data || null;
+        const m = data?.member || {};
+        const stats = data?.stats || {};
+        const acct = data?.linked_account || null;
+        const bookings = Array.isArray(data?.recent_bookings) ? data.recent_bookings : [];
+
+        const accountHtml = acct ? `
+            <div class="modal-section">
+                <div class="modal-label">Linked Account</div>
+                <div class="modal-value">
+                    ${escapeHtml(acct.name || "")} (${escapeHtml(acct.email || "")})
+                    <button class="btn-view" style="margin-left:10px" onclick="viewPlayerDetail(${acct.id})">View Account</button>
+                </div>
+            </div>
+        ` : `
+            <div class="modal-section">
+                <div class="modal-label">Linked Account</div>
+                <div class="modal-value"><span class="muted">No app account found for this member email.</span></div>
+            </div>
+        `;
+
+        const html = `
+            <div class="modal-section">
+                <div class="modal-label">Member</div>
+                <div class="modal-value">
+                    ${escapeHtml(m.name || "-")}
+                    ${(currentUserRole === "admin" || currentUserRole === "super_admin") ? `<button class="btn-edit" style="margin-left:10px" onclick="openMemberEditModal(${memberId})">Edit</button>` : ""}
+                </div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Member #</div>
+                <div class="modal-value">${m.member_number ? escapeHtml(m.member_number) : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Email</div>
+                <div class="modal-value">${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Phone</div>
+                <div class="modal-value">${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Handicap</div>
+                <div class="modal-value">${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Home Club</div>
+                <div class="modal-value">${m.home_club ? escapeHtml(m.home_club) : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Active</div>
+                <div class="modal-value">${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</div>
+            </div>
+            ${accountHtml}
+            <div class="modal-section">
+                <div class="modal-label">Bookings</div>
+                <div class="modal-value">${Number(stats.bookings_count || 0)}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Total Spent</div>
+                <div class="modal-value">R${Number(stats.total_spent || 0).toFixed(2)}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Last Seen</div>
+                <div class="modal-value">${stats.last_seen ? formatDateTimeDMY(stats.last_seen) : "-"}</div>
+            </div>
+            <div class="modal-section">
+                <h3>Recent Bookings</h3>
+                <table class="data-table" style="font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Tee Time</th>
+                            <th>Status</th>
+                            <th>Holes</th>
+                            <th>Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bookings.length ? bookings.map(b => `
+                        <tr>
+                            <td>${b.tee_time ? formatDateTimeDMY(b.tee_time) : "-"}</td>
+                            <td><span class="status-badge ${b.status}" style="font-size: 10px;">${escapeHtml(String(b.status || "-"))}</span></td>
+                            <td>${b.holes == null ? "-" : Number(b.holes)}</td>
+                            <td>R${Number(b.price || 0).toFixed(2)}</td>
+                        </tr>
+                        `).join("") : `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 12px;">No bookings yet.</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById("player-modal-body").innerHTML = html;
+        document.getElementById("player-modal").classList.add("show");
+    } catch (error) {
+        console.error("Failed to load member detail:", error);
+        toastError(error?.message || "Failed to load member");
+    }
+}
+
+async function openMemberEditModal(memberId) {
+    const token = localStorage.getItem("token");
+
+    let m = {
+        member_number: "",
+        first_name: "",
+        last_name: "",
+        email: "",
+        phone: "",
+        handicap_number: "",
+        home_club: "",
+        active: true
+    };
+
+    if (memberId) {
+        try {
+            const data = await fetchJson(`${API_BASE}/api/admin/members/${memberId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            m = { ...m, ...(data?.member || {}) };
+        } catch (e) {
+            toastError(e?.message || "Failed to load member");
+            return;
+        }
+    }
+
+    const title = memberId ? "Edit Member" : "Add Member";
+
+    const html = `
+        <div class="modal-section">
+            <h2>${title}</h2>
+        </div>
+        <div class="modal-section">
+            <label>First name</label>
+            <input type="text" id="member-first-name" value="${escapeHtml(m.first_name || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Last name</label>
+            <input type="text" id="member-last-name" value="${escapeHtml(m.last_name || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Member #</label>
+            <input type="text" id="member-number" value="${escapeHtml(m.member_number || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Email</label>
+            <input type="email" id="member-email" value="${escapeHtml(m.email || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Phone</label>
+            <input type="tel" id="member-phone" value="${escapeHtml(m.phone || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Handicap</label>
+            <input type="text" id="member-handicap" value="${escapeHtml(m.handicap_number || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Home club</label>
+            <input type="text" id="member-home-club" value="${escapeHtml(m.home_club || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label style="display:flex; gap:10px; align-items:center;">
+                <input type="checkbox" id="member-active" ${m.active ? "checked" : ""}>
+                Active
+            </label>
+        </div>
+        <div class="modal-section" style="display: flex; gap: 10px;">
+            <button class="btn-save" onclick="saveMember(${memberId ? Number(memberId) : "null"})">Save</button>
+            <button class="btn-cancel" onclick="closePriceModal()">Cancel</button>
+        </div>
+    `;
+
+    document.getElementById("player-modal-body").innerHTML = html;
+    document.getElementById("player-modal").classList.add("show");
+}
+
+async function saveMember(memberId) {
+    const token = localStorage.getItem("token");
+
+    const firstName = (document.getElementById("member-first-name")?.value || "").trim();
+    const lastName = (document.getElementById("member-last-name")?.value || "").trim();
+    const memberNumber = (document.getElementById("member-number")?.value || "").trim();
+    const email = (document.getElementById("member-email")?.value || "").trim();
+    const phone = (document.getElementById("member-phone")?.value || "").trim();
+    const handicap = (document.getElementById("member-handicap")?.value || "").trim();
+    const homeClub = (document.getElementById("member-home-club")?.value || "").trim();
+    const active = Boolean(document.getElementById("member-active")?.checked);
+
+    if (!firstName || !lastName) {
+        toastError("First name and last name are required");
+        return;
+    }
+
+    const payload = {
+        first_name: firstName,
+        last_name: lastName,
+        member_number: memberNumber || null,
+        email: email || null,
+        phone: phone || null,
+        handicap_number: handicap || null,
+        home_club: homeClub || null,
+        active
+    };
+
+    try {
+        if (memberId) {
+            await fetchJson(`${API_BASE}/api/admin/members/${memberId}`, {
+                method: "PUT",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            toastSuccess("Member updated");
+        } else {
+            await fetchJson(`${API_BASE}/api/admin/members`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            toastSuccess("Member created");
+        }
+
+        document.getElementById("player-modal").classList.remove("show");
+        loadPlayers();
+    } catch (e) {
+        toastError(e?.message || "Save failed");
+    }
+}
+
+async function openStaffEditModal(userId) {
+    const token = localStorage.getItem("token");
+    const isEdit = Boolean(userId);
+
+    let name = "";
+    let email = "";
+
+    if (isEdit) {
+        // Pull from the current table row if available (lightweight, avoids adding a new endpoint).
+        try {
+            const row = Array.from(document.querySelectorAll("#players-table tr")).find(tr => tr.querySelector("button")?.getAttribute("onclick")?.includes(`(${userId}`));
+            const cells = row ? row.querySelectorAll("td") : null;
+            if (cells && cells.length >= 2) {
+                name = (cells[0].textContent || "").trim();
+                email = (cells[1].textContent || "").trim();
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    const title = isEdit ? "Edit Staff" : "Add Staff";
+
+    const html = `
+        <div class="modal-section">
+            <h2>${title}</h2>
+        </div>
+        <div class="modal-section">
+            <label>Name</label>
+            <input type="text" id="staff-name" value="${escapeHtml(name)}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Email</label>
+            <input type="email" id="staff-email" value="${escapeHtml(email)}" ${isEdit ? "disabled" : ""} style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>${isEdit ? "New password (optional)" : "Password"}</label>
+            <input type="password" id="staff-password" value="" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section" style="display: flex; gap: 10px;">
+            <button class="btn-save" onclick="saveStaff(${isEdit ? Number(userId) : "null"})">Save</button>
+            <button class="btn-cancel" onclick="closePriceModal()">Cancel</button>
+        </div>
+        <div class="modal-section">
+            <div class="muted-text">Staff created here are limited to the <b>club_staff</b> role. Admin roles are managed by Super Admin.</div>
+        </div>
+    `;
+
+    document.getElementById("player-modal-body").innerHTML = html;
+    document.getElementById("player-modal").classList.add("show");
+}
+
+async function saveStaff(userId) {
+    const token = localStorage.getItem("token");
+
+    const name = (document.getElementById("staff-name")?.value || "").trim();
+    const email = (document.getElementById("staff-email")?.value || "").trim();
+    const password = (document.getElementById("staff-password")?.value || "").trim();
+
+    if (!name) {
+        toastError("Name is required");
+        return;
+    }
+    if (!userId && !email) {
+        toastError("Email is required");
+        return;
+    }
+    if (!userId && !password) {
+        toastError("Password is required for new staff");
+        return;
+    }
+
+    const payload = {
+        name,
+        email: email || "",
+        role: "club_staff",
+        password: password || null,
+        force_reset: true
+    };
+
+    try {
+        if (userId) {
+            await fetchJson(`${API_BASE}/api/admin/staff/${userId}`, {
+                method: "PUT",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            toastSuccess("Staff updated");
+        } else {
+            await fetchJson(`${API_BASE}/api/admin/staff`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            toastSuccess("Staff created");
+        }
+
+        document.getElementById("player-modal").classList.remove("show");
+        loadPlayers();
+    } catch (e) {
+        toastError(e?.message || "Save failed");
+    }
 }
 
 function feeOptionsHtml() {
@@ -3043,7 +4320,7 @@ async function submitTeeBooking() {
 
         closeTeeBookingModal();
         if (created > 0) {
-            loadTeeTimes();
+            loadTeeTimes({ preserveScroll: true });
             loadBookings();
             loadDashboard();
         }
@@ -3166,10 +4443,21 @@ function setupCloseModals() {
             e.target.classList.remove("show");
         }
     };
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        const open = Array.from(document.querySelectorAll(".modal.show"));
+        if (!open.length) return;
+        const top = open[open.length - 1];
+        top.classList.remove("show");
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
 }
 
 function logout() {
     localStorage.removeItem("token");
+    localStorage.removeItem("active_club_id");
     window.location.href = "index.html";
 }
 

@@ -13,8 +13,14 @@ from pydantic import BaseModel
 from app.auth import get_db, get_current_user
 from app import crud, models, schemas
 from app.booking_rules import get_booking_window_for_user
+from app.tenancy import get_active_club_id
 
 router = APIRouter(prefix="/tsheet", tags=["tsheet"])
+
+def _verify_staff(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if getattr(current_user, "role", None) not in {models.UserRole.super_admin, models.UserRole.admin, models.UserRole.club_staff}:
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return current_user
 
 
 def _to_status_str(value) -> str:
@@ -74,7 +80,12 @@ def _is_occupying_booking(b: models.Booking) -> bool:
     return status not in {"cancelled", "no_show"}
 
 @router.post("/create", response_model=schemas.TeeTimeOut)
-def create_tee(tee: schemas.TeeTimeCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def create_tee(
+    tee: schemas.TeeTimeCreate,
+    db: Session = Depends(get_db),
+    _=Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
     tt = crud.create_tee_time(db, tee.tee_time, tee.hole, tee.capacity or 4, tee.status or "open")
     return tt
 
@@ -100,12 +111,78 @@ def _parse_hhmm(value: str) -> Time:
         raise ValueError("invalid time")
     return Time(hour=hh, minute=mm)
 
+class BookingMoveRequest(BaseModel):
+    to_tee_time_id: int
+
+@router.put("/bookings/{booking_id}/move")
+def move_booking(
+    booking_id: int,
+    payload: BookingMoveRequest,
+    db: Session = Depends(get_db),
+    staff: models.User = Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    """
+    Move a booking to a different tee time (drag-and-drop support).
+    """
+    booking = (
+        db.query(models.Booking)
+        .options(selectinload(models.Booking.tee_time))
+        .filter(models.Booking.id == booking_id, models.Booking.club_id == club_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    to_id = int(getattr(payload, "to_tee_time_id", None) or 0)
+    if to_id <= 0:
+        raise HTTPException(status_code=400, detail="to_tee_time_id is required")
+
+    to_tt = db.query(models.TeeTime).filter(models.TeeTime.id == to_id, models.TeeTime.club_id == club_id).first()
+    if not to_tt:
+        raise HTTPException(status_code=404, detail="Target tee time not found")
+
+    from_tt = getattr(booking, "tee_time", None)
+    if from_tt and getattr(from_tt, "tee_time", None):
+        if crud.is_day_closed(db, from_tt.tee_time.date()):
+            raise HTTPException(status_code=403, detail="Tee sheet is closed for the original date")
+    if getattr(to_tt, "tee_time", None):
+        if crud.is_day_closed(db, to_tt.tee_time.date()):
+            raise HTTPException(status_code=403, detail="Tee sheet is closed for the target date")
+
+    if booking.tee_time_id == to_tt.id:
+        return {"status": "success", "booking_id": booking.id, "from_tee_time_id": booking.tee_time_id, "to_tee_time_id": to_tt.id}
+
+    # Capacity enforcement on destination tee time.
+    occupying_statuses = [models.BookingStatus.booked, models.BookingStatus.checked_in, models.BookingStatus.completed]
+    dest_bookings = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.tee_time_id == to_tt.id,
+            models.Booking.id != booking.id,
+            models.Booking.status.in_(occupying_statuses),
+        )
+        .all()
+    )
+    existing_total = sum((b.party_size or 1) for b in dest_bookings)
+    party_size = int(getattr(booking, "party_size", None) or 1)
+    cap = int(getattr(to_tt, "capacity", None) or 4)
+    if existing_total + party_size > cap:
+        raise HTTPException(status_code=409, detail="Target tee time capacity exceeded")
+
+    old_id = booking.tee_time_id
+    booking.tee_time_id = to_tt.id
+    db.commit()
+
+    return {"status": "success", "booking_id": booking.id, "from_tee_time_id": old_id, "to_tee_time_id": to_tt.id}
+
 
 @router.post("/generate")
 def generate_tee_sheet(
     req: TeeSheetGenerateRequest,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    staff: models.User = Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
 ):
     """
     Create tee times for a date in one request.
@@ -140,6 +217,7 @@ def generate_tee_sheet(
         existing_rows = (
             db.query(models.TeeTime.tee_time, models.TeeTime.hole)
             .filter(
+                models.TeeTime.club_id == club_id,
                 models.TeeTime.tee_time >= start_dt,
                 models.TeeTime.tee_time <= end_dt,
                 models.TeeTime.hole.in_(tees),
@@ -162,7 +240,9 @@ def generate_tee_sheet(
                 if key in existing:
                     continue
                 existing.add(key)
-                new_rows.append(models.TeeTime(tee_time=t_key, hole=tee, capacity=capacity, status=status))
+                new_rows.append(
+                    models.TeeTime(club_id=club_id, tee_time=t_key, hole=tee, capacity=capacity, status=status)
+                )
                 created += 1
             t = t + timedelta(minutes=interval)
 
@@ -186,10 +266,11 @@ def tee_range(
     end: datetime = Query(..., description="Exclusive range end (ISO datetime)"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    club_id: int = Depends(get_active_club_id),
 ):
     try:
         # Enforce booking window for non-admins by clamping the range.
-        if getattr(current_user, "role", None) != models.UserRole.admin:
+        if getattr(current_user, "role", None) not in {models.UserRole.super_admin, models.UserRole.admin, models.UserRole.club_staff}:
             _, _, max_date = get_booking_window_for_user(db, current_user)
             if start.date() > max_date:
                 return []
@@ -200,7 +281,11 @@ def tee_range(
         tee_times = (
             db.query(models.TeeTime)
             .options(selectinload(models.TeeTime.bookings))
-            .filter(models.TeeTime.tee_time >= start, models.TeeTime.tee_time < end)
+            .filter(
+                models.TeeTime.club_id == club_id,
+                models.TeeTime.tee_time >= start,
+                models.TeeTime.tee_time < end,
+            )
             .order_by(models.TeeTime.tee_time)
             .all()
         )
@@ -231,11 +316,16 @@ def tee_range(
         raise HTTPException(status_code=500, detail="Failed to load tee sheet")
 
 @router.get("/", response_model=List[schemas.TeeTimeWithBookings])
-def all_tee(db: Session = Depends(get_db)):
+def all_tee(
+    db: Session = Depends(get_db),
+    _=Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
     try:
         tee_times = (
             db.query(models.TeeTime)
             .options(selectinload(models.TeeTime.bookings))
+            .filter(models.TeeTime.club_id == club_id)
             .order_by(models.TeeTime.tee_time)
             .all()
         )
@@ -264,9 +354,19 @@ def all_tee(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to load tee sheet")
 
 @router.post("/booking", response_model=schemas.BookingOut)
-def book(b: schemas.BookingCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def book(
+    b: schemas.BookingCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    club_id: int = Depends(get_active_club_id),
+):
     return crud.create_booking(db, b, current_user=current_user)
 
 @router.get("/bookings/{tee_id}", response_model=List[schemas.BookingOut])
-def bookings_for_tee(tee_id: int, db: Session = Depends(get_db)):
+def bookings_for_tee(
+    tee_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
     return crud.list_bookings_for_tee(db, tee_id)

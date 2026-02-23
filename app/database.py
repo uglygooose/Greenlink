@@ -12,6 +12,8 @@ load_dotenv()
 # - Supabase:  postgresql+psycopg://postgres:pass@db.<ref>.supabase.co:5432/postgres
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATABASE_URL_STRICT = str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"}
+PREFER_LOCAL_DB = str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"}
+FORCE_SQLITE = str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"}
 
 def _normalize_database_url(url: str | None) -> str | None:
     """
@@ -97,17 +99,17 @@ engine = None
 engine_error = None
 DB_SOURCE = None  # "DATABASE_URL" | "MYSQL" | "SQLITE"
 
-if DATABASE_URL:
+if DATABASE_URL and (not PREFER_LOCAL_DB) and (not FORCE_SQLITE):
     engine, engine_error = _try_engine(DATABASE_URL)
     if engine_error:
         print(f"[DB] DATABASE_URL connection failed: {engine_error}")
     else:
         DB_SOURCE = "DATABASE_URL"
 
-if engine is None and DATABASE_URL and DATABASE_URL_STRICT:
+if engine is None and DATABASE_URL and DATABASE_URL_STRICT and (not FORCE_SQLITE) and (not PREFER_LOCAL_DB):
     raise RuntimeError("DATABASE_URL_STRICT is enabled, refusing to fall back after DATABASE_URL failure.")
 
-if engine is None:
+if engine is None and (not FORCE_SQLITE):
     mysql_url = _build_mysql_url()
     engine, engine_error = _try_engine(mysql_url)
     if engine_error:

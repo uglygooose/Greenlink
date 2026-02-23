@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
+from sqlalchemy import event
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import with_loader_criteria
 
 from app import models
 from app.database import SessionLocal
@@ -79,6 +81,61 @@ def create_access_token(
 # ------------------------------------------------------------------
 # DATABASE DEPENDENCY
 # ------------------------------------------------------------------
+
+_TENANT_SCOPED_MODELS = (
+    models.User,
+    models.Member,
+    models.TeeTime,
+    models.Booking,
+    models.LedgerEntry,
+    models.DayClose,
+    models.AccountingSetting,
+    models.KpiTarget,
+    models.ClubSetting,
+    models.ImportBatch,
+    models.RevenueTransaction,
+)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _apply_tenant_scope(execute_state):  # type: ignore[no-untyped-def]
+    """
+    Enforce per-club data isolation whenever `session.info["club_id"]` is set.
+
+    `get_active_club_id()` sets the club_id on the request session for admin/staff
+    endpoints. This hook ensures any ORM SELECT query touching club-scoped models
+    is automatically filtered, even if a developer forgets to add `club_id` to a query.
+
+    Notes:
+    - Only applies to SELECTs (writes must still set `club_id` on new rows).
+    - Does not affect tables without `club_id`.
+    """
+    if not execute_state.is_select:
+        return
+
+    session = execute_state.session
+    club_id = getattr(session, "info", {}).get("club_id")
+    if not club_id:
+        return
+
+    try:
+        club_id_int = int(club_id)
+    except Exception:
+        return
+    if club_id_int <= 0:
+        return
+
+    stmt = execute_state.statement
+    for model in _TENANT_SCOPED_MODELS:
+        stmt = stmt.options(
+            with_loader_criteria(
+                model,
+                lambda cls, cid=club_id_int: cls.club_id == cid,  # type: ignore[attr-defined]
+                include_aliases=True,
+            )
+        )
+    execute_state.statement = stmt
+
 
 def get_db():
     db = SessionLocal()
