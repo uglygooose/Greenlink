@@ -234,10 +234,23 @@ function statusToLabel(status) {
     return String(status || "").replaceAll("_", " ");
 }
 
+function formatNumber(value, minFractionDigits = 0, maxFractionDigits = minFractionDigits) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return minFractionDigits > 0 ? `0.${"0".repeat(minFractionDigits)}` : "0";
+    return num.toLocaleString("en-US", {
+        minimumFractionDigits: Math.max(0, Number(minFractionDigits) || 0),
+        maximumFractionDigits: Math.max(0, Number(maxFractionDigits) || 0),
+    });
+}
+
+function formatInteger(value) {
+    return formatNumber(value, 0, 0);
+}
+
 function formatCurrencyZAR(value) {
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return "R0.00";
-    return `R${num.toFixed(2)}`;
+    return `R${formatNumber(num, 2, 2)}`;
 }
 
 function safeNumber(value) {
@@ -247,8 +260,8 @@ function safeNumber(value) {
 
 function formatPct(value) {
     const num = Number(value);
-    if (!Number.isFinite(num)) return "—";
-    return `${(num * 100).toFixed(0)}%`;
+    if (!Number.isFinite(num)) return "-";
+    return `${formatNumber(num * 100, 0, 0)}%`;
 }
 
 function pctPillClass(pct) {
@@ -787,15 +800,15 @@ function formatDashboardMetric(metric) {
     if (!Number.isFinite(value)) return "-";
     if (format === "currency") return formatCurrencyZAR(value);
     if (format === "percent") return formatPct(value);
-    if (format === "ratio") return `${value.toFixed(2)}x`;
-    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    if (format === "ratio") return `${formatNumber(value, 2, 2)}x`;
+    return Number.isInteger(value) ? formatInteger(value) : formatNumber(value, 2, 2);
 }
 
 function formatTrendDelta(value, periodSingular = "Week") {
     const periodWord = String(periodSingular || "Week").toLowerCase();
     const num = Number(value);
     if (!Number.isFinite(num)) return `No prior-${periodWord} baseline`;
-    const pct = (num * 100).toFixed(0);
+    const pct = formatNumber(num * 100, 0, 0);
     const sign = num > 0 ? "+" : "";
     return `${sign}${pct}% vs prior ${periodWord}`;
 }
@@ -820,6 +833,36 @@ function resolveDashboardSelectedPeriod(selected, periodKey) {
         avg_ticket: safeNumber(row.avg_ticket),
         vs_prior: Number.isFinite(Number(row.vs_prior)) ? Number(row.vs_prior) : null,
         prior_revenue: safeNumber(row.prior_revenue),
+    };
+}
+
+function dashboardTargetPeriodKey(periodKey) {
+    const key = String(periodKey || "day").toLowerCase();
+    if (key === "week") return "wtd";
+    if (key === "month") return "mtd";
+    return "day";
+}
+
+function resolveDashboardTargetBenchmark(data, periodKey) {
+    const targetKey = dashboardTargetPeriodKey(periodKey);
+    const periods = (data && data.targets && data.targets.periods && typeof data.targets.periods === "object")
+        ? data.targets.periods
+        : {};
+    const row = (periods && typeof periods[targetKey] === "object") ? periods[targetKey] : {};
+    const revenueActual = safeNumber(row?.revenue_actual);
+    const revenueTarget = safeNumber(row?.revenue_target);
+    const roundsActual = safeNumber(row?.rounds_actual);
+    const roundsTarget = safeNumber(row?.rounds_target);
+    const revenueAttainment = revenueTarget > 0 ? (revenueActual / revenueTarget) : null;
+    const roundsAttainment = roundsTarget > 0 ? (roundsActual / roundsTarget) : null;
+    return {
+        key: targetKey,
+        revenue_actual: revenueActual,
+        revenue_target: revenueTarget,
+        rounds_actual: roundsActual,
+        rounds_target: roundsTarget,
+        revenue_attainment: revenueAttainment,
+        rounds_attainment: roundsAttainment,
     };
 }
 
@@ -882,52 +925,73 @@ function renderDashboardHighlights(data, streamKey) {
     `).join("");
 }
 
-function applyDashboardOperationLayout(data, streamKey) {
-    const insights = (data && data.operation_insights && typeof data.operation_insights === "object")
-        ? data.operation_insights
-        : {};
-    const fallbackCards = {
-        all: [
-            { label: "Total Bookings", value: safeNumber(data?.total_bookings), format: "number" },
-            { label: "Members", value: safeNumber(data?.total_members ?? data?.total_players), format: "number" },
-            { label: "Total Revenue (All)", value: safeNumber(data?.total_revenue), format: "currency" },
-            { label: "Completed Rounds", value: safeNumber(data?.completed_rounds), format: "number" },
-        ],
-        golf: [
-            { label: "Bookings Today", value: safeNumber(data?.today_bookings), format: "number" },
-            { label: "Members", value: safeNumber(data?.total_members ?? data?.total_players), format: "number" },
-            { label: "Golf Revenue", value: safeNumber(data?.golf_revenue_total), format: "currency" },
-            { label: "Completed Rounds", value: safeNumber(data?.completed_rounds), format: "number" },
-        ],
-        pro_shop: [
-            { label: "Sales Today", value: safeNumber(data?.pro_shop_revenue_today), format: "currency" },
-            { label: "Transactions Today", value: 0, format: "number" },
-            { label: "Pro Shop Revenue", value: safeNumber(data?.pro_shop_revenue_total), format: "currency" },
-            { label: "Low Stock Items", value: 0, format: "number" },
-        ],
-        pub: [
-            { label: "Pub Revenue Today", value: 0, format: "currency" },
-            { label: "Transactions Today", value: 0, format: "number" },
-            { label: "Pub Revenue 7d", value: 0, format: "currency" },
-            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
-        ],
-        bowls: [
-            { label: "Bowls Revenue Today", value: 0, format: "currency" },
-            { label: "Transactions Today", value: 0, format: "number" },
-            { label: "Bowls Revenue 7d", value: 0, format: "currency" },
-            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
-        ],
-        other: [
-            { label: "Other Revenue Today", value: 0, format: "currency" },
-            { label: "Transactions Today", value: 0, format: "number" },
-            { label: "Other Revenue 7d", value: 0, format: "currency" },
-            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
-        ],
-    };
-    const selected = insights[streamKey] || insights.all || null;
-    const cards = Array.isArray(selected?.cards) && selected.cards.length
-        ? selected.cards
-        : (fallbackCards[streamKey] || fallbackCards.all);
+function buildDashboardOperationCards(data, streamKey, selectedPeriod) {
+    const stream = String(streamKey || "all").toLowerCase();
+    const periodMeta = dashboardPeriodMeta(selectedPeriod?.key || dashboardPeriodView);
+    const periodLabel = periodMeta.label;
+    const revenue = safeNumber(selectedPeriod?.revenue);
+    const transactions = safeNumber(selectedPeriod?.transactions);
+    const avgTicket = safeNumber(selectedPeriod?.avg_ticket);
+    const benchmark = resolveDashboardTargetBenchmark(data, periodMeta.key);
+    const targetRevenueAttainment = benchmark.revenue_attainment;
+    const targetRoundsAttainment = benchmark.rounds_attainment;
+    const targetContribution = benchmark.revenue_target > 0 ? (revenue / benchmark.revenue_target) : null;
+
+    if (stream === "golf") {
+        return [
+            { label: `${periodLabel} Golf Revenue`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Paid Rounds`, value: transactions, format: "number" },
+            { label: `${periodLabel} Revenue Target`, value: targetRevenueAttainment, format: "percent" },
+            { label: `${periodLabel} Rounds Target`, value: targetRoundsAttainment, format: "percent" },
+        ];
+    }
+
+    if (stream === "pro_shop") {
+        return [
+            { label: `${periodLabel} Sales`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
+            { label: `Avg Basket (${periodLabel})`, value: avgTicket, format: "currency" },
+            { label: `${periodLabel} Target Contribution`, value: targetContribution, format: "percent" },
+        ];
+    }
+
+    if (stream === "pub") {
+        return [
+            { label: `${periodLabel} Pub Revenue`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
+            { label: `Avg Ticket (${periodLabel})`, value: avgTicket, format: "currency" },
+            { label: `${periodLabel} Target Contribution`, value: targetContribution, format: "percent" },
+        ];
+    }
+
+    if (stream === "bowls") {
+        return [
+            { label: `${periodLabel} Bowls Revenue`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
+            { label: `Avg Ticket (${periodLabel})`, value: avgTicket, format: "currency" },
+            { label: `${periodLabel} Target Contribution`, value: targetContribution, format: "percent" },
+        ];
+    }
+
+    if (stream === "other") {
+        return [
+            { label: `${periodLabel} Other Revenue`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
+            { label: `Avg Ticket (${periodLabel})`, value: avgTicket, format: "currency" },
+            { label: `${periodLabel} Target Contribution`, value: targetContribution, format: "percent" },
+        ];
+    }
+
+    return [
+        { label: `${periodLabel} Revenue`, value: revenue, format: "currency" },
+        { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
+        { label: `${periodLabel} Revenue Target`, value: targetRevenueAttainment, format: "percent" },
+        { label: `${periodLabel} Rounds Target`, value: targetRoundsAttainment, format: "percent" },
+    ];
+}
+
+function applyDashboardOperationLayout(data, streamKey, selectedPeriod) {
+    const cards = buildDashboardOperationCards(data, streamKey, selectedPeriod);
 
     const statLabels = [
         document.getElementById("stat-label-1"),
@@ -948,21 +1012,117 @@ function applyDashboardOperationLayout(data, streamKey) {
         const valueEl = statValues[idx];
         if (!labelEl || !valueEl || !metric) continue;
         labelEl.textContent = String(metric.label || "");
-        if (idx === 2 && String(metric.format || "").toLowerCase() === "currency") {
-            valueEl.textContent = safeNumber(metric.value).toFixed(2);
-        } else {
-            valueEl.textContent = formatDashboardMetric(metric);
-        }
+        valueEl.textContent = formatDashboardMetric(metric);
     }
 
-    const showGolfSections = streamKey === "all" || streamKey === "golf";
+    const showGolfSections = streamKey === "golf";
     document.querySelectorAll(".dashboard-golf-only").forEach(el => {
         if (el instanceof HTMLElement) el.style.display = showGolfSections ? "" : "none";
     });
-    const bookingStatusCard = document.querySelector(".dashboard-booking-status-card");
-    if (bookingStatusCard instanceof HTMLElement) {
-        bookingStatusCard.style.display = showGolfSections ? "" : "none";
+}
+
+function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
+    const titleEl = document.getElementById("dashboard-secondary-title");
+    const bookingStatusEl = document.getElementById("dashboard-booking-status-breakdown");
+    const focusEl = document.getElementById("dashboard-operation-focus");
+    const noteEl = document.getElementById("dashboard-operation-focus-note");
+    if (!titleEl || !bookingStatusEl || !focusEl || !noteEl) return;
+
+    const stream = String(streamKey || "all").toLowerCase();
+    const periodMeta = dashboardPeriodMeta(selectedPeriod?.key || dashboardPeriodView);
+    const periodLabel = periodMeta.label;
+    const benchmark = resolveDashboardTargetBenchmark(data, periodMeta.key);
+    const insights = (data && data.operation_insights && typeof data.operation_insights === "object")
+        ? data.operation_insights
+        : {};
+    const streamInsight = (insights && typeof insights[stream] === "object") ? insights[stream] : {};
+
+    if (stream === "golf") {
+        titleEl.textContent = "Booking Status";
+        bookingStatusEl.style.display = "";
+        focusEl.style.display = "none";
+        noteEl.style.display = "none";
+        return;
     }
+
+    bookingStatusEl.style.display = "none";
+    focusEl.style.display = "";
+    noteEl.style.display = "";
+
+    const rows = [];
+    let title = "Operational Focus";
+    let note = `${periodLabel} operational metrics for this stream.`;
+
+    if (stream === "all") {
+        title = `${periodLabel} Operations Mix`;
+        note = "Revenue mix by operation for the selected performance window.";
+        const streamKeys = [
+            { key: "golf", label: "Golf" },
+            { key: "pro_shop", label: "Pro Shop" },
+            { key: "pub", label: "Pub" },
+            { key: "bowls", label: "Bowls" },
+            { key: "other", label: "Other" },
+        ];
+        const amounts = streamKeys.map(entry => ({
+            ...entry,
+            amount: safeNumber(data?.revenue_streams?.[entry.key]?.periods?.[periodMeta.key]?.revenue),
+        }));
+        const total = amounts.reduce((sum, entry) => sum + safeNumber(entry.amount), 0);
+        for (const entry of amounts) {
+            const share = total > 0 ? (safeNumber(entry.amount) / total) : 0;
+            rows.push({
+                label: entry.label,
+                value: `${formatCurrencyZAR(entry.amount)} (${formatPct(share)})`,
+            });
+        }
+    } else if (stream === "pro_shop") {
+        title = "Inventory & POS Health";
+        note = "Pro shop operations should balance sales throughput with stock risk.";
+        const inventory = (streamInsight && typeof streamInsight.inventory === "object") ? streamInsight.inventory : {};
+        rows.push(
+            { label: `${periodLabel} Sales`, value: formatCurrencyZAR(selectedPeriod.revenue) },
+            { label: `${periodLabel} Transactions`, value: formatInteger(selectedPeriod.transactions) },
+            { label: "Low-stock Items", value: `${formatInteger(inventory?.low_stock_items)} / ${formatInteger(inventory?.active_products)} active` },
+            { label: "Stock Value", value: formatCurrencyZAR(inventory?.stock_value) },
+            {
+                label: `${periodLabel} Target Contribution`,
+                value: benchmark.revenue_target > 0 ? formatPct(safeNumber(selectedPeriod.revenue) / benchmark.revenue_target) : "-",
+            },
+        );
+    } else {
+        const streamLabel = revenueImportStreamLabel(stream);
+        title = `${streamLabel} Revenue Focus`;
+        note = `${streamLabel} stream view prioritizes pace, ticket quality, and category performance.`;
+        const highlights = Array.isArray(streamInsight?.highlights) ? streamInsight.highlights : [];
+        const topCategory = highlights.length ? highlights[0] : null;
+        const topCategoryLabel = topCategory?.name ? String(topCategory.name) : "Top Category (30d)";
+        const topCategoryValue = topCategory
+            ? formatDashboardMetric({
+                value: topCategory?.current ?? topCategory?.value,
+                format: topCategory?.format || "currency",
+            })
+            : "-";
+
+        rows.push(
+            { label: `${periodLabel} Revenue`, value: formatCurrencyZAR(selectedPeriod.revenue) },
+            { label: `${periodLabel} Transactions`, value: formatInteger(selectedPeriod.transactions) },
+            { label: `Avg Ticket (${periodLabel})`, value: formatCurrencyZAR(selectedPeriod.avg_ticket) },
+            {
+                label: `${periodLabel} Target Contribution`,
+                value: benchmark.revenue_target > 0 ? formatPct(safeNumber(selectedPeriod.revenue) / benchmark.revenue_target) : "-",
+            },
+            { label: topCategoryLabel, value: topCategoryValue },
+        );
+    }
+
+    titleEl.textContent = title;
+    focusEl.innerHTML = rows.map(row => `
+        <div class="today-stat">
+            <span>${escapeHtml(String(row.label || ""))}</span>
+            <span class="stat-number">${escapeHtml(String(row.value || "-"))}</span>
+        </div>
+    `).join("");
+    noteEl.textContent = note;
 }
 
 function applyDashboardStreamView(data) {
@@ -983,10 +1143,10 @@ function applyDashboardStreamView(data) {
     const weekRevenueLabelEl = document.getElementById("week-revenue-label");
     const noteEl = document.getElementById("dashboard-stream-note");
 
-    if (totalRevenueEl) totalRevenueEl.textContent = selected.total_revenue.toFixed(2);
-    if (todayPrimaryValueEl) todayPrimaryValueEl.textContent = String(Math.round(selectedPeriod.transactions));
-    if (todayRevenueEl) todayRevenueEl.textContent = selectedPeriod.revenue.toFixed(2);
-    if (weekRevenueEl) weekRevenueEl.textContent = selectedPeriod.prior_revenue.toFixed(2);
+    if (totalRevenueEl) totalRevenueEl.textContent = formatCurrencyZAR(selected.total_revenue);
+    if (todayPrimaryValueEl) todayPrimaryValueEl.textContent = formatInteger(Math.round(selectedPeriod.transactions));
+    if (todayRevenueEl) todayRevenueEl.textContent = formatNumber(selectedPeriod.revenue, 2, 2);
+    if (weekRevenueEl) weekRevenueEl.textContent = formatNumber(selectedPeriod.prior_revenue, 2, 2);
 
     if (totalRevenueLabelEl) totalRevenueLabelEl.textContent = `${label} Revenue`;
     if (todayPrimaryLabelEl) todayPrimaryLabelEl.textContent = `${selectedPeriod.label} Transactions (${label})`;
@@ -1009,7 +1169,8 @@ function applyDashboardStreamView(data) {
         }
     }
 
-    applyDashboardOperationLayout(data, selected.key);
+    applyDashboardOperationLayout(data, selected.key, selectedPeriod);
+    renderDashboardSecondaryCard(data, selected.key, selectedPeriod);
     renderDashboardHighlights(data, selected.key);
 
     if (currentActivePage === "dashboard") {
@@ -1029,10 +1190,10 @@ async function loadDashboard() {
             headers: { Authorization: `Bearer ${token}` }
         });
 
-        document.getElementById("total-bookings").textContent = data.total_bookings;
-        document.getElementById("total-members").textContent = data.total_members ?? data.total_players;
-        document.getElementById("completed-rounds").textContent = data.completed_rounds;
-        document.getElementById("today-bookings").textContent = data.today_bookings;
+        document.getElementById("total-bookings").textContent = formatInteger(data.total_bookings);
+        document.getElementById("total-members").textContent = formatInteger(data.total_members ?? data.total_players);
+        document.getElementById("completed-rounds").textContent = formatInteger(data.completed_rounds);
+        document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
         dashboardDataCache = data;
         applyDashboardStreamView(data);
 
@@ -1063,7 +1224,7 @@ async function loadDashboard() {
             const el = document.getElementById(elId);
             if (el) el.style.width = width + "%";
             const countEl = document.getElementById(countId);
-            if (countEl) countEl.textContent = String(count);
+            if (countEl) countEl.textContent = formatInteger(count);
         });
 
         // Revenue chart
@@ -1097,8 +1258,8 @@ function renderTargetsTable(targets) {
         return `
             <tr>
                 <td><strong>${label}</strong></td>
-                <td>${String(Math.round(roundsActual))}</td>
-                <td>${roundsTarget == null ? "—" : String(Math.round(safeNumber(roundsTarget)))}</td>
+                <td>${formatInteger(roundsActual)}</td>
+                <td>${roundsTarget == null ? "—" : formatInteger(safeNumber(roundsTarget))}</td>
                 <td>${formatCurrencyZAR(revenueActual)}</td>
                 <td>${revenueTarget == null ? "—" : formatCurrencyZAR(revenueTarget)}</td>
                 <td>${pct == null ? "—" : `<span class="kpi-pill ${pctPillClass(pct)}">${formatPct(pct)}</span>`}</td>
@@ -1164,7 +1325,7 @@ async function loadRevenueChart() {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { callback: val => "R" + val.toFixed(0) }
+                        ticks: { callback: val => "R" + formatNumber(val, 0, 0) }
                     }
                 }
             }

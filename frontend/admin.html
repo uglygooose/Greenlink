@@ -112,7 +112,7 @@
                             <div class="stat-icon">💰</div>
                             <div class="stat-content">
                                 <div class="stat-label" id="total-revenue-label">Total Revenue (All)</div>
-                                <div class="stat-value">R<span id="total-revenue">0</span></div>
+                                <div class="stat-value" id="total-revenue">R0.00</div>
                             </div>
                         </div>
                         <div class="stat-card">
@@ -162,9 +162,9 @@
                             </div>
                         </div>
 
-                        <div class="dashboard-card">
-                            <h3>Booking Status</h3>
-                            <div class="status-breakdown">
+                        <div class="dashboard-card dashboard-booking-status-card" id="dashboard-booking-status-card">
+                            <h3 id="dashboard-secondary-title">Booking Status</h3>
+                            <div class="status-breakdown" id="dashboard-booking-status-breakdown">
                                 <div class="status-item">
                                     <span class="status-label">Booked</span>
                                     <span class="status-count" id="status-booked-count">0</span>
@@ -191,6 +191,8 @@
                                     <div class="status-bar"><div class="status-fill cancelled" id="status-cancelled"></div></div>
                                 </div>
                             </div>
+                            <div class="today-stats" id="dashboard-operation-focus" style="display:none;"></div>
+                            <div class="action-note" id="dashboard-operation-focus-note" style="display:none;"></div>
                         </div>
 
                         <div class="dashboard-card">
@@ -580,7 +582,7 @@
                     </div>
 
                     <div class="analytics-grid">
-                        <div class="dashboard-card dashboard-booking-status-card">
+                        <div class="dashboard-card pro-shop-inventory-card">
                             <h3>Inventory</h3>
                             <div class="table-container">
                                 <table class="data-table">
