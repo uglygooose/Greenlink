@@ -19,7 +19,13 @@
                 <h2>GreenLink Admin</h2>
             </div>
             <nav class="nav-menu">
-                <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
+                <details class="nav-group" open>
+                    <summary class="nav-group-toggle">General</summary>
+                    <div class="nav-group-items">
+                        <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
+                        <a href="#operations-config" class="nav-item" data-page="operations-config">Operations Config</a>
+                    </div>
+                </details>
 
                 <details class="nav-group" open>
                     <summary class="nav-group-toggle">Golf</summary>
@@ -251,6 +257,103 @@
                     </div>
                 </section>
 
+                <section id="operations-config" class="page">
+                    <div class="page-header">
+                        <h2>Operations Configuration</h2>
+                        <div class="filters">
+                            <label for="ops-import-stream">Operation</label>
+                            <select id="ops-import-stream">
+                                <option value="golf">Golf</option>
+                                <option value="pro_shop">Pro Shop</option>
+                                <option value="pub">Pub</option>
+                                <option value="bowls">Bowls</option>
+                                <option value="other" selected>Other</option>
+                            </select>
+                            <button class="btn-secondary" id="ops-load-settings-btn" type="button">Reload Settings</button>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Revenue Import Profile</h3>
+                        <div class="acct-subtitle">Configure once per operation, then import daily/weekly CSVs without remapping fields each time.</div>
+                        <div class="accounting-grid" style="margin-top:12px;">
+                            <label for="ops-date-field">Date column</label>
+                            <input type="text" id="ops-date-field" placeholder="e.g. transaction_date" />
+
+                            <label for="ops-amount-field">Amount column</label>
+                            <input type="text" id="ops-amount-field" placeholder="e.g. amount" />
+
+                            <label for="ops-description-field">Description column</label>
+                            <input type="text" id="ops-description-field" placeholder="e.g. description" />
+
+                            <label for="ops-category-field">Category column</label>
+                            <input type="text" id="ops-category-field" placeholder="e.g. category" />
+
+                            <label for="ops-external-id-field">External ID column</label>
+                            <input type="text" id="ops-external-id-field" placeholder="e.g. transaction_id" />
+
+                            <label for="ops-stream-field">Stream column (optional)</label>
+                            <input type="text" id="ops-stream-field" placeholder="e.g. source" />
+
+                            <label for="ops-tax-field">Tax amount column (optional)</label>
+                            <input type="text" id="ops-tax-field" placeholder="e.g. vat_amount" />
+
+                            <label for="ops-tax-rate">Tax rate (%)</label>
+                            <input type="number" id="ops-tax-rate" min="0" max="100" step="0.01" value="15.00" />
+
+                            <label for="ops-amount-sign">Amount sign</label>
+                            <select id="ops-amount-sign">
+                                <option value="as_is" selected>As is</option>
+                                <option value="invert">Invert sign</option>
+                            </select>
+
+                            <label for="ops-amount-basis">Amount basis</label>
+                            <select id="ops-amount-basis">
+                                <option value="gross" selected>Gross</option>
+                                <option value="net">Net</option>
+                            </select>
+
+                            <label for="ops-tax-adjustment">Tax adjustment</label>
+                            <select id="ops-tax-adjustment">
+                                <option value="ignore" selected>Ignore tax column</option>
+                                <option value="add">Add tax to amount</option>
+                                <option value="subtract">Subtract tax from amount</option>
+                            </select>
+
+                            <label for="ops-allow-stream-override">Use stream from CSV</label>
+                            <select id="ops-allow-stream-override">
+                                <option value="true" selected>Yes</option>
+                                <option value="false">No</option>
+                            </select>
+
+                            <label for="ops-dedupe">Auto-dedupe if no external ID</label>
+                            <select id="ops-dedupe">
+                                <option value="true" selected>Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                        <div class="accounting-actions">
+                            <label style="display:flex; align-items:center; gap:8px; font-size:13px;">
+                                <input type="checkbox" id="revenue-import-save-on-import" checked />
+                                Save detected columns on import
+                            </label>
+                            <button class="btn-primary" id="ops-save-settings-btn" type="button">Save Settings</button>
+                            <span class="accounting-note" id="ops-settings-status"></span>
+                        </div>
+                        <div class="action-note" id="ops-settings-hint"></div>
+                    </div>
+
+                    <div class="dashboard-card revenue-upload-flow">
+                        <h3>Import Workflow</h3>
+                        <ol class="flow-steps">
+                            <li>Select operation and confirm the import profile fields above.</li>
+                            <li>Open <code>Revenue</code> and import the operation CSV.</li>
+                            <li>GreenLink reuses saved settings so daily/weekly imports map consistently.</li>
+                            <li>Review inserted/updated counts and validate totals in Revenue Analytics.</li>
+                        </ol>
+                    </div>
+                </section>
+
                 <!-- Bookings Page -->
                 <section id="bookings" class="page">
                     <div class="page-header">
@@ -370,7 +473,7 @@
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Other Revenue Upload Flow</h3>
                         <ol class="flow-steps">
-                            <li>Select the stream first: <code>Pro Shop</code>, <code>Pub</code>, <code>Bowls</code>, or <code>Other</code>.</li>
+                            <li>Select stream first, then keep import profile updated in <code>General → Operations Config</code>.</li>
                             <li>Upload the CSV for that stream (date, description, amount format).</li>
                             <li>Click <code>Import</code>, then confirm rows inserted/updated in the status line.</li>
                             <li>Validate results in <code>Other Revenue by Stream</code> and the Dashboard <code>Operations View</code> toggle.</li>

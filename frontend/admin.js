@@ -36,6 +36,7 @@ let dashboardDataCache = null;
 let dashboardStreamPreset = "all";
 let dashboardMenuContext = "main";
 let dashboardPeriodView = "day";
+let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
 
@@ -525,6 +526,9 @@ function setupNavigation() {
                 case "revenue":
                     loadRevenue();
                     break;
+                case "operations-config":
+                    loadOpsImportSettings();
+                    break;
                 case "pro-shop":
                     initProShopPage();
                     break;
@@ -558,6 +562,7 @@ function showPage(pageName) {
     // Update title
     const titles = {
         dashboard: "Dashboard",
+        "operations-config": "Operations Config",
         bookings: "Bookings",
         players: "People",
         "pro-shop": "Pro Shop Sales",
@@ -2365,13 +2370,7 @@ function updateRevenueUploadFlowHint() {
     if (!streamSelect || !note) return;
 
     const stream = String(streamSelect.value || "other").trim().toLowerCase();
-    const label = stream === "pub"
-        ? "Pub"
-        : (stream === "bowls"
-            ? "Bowls"
-            : (stream === "golf"
-                ? "Golf"
-                : (stream === "pro_shop" ? "Pro Shop" : "Other")));
+    const label = revenueImportStreamLabel(stream);
     if (stream === "golf") {
         note.textContent = "Selected stream: Golf. Use this only for non-booking golf revenue adjustments.";
     } else if (stream === "pro_shop") {
@@ -2381,16 +2380,191 @@ function updateRevenueUploadFlowHint() {
     }
 }
 
+function revenueImportStreamLabel(stream) {
+    const key = String(stream || "other").trim().toLowerCase();
+    if (key === "golf") return "Golf";
+    if (key === "pro_shop") return "Pro Shop";
+    if (key === "pub") return "Pub";
+    if (key === "bowls") return "Bowls";
+    return "Other";
+}
+
+function normalizeRevenueImportSettings(stream, raw = {}) {
+    const fallback = {
+        stream: String(stream || "other").trim().toLowerCase() || "other",
+        date_field: "",
+        amount_field: "",
+        description_field: "",
+        category_field: "",
+        external_id_field: "",
+        stream_field: "",
+        tax_field: "",
+        amount_sign: "as_is",
+        amount_basis: "gross",
+        tax_adjustment: "ignore",
+        tax_rate: 0.15,
+        allow_stream_override: true,
+        dedupe_without_external_id: true,
+    };
+    const out = { ...fallback, ...(raw || {}) };
+    out.stream = fallback.stream;
+    out.date_field = String(out.date_field || "");
+    out.amount_field = String(out.amount_field || "");
+    out.description_field = String(out.description_field || "");
+    out.category_field = String(out.category_field || "");
+    out.external_id_field = String(out.external_id_field || "");
+    out.stream_field = String(out.stream_field || "");
+    out.tax_field = String(out.tax_field || "");
+    out.amount_sign = out.amount_sign === "invert" ? "invert" : "as_is";
+    out.amount_basis = out.amount_basis === "net" ? "net" : "gross";
+    out.tax_adjustment = ["ignore", "add", "subtract"].includes(String(out.tax_adjustment || "").toLowerCase())
+        ? String(out.tax_adjustment).toLowerCase()
+        : "ignore";
+    out.tax_rate = Math.max(0, Math.min(1, Number(out.tax_rate || 0)));
+    out.allow_stream_override = Boolean(out.allow_stream_override);
+    out.dedupe_without_external_id = Boolean(out.dedupe_without_external_id);
+    return out;
+}
+
+function getOpsSettingsStream() {
+    const streamSelect = document.getElementById("ops-import-stream");
+    return String(streamSelect?.value || "other").trim().toLowerCase() || "other";
+}
+
+function populateOpsImportSettingsForm(settings) {
+    const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+    setVal("ops-date-field", settings.date_field || "");
+    setVal("ops-amount-field", settings.amount_field || "");
+    setVal("ops-description-field", settings.description_field || "");
+    setVal("ops-category-field", settings.category_field || "");
+    setVal("ops-external-id-field", settings.external_id_field || "");
+    setVal("ops-stream-field", settings.stream_field || "");
+    setVal("ops-tax-field", settings.tax_field || "");
+    setVal("ops-amount-sign", settings.amount_sign || "as_is");
+    setVal("ops-amount-basis", settings.amount_basis || "gross");
+    setVal("ops-tax-adjustment", settings.tax_adjustment || "ignore");
+    setVal("ops-tax-rate", (Number(settings.tax_rate || 0) * 100).toFixed(2));
+    setVal("ops-allow-stream-override", settings.allow_stream_override ? "true" : "false");
+    setVal("ops-dedupe", settings.dedupe_without_external_id ? "true" : "false");
+}
+
+function collectOpsImportSettingsForm(stream) {
+    const getVal = (id) => String(document.getElementById(id)?.value || "").trim();
+    const taxRatePct = Math.max(0, Number(getVal("ops-tax-rate") || 0));
+    return normalizeRevenueImportSettings(stream, {
+        date_field: getVal("ops-date-field"),
+        amount_field: getVal("ops-amount-field"),
+        description_field: getVal("ops-description-field"),
+        category_field: getVal("ops-category-field"),
+        external_id_field: getVal("ops-external-id-field"),
+        stream_field: getVal("ops-stream-field"),
+        tax_field: getVal("ops-tax-field"),
+        amount_sign: getVal("ops-amount-sign") || "as_is",
+        amount_basis: getVal("ops-amount-basis") || "gross",
+        tax_adjustment: getVal("ops-tax-adjustment") || "ignore",
+        tax_rate: taxRatePct / 100,
+        allow_stream_override: getVal("ops-allow-stream-override") !== "false",
+        dedupe_without_external_id: getVal("ops-dedupe") !== "false",
+    });
+}
+
+function renderOpsImportSettingsHint(stream, settings, configured) {
+    const hintEl = document.getElementById("ops-settings-hint");
+    if (!hintEl) return;
+    const requiredMissing = [];
+    if (!String(settings?.date_field || "").trim()) requiredMissing.push("date field");
+    if (!String(settings?.amount_field || "").trim()) requiredMissing.push("amount field");
+    const label = revenueImportStreamLabel(stream);
+    if (!configured) {
+        hintEl.textContent = `${label}: profile not saved yet. Import once with "Save detected columns on import" enabled, then review and save.`;
+        return;
+    }
+    if (requiredMissing.length) {
+        hintEl.textContent = `${label}: profile saved but missing ${requiredMissing.join(" and ")}. Imports will fall back to default field guesses.`;
+        return;
+    }
+    hintEl.textContent = `${label}: profile saved. Future daily/weekly imports will apply this mapping automatically.`;
+}
+
+async function loadOpsImportSettings(options = {}) {
+    const stream = String(options?.stream || getOpsSettingsStream()).trim().toLowerCase() || "other";
+    const statusEl = document.getElementById("ops-settings-status");
+    try {
+        if (statusEl && !options?.silent) statusEl.textContent = "Loading settings...";
+        const data = await fetchJson(`${API_BASE}/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`);
+        const normalized = normalizeRevenueImportSettings(stream, data?.settings || {});
+        revenueImportSettingsCache[stream] = { configured: Boolean(data?.configured), settings: normalized };
+        populateOpsImportSettingsForm(normalized);
+        renderOpsImportSettingsHint(stream, normalized, Boolean(data?.configured));
+        if (statusEl && !options?.silent) {
+            statusEl.textContent = data?.configured ? "Settings loaded" : "No saved settings yet";
+        }
+    } catch (error) {
+        console.error("Failed to load import settings:", error);
+        if (statusEl) statusEl.textContent = "";
+        renderOpsImportSettingsHint(stream, normalizeRevenueImportSettings(stream, {}), false);
+    }
+}
+
+async function saveOpsImportSettings() {
+    const stream = getOpsSettingsStream();
+    const statusEl = document.getElementById("ops-settings-status");
+    const payload = collectOpsImportSettingsForm(stream);
+    if (statusEl) statusEl.textContent = "Saving settings...";
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const normalized = normalizeRevenueImportSettings(stream, data?.settings || payload);
+        revenueImportSettingsCache[stream] = { configured: true, settings: normalized };
+        populateOpsImportSettingsForm(normalized);
+        renderOpsImportSettingsHint(stream, normalized, true);
+        if (statusEl) statusEl.textContent = "Settings saved";
+        toastSuccess(`${revenueImportStreamLabel(stream)} import settings saved`);
+    } catch (error) {
+        console.error("Failed to save import settings:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Save failed";
+        toastError(error?.message || "Failed to save import settings");
+    }
+}
+
 function setupRevenueImport() {
     const btn = document.getElementById("revenue-import-btn");
     if (!btn) return;
     const streamSelect = document.getElementById("revenue-import-stream");
-    streamSelect?.addEventListener("change", updateRevenueUploadFlowHint);
+    const opsStreamSelect = document.getElementById("ops-import-stream");
+    const opsReloadBtn = document.getElementById("ops-load-settings-btn");
+    const opsSaveBtn = document.getElementById("ops-save-settings-btn");
+
+    streamSelect?.addEventListener("change", () => {
+        updateRevenueUploadFlowHint();
+        if (opsStreamSelect && opsStreamSelect.value !== streamSelect.value) {
+            opsStreamSelect.value = streamSelect.value;
+            loadOpsImportSettings({ stream: streamSelect.value, silent: true });
+        }
+    });
+    opsStreamSelect?.addEventListener("change", () => {
+        if (streamSelect && streamSelect.value !== opsStreamSelect.value) {
+            streamSelect.value = opsStreamSelect.value;
+            updateRevenueUploadFlowHint();
+        }
+        loadOpsImportSettings({ stream: opsStreamSelect.value });
+    });
+    opsReloadBtn?.addEventListener("click", () => loadOpsImportSettings({ stream: getOpsSettingsStream() }));
+    opsSaveBtn?.addEventListener("click", () => saveOpsImportSettings());
+
     updateRevenueUploadFlowHint();
+    loadOpsImportSettings({ stream: streamSelect?.value || "other", silent: true });
 
     btn.addEventListener("click", async () => {
         const token = localStorage.getItem("token");
         const stream = (streamSelect?.value || "other").trim();
+        const saveOnImport = Boolean(document.getElementById("revenue-import-save-on-import")?.checked);
         const fileInput = document.getElementById("revenue-import-file");
         const statusEl = document.getElementById("revenue-import-status");
 
@@ -2407,7 +2581,12 @@ function setupRevenueImport() {
             const form = new FormData();
             form.append("file", file);
 
-            const res = await fetch(`${API_BASE}/api/admin/imports/revenue-csv?stream=${encodeURIComponent(stream)}`, {
+            const query = new URLSearchParams({
+                stream: String(stream || "other"),
+                use_saved_settings: "true",
+                save_settings: saveOnImport ? "true" : "false",
+            });
+            const res = await fetch(`${API_BASE}/api/admin/imports/revenue-csv?${query.toString()}`, {
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}` },
                 body: form
@@ -2427,7 +2606,19 @@ function setupRevenueImport() {
             }
 
             if (statusEl) {
-                statusEl.textContent = `Imported to ${stream}: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
+                const suffix = data?.settings_source ? ` (${data.settings_source} settings)` : "";
+                statusEl.textContent = `Imported to ${stream}: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed${suffix}`;
+            }
+
+            if (data?.settings_applied && opsStreamSelect) {
+                const normalized = normalizeRevenueImportSettings(stream, data.settings_applied);
+                revenueImportSettingsCache[String(stream)] = { configured: Boolean(data?.settings_saved), settings: normalized };
+                if (String(opsStreamSelect.value || "").toLowerCase() === String(stream || "").toLowerCase()) {
+                    populateOpsImportSettingsForm(normalized);
+                    renderOpsImportSettingsHint(stream, normalized, true);
+                }
+            } else {
+                loadOpsImportSettings({ stream, silent: true });
             }
 
             loadRevenue();

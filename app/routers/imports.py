@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.models import (
     ImportBatch,
     Member,
     RevenueTransaction,
+    ClubSetting,
     TeeTime,
     User,
     UserRole,
@@ -138,6 +140,231 @@ def _norm_stream(value: Any) -> str | None:
     return aliases.get(raw, raw)
 
 
+_ALLOWED_REVENUE_STREAMS = {"golf", "pro_shop", "pub", "bowls", "other"}
+
+
+def _normalize_revenue_stream_for_settings(value: Any) -> str:
+    stream = _norm_stream(value) or "other"
+    return stream if stream in _ALLOWED_REVENUE_STREAMS else "other"
+
+
+def _revenue_settings_key(stream: str) -> str:
+    return f"revenue_import_settings:{stream}"
+
+
+def _default_revenue_import_settings(stream: str) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "stream": stream,
+        "date_field": None,
+        "amount_field": None,
+        "description_field": None,
+        "category_field": None,
+        "external_id_field": None,
+        "stream_field": None,
+        "tax_field": None,
+        "amount_sign": "as_is",  # as_is | invert
+        "amount_basis": "gross",  # gross | net
+        "tax_adjustment": "ignore",  # ignore | add | subtract
+        "tax_rate": 0.15,  # decimal form
+        "allow_stream_override": True,
+        "dedupe_without_external_id": True,
+    }
+
+
+def _normalize_field_name(value: Any) -> str | None:
+    k = _norm_key(str(value or ""))
+    return k or None
+
+
+def _normalize_revenue_import_settings(raw: Any, stream: str) -> dict[str, Any]:
+    out = _default_revenue_import_settings(stream)
+    if not isinstance(raw, dict):
+        return out
+
+    out["date_field"] = _normalize_field_name(raw.get("date_field"))
+    out["amount_field"] = _normalize_field_name(raw.get("amount_field"))
+    out["description_field"] = _normalize_field_name(raw.get("description_field"))
+    out["category_field"] = _normalize_field_name(raw.get("category_field"))
+    out["external_id_field"] = _normalize_field_name(raw.get("external_id_field"))
+    out["stream_field"] = _normalize_field_name(raw.get("stream_field"))
+    out["tax_field"] = _normalize_field_name(raw.get("tax_field"))
+
+    amount_sign = str(raw.get("amount_sign") or "").strip().lower()
+    out["amount_sign"] = amount_sign if amount_sign in {"as_is", "invert"} else "as_is"
+
+    amount_basis = str(raw.get("amount_basis") or "").strip().lower()
+    out["amount_basis"] = amount_basis if amount_basis in {"gross", "net"} else "gross"
+
+    tax_adjustment = str(raw.get("tax_adjustment") or "").strip().lower()
+    out["tax_adjustment"] = tax_adjustment if tax_adjustment in {"ignore", "add", "subtract"} else "ignore"
+
+    try:
+        rate = float(raw.get("tax_rate"))
+        out["tax_rate"] = min(max(rate, 0.0), 1.0)
+    except Exception:
+        out["tax_rate"] = 0.15
+
+    out["allow_stream_override"] = bool(raw.get("allow_stream_override", True))
+    out["dedupe_without_external_id"] = bool(raw.get("dedupe_without_external_id", True))
+    return out
+
+
+def _merge_revenue_import_settings(base: dict[str, Any], overlay: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(overlay, dict):
+        return dict(base)
+    merged = dict(base)
+    for key in list(base.keys()):
+        if key in overlay and overlay[key] is not None:
+            merged[key] = overlay[key]
+    return _normalize_revenue_import_settings(merged, str(merged.get("stream") or base.get("stream") or "other"))
+
+
+def _read_revenue_import_settings(db: Session, club_id: int, stream: str) -> dict[str, Any] | None:
+    key = _revenue_settings_key(stream)
+    row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
+    if not row or not (row.value or "").strip():
+        return None
+    try:
+        parsed = json.loads(row.value)
+    except Exception:
+        return None
+    return _normalize_revenue_import_settings(parsed, stream)
+
+
+def _write_revenue_import_settings(db: Session, club_id: int, stream: str, settings: dict[str, Any]) -> None:
+    key = _revenue_settings_key(stream)
+    payload = json.dumps(_normalize_revenue_import_settings(settings, stream))
+    row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
+    if row:
+        row.value = payload
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(ClubSetting(club_id=int(club_id), key=key, value=payload, updated_at=datetime.utcnow()))
+
+
+def _pick_detected_field(fieldnames: list[str], candidates: list[str]) -> str | None:
+    if not fieldnames:
+        return None
+    normalized_to_original: dict[str, str] = {}
+    for raw in fieldnames:
+        key = _norm_key(str(raw or ""))
+        if key and key not in normalized_to_original:
+            normalized_to_original[key] = key
+    for candidate in candidates:
+        key = _norm_key(candidate)
+        if key in normalized_to_original:
+            return normalized_to_original[key]
+    return None
+
+
+def _detect_revenue_import_settings(fieldnames: list[str], stream: str) -> dict[str, Any]:
+    detected = _default_revenue_import_settings(stream)
+    detected["date_field"] = _pick_detected_field(
+        fieldnames,
+        ["transaction_date", "date", "posted_date", "payment_date", "txn_date", "sale_date"],
+    )
+    detected["amount_field"] = _pick_detected_field(
+        fieldnames,
+        ["amount", "total", "value", "gross", "gross_amount", "net_amount", "net", "sales_amount"],
+    )
+    detected["description_field"] = _pick_detected_field(
+        fieldnames,
+        ["description", "details", "memo", "narration", "note", "item"],
+    )
+    detected["category_field"] = _pick_detected_field(
+        fieldnames,
+        ["category", "department", "type", "segment", "revenue_type"],
+    )
+    detected["external_id_field"] = _pick_detected_field(
+        fieldnames,
+        ["external_id", "transaction_id", "id", "receipt_no", "receipt", "reference", "invoice_no"],
+    )
+    detected["stream_field"] = _pick_detected_field(
+        fieldnames,
+        ["stream", "source", "department", "revenue_stream", "business_unit"],
+    )
+    detected["tax_field"] = _pick_detected_field(
+        fieldnames,
+        ["tax_amount", "tax", "vat_amount", "vat", "gst_amount", "tax_value"],
+    )
+    return detected
+
+
+def _row_value(row: dict[str, Any], configured_key: str | None, fallbacks: list[str]) -> Any:
+    keys: list[str] = []
+    if configured_key:
+        keys.append(_norm_key(configured_key))
+    keys.extend([_norm_key(v) for v in fallbacks if _norm_key(v)])
+    seen: set[str] = set()
+    for key in keys:
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        value = row.get(key)
+        if value is None:
+            continue
+        if str(value).strip() == "":
+            continue
+        return value
+    return None
+
+
+class RevenueImportSettingsPayload(BaseModel):
+    date_field: str | None = None
+    amount_field: str | None = None
+    description_field: str | None = None
+    category_field: str | None = None
+    external_id_field: str | None = None
+    stream_field: str | None = None
+    tax_field: str | None = None
+    amount_sign: str = "as_is"
+    amount_basis: str = "gross"
+    tax_adjustment: str = "ignore"
+    tax_rate: float = 0.15
+    allow_stream_override: bool = True
+    dedupe_without_external_id: bool = True
+
+
+@router.get("/revenue-settings")
+def get_revenue_import_settings(
+    stream: str = Query("other", description="Revenue stream: golf|pro_shop|pub|bowls|other"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    stream_norm = _normalize_revenue_stream_for_settings(stream)
+    defaults = _default_revenue_import_settings(stream_norm)
+    saved = _read_revenue_import_settings(db, club_id, stream_norm)
+    settings = _merge_revenue_import_settings(defaults, saved)
+    return {
+        "stream": stream_norm,
+        "configured": saved is not None,
+        "settings": settings,
+        "required_fields": ["date_field", "amount_field"],
+    }
+
+
+@router.put("/revenue-settings")
+def save_revenue_import_settings(
+    payload: RevenueImportSettingsPayload,
+    stream: str = Query("other", description="Revenue stream: golf|pro_shop|pub|bowls|other"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    stream_norm = _normalize_revenue_stream_for_settings(stream)
+    normalized = _normalize_revenue_import_settings(payload.dict(), stream_norm)
+    _write_revenue_import_settings(db, club_id, stream_norm, normalized)
+    db.commit()
+    return {
+        "status": "ok",
+        "stream": stream_norm,
+        "configured": True,
+        "settings": normalized,
+    }
+
+
 @router.get("")
 def list_import_batches(
     kind: str | None = Query(None, description="Optional: bookings|revenue|members"),
@@ -180,7 +407,9 @@ def list_import_batches(
 @router.post("/revenue-csv")
 async def import_revenue_csv(
     stream: str = Query("other", description="Revenue stream: pub|bowls|golf|pro_shop|other"),
-    dedupe_without_external_id: bool = Query(True, description="Generate stable external IDs when missing"),
+    dedupe_without_external_id: bool | None = Query(None, description="Override dedupe behavior for rows without external IDs"),
+    use_saved_settings: bool = Query(True, description="Apply saved import settings for this stream when available"),
+    save_settings: bool = Query(False, description="Save detected/mapped settings for this stream after import"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
@@ -190,7 +419,7 @@ async def import_revenue_csv(
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    stream_norm = (stream or "other").strip().lower() or "other"
+    stream_norm = _normalize_revenue_stream_for_settings(stream)
     file_hash = _sha256_bytes(content)
 
     batch = ImportBatch(
@@ -211,36 +440,93 @@ async def import_revenue_csv(
     total = 0
     notes: list[str] = []
     streams_seen: set[str] = set()
+    settings_saved = False
 
     try:
         reader = _open_csv_bytes(content)
+        fieldnames = [str(v or "") for v in (reader.fieldnames or [])]
+
+        defaults = _default_revenue_import_settings(stream_norm)
+        detected_settings = _detect_revenue_import_settings(fieldnames, stream_norm)
+        saved_settings = _read_revenue_import_settings(db, club_id, stream_norm) if use_saved_settings else None
+
+        settings_source = "saved" if saved_settings is not None else "detected"
+        effective_settings = _merge_revenue_import_settings(defaults, saved_settings if saved_settings is not None else detected_settings)
+        # Fill blank configured fields from detected headers where possible.
+        effective_settings = _merge_revenue_import_settings(
+            effective_settings,
+            {
+                k: v
+                for k, v in detected_settings.items()
+                if k.endswith("_field") and effective_settings.get(k) in (None, "") and v not in (None, "")
+            },
+        )
+        effective_settings["stream"] = stream_norm
+        effective_dedupe = (
+            bool(effective_settings.get("dedupe_without_external_id", True))
+            if dedupe_without_external_id is None
+            else bool(dedupe_without_external_id)
+        )
+
+        if save_settings:
+            _write_revenue_import_settings(db, club_id, stream_norm, effective_settings)
+            db.commit()
+            settings_saved = True
+
         for idx, raw_row in enumerate(reader):
             total += 1
             row = _row_keys(raw_row)
 
-            row_stream = _norm_stream(
-                row.get("stream")
-                or row.get("source")
-                or row.get("department")
-                or row.get("revenue_stream")
-                or row.get("business_unit")
+            row_stream_raw = (
+                _row_value(
+                    row,
+                    str(effective_settings.get("stream_field") or ""),
+                    ["stream", "source", "department", "revenue_stream", "business_unit"],
+                )
+                if bool(effective_settings.get("allow_stream_override", True))
+                else None
             )
+            row_stream = _norm_stream(row_stream_raw)
             row_stream = row_stream or stream_norm
+            if row_stream not in _ALLOWED_REVENUE_STREAMS:
+                row_stream = "other"
             streams_seen.add(row_stream)
 
             txn_date = _parse_date(
-                row.get("transaction_date")
-                or row.get("date")
-                or row.get("posted_date")
-                or row.get("payment_date")
+                _row_value(
+                    row,
+                    str(effective_settings.get("date_field") or ""),
+                    ["transaction_date", "date", "posted_date", "payment_date", "sale_date"],
+                )
             )
             amount = _parse_amount(
-                row.get("amount")
-                or row.get("total")
-                or row.get("value")
-                or row.get("gross")
-                or row.get("net_amount")
+                _row_value(
+                    row,
+                    str(effective_settings.get("amount_field") or ""),
+                    ["amount", "total", "value", "gross", "gross_amount", "net_amount", "net"],
+                )
             )
+            if amount is not None and str(effective_settings.get("amount_sign") or "as_is") == "invert":
+                amount = float(amount) * -1.0
+
+            tax_amount = _parse_amount(
+                _row_value(
+                    row,
+                    str(effective_settings.get("tax_field") or ""),
+                    ["tax_amount", "tax", "vat_amount", "vat", "gst_amount"],
+                )
+            )
+            if amount is not None:
+                tax_adjustment = str(effective_settings.get("tax_adjustment") or "ignore")
+                tax_rate = float(effective_settings.get("tax_rate") or 0.0)
+                if tax_adjustment == "add":
+                    if tax_amount is not None:
+                        amount = float(amount) + abs(float(tax_amount))
+                    elif str(effective_settings.get("amount_basis") or "gross") == "net" and tax_rate > 0:
+                        amount = float(amount) * (1.0 + tax_rate)
+                elif tax_adjustment == "subtract" and tax_amount is not None:
+                    amount = float(amount) - abs(float(tax_amount))
+
             if txn_date is None or amount is None:
                 failed += 1
                 if len(notes) < 5:
@@ -249,18 +535,17 @@ async def import_revenue_csv(
 
             external_id = (
                 str(
-                    row.get("external_id")
-                    or row.get("transaction_id")
-                    or row.get("id")
-                    or row.get("receipt_no")
-                    or row.get("receipt")
-                    or row.get("reference")
+                    _row_value(
+                        row,
+                        str(effective_settings.get("external_id_field") or ""),
+                        ["external_id", "transaction_id", "id", "receipt_no", "receipt", "reference", "invoice_no"],
+                    )
                     or ""
                 )
                 .strip()
                 or None
             )
-            if external_id is None and dedupe_without_external_id:
+            if external_id is None and effective_dedupe:
                 # Best-effort stable ID based on row content (excluding empty fields).
                 fingerprint = {
                     k: (str(v).strip() if v is not None else "")
@@ -273,9 +558,21 @@ async def import_revenue_csv(
                 ).hexdigest()[:24]
 
             description = str(
-                row.get("description") or row.get("details") or row.get("memo") or row.get("narration") or ""
+                _row_value(
+                    row,
+                    str(effective_settings.get("description_field") or ""),
+                    ["description", "details", "memo", "narration", "note"],
+                )
+                or ""
             ).strip() or None
-            category = str(row.get("category") or row.get("department") or row.get("type") or "").strip() or None
+            category = str(
+                _row_value(
+                    row,
+                    str(effective_settings.get("category_field") or ""),
+                    ["category", "department", "type", "segment"],
+                )
+                or ""
+            ).strip() or None
 
             existing = None
             if external_id is not None:
@@ -333,6 +630,10 @@ async def import_revenue_csv(
             "rows_failed": failed,
             "notes": batch.notes,
             "streams_seen": sorted(streams_seen),
+            "settings_source": settings_source,
+            "settings_saved": settings_saved,
+            "settings_applied": effective_settings,
+            "detected_settings": detected_settings,
         }
     except IntegrityError as e:
         db.rollback()
