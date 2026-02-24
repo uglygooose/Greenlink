@@ -1695,14 +1695,27 @@ async def get_staff_users(
 
     Note: "Super admin" users are global and are managed via /api/super.
     """
-    query = db.query(User).filter(User.role.in_([UserRole.admin, UserRole.club_staff]))
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    query = (
+        db.query(User)
+        .filter(User.role.in_([UserRole.admin, UserRole.club_staff]))
+        .filter(User.club_id == club_id)
+    )
     if q:
         needle = q.strip().lower()
         like = f"%{needle}%"
         query = query.filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like)))
 
     total = query.count()
-    rows = query.order_by(func.lower(User.role).asc(), func.lower(User.name).asc()).offset(skip).limit(limit).all()
+    rows = (
+        query.order_by(func.lower(cast(User.role, String)).asc(), func.lower(User.name).asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     return {
         "total": total,
@@ -1711,7 +1724,7 @@ async def get_staff_users(
                 "id": u.id,
                 "name": u.name,
                 "email": u.email,
-                "role": u.role,
+                "role": getattr(u.role, "value", u.role),
             }
             for u in rows
         ],
