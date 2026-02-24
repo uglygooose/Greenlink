@@ -2663,6 +2663,94 @@ let teeDragFromTeeTimeId = null;
 let teeDragInit = false;
 let teeSuppressClicksUntil = 0;
 
+function _teeSlotNumberFromTd(td) {
+    if (!(td instanceof HTMLTableCellElement)) return null;
+    const idx = Number(td.cellIndex);
+    if (!Number.isFinite(idx)) return null;
+    // Row structure: [time, tee, slot1, slot2, slot3, slot4]
+    const slot = idx - 1; // because cellIndex is 0-based; slot starts at 2 => slotNumber 1
+    if (slot < 1 || slot > 4) return null;
+    return slot;
+}
+
+function _inferCapacityFromRow(row) {
+    if (!(row instanceof HTMLTableRowElement)) return 4;
+    try {
+        const cells = Array.from(row.cells).slice(2, 6);
+        if (!cells.length) return 4;
+        let notAvailable = 0;
+        for (const td of cells) {
+            const name = td.querySelector(".slot-card .slot-name")?.textContent?.trim();
+            if (name === "Not available") notAvailable += 1;
+        }
+        const cap = 4 - notAvailable;
+        return cap >= 1 && cap <= 4 ? cap : 4;
+    } catch {
+        return 4;
+    }
+}
+
+function _updateOpenSlotsForRow(row) {
+    if (!(row instanceof HTMLTableRowElement)) return;
+    const dateStr = lastTeeSheetDateStr;
+    const teeTimeIso = row.getAttribute("data-tee-time-iso") || "";
+    const teeLabel = row.querySelector(".tee-col")?.textContent?.trim() || "1";
+    const capacity = _inferCapacityFromRow(row);
+
+    const bookedCount = row.querySelectorAll('.slot-card[data-booking-id]').length;
+    const isClosed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso) : false;
+
+    const cells = Array.from(row.cells).slice(2, 6);
+    for (let i = 0; i < cells.length; i++) {
+        const td = cells[i];
+        const slotNumber = i + 1;
+        if (slotNumber > capacity) continue;
+
+        const open = td.querySelector(".slot-card.open[data-tee-time-id]");
+        if (!open) continue;
+        if (isClosed) continue;
+
+        const toAdd = Math.max(1, slotNumber - bookedCount);
+        const action = open.querySelector(".slot-action");
+        if (action) action.textContent = `Add ${toAdd} player${toAdd === 1 ? "" : "s"}`;
+
+        const teeTimeId = open.getAttribute("data-tee-time-id");
+        if (!teeTimeId) continue;
+        open.onclick = () => openBookingFormAdmin(
+            Number(teeTimeId),
+            teeTimeIso,
+            teeLabel,
+            capacity,
+            bookedCount,
+            slotNumber
+        );
+    }
+}
+
+function _buildSlotPlaceholderForRow(row, teeTimeId, slotNumber) {
+    const dateStr = lastTeeSheetDateStr;
+    const teeTimeIso = row?.getAttribute?.("data-tee-time-iso") || "";
+    const closed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso) : false;
+
+    const el = document.createElement("div");
+    if (closed) {
+        el.className = "slot-card closed";
+        el.innerHTML = `
+            <div class="slot-name">Closed</div>
+            <div class="slot-meta">Past time</div>
+        `;
+        return el;
+    }
+
+    el.className = "slot-card open";
+    el.setAttribute("data-tee-time-id", String(teeTimeId));
+    el.innerHTML = `
+        <div class="slot-name">Available</div>
+        <div class="slot-action">Add player</div>
+    `;
+    return el;
+}
+
 function setupTeeSheetDragDrop() {
     if (teeDragInit) return;
     teeDragInit = true;
@@ -2769,14 +2857,65 @@ function setupTeeSheetDragDrop() {
         if (!bookingId) return;
         if (teeDragFromTeeTimeId && String(teeDragFromTeeTimeId) === String(toTeeTimeId)) return;
 
+        // Prevent the drop from also triggering the open-slot click (set early, before awaits).
+        teeSuppressClicksUntil = Date.now() + 900;
+
+        let revert = null;
         try {
+            // Optimistic UI: update the DOM immediately (no full tee sheet refresh).
+            const fromCard = tbody.querySelector(`.slot-card[data-booking-id="${CSS.escape(String(bookingId))}"]`);
+            const fromTd = fromCard?.closest?.("td");
+            const fromRow = fromCard?.closest?.("tr");
+            const toRow = drop.closest("tr");
+
+            // Prefer the first open slot in the destination row to keep slots compact,
+            // regardless of which open cell the user hovered.
+            const preferredDrop = toRow?.querySelector?.(`.slot-card.open[data-tee-time-id="${CSS.escape(String(toTeeTimeId))}"]`) || drop;
+            const toTd = preferredDrop?.closest?.("td");
+
+            if (fromCard instanceof HTMLElement && fromTd instanceof HTMLTableCellElement && fromRow instanceof HTMLTableRowElement
+                && toRow instanceof HTMLTableRowElement && toTd instanceof HTMLTableCellElement) {
+                const fromBackup = fromTd.innerHTML;
+                const toBackup = toTd.innerHTML;
+
+                const moved = fromCard.cloneNode(true);
+                if (moved instanceof HTMLElement) {
+                    moved.classList.remove("dragging");
+                    moved.classList.add("just-moved");
+                    moved.setAttribute("data-tee-time-id", String(toTeeTimeId));
+                }
+
+                const slotNumber = _teeSlotNumberFromTd(fromTd) || 1;
+                const fromTeeTimeId = fromCard.getAttribute("data-tee-time-id") || teeDragFromTeeTimeId || "";
+                const placeholder = _buildSlotPlaceholderForRow(fromRow, fromTeeTimeId, slotNumber);
+
+                fromTd.replaceChildren(placeholder);
+                toTd.replaceChildren(moved);
+
+                _updateOpenSlotsForRow(fromRow);
+                _updateOpenSlotsForRow(toRow);
+
+                setTimeout(() => {
+                    try {
+                        const el = toTd.querySelector(".slot-card.just-moved");
+                        el?.classList.remove("just-moved");
+                    } catch {}
+                }, 320);
+
+                revert = () => {
+                    fromTd.innerHTML = fromBackup;
+                    toTd.innerHTML = toBackup;
+                    _updateOpenSlotsForRow(fromRow);
+                    _updateOpenSlotsForRow(toRow);
+                };
+            }
+
             await moveBookingToTeeTime(bookingId, toTeeTimeId);
-            teeSuppressClicksUntil = Date.now() + 900;
-            await loadTeeTimes({ preserveScroll: true });
             toastSuccess("Booking moved");
             if (currentActivePage === "bookings") loadBookings();
             if (currentActivePage === "dashboard") loadDashboard();
         } catch (err) {
+            try { if (typeof revert === "function") revert(); } catch {}
             toastError(err?.message || "Move failed");
         }
     });

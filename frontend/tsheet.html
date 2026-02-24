@@ -396,17 +396,33 @@
 	      cursor: grab;
 	    }
 
-	    .slot-card.dragging,
-	    .tee-slot.dragging {
-	      opacity: 0.55;
-	      transform: scale(0.99);
-	    }
+		    .slot-card.dragging,
+		    .tee-slot.dragging {
+		      opacity: 0.55;
+		      transform: scale(0.99);
+		    }
 
-	    .slot-card.drop-hover,
-	    .tee-slot.drop-hover {
-	      outline: 2px solid rgba(29, 78, 216, 0.65);
-	      box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.14);
-	    }
+		    .slot-card.just-moved,
+		    .tee-slot.just-moved {
+		      animation: slotPop 260ms ease-out;
+		    }
+
+		    @keyframes slotPop {
+		      from {
+		        transform: scale(0.985);
+		        box-shadow: 0 0 0 rgba(31, 42, 27, 0);
+		      }
+		      to {
+		        transform: scale(1);
+		        box-shadow: 0 10px 26px rgba(31, 42, 27, 0.10);
+		      }
+		    }
+
+		    .slot-card.drop-hover,
+		    .tee-slot.drop-hover {
+		      outline: 2px solid rgba(29, 78, 216, 0.65);
+		      box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.14);
+		    }
 
 	    body.drag-active .slot-card.open,
 	    body.drag-active .tee-slot.open {
@@ -2182,29 +2198,133 @@ async function createBooking(teeTimeId) {
 	  openModal('bookingModal');
 	}
 
-	async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
-	  const res = await fetch(`${API_PREFIX}/bookings/${bookingId}/move`, {
-	    method: 'PUT',
-	    headers: {
-	      'Content-Type': 'application/json',
-	      'Authorization': 'Bearer ' + token
-	    },
-	    body: JSON.stringify({ to_tee_time_id: toTeeTimeId })
-	  });
-	  if (!res.ok) {
-	    let detail = 'Failed to move booking';
-	    try {
-	      const data = await res.json();
-	      detail = data?.detail || JSON.stringify(data);
-	    } catch {}
-	    throw new Error(detail);
-	  }
-	}
+		async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
+		  const res = await fetch(`${API_PREFIX}/bookings/${bookingId}/move`, {
+		    method: 'PUT',
+		    headers: {
+		      'Content-Type': 'application/json',
+		      'Authorization': 'Bearer ' + token
+		    },
+		    body: JSON.stringify({ to_tee_time_id: toTeeTimeId })
+		  });
+		  if (!res.ok) {
+		    let detail = 'Failed to move booking';
+		    try {
+		      const data = await res.json();
+		      detail = data?.detail || JSON.stringify(data);
+		    } catch {}
+		    throw new Error(detail);
+		  }
+		}
 
-	function setupTeeSheetDragDrop() {
-	  if (!isStaff) return;
-	  if (window.__greenlink_tsheet_dragdrop_setup) return;
-	  window.__greenlink_tsheet_dragdrop_setup = true;
+		function _teeTimeIsoById(teeTimeId) {
+		  const id = parseInt(String(teeTimeId || ""), 10);
+		  if (!Number.isFinite(id)) return null;
+		  const list = Array.isArray(allTeeTimes) ? allTeeTimes : [];
+		  const tt = list.find(t => t && parseInt(String(t.id || ""), 10) === id);
+		  return tt ? String(tt.tee_time || "") : null;
+		}
+
+		function _slotNumberFromSlotCard(el) {
+		  const td = el?.closest?.("td");
+		  if (!td || typeof td.cellIndex !== "number") return null;
+		  const slot = td.cellIndex - 1; // [time=0, tee=1, slot1=2]
+		  return slot >= 1 && slot <= 4 ? slot : null;
+		}
+
+		function _slotNumberFromTeeSlot(el) {
+		  const parent = el?.parentElement;
+		  if (!parent) return null;
+		  const slots = Array.from(parent.querySelectorAll(".tee-slot"));
+		  const idx = slots.indexOf(el);
+		  const slot = idx + 1;
+		  return slot >= 1 && slot <= 4 ? slot : null;
+		}
+
+		function _updateOpenLabelsInTableRow(row) {
+		  if (!row) return;
+		  const booked = row.querySelectorAll('.slot-card[data-booking-id]').length;
+		  const tds = Array.from(row.querySelectorAll("td")).slice(2, 6);
+		  tds.forEach((td, i) => {
+		    const open = td.querySelector(".slot-card.open .slot-action");
+		    if (!open) return;
+		    const slotNumber = i + 1;
+		    const toAdd = Math.max(1, slotNumber - booked);
+		    open.textContent = `Add ${toAdd} player${toAdd === 1 ? "" : "s"}`;
+		  });
+		}
+
+		function _updateOpenLabelsInCardSlots(container) {
+		  if (!container) return;
+		  const booked = container.querySelectorAll('.tee-slot[data-booking-id]').length;
+		  const slots = Array.from(container.querySelectorAll(".tee-slot"));
+		  slots.forEach((slot, idx) => {
+		    if (!slot.classList.contains("open")) return;
+		    const metas = slot.querySelectorAll(".meta");
+		    if (!metas.length) return;
+		    const slotNumber = idx + 1;
+		    const toAdd = Math.max(1, slotNumber - booked);
+		    metas[metas.length - 1].textContent = `Add ${toAdd} player${toAdd === 1 ? "" : "s"}`;
+		  });
+		}
+
+		function _buildSlotPlaceholder(view, teeTimeId, slotNumber, closed) {
+		  const id = parseInt(String(teeTimeId || ""), 10);
+		  const slot = parseInt(String(slotNumber || ""), 10);
+		  if (!Number.isFinite(id) || !Number.isFinite(slot)) return null;
+
+		  if (view === "slot-card") {
+		    const el = document.createElement("div");
+		    if (closed) {
+		      el.className = "slot-card closed";
+		      el.innerHTML = `
+		        <div class="slot-top"><span class="slot-status">Closed</span></div>
+		        <div class="slot-name">Past time</div>
+		      `;
+		      return el;
+		    }
+		    el.className = "slot-card open";
+		    el.dataset.teeTimeId = String(id);
+		    el.setAttribute("onclick", `openBookingForm(${id}, ${slot})`);
+		    el.innerHTML = `
+		      <div class="slot-name">Available</div>
+		      <div class="slot-action">Add player</div>
+		    `;
+		    return el;
+		  }
+
+		  if (view === "tee-slot") {
+		    const el = document.createElement("div");
+		    if (closed) {
+		      el.className = "tee-slot closed";
+		      el.innerHTML = `
+		        <div>
+		          <div class="label">Slot ${slot}</div>
+		          <div class="meta">Past time</div>
+		        </div>
+		      `;
+		      return el;
+		    }
+		    el.className = "tee-slot open";
+		    el.dataset.teeTimeId = String(id);
+		    el.setAttribute("onclick", `openBookingForm(${id}, ${slot})`);
+		    el.innerHTML = `
+		      <div>
+		        <div class="label">Slot ${slot}</div>
+		        <div class="meta">Available</div>
+		      </div>
+		      <div class="meta">Add player</div>
+		    `;
+		    return el;
+		  }
+
+		  return null;
+		}
+
+		function setupTeeSheetDragDrop() {
+		  if (!isStaff) return;
+		  if (window.__greenlink_tsheet_dragdrop_setup) return;
+		  window.__greenlink_tsheet_dragdrop_setup = true;
 
 	  let activeDrag = null;
 	  let suppressClicksUntil = 0;
@@ -2278,28 +2398,97 @@ async function createBooking(teeTimeId) {
 	    }
 	  }, true);
 
-	  document.addEventListener('drop', async (e) => {
-	    if (!activeDrag) return;
-	    const target = e.target?.closest?.('.slot-card.open[data-tee-time-id], .tee-slot.open[data-tee-time-id]');
-	    if (!target) return;
+		  document.addEventListener('drop', async (e) => {
+		    if (!activeDrag) return;
+		    const target = e.target?.closest?.('.slot-card.open[data-tee-time-id], .tee-slot.open[data-tee-time-id]');
+		    if (!target) return;
 
 	    const toTeeTimeId = parseInt(target.dataset.teeTimeId || '', 10);
 	    if (!Number.isFinite(toTeeTimeId) || toTeeTimeId === activeDrag.fromTeeTimeId) return;
 
-	    e.preventDefault();
-	    e.stopPropagation();
-	    clearHover();
+		    e.preventDefault();
+		    e.stopPropagation();
+		    clearHover();
 
-		    try {
-		      await moveBookingToTeeTime(activeDrag.bookingId, toTeeTimeId);
-		      suppressClicksUntil = Date.now() + 800;
-		      await loadTeeTimes({ preservePage: true, preserveScroll: true });
-		    } catch (err) {
-		      alert(err?.message || 'Failed to move booking');
-		    } finally {
-	      activeDrag = null;
-	    }
-	  }, true);
+		    // Prevent the drop from also triggering the open-slot click (set early, before awaits).
+		    suppressClicksUntil = Date.now() + 800;
+
+		    let revertFns = [];
+			    try {
+			      // Optimistic UI: move in DOM immediately (no full refresh).
+			      const bookingId = activeDrag.bookingId;
+			      const fromTeeTimeId = activeDrag.fromTeeTimeId;
+			      const fromIso = _teeTimeIsoById(fromTeeTimeId);
+			      const closed = fromIso ? isPastTeeTime(fromIso) : false;
+
+			      // Table view
+			      const fromCard = document.querySelector(`.slot-card[data-booking-id="${bookingId}"]`);
+			      const toCard = document.querySelector(`.slot-card.open[data-tee-time-id="${toTeeTimeId}"]`);
+			      if (fromCard && toCard) {
+			        const fromTd = fromCard.closest("td");
+			        const toTd = toCard.closest("td");
+			        if (fromTd && toTd) {
+			          const fromBackup = fromTd.innerHTML;
+			          const toBackup = toTd.innerHTML;
+			          revertFns.push(() => { fromTd.innerHTML = fromBackup; toTd.innerHTML = toBackup; });
+
+			          const slotNumber = _slotNumberFromSlotCard(fromCard) || 1;
+			          const placeholder = _buildSlotPlaceholder("slot-card", fromTeeTimeId, slotNumber, closed);
+			          if (!placeholder) throw new Error("Unable to move booking");
+
+			          const moved = fromCard.cloneNode(true);
+			          moved.classList.remove("dragging");
+			          moved.classList.add("just-moved");
+			          moved.dataset.teeTimeId = String(toTeeTimeId);
+			          fromCard.replaceWith(placeholder);
+			          toCard.replaceWith(moved);
+
+			          _updateOpenLabelsInTableRow(fromTd.closest("tr"));
+			          _updateOpenLabelsInTableRow(toTd.closest("tr"));
+
+			          setTimeout(() => { try { moved.classList.remove("just-moved"); } catch {} }, 320);
+			        }
+			      }
+
+			      // Card view
+			      const fromSlot = document.querySelector(`.tee-slot[data-booking-id="${bookingId}"]`);
+			      const toSlot = document.querySelector(`.tee-slot.open[data-tee-time-id="${toTeeTimeId}"]`);
+			      if (fromSlot && toSlot) {
+			        const fromWrap = fromSlot.parentElement;
+			        const toWrap = toSlot.parentElement;
+			        if (fromWrap && toWrap) {
+			          const fromBackup = fromWrap.innerHTML;
+			          const toBackup = toWrap.innerHTML;
+			          revertFns.push(() => { fromWrap.innerHTML = fromBackup; toWrap.innerHTML = toBackup; });
+
+			          const slotNumber = _slotNumberFromTeeSlot(fromSlot) || 1;
+			          const placeholder = _buildSlotPlaceholder("tee-slot", fromTeeTimeId, slotNumber, closed);
+			          if (!placeholder) throw new Error("Unable to move booking");
+
+			          const moved = fromSlot.cloneNode(true);
+			          moved.classList.remove("dragging");
+			          moved.classList.add("just-moved");
+			          moved.dataset.teeTimeId = String(toTeeTimeId);
+			          fromSlot.replaceWith(placeholder);
+			          toSlot.replaceWith(moved);
+
+			          _updateOpenLabelsInCardSlots(fromWrap);
+			          _updateOpenLabelsInCardSlots(toWrap);
+
+			          setTimeout(() => { try { moved.classList.remove("just-moved"); } catch {} }, 320);
+			        }
+			      }
+
+			      await moveBookingToTeeTime(activeDrag.bookingId, toTeeTimeId);
+			    } catch (err) {
+			      try {
+			        (revertFns || []).forEach(fn => { try { fn(); } catch {} });
+			      } catch {}
+			      alert(err?.message || 'Failed to move booking');
+			    } finally {
+		      activeDrag = null;
+		    }
+		  }, true);
 
 	  document.addEventListener('click', (e) => {
 	    if (Date.now() < suppressClicksUntil) {
