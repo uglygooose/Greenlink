@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
-    <link rel="stylesheet" href="admin-style.css?v=2026-02-24-07" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-02-24-08" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -22,17 +22,24 @@
                 <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
 
                 <details class="nav-group" open>
-                    <summary class="nav-group-toggle">Golf / Pro Shop</summary>
+                    <summary class="nav-group-toggle">Golf</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
                         <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
                         <a href="#players" class="nav-item" data-page="players">People</a>
-                        <a href="#pro-shop" class="nav-item" data-page="pro-shop">Pro Shop Sales</a>
                         <a href="#revenue" class="nav-item" data-page="revenue">Revenue</a>
                         <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
                         <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
                         <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
                         <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Super Admin</a>
+                    </div>
+                </details>
+
+                <details class="nav-group" open>
+                    <summary class="nav-group-toggle">Pro Shop</summary>
+                    <div class="nav-group-items">
+                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Pro Shop Dashboard</a>
+                        <a href="#pro-shop" class="nav-item" data-page="pro-shop">Pro Shop Sales</a>
                     </div>
                 </details>
 
@@ -84,14 +91,14 @@
                         <div class="stat-card">
                             <div class="stat-icon">📊</div>
                             <div class="stat-content">
-                                <div class="stat-label">Total Bookings</div>
+                                <div class="stat-label" id="stat-label-1">Total Bookings</div>
                                 <div class="stat-value" id="total-bookings">0</div>
                             </div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-icon">👥</div>
                             <div class="stat-content">
-                                <div class="stat-label">Members</div>
+                                <div class="stat-label" id="stat-label-2">Members</div>
                                 <div class="stat-value" id="total-members">0</div>
                             </div>
                         </div>
@@ -105,7 +112,7 @@
                         <div class="stat-card">
                             <div class="stat-icon">🏌️</div>
                             <div class="stat-content">
-                                <div class="stat-label">Completed Rounds</div>
+                                <div class="stat-label" id="stat-label-4">Completed Rounds</div>
                                 <div class="stat-value" id="completed-rounds">0</div>
                             </div>
                         </div>
@@ -115,6 +122,7 @@
                         <div class="tee-toggle dashboard-stream-toggle" role="group" aria-label="Dashboard revenue stream view">
                             <button class="tee-btn dashboard-stream-btn active" type="button" data-stream="all">All</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="golf">Golf</button>
+                            <button class="tee-btn dashboard-stream-btn" type="button" data-stream="pro_shop">Pro Shop</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="pub">Pub</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="bowls">Bowls</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="other">Other</button>
@@ -127,7 +135,7 @@
                             <h3>Today's Performance</h3>
                             <div class="today-stats">
                                 <div class="today-stat">
-                                    <span>Today's Bookings</span>
+                                    <span id="today-primary-label">Today's Bookings</span>
                                     <span class="stat-number" id="today-bookings">0</span>
                                 </div>
                                 <div class="today-stat">
@@ -191,7 +199,24 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width">
+                    <div class="dashboard-card full-width dashboard-highlights-card">
+                        <h3 id="dashboard-highlights-title">Operational Highlights</h3>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Units / Txn</th>
+                                        <th>Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboard-highlights-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="action-note" id="dashboard-highlights-note"></div>
+                    </div>
+
+                    <div class="dashboard-card full-width dashboard-golf-only">
                         <h3>Targets vs Actual (Paid)</h3>
                         <div class="kpi-subtitle">
                             Paid bookings = checked-in + completed. Targets are derived from annual targets.
@@ -213,7 +238,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width">
+                    <div class="dashboard-card full-width dashboard-golf-only">
                         <h3>Monthly Revenue Trend</h3>
                         <canvas id="revenueChart"></canvas>
                     </div>
@@ -325,6 +350,7 @@
                             <label for="revenue-import-stream">Stream</label>
                             <select id="revenue-import-stream">
                                 <option value="golf">Golf</option>
+                                <option value="pro_shop">Pro Shop</option>
                                 <option value="pub">Pub</option>
                                 <option value="bowls">Bowls</option>
                                 <option value="other" selected>Other</option>
@@ -337,7 +363,7 @@
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Other Revenue Upload Flow</h3>
                         <ol class="flow-steps">
-                            <li>Select the stream first: <code>Pub</code>, <code>Bowls</code>, or <code>Other</code>.</li>
+                            <li>Select the stream first: <code>Pro Shop</code>, <code>Pub</code>, <code>Bowls</code>, or <code>Other</code>.</li>
                             <li>Upload the CSV for that stream (date, description, amount format).</li>
                             <li>Click <code>Import</code>, then confirm rows inserted/updated in the status line.</li>
                             <li>Validate results in <code>Other Revenue by Stream</code> and the Dashboard <code>Operations View</code> toggle.</li>
@@ -351,7 +377,7 @@
                             <strong id="revenue-golf-paid">R0.00</strong>
                         </div>
                         <div class="summary-stat">
-                            <span>Other (Imported)</span>
+                            <span>Non-Booking (Imported)</span>
                             <strong id="revenue-other">R0.00</strong>
                         </div>
                         <div class="summary-stat">
@@ -381,7 +407,7 @@
                     </div>
                     <div class="dashboard-card revenue-flow-card">
                         <h3>Revenue Flow</h3>
-                        <p id="revenue-flow-text">Booked shows demand. Paid golf confirms collected rounds revenue. Imported streams (pub, bowls, other) complete the cash picture.</p>
+                        <p id="revenue-flow-text">Booked shows demand. Paid golf confirms collected rounds revenue. Pro shop + imported streams complete the cash picture.</p>
                     </div>
                     <div class="analytics-grid">
                         <div class="dashboard-card">
@@ -395,7 +421,7 @@
                     </div>
 
                     <div class="dashboard-card full-width" style="margin-top: 16px;">
-                        <h3>Other Revenue (Imported) by Stream</h3>
+                        <h3>Non-Booking Revenue by Stream</h3>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
@@ -444,7 +470,7 @@
                     </div>
 
                     <div class="analytics-grid">
-                        <div class="dashboard-card">
+                        <div class="dashboard-card dashboard-booking-status-card">
                             <h3>Inventory</h3>
                             <div class="table-container">
                                 <table class="data-table">
@@ -1179,6 +1205,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-02-24-07"></script>
+	    <script src="admin.js?v=2026-02-24-08"></script>
 	</body>
 	</html>

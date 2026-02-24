@@ -580,7 +580,7 @@ function showPage(pageName) {
 function setupDashboardStreamFilters() {
     const buttons = document.querySelectorAll(".dashboard-stream-btn");
     if (!buttons.length) return;
-    const valid = new Set(["all", "golf", "pub", "bowls", "other"]);
+    const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const stored = String(localStorage.getItem("dashboard_stream_view") || "").toLowerCase();
     setDashboardStreamViewState(valid.has(stored) ? stored : "all", { persist: false, lock: false });
 
@@ -594,7 +594,7 @@ function setupDashboardStreamFilters() {
 }
 
 function setDashboardStreamViewState(stream, options = {}) {
-    const valid = new Set(["all", "golf", "pub", "bowls", "other"]);
+    const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const next = valid.has(String(stream || "").toLowerCase()) ? String(stream || "").toLowerCase() : "all";
     const persist = options.persist !== false;
     const lock = Boolean(options.lock) && next !== "all";
@@ -635,10 +635,16 @@ function resolveDashboardStreamMetrics(data, streamKey) {
             week_revenue: safeNumber(data?.week_revenue),
         },
         golf: {
-            label: "Golf / Pro Shop",
+            label: "Golf",
             total_revenue: safeNumber(data?.golf_revenue_total),
             today_revenue: safeNumber(data?.golf_revenue_today),
             week_revenue: safeNumber(data?.golf_revenue_week),
+        },
+        pro_shop: {
+            label: "Pro Shop",
+            total_revenue: safeNumber(data?.pro_shop_revenue_total),
+            today_revenue: safeNumber(data?.pro_shop_revenue_today),
+            week_revenue: safeNumber(data?.pro_shop_revenue_week),
         },
         other: {
             label: "Other Operations",
@@ -659,6 +665,142 @@ function resolveDashboardStreamMetrics(data, streamKey) {
         week_revenue: safeNumber(selected.week_revenue),
         key,
     };
+}
+
+function formatDashboardMetric(metric) {
+    const format = String(metric?.format || "number").toLowerCase();
+    const value = safeNumber(metric?.value);
+    if (format === "currency") return formatCurrencyZAR(value);
+    if (format === "percent") return formatPct(value);
+    if (format === "ratio") return `${value.toFixed(2)}x`;
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function renderDashboardHighlights(data, streamKey) {
+    const body = document.getElementById("dashboard-highlights-body");
+    const titleEl = document.getElementById("dashboard-highlights-title");
+    const noteEl = document.getElementById("dashboard-highlights-note");
+    if (!body || !titleEl || !noteEl) return;
+
+    const insights = (data && data.operation_insights && typeof data.operation_insights === "object")
+        ? data.operation_insights
+        : {};
+    const row = insights[streamKey] || insights.all || null;
+    const label = resolveDashboardStreamMetrics(data, streamKey).label;
+
+    titleEl.textContent = `${label} Highlights`;
+    noteEl.textContent = row?.note ? String(row.note) : "No additional highlights available yet.";
+
+    const highlights = Array.isArray(row?.highlights) ? row.highlights : [];
+    if (!highlights.length) {
+        body.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="3"><div class="empty-state">No highlight rows available for this stream yet.</div></td>
+            </tr>
+        `;
+        return;
+    }
+
+    body.innerHTML = highlights.map(item => `
+        <tr>
+            <td>${escapeHtml(String(item?.name || item?.label || "Item"))}</td>
+            <td>${escapeHtml(String(item?.units ?? item?.transactions ?? "-"))}</td>
+            <td>${escapeHtml(formatCurrencyZAR(item?.revenue ?? item?.amount ?? 0))}</td>
+        </tr>
+    `).join("");
+}
+
+function applyDashboardOperationLayout(data, streamKey) {
+    const insights = (data && data.operation_insights && typeof data.operation_insights === "object")
+        ? data.operation_insights
+        : {};
+    const fallbackCards = {
+        all: [
+            { label: "Total Bookings", value: safeNumber(data?.total_bookings), format: "number" },
+            { label: "Members", value: safeNumber(data?.total_members ?? data?.total_players), format: "number" },
+            { label: "Total Revenue (All)", value: safeNumber(data?.total_revenue), format: "currency" },
+            { label: "Completed Rounds", value: safeNumber(data?.completed_rounds), format: "number" },
+        ],
+        golf: [
+            { label: "Bookings Today", value: safeNumber(data?.today_bookings), format: "number" },
+            { label: "Members", value: safeNumber(data?.total_members ?? data?.total_players), format: "number" },
+            { label: "Golf Revenue", value: safeNumber(data?.golf_revenue_total), format: "currency" },
+            { label: "Completed Rounds", value: safeNumber(data?.completed_rounds), format: "number" },
+        ],
+        pro_shop: [
+            { label: "Sales Today", value: safeNumber(data?.pro_shop_revenue_today), format: "currency" },
+            { label: "Transactions Today", value: 0, format: "number" },
+            { label: "Pro Shop Revenue", value: safeNumber(data?.pro_shop_revenue_total), format: "currency" },
+            { label: "Low Stock Items", value: 0, format: "number" },
+        ],
+        pub: [
+            { label: "Pub Revenue Today", value: 0, format: "currency" },
+            { label: "Transactions Today", value: 0, format: "number" },
+            { label: "Pub Revenue 7d", value: 0, format: "currency" },
+            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
+        ],
+        bowls: [
+            { label: "Bowls Revenue Today", value: 0, format: "currency" },
+            { label: "Transactions Today", value: 0, format: "number" },
+            { label: "Bowls Revenue 7d", value: 0, format: "currency" },
+            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
+        ],
+        other: [
+            { label: "Other Revenue Today", value: 0, format: "currency" },
+            { label: "Transactions Today", value: 0, format: "number" },
+            { label: "Other Revenue 7d", value: 0, format: "currency" },
+            { label: "Avg Ticket (7d)", value: 0, format: "currency" },
+        ],
+    };
+    const selected = insights[streamKey] || insights.all || null;
+    const cards = Array.isArray(selected?.cards) && selected.cards.length
+        ? selected.cards
+        : (fallbackCards[streamKey] || fallbackCards.all);
+
+    const statLabels = [
+        document.getElementById("stat-label-1"),
+        document.getElementById("stat-label-2"),
+        document.getElementById("total-revenue-label"),
+        document.getElementById("stat-label-4"),
+    ];
+    const statValues = [
+        document.getElementById("total-bookings"),
+        document.getElementById("total-members"),
+        document.getElementById("total-revenue"),
+        document.getElementById("completed-rounds"),
+    ];
+
+    for (let idx = 0; idx < 4; idx += 1) {
+        const metric = cards[idx] || null;
+        const labelEl = statLabels[idx];
+        const valueEl = statValues[idx];
+        if (!labelEl || !valueEl || !metric) continue;
+        labelEl.textContent = String(metric.label || "");
+        if (idx === 2 && String(metric.format || "").toLowerCase() === "currency") {
+            valueEl.textContent = safeNumber(metric.value).toFixed(2);
+        } else {
+            valueEl.textContent = formatDashboardMetric(metric);
+        }
+    }
+
+    const todayPrimaryLabelEl = document.getElementById("today-primary-label");
+    const todayPrimaryValueEl = document.getElementById("today-bookings");
+    const primaryMetric = cards[0] || null;
+    if (todayPrimaryLabelEl && primaryMetric) {
+        todayPrimaryLabelEl.textContent = String(primaryMetric.label || "Today's Activity");
+    }
+    if (todayPrimaryValueEl && primaryMetric) {
+        todayPrimaryValueEl.textContent = formatDashboardMetric(primaryMetric);
+    }
+
+    const showGolfSections = streamKey === "all" || streamKey === "golf";
+    document.querySelectorAll(".dashboard-golf-only").forEach(el => {
+        if (el instanceof HTMLElement) el.style.display = showGolfSections ? "" : "none";
+    });
+    const bookingStatusCard = document.querySelector(".dashboard-booking-status-card");
+    if (bookingStatusCard instanceof HTMLElement) {
+        bookingStatusCard.style.display = showGolfSections ? "" : "none";
+    }
 }
 
 function applyDashboardStreamView(data) {
@@ -690,11 +832,16 @@ function applyDashboardStreamView(data) {
         } else if (selected.key === "all") {
             noteEl.textContent = "Showing combined operations view.";
         } else if (selected.key === "golf") {
-            noteEl.textContent = "Golf / Pro Shop view uses bookings + paid golf cashbook data.";
+            noteEl.textContent = "Golf view uses bookings, paid rounds, and tee-sheet utilization.";
+        } else if (selected.key === "pro_shop") {
+            noteEl.textContent = "Pro shop view uses POS sales, basket value, and stock-risk metrics.";
         } else {
             noteEl.textContent = `${label} view uses imported non-golf revenue transactions.`;
         }
     }
+
+    applyDashboardOperationLayout(data, selected.key);
+    renderDashboardHighlights(data, selected.key);
 
     if (currentActivePage === "dashboard") {
         const titleEl = document.getElementById("page-title");
@@ -728,7 +875,7 @@ async function loadDashboard() {
         const lastRevenue = data?.imports?.revenue || null;
         if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
         if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
-        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, and Revenue > Import Revenue CSV for non-golf streams.";
+        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, Revenue > Import Revenue CSV for pub/bowls/other/pro shop, and Pro Shop Sales for direct checkout.";
 
         renderTargetsTable(data.targets);
 
@@ -1902,7 +2049,7 @@ async function loadRevenue() {
             flowEl.textContent =
                 `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
                 `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${collectionRate == null ? "-" : formatPct(collectionRate)}). ` +
-                `Imported non-golf: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+                `Pro shop + imported non-booking streams: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
         }
         if (golfEl) golfEl.textContent = formatCurrencyZAR(actualPaid);
         if (otherEl) otherEl.textContent = formatCurrencyZAR(actualOther);
@@ -2054,9 +2201,17 @@ function updateRevenueUploadFlowHint() {
     if (!streamSelect || !note) return;
 
     const stream = String(streamSelect.value || "other").trim().toLowerCase();
-    const label = stream === "pub" ? "Pub" : (stream === "bowls" ? "Bowls" : (stream === "golf" ? "Golf" : "Other"));
+    const label = stream === "pub"
+        ? "Pub"
+        : (stream === "bowls"
+            ? "Bowls"
+            : (stream === "golf"
+                ? "Golf"
+                : (stream === "pro_shop" ? "Pro Shop" : "Other")));
     if (stream === "golf") {
         note.textContent = "Selected stream: Golf. Use this only for non-booking golf revenue adjustments.";
+    } else if (stream === "pro_shop") {
+        note.textContent = "Selected stream: Pro Shop. Use this for external POS imports when sales are not captured in GreenLink checkout.";
     } else {
         note.textContent = `Selected stream: ${label}. Import one stream at a time for cleaner reconciliation.`;
     }

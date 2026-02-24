@@ -127,8 +127,10 @@ def _norm_stream(value: Any) -> str | None:
         "bowling": "bowls",
         "greens": "bowls",
         "golfshop": "golf",
-        "proshop": "golf",
-        "pro_shop": "golf",
+        "proshop": "pro_shop",
+        "pro_shop": "pro_shop",
+        "retail": "pro_shop",
+        "shop": "pro_shop",
         "greenfee": "golf",
         "green_fees": "golf",
         "green fees": "golf",
@@ -177,7 +179,7 @@ def list_import_batches(
 
 @router.post("/revenue-csv")
 async def import_revenue_csv(
-    stream: str = Query("other", description="Revenue stream: pub|bowls|golf|other"),
+    stream: str = Query("other", description="Revenue stream: pub|bowls|golf|pro_shop|other"),
     dedupe_without_external_id: bool = Query(True, description="Generate stable external IDs when missing"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
