@@ -213,6 +213,78 @@
       margin-top: 14px;
     }
 
+    .rounds-panel {
+      margin-top: 18px;
+    }
+
+    .rounds-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .rounds-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .round-row {
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .round-meta {
+      display: grid;
+      gap: 4px;
+      min-width: 220px;
+    }
+
+    .round-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #f3f7ea;
+      color: var(--ucc-olive-dark);
+      border: 1px solid var(--ucc-border);
+    }
+
+    .pill.warn {
+      background: #fff6e5;
+      color: #9a6a00;
+      border-color: #f3d9a6;
+    }
+
+    .pill.ok {
+      background: #eaf7ef;
+      color: #1f7a40;
+      border-color: #c8e8d3;
+    }
+
+    .btn.small {
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
     @media (max-width: 900px) {
       .cards-grid {
         grid-template-columns: 1fr;
@@ -264,10 +336,27 @@
           <div class="info-item"><span>Email</span><strong id="user_email">-</strong></div>
           <div class="info-item"><span>Phone</span><strong id="user_phone">-</strong></div>
           <div class="info-item"><span>Date of Birth</span><strong id="user_birth_date">-</strong></div>
+          <div class="info-item"><span>Member Number</span><strong id="user_member_number">-</strong></div>
+          <div class="info-item"><span>Handicap Number</span><strong id="user_handicap_number">-</strong></div>
           <div class="info-item"><span>HNA SA ID</span><strong id="user_handicap_sa">-</strong></div>
           <div class="info-item"><span>Handicap Index</span><strong id="user_handicap_index">-</strong></div>
           <div class="info-item"><span>Category</span><strong id="user_category">-</strong></div>
+          <div class="info-item"><span>Member Link</span><strong id="user_member_link">-</strong></div>
         </div>
+      </div>
+    </section>
+
+    <section class="card rounds-panel">
+      <div class="rounds-header">
+        <h3 style="margin:0;">My Rounds (HNA Ready)</h3>
+        <button class="btn ghost small" type="button" onclick="loadMyBookings()">Refresh</button>
+      </div>
+      <div class="chip-row">
+        <div class="chip" id="round-member-link-chip">Member link: --</div>
+        <div class="chip" id="round-handicap-chip">HNA/Index: --</div>
+      </div>
+      <div class="rounds-list" id="my_rounds_list">
+        <div class="round-row"><div class="round-meta"><strong>Loading rounds...</strong></div></div>
       </div>
     </section>
 
@@ -286,6 +375,14 @@
           <div class="form-group">
             <label>Date of Birth</label>
             <input type="date" id="profile_birth_date" required>
+          </div>
+          <div class="form-group">
+            <label>Member Number</label>
+            <input type="text" id="profile_member_number" placeholder="Club member number">
+          </div>
+          <div class="form-group">
+            <label>Handicap Number</label>
+            <input type="text" id="profile_handicap_number" placeholder="Handicap number">
           </div>
           <div class="form-group">
             <label>HNA SA Player ID</label>
@@ -341,6 +438,7 @@ let typeLabels = {
 
 let cachedProfile = null;
 let bookingWindow = null;
+let myBookingsCache = [];
 
 function logout(){ localStorage.removeItem('token'); window.location.href='/frontend/index.html'; }
 function goto(p){ window.location.href='/frontend/'+p; }
@@ -360,15 +458,36 @@ function inferPlayerType(profile){
   return 'non_affiliated';
 }
 
+function esc(value){
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function formatDateTime(value){
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function roundStateLabel(item){
+  if (!item?.round) return 'Not Open';
+  if (item.round.no_return) return 'No Return';
+  if (item.round.closed) return 'Closed';
+  return 'Open';
+}
+
 function updateProfileSummary(profile){
   const playerType = inferPlayerType(profile);
   document.getElementById('user_name').textContent = profile.name || 'Player';
   document.getElementById('user_email').textContent = profile.email || '-';
   document.getElementById('user_phone').textContent = profile.phone || 'Not set';
   document.getElementById('user_birth_date').textContent = profile.birth_date || 'Not set';
+  document.getElementById('user_member_number').textContent = profile.member_number || 'Not linked';
+  document.getElementById('user_handicap_number').textContent = profile.handicap_number || 'Not set';
   document.getElementById('user_handicap_sa').textContent = profile.handicap_sa_id || 'Not set';
   document.getElementById('user_handicap_index').textContent = profile.handicap_index ?? 'Not set';
   document.getElementById('user_category').textContent = profile.player_category || 'Not set';
+  document.getElementById('user_member_link').textContent = profile.linked_member ? `Linked (#${profile.linked_member_id})` : 'Not linked';
 
   const membershipLabel = typeLabels[playerType] || 'Visitor';
   document.getElementById('membership_status').textContent = `Membership: ${membershipLabel}`;
@@ -385,6 +504,8 @@ function populateForm(profile){
   document.getElementById('profile_name').value = profile.name || '';
   document.getElementById('profile_phone').value = profile.phone || '';
   document.getElementById('profile_birth_date').value = profile.birth_date || '';
+  document.getElementById('profile_member_number').value = profile.member_number || '';
+  document.getElementById('profile_handicap_number').value = profile.handicap_number || '';
   document.getElementById('profile_handicap_sa_id').value = profile.handicap_sa_id || '';
   document.getElementById('profile_home_course').value = profile.home_course || '';
   document.getElementById('profile_handicap_index').value = profile.handicap_index ?? '';
@@ -425,12 +546,135 @@ function updateBookingWindowLabel(){
   }
 }
 
+function renderRoundRows(items){
+  const container = document.getElementById('my_rounds_list');
+  if (!container) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    container.innerHTML = `<div class="round-row"><div class="round-meta"><strong>No bookings found in the current window.</strong><span>Book a tee time first, then open your round here.</span></div></div>`;
+    return;
+  }
+
+  container.innerHTML = items.map(item => {
+    const round = item.round || null;
+    const mode = round?.mode === 'adjusted_gross' ? 'Adjusted Gross' : 'Hole by Hole';
+    const roundLabel = roundStateLabel(item);
+    const roundPillClass = round?.no_return ? 'pill warn' : (round?.closed ? 'pill ok' : 'pill');
+    const canOpen = Boolean(item.can_open_round);
+    const canSubmit = Boolean(item.can_submit_round);
+    const submitted = round?.submitted_at ? formatDateTime(round.submitted_at) : '-';
+    return `
+      <div class="round-row">
+        <div class="round-meta">
+          <strong>${esc(item.player_name || 'Booking')} • ${formatDateTime(item.tee_time)}</strong>
+          <span>Status: ${esc(item.status || '-')} • Round: <span class="${roundPillClass}">${esc(roundLabel)}</span></span>
+          <span>Mode: ${esc(mode)} • Submitted: ${esc(submitted)}</span>
+        </div>
+        <div class="round-actions">
+          ${canOpen ? `<button class="btn ghost small" type="button" onclick="openRound(${Number(item.booking_id)}, 'hole_by_hole')">Open (Hole-by-hole)</button>` : ''}
+          ${canOpen ? `<button class="btn ghost small" type="button" onclick="openRound(${Number(item.booking_id)}, 'adjusted_gross')">Open (Adjusted)</button>` : ''}
+          ${canSubmit && round?.id ? `<button class="btn primary small" type="button" onclick="submitAdjustedGross(${Number(round.id)})">Submit Adjusted</button>` : ''}
+          ${canSubmit && round?.id ? `<button class="btn outline small" type="button" onclick="markNoReturn(${Number(round.id)})">Mark N/R</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadMyBookings(){
+  const memberChip = document.getElementById('round-member-link-chip');
+  const handicapChip = document.getElementById('round-handicap-chip');
+  try {
+    const res = await fetch('/scoring/my-bookings?days=60&include_past=true', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) {
+      if (res.status === 403) {
+        const container = document.getElementById('my_rounds_list');
+        if (container) container.innerHTML = `<div class="round-row"><div class="round-meta"><strong>Player round hub is available for player logins only.</strong></div></div>`;
+        return;
+      }
+      throw new Error('Failed to load bookings');
+    }
+    const data = await res.json();
+    myBookingsCache = Array.isArray(data?.bookings) ? data.bookings : [];
+    renderRoundRows(myBookingsCache);
+    if (memberChip) memberChip.textContent = data?.member_linked ? `Member link: ${data.member_number || 'Linked'}` : 'Member link: not linked';
+    const handicapParts = [];
+    if (data?.handicap_sa_id) handicapParts.push(`HNA ${data.handicap_sa_id}`);
+    if (data?.handicap_index != null) handicapParts.push(`Idx ${data.handicap_index}`);
+    if (handicapChip) handicapChip.textContent = handicapParts.length ? `HNA/Index: ${handicapParts.join(' | ')}` : 'HNA/Index: not set';
+  } catch (err) {
+    const container = document.getElementById('my_rounds_list');
+    if (container) container.innerHTML = `<div class="round-row"><div class="round-meta"><strong>Failed to load rounds.</strong><span>${esc(err?.message || 'Unknown error')}</span></div></div>`;
+  }
+}
+
+async function openRound(bookingId, scoringMode){
+  try {
+    const res = await fetch('/scoring/my-rounds/open', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: Number(bookingId), scoring_mode: scoringMode || 'hole_by_hole' })
+    });
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!res.ok) throw new Error(data?.detail || 'Failed to open round');
+    alert('Round opened successfully.');
+    await loadMyBookings();
+  } catch (err) {
+    alert(err?.message || 'Failed to open round');
+  }
+}
+
+async function submitAdjustedGross(roundId){
+  const input = prompt('Enter adjusted gross score (total):');
+  if (input == null) return;
+  const score = Number(input);
+  if (!Number.isFinite(score) || score <= 0) {
+    alert('Please enter a valid adjusted gross score.');
+    return;
+  }
+  try {
+    const res = await fetch(`/scoring/my-rounds/${Number(roundId)}/submit`, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scoring_mode: 'adjusted_gross', adjusted_gross: Math.round(score), holes_played: 18 })
+    });
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!res.ok) throw new Error(data?.detail || 'Failed to submit round');
+    alert('Round submitted.');
+    await loadMyBookings();
+  } catch (err) {
+    alert(err?.message || 'Failed to submit round');
+  }
+}
+
+async function markNoReturn(roundId){
+  if (!confirm('Mark this round as No Return (N/R)? This will require committee review.')) return;
+  try {
+    const res = await fetch(`/scoring/my-rounds/${Number(roundId)}/no-return`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!res.ok) throw new Error(data?.detail || 'Failed to mark N/R');
+    alert('Round marked as No Return.');
+    await loadMyBookings();
+  } catch (err) {
+    alert(err?.message || 'Failed to mark N/R');
+  }
+}
+
 async function saveProfile(e){
   e.preventDefault();
   const profileData = {
     name: document.getElementById('profile_name').value,
     phone: document.getElementById('profile_phone').value,
     birth_date: document.getElementById('profile_birth_date').value,
+    member_number: document.getElementById('profile_member_number').value,
+    handicap_number: document.getElementById('profile_handicap_number').value,
     handicap_sa_id: document.getElementById('profile_handicap_sa_id').value,
     home_course: document.getElementById('profile_home_course').value,
     handicap_index: document.getElementById('profile_handicap_index').value,
@@ -466,6 +710,7 @@ async function saveProfile(e){
 
   await loadUserInfo();
   await loadBookingWindow();
+  await loadMyBookings();
 })();
 </script>
 </body>
