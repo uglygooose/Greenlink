@@ -79,6 +79,16 @@ def _is_occupying_booking(b: models.Booking) -> bool:
         status = ""
     return status not in {"cancelled", "no_show"}
 
+
+def _as_naive_datetime(value: datetime) -> datetime:
+    """
+    Normalize ISO query datetimes to naive datetimes.
+    Handles clients that send timezone-qualified strings (e.g. trailing 'Z').
+    """
+    if value is not None and getattr(value, "tzinfo", None) is not None:
+        return value.replace(tzinfo=None)
+    return value
+
 @router.post("/create", response_model=schemas.TeeTimeOut)
 def create_tee(
     tee: schemas.TeeTimeCreate,
@@ -269,6 +279,11 @@ def tee_range(
     club_id: int = Depends(get_active_club_id),
 ):
     try:
+        start = _as_naive_datetime(start)
+        end = _as_naive_datetime(end)
+        if end <= start:
+            raise HTTPException(status_code=400, detail="Invalid range: end must be after start")
+
         # Enforce booking window for non-admins by clamping the range.
         if getattr(current_user, "role", None) not in {models.UserRole.super_admin, models.UserRole.admin, models.UserRole.club_staff}:
             _, _, max_date = get_booking_window_for_user(db, current_user)

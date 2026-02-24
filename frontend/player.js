@@ -45,6 +45,15 @@ function ymdToDate(ymd) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function dateToYmd(dateObj) {
+  const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -174,7 +183,10 @@ function buildRangeForDate(dateYmd) {
   if (!d) return null;
   const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
   const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0);
-  return { startIso: start.toISOString(), endIso: end.toISOString() };
+  return {
+    startIso: `${dateToYmd(start)}T00:00:00`,
+    endIso: `${dateToYmd(end)}T00:00:00`
+  };
 }
 
 function applyRouteState() {
