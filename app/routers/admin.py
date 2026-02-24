@@ -1543,6 +1543,7 @@ async def get_all_bookings(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     period: Optional[str] = None,  # day | week | month | ytd
+    date_basis: Optional[str] = "tee_time",  # tee_time | created
     anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff)
@@ -1558,11 +1559,19 @@ async def get_all_bookings(
     if status:
         query = query.filter(Booking.status == status)
 
-    # Filter by tee time range (inclusive start, exclusive end).
-    # This is used by the admin UI for day/week/month/ytd views.
+    basis = str(date_basis or "tee_time").strip().lower()
+    if basis not in {"tee_time", "created"}:
+        raise HTTPException(status_code=400, detail="Invalid date_basis (use tee_time or created)")
+
+    # Filter by selected date basis range (inclusive start, exclusive end).
+    # Used by admin UI day/week/month/ytd views.
     if start and end:
-        query = query.filter(TeeTime.tee_time >= start, TeeTime.tee_time < end)
-        query = query.order_by(TeeTime.tee_time, Booking.id)
+        if basis == "created":
+            query = query.filter(Booking.created_at >= start, Booking.created_at < end)
+            query = query.order_by(desc(Booking.created_at), desc(Booking.id))
+        else:
+            query = query.filter(TeeTime.tee_time >= start, TeeTime.tee_time < end)
+            query = query.order_by(TeeTime.tee_time, Booking.id)
     elif period and anchor_date:
         period = period.lower().strip()
         if period not in {"day", "week", "month", "ytd"}:
@@ -1589,8 +1598,12 @@ async def get_all_bookings(
             range_start = datetime.combine(ytd_start, datetime.min.time())
             range_end = datetime.combine(anchor_date + timedelta(days=1), datetime.min.time())
 
-        query = query.filter(TeeTime.tee_time >= range_start, TeeTime.tee_time < range_end)
-        query = query.order_by(TeeTime.tee_time, Booking.id)
+        if basis == "created":
+            query = query.filter(Booking.created_at >= range_start, Booking.created_at < range_end)
+            query = query.order_by(desc(Booking.created_at), desc(Booking.id))
+        else:
+            query = query.filter(TeeTime.tee_time >= range_start, TeeTime.tee_time < range_end)
+            query = query.order_by(TeeTime.tee_time, Booking.id)
     else:
         query = query.order_by(desc(Booking.created_at))
     

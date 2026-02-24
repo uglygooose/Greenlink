@@ -1553,7 +1553,7 @@ async function loadBookings() {
     const dateStr = document.getElementById("bookings-date")?.value;
 
     try {
-        let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10`;
+        let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10&date_basis=created`;
         if (status) url += `&status=${status}`;
 
         const range = buildBookingRange(dateStr, bookingPeriod);
