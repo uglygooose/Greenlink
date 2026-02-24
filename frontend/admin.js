@@ -871,7 +871,11 @@ async function loadBookings() {
         `).join("");
 
         // Pagination
-        const totalPages = Math.ceil(data.total / 10);
+        const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / 10));
+        if (currentPage > totalPages) {
+            currentPage = totalPages;
+            return loadBookings();
+        }
         renderPagination("bookings-pagination", currentPage, totalPages, (page) => {
             currentPage = page;
             loadBookings();
@@ -1344,6 +1348,10 @@ async function loadPlayers() {
         }
 
         const totalPages = Math.ceil(Number(data.total || 0) / 10) || 1;
+        if (currentPlayersPage > totalPages) {
+            currentPlayersPage = totalPages;
+            return loadPlayers();
+        }
         renderPagination("players-pagination", currentPlayersPage, totalPages, (page) => {
             currentPlayersPage = page;
             loadPlayers();
@@ -1692,18 +1700,40 @@ async function loadRevenue() {
         });
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
 
-        // Summary (paid revenue vs target)
+        // Summary (combined actual vs target)
+        const bookedTotal = series.booked.reduce((sum, v) => sum + safeNumber(v), 0);
         const actualPaid = series.paid.reduce((sum, v) => sum + safeNumber(v), 0);
         const actualOther = (series.other || []).reduce((sum, v) => sum + safeNumber(v), 0);
         const combinedActual = actualPaid + actualOther;
         const targetRevenue = data.target_revenue;
-        const pct = targetRevenue ? (actualPaid / safeNumber(targetRevenue)) : null;
+        const pct = targetRevenue ? (combinedActual / safeNumber(targetRevenue)) : null;
+        const collectionRate = bookedTotal > 0 ? (actualPaid / bookedTotal) : null;
+        const otherMix = combinedActual > 0 ? (actualOther / combinedActual) : null;
+        const gapToTarget = targetRevenue == null ? null : (combinedActual - safeNumber(targetRevenue));
 
         const actualEl = document.getElementById("revenue-actual");
         const golfEl = document.getElementById("revenue-golf-paid");
         const otherEl = document.getElementById("revenue-other");
         const targetEl = document.getElementById("revenue-target");
         const pctEl = document.getElementById("revenue-pct");
+        const collectionEl = document.getElementById("revenue-collection-rate");
+        const otherMixEl = document.getElementById("revenue-other-mix");
+        const gapEl = document.getElementById("revenue-gap");
+        const flowEl = document.getElementById("revenue-flow-text");
+        if (collectionEl) collectionEl.textContent = collectionRate == null ? "-" : formatPct(collectionRate);
+        if (otherMixEl) otherMixEl.textContent = otherMix == null ? "-" : formatPct(otherMix);
+        if (gapEl) gapEl.textContent = gapToTarget == null ? "-" : formatCurrencyZAR(gapToTarget);
+        if (flowEl) {
+            const targetSummary = targetRevenue == null
+                ? "No target has been configured for this period."
+                : (gapToTarget >= 0
+                    ? `You are ahead of target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`
+                    : `You are below target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`);
+            flowEl.textContent =
+                `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
+                `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${collectionRate == null ? "-" : formatPct(collectionRate)}). ` +
+                `Imported non-golf: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+        }
         if (golfEl) golfEl.textContent = formatCurrencyZAR(actualPaid);
         if (otherEl) otherEl.textContent = formatCurrencyZAR(actualOther);
         if (actualEl) actualEl.textContent = formatCurrencyZAR(combinedActual);
@@ -1715,6 +1745,7 @@ async function loadRevenue() {
         if (window.dailyChart) window.dailyChart.destroy();
         const dailyRequired = data?.daily_revenue_required;
         const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
+        const combinedSeries = series.labels.map((_, idx) => safeNumber(series.paid[idx]) + safeNumber(series.other[idx]));
 
         window.dailyChart = new Chart(dailyCtx, {
             type: "bar",
@@ -1722,19 +1753,39 @@ async function loadRevenue() {
                 labels: series.labels.map(d => formatYMDToDMY(d)),
                 datasets: [
                     {
-                        label: "Booked Revenue (R)",
-                        data: series.booked,
-                        backgroundColor: "rgba(6, 79, 50, 0.65)"
-                    },
-                    {
-                        label: "Paid Revenue (R)",
+                        label: "Paid Golf (R)",
                         data: series.paid,
-                        backgroundColor: "rgba(30, 136, 229, 0.65)"
+                        backgroundColor: "rgba(30, 136, 229, 0.72)",
+                        stack: "actual"
                     },
                     {
-                        label: "Other Revenue (R)",
+                        label: "Other Imported (R)",
                         data: series.other,
-                        backgroundColor: "rgba(242, 140, 44, 0.65)"
+                        backgroundColor: "rgba(242, 140, 44, 0.72)",
+                        stack: "actual"
+                    },
+                    {
+                        type: "line",
+                        label: "Combined Actual (R)",
+                        data: combinedSeries,
+                        borderColor: "#064f32",
+                        backgroundColor: "rgba(6, 79, 50, 0.08)",
+                        pointRadius: 2,
+                        borderWidth: 2,
+                        tension: 0.25,
+                        yAxisID: "y"
+                    },
+                    {
+                        type: "line",
+                        label: "Booked Value (R)",
+                        data: series.booked,
+                        borderColor: "#6d4c41",
+                        backgroundColor: "rgba(109, 76, 65, 0.05)",
+                        borderDash: [5, 4],
+                        pointRadius: 1.5,
+                        borderWidth: 1.8,
+                        tension: 0.2,
+                        yAxisID: "y"
                     },
                     ...(dailyRequiredValue == null ? [] : [{
                         type: "line",
@@ -1753,7 +1804,8 @@ async function loadRevenue() {
                 responsive: true,
                 maintainAspectRatio: true,
                 scales: {
-                    y: { beginAtZero: true }
+                    x: { stacked: true },
+                    y: { beginAtZero: true, stacked: true }
                 }
             }
         });
@@ -1765,7 +1817,7 @@ async function loadRevenue() {
         window.statusChart = new Chart(statusCtx, {
             type: "pie",
             data: {
-                labels: data.revenue_by_status.map(s => s.status),
+                labels: data.revenue_by_status.map(s => statusToLabel(s.status || "unknown")),
                 datasets: [{
                     data: data.revenue_by_status.map(s => s.amount),
                     backgroundColor: ["#3498db", "#f39c12", "#27ae60", "#e74c3c"]
@@ -1777,10 +1829,11 @@ async function loadRevenue() {
         const otherBody = document.getElementById("other-revenue-streams-body");
         if (otherBody) {
             const rows = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
+            const otherTotal = rows.reduce((sum, r) => sum + safeNumber(r?.amount), 0);
             if (!rows.length) {
                 otherBody.innerHTML = `
                     <tr class="empty-row">
-                        <td colspan="3">
+                        <td colspan="6">
                             <div class="empty-state">No imported revenue yet. Use “Import Revenue CSV” above.</div>
                         </td>
                     </tr>
@@ -1788,9 +1841,12 @@ async function loadRevenue() {
             } else {
                 otherBody.innerHTML = rows.map(r => `
                     <tr>
-                        <td>${escapeHtml(String(r.stream || ""))}</td>
+                        <td>${escapeHtml(String(r.stream || "").replaceAll("_", " "))}</td>
                         <td>${escapeHtml(formatCurrencyZAR(r.amount || 0))}</td>
                         <td>${escapeHtml(String(r.transactions ?? 0))}</td>
+                        <td>${otherTotal > 0 ? escapeHtml(formatPct(safeNumber(r.amount) / otherTotal)) : "-"}</td>
+                        <td>${combinedActual > 0 ? escapeHtml(formatPct(safeNumber(r.amount) / combinedActual)) : "-"}</td>
+                        <td>${Number(r.transactions || 0) > 0 ? escapeHtml(formatCurrencyZAR(safeNumber(r.amount) / safeNumber(r.transactions))) : "-"}</td>
                     </tr>
                 `).join("");
             }
@@ -4532,7 +4588,11 @@ async function loadLedger() {
             `;
         }
 
-        const totalPages = Math.ceil(data.total / 10);
+        const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / 10));
+        if (currentLedgerPage > totalPages) {
+            currentLedgerPage = totalPages;
+            return loadLedger();
+        }
         renderPagination("ledger-pagination", currentLedgerPage, totalPages, (page) => {
             currentLedgerPage = page;
             loadLedger();
@@ -4553,17 +4613,65 @@ async function loadLedger() {
 }
 
 // Utilities
+function buildPaginationItems(currentPage, totalPages) {
+    if (totalPages <= 9) {
+        return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    }
+
+    if (currentPage <= 4) {
+        return [1, 2, 3, 4, 5, "...", totalPages];
+    }
+
+    if (currentPage >= totalPages - 3) {
+        return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+
+    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+}
+
 function renderPagination(elementId, currentPage, totalPages, callback) {
     const container = document.getElementById(elementId);
+    if (!container) return;
     container.innerHTML = "";
 
-    for (let i = 1; i <= totalPages; i++) {
+    const safeTotal = Math.max(1, Number(totalPages || 1));
+    const safeCurrent = Math.min(Math.max(1, Number(currentPage || 1)), safeTotal);
+    if (safeTotal <= 1) return;
+
+    const makeNavButton = (label, page, disabled) => {
         const btn = document.createElement("button");
-        btn.textContent = i;
-        btn.classList.toggle("active", i === currentPage);
-        btn.onclick = () => callback(i);
+        btn.type = "button";
+        btn.className = "page-nav";
+        btn.textContent = label;
+        btn.disabled = disabled;
+        if (!disabled) {
+            btn.onclick = () => callback(page);
+        }
+        return btn;
+    };
+
+    container.appendChild(makeNavButton("Prev", safeCurrent - 1, safeCurrent <= 1));
+
+    const items = buildPaginationItems(safeCurrent, safeTotal);
+    for (const item of items) {
+        if (item === "...") {
+            const ellipsis = document.createElement("span");
+            ellipsis.className = "page-ellipsis";
+            ellipsis.textContent = "...";
+            container.appendChild(ellipsis);
+            continue;
+        }
+
+        const page = Number(item);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = String(page);
+        btn.classList.toggle("active", page === safeCurrent);
+        btn.onclick = () => callback(page);
         container.appendChild(btn);
     }
+
+    container.appendChild(makeNavButton("Next", safeCurrent + 1, safeCurrent >= safeTotal));
 }
 
 function updateTime() {
