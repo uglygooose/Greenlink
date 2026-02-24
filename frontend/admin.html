@@ -132,7 +132,14 @@
 
                     <div class="dashboard-grid">
                         <div class="dashboard-card">
-                            <h3>Today's Performance</h3>
+                            <div class="dashboard-performance-header">
+                                <h3>Performance Window</h3>
+                                <div class="tee-toggle dashboard-period-toggle" role="group" aria-label="Dashboard performance window">
+                                    <button class="tee-btn dashboard-period-btn active" type="button" data-period="day">Daily</button>
+                                    <button class="tee-btn dashboard-period-btn" type="button" data-period="week">Weekly</button>
+                                    <button class="tee-btn dashboard-period-btn" type="button" data-period="month">Monthly</button>
+                                </div>
+                            </div>
                             <div class="today-stats">
                                 <div class="today-stat">
                                     <span id="today-primary-label">Today's Bookings</span>

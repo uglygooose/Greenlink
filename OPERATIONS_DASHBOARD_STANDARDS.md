@@ -49,13 +49,14 @@ This guide maps each GreenLink operation to practical dashboard KPIs and workflo
   - Golf: tee occupancy, paid rounds, revenue per paid round, no-show rate.
   - Pro Shop: sales today, transactions today, avg basket (7d), low-stock rate.
   - Pub/Bowls/Other: revenue today, transactions today, avg ticket (7d), 7d trend.
+- Dashboard performance panel now supports `Daily`, `Weekly`, and `Monthly` views using current vs prior-period comparisons.
 - Golf-only sections (targets + monthly golf trend + booking-status card) hide automatically on non-golf dashboards.
 - Added operational highlights table:
   - All: revenue-mix split by operation.
   - Golf: tee-sheet and conversion signals.
   - Pro Shop: inventory health + top sellers.
   - Pub/Bowls/Other: top imported categories + transaction context.
-- Dashboard stream switching is always available (no lock mode), including when entering from individual operation dashboard links.
+- `Operations View` selector is shown on `Dashboard (All)` only; operation dashboards stay focused on their own stream.
 - Revenue import stream options now include `pro_shop`.
 
 ## AI quick wins (low-effort, high-value)

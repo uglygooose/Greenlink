@@ -1962,6 +1962,18 @@ body.drag-active .slot-card.open {
     min-width: 86px;
 }
 
+.dashboard-performance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.dashboard-period-toggle .tee-btn {
+    min-width: 80px;
+}
+
 .pro-shop-form-grid {
     grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr);
 }

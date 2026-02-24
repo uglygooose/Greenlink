@@ -1003,71 +1003,150 @@ async def get_dashboard_stats(
             return 1.0 if cur > 0 else None
         return (cur - prev) / prev
 
-    golf_paid_today_revenue, golf_paid_today_rounds = _golf_paid_amounts_and_rounds(today, today)
+    yesterday = today - timedelta(days=1)
+    month_start = today.replace(day=1)
+    prior_month_end = month_start - timedelta(days=1)
+    prior_month_start = prior_month_end.replace(day=1)
+
+    day_stream_stats = today_stream_stats
+    prior_day_stream_stats = _stream_amounts_and_transactions(yesterday, yesterday)
+    month_stream_stats = _stream_amounts_and_transactions(month_start, today)
+    prior_month_stream_stats = _stream_amounts_and_transactions(prior_month_start, prior_month_end)
+
+    def _period_rollup(current_revenue: float, current_txns: int, prior_revenue: float) -> dict[str, float | int | None]:
+        return {
+            "revenue": float(current_revenue),
+            "transactions": int(current_txns),
+            "avg_ticket": float(_avg_ticket(current_revenue, current_txns)),
+            "vs_prior": _delta_ratio(current_revenue, prior_revenue),
+            "prior_revenue": float(prior_revenue),
+        }
+
+    golf_paid_day_revenue, golf_paid_day_rounds = _golf_paid_amounts_and_rounds(today, today)
+    golf_paid_prior_day_revenue, golf_paid_prior_day_rounds = _golf_paid_amounts_and_rounds(yesterday, yesterday)
     golf_paid_week_revenue, golf_paid_week_rounds = _golf_paid_amounts_and_rounds(today - timedelta(days=6), today)
     golf_paid_prior_week_revenue, golf_paid_prior_week_rounds = _golf_paid_amounts_and_rounds(
         today - timedelta(days=13),
         today - timedelta(days=7),
     )
+    golf_paid_month_revenue, golf_paid_month_rounds = _golf_paid_amounts_and_rounds(month_start, today)
+    golf_paid_prior_month_revenue, golf_paid_prior_month_rounds = _golf_paid_amounts_and_rounds(
+        prior_month_start,
+        prior_month_end,
+    )
 
-    golf_today_revenue = float(golf_paid_today_revenue + _stream_amount(today_stream_stats, "golf"))
-    golf_week_revenue = float(golf_paid_week_revenue + _stream_amount(week_stream_stats, "golf"))
-    golf_prior_week_revenue = float(golf_paid_prior_week_revenue + _stream_amount(prior_week_stream_stats, "golf"))
-    golf_today_transactions = int(golf_paid_today_rounds + _stream_txns(today_stream_stats, "golf"))
-    golf_week_transactions = int(golf_paid_week_rounds + _stream_txns(week_stream_stats, "golf"))
-    golf_prior_week_transactions = int(golf_paid_prior_week_rounds + _stream_txns(prior_week_stream_stats, "golf"))
-    golf_week_vs_prior = _delta_ratio(golf_week_revenue, golf_prior_week_revenue)
-    golf_avg_ticket_7d = _avg_ticket(golf_week_revenue, golf_week_transactions)
+    golf_periods = {
+        "day": _period_rollup(
+            golf_paid_day_revenue + _stream_amount(day_stream_stats, "golf"),
+            golf_paid_day_rounds + _stream_txns(day_stream_stats, "golf"),
+            golf_paid_prior_day_revenue + _stream_amount(prior_day_stream_stats, "golf"),
+        ),
+        "week": _period_rollup(
+            golf_paid_week_revenue + _stream_amount(week_stream_stats, "golf"),
+            golf_paid_week_rounds + _stream_txns(week_stream_stats, "golf"),
+            golf_paid_prior_week_revenue + _stream_amount(prior_week_stream_stats, "golf"),
+        ),
+        "month": _period_rollup(
+            golf_paid_month_revenue + _stream_amount(month_stream_stats, "golf"),
+            golf_paid_month_rounds + _stream_txns(month_stream_stats, "golf"),
+            golf_paid_prior_month_revenue + _stream_amount(prior_month_stream_stats, "golf"),
+        ),
+    }
 
-    pro_shop_today_revenue = float(_stream_amount(today_stream_stats, "pro_shop"))
-    pro_shop_week_revenue = float(_stream_amount(week_stream_stats, "pro_shop"))
-    pro_shop_prior_week_revenue = float(_stream_amount(prior_week_stream_stats, "pro_shop"))
-    pro_shop_today_transactions = int(_stream_txns(today_stream_stats, "pro_shop"))
-    pro_shop_week_transactions = int(_stream_txns(week_stream_stats, "pro_shop"))
-    pro_shop_prior_week_transactions = int(_stream_txns(prior_week_stream_stats, "pro_shop"))
-    pro_shop_week_vs_prior = _delta_ratio(pro_shop_week_revenue, pro_shop_prior_week_revenue)
-    pro_shop_avg_ticket_7d = _avg_ticket(pro_shop_week_revenue, pro_shop_week_transactions)
+    pro_shop_periods = {
+        "day": _period_rollup(
+            _stream_amount(day_stream_stats, "pro_shop"),
+            _stream_txns(day_stream_stats, "pro_shop"),
+            _stream_amount(prior_day_stream_stats, "pro_shop"),
+        ),
+        "week": _period_rollup(
+            _stream_amount(week_stream_stats, "pro_shop"),
+            _stream_txns(week_stream_stats, "pro_shop"),
+            _stream_amount(prior_week_stream_stats, "pro_shop"),
+        ),
+        "month": _period_rollup(
+            _stream_amount(month_stream_stats, "pro_shop"),
+            _stream_txns(month_stream_stats, "pro_shop"),
+            _stream_amount(prior_month_stream_stats, "pro_shop"),
+        ),
+    }
 
     other_streams: list[tuple[str, str]] = [("pub", "Pub"), ("bowls", "Bowls"), ("other", "Other")]
-    stream_operational: dict[str, dict[str, float | int | str | None]] = {}
+    stream_rollups: dict[str, dict] = {
+        "golf": {
+            "label": "Golf",
+            "total_revenue": float(golf_total_revenue),
+            "periods": golf_periods,
+        },
+        "pro_shop": {
+            "label": "Pro Shop",
+            "total_revenue": float(pro_shop_total_revenue),
+            "periods": pro_shop_periods,
+        },
+    }
     for stream_key, stream_label in other_streams:
-        today_amount = float(_stream_amount(today_stream_stats, stream_key))
-        week_amount = float(_stream_amount(week_stream_stats, stream_key))
-        prior_week_amount = float(_stream_amount(prior_week_stream_stats, stream_key))
-        today_txns = int(_stream_txns(today_stream_stats, stream_key))
-        week_txns = int(_stream_txns(week_stream_stats, stream_key))
-        prior_week_txns = int(_stream_txns(prior_week_stream_stats, stream_key))
-        stream_operational[stream_key] = {
+        stream_rollups[stream_key] = {
             "label": stream_label,
             "total_revenue": float(other_total_by_stream.get(stream_key, 0.0)),
-            "today_revenue": today_amount,
-            "week_revenue": week_amount,
-            "prior_week_revenue": prior_week_amount,
-            "today_transactions": today_txns,
-            "week_transactions": week_txns,
-            "prior_week_transactions": prior_week_txns,
-            "avg_ticket_week": _avg_ticket(week_amount, week_txns),
-            "week_vs_prior_week": _delta_ratio(week_amount, prior_week_amount),
+            "periods": {
+                "day": _period_rollup(
+                    _stream_amount(day_stream_stats, stream_key),
+                    _stream_txns(day_stream_stats, stream_key),
+                    _stream_amount(prior_day_stream_stats, stream_key),
+                ),
+                "week": _period_rollup(
+                    _stream_amount(week_stream_stats, stream_key),
+                    _stream_txns(week_stream_stats, stream_key),
+                    _stream_amount(prior_week_stream_stats, stream_key),
+                ),
+                "month": _period_rollup(
+                    _stream_amount(month_stream_stats, stream_key),
+                    _stream_txns(month_stream_stats, stream_key),
+                    _stream_amount(prior_month_stream_stats, stream_key),
+                ),
+            },
         }
 
-    other_total_revenue = float(sum(float(stream_operational[k]["total_revenue"]) for k, _ in other_streams))
-    today_other_revenue = float(sum(float(stream_operational[k]["today_revenue"]) for k, _ in other_streams))
-    week_other_revenue = float(sum(float(stream_operational[k]["week_revenue"]) for k, _ in other_streams))
-    other_prior_week_revenue = float(sum(float(stream_operational[k]["prior_week_revenue"]) for k, _ in other_streams))
+    combined_total_revenue = float(sum(float(stream_rollups[k]["total_revenue"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
+    combined_periods: dict[str, dict[str, float | int | None]] = {}
+    for period_key in ("day", "week", "month"):
+        combined_revenue = float(sum(float(stream_rollups[k]["periods"][period_key]["revenue"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
+        combined_txns = int(sum(int(stream_rollups[k]["periods"][period_key]["transactions"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
+        combined_prior_revenue = float(
+            sum(float(stream_rollups[k]["periods"][period_key]["prior_revenue"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"])
+        )
+        combined_periods[period_key] = _period_rollup(combined_revenue, combined_txns, combined_prior_revenue)
 
-    combined_total_revenue = float(golf_total_revenue + pro_shop_total_revenue + other_total_revenue)
-    combined_today_revenue = float(golf_today_revenue + pro_shop_today_revenue + today_other_revenue)
-    combined_week_revenue = float(golf_week_revenue + pro_shop_week_revenue + week_other_revenue)
-    combined_prior_week_revenue = float(golf_prior_week_revenue + pro_shop_prior_week_revenue + other_prior_week_revenue)
+    stream_rollups["all"] = {
+        "label": "All Operations",
+        "total_revenue": float(combined_total_revenue),
+        "periods": combined_periods,
+    }
 
-    combined_today_transactions = int(
-        golf_today_transactions + pro_shop_today_transactions + sum(int(stream_operational[k]["today_transactions"]) for k, _ in other_streams)
-    )
-    combined_week_transactions = int(
-        golf_week_transactions + pro_shop_week_transactions + sum(int(stream_operational[k]["week_transactions"]) for k, _ in other_streams)
-    )
-    combined_week_vs_prior = _delta_ratio(combined_week_revenue, combined_prior_week_revenue)
-    combined_avg_ticket_7d = _avg_ticket(combined_week_revenue, combined_week_transactions)
+    golf_today_revenue = float(stream_rollups["golf"]["periods"]["day"]["revenue"])
+    golf_week_revenue = float(stream_rollups["golf"]["periods"]["week"]["revenue"])
+    golf_today_transactions = int(stream_rollups["golf"]["periods"]["day"]["transactions"])
+    golf_week_transactions = int(stream_rollups["golf"]["periods"]["week"]["transactions"])
+    golf_week_vs_prior = stream_rollups["golf"]["periods"]["week"]["vs_prior"]
+    golf_avg_ticket_7d = float(stream_rollups["golf"]["periods"]["week"]["avg_ticket"])
+
+    pro_shop_today_revenue = float(stream_rollups["pro_shop"]["periods"]["day"]["revenue"])
+    pro_shop_week_revenue = float(stream_rollups["pro_shop"]["periods"]["week"]["revenue"])
+    pro_shop_today_transactions = int(stream_rollups["pro_shop"]["periods"]["day"]["transactions"])
+    pro_shop_week_transactions = int(stream_rollups["pro_shop"]["periods"]["week"]["transactions"])
+    pro_shop_week_vs_prior = stream_rollups["pro_shop"]["periods"]["week"]["vs_prior"]
+    pro_shop_avg_ticket_7d = float(stream_rollups["pro_shop"]["periods"]["week"]["avg_ticket"])
+
+    other_total_revenue = float(sum(float(stream_rollups[k]["total_revenue"]) for k, _ in other_streams))
+    today_other_revenue = float(sum(float(stream_rollups[k]["periods"]["day"]["revenue"]) for k, _ in other_streams))
+    week_other_revenue = float(sum(float(stream_rollups[k]["periods"]["week"]["revenue"]) for k, _ in other_streams))
+
+    combined_today_revenue = float(stream_rollups["all"]["periods"]["day"]["revenue"])
+    combined_week_revenue = float(stream_rollups["all"]["periods"]["week"]["revenue"])
+    combined_today_transactions = int(stream_rollups["all"]["periods"]["day"]["transactions"])
+    combined_week_transactions = int(stream_rollups["all"]["periods"]["week"]["transactions"])
+    combined_week_vs_prior = stream_rollups["all"]["periods"]["week"]["vs_prior"]
+    combined_avg_ticket_7d = float(stream_rollups["all"]["periods"]["week"]["avg_ticket"])
 
     golf_today_occupancy_rate = (
         float(golf_today_slot_booked) / float(golf_today_slot_capacity)
@@ -1090,49 +1169,35 @@ async def get_dashboard_stats(
         else 0.0
     )
 
-    revenue_streams = {
-        "all": {
-            "label": "All Operations",
-            "total_revenue": float(combined_total_revenue),
-            "today_revenue": float(combined_today_revenue),
-            "week_revenue": float(combined_week_revenue),
-            "today_transactions": int(combined_today_transactions),
-            "week_transactions": int(combined_week_transactions),
-            "avg_ticket_week": float(combined_avg_ticket_7d),
-            "week_vs_prior_week": combined_week_vs_prior,
-        },
-        "golf": {
-            "label": "Golf",
-            "total_revenue": float(golf_total_revenue),
-            "today_revenue": float(golf_today_revenue),
-            "week_revenue": float(golf_week_revenue),
-            "today_transactions": int(golf_today_transactions),
-            "week_transactions": int(golf_week_transactions),
-            "avg_ticket_week": float(golf_avg_ticket_7d),
-            "week_vs_prior_week": golf_week_vs_prior,
-        },
-        "pro_shop": {
-            "label": "Pro Shop",
-            "total_revenue": float(pro_shop_total_revenue),
-            "today_revenue": float(pro_shop_today_revenue),
-            "week_revenue": float(pro_shop_week_revenue),
-            "today_transactions": int(pro_shop_today_transactions),
-            "week_transactions": int(pro_shop_week_transactions),
-            "avg_ticket_week": float(pro_shop_avg_ticket_7d),
-            "week_vs_prior_week": pro_shop_week_vs_prior,
-        },
-    }
-    for stream_key, stream_label in other_streams:
-        stream_info = stream_operational[stream_key]
+    revenue_streams: dict[str, dict] = {}
+    for stream_key in ("all", "golf", "pro_shop", "pub", "bowls", "other"):
+        stream_data = stream_rollups[stream_key]
+        periods_payload: dict[str, dict[str, float | int | None]] = {}
+        for period_key in ("day", "week", "month"):
+            period_data = stream_data["periods"][period_key]
+            periods_payload[period_key] = {
+                "revenue": float(period_data["revenue"]),
+                "transactions": int(period_data["transactions"]),
+                "avg_ticket": float(period_data["avg_ticket"]),
+                "vs_prior": period_data["vs_prior"],
+                "prior_revenue": float(period_data["prior_revenue"]),
+            }
+
         revenue_streams[stream_key] = {
-            "label": stream_label,
-            "total_revenue": float(stream_info["total_revenue"]),
-            "today_revenue": float(stream_info["today_revenue"]),
-            "week_revenue": float(stream_info["week_revenue"]),
-            "today_transactions": int(stream_info["today_transactions"]),
-            "week_transactions": int(stream_info["week_transactions"]),
-            "avg_ticket_week": float(stream_info["avg_ticket_week"]),
-            "week_vs_prior_week": stream_info["week_vs_prior_week"],
+            "label": str(stream_data["label"]),
+            "total_revenue": float(stream_data["total_revenue"]),
+            "today_revenue": float(periods_payload["day"]["revenue"]),
+            "week_revenue": float(periods_payload["week"]["revenue"]),
+            "month_revenue": float(periods_payload["month"]["revenue"]),
+            "today_transactions": int(periods_payload["day"]["transactions"]),
+            "week_transactions": int(periods_payload["week"]["transactions"]),
+            "month_transactions": int(periods_payload["month"]["transactions"]),
+            "avg_ticket_week": float(periods_payload["week"]["avg_ticket"]),
+            "avg_ticket_month": float(periods_payload["month"]["avg_ticket"]),
+            "day_vs_prior_day": periods_payload["day"]["vs_prior"],
+            "week_vs_prior_week": periods_payload["week"]["vs_prior"],
+            "month_vs_prior_month": periods_payload["month"]["vs_prior"],
+            "periods": periods_payload,
         }
 
     def _stream_mix(amt: float) -> float:
@@ -1153,13 +1218,13 @@ async def get_dashboard_stats(
         },
     ]
     for stream_key, stream_label in other_streams:
-        stream_info = stream_operational[stream_key]
+        stream_day = stream_rollups[stream_key]["periods"]["day"]
         all_highlights.append(
             {
                 "name": f"{stream_label} Revenue Mix (Today)",
-                "current": _stream_mix(float(stream_info["today_revenue"])),
+                "current": _stream_mix(float(stream_day["revenue"])),
                 "format": "percent",
-                "context": f"{int(stream_info['today_transactions'])} transactions | R{float(stream_info['today_revenue']):.2f}",
+                "context": f"{int(stream_day['transactions'])} transactions | R{float(stream_day['revenue']):.2f}",
             }
         )
 
@@ -1268,13 +1333,14 @@ async def get_dashboard_stats(
     }
 
     for stream_key, stream_label in other_streams:
-        stream_info = stream_operational[stream_key]
-        stream_today_amount = float(stream_info["today_revenue"])
-        stream_week_amount = float(stream_info["week_revenue"])
-        stream_today_txns = int(stream_info["today_transactions"])
-        stream_week_txns = int(stream_info["week_transactions"])
-        stream_avg_ticket_week = float(stream_info["avg_ticket_week"])
-        stream_week_vs_prior = stream_info["week_vs_prior_week"]
+        stream_day = stream_rollups[stream_key]["periods"]["day"]
+        stream_week = stream_rollups[stream_key]["periods"]["week"]
+        stream_today_amount = float(stream_day["revenue"])
+        stream_week_amount = float(stream_week["revenue"])
+        stream_today_txns = int(stream_day["transactions"])
+        stream_week_txns = int(stream_week["transactions"])
+        stream_avg_ticket_week = float(stream_week["avg_ticket"])
+        stream_week_vs_prior = stream_week["vs_prior"]
 
         operation_insights[stream_key] = {
             "cards": [

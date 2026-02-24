@@ -34,6 +34,8 @@ let currentMemberDetail = null;
 let dashboardStreamView = "all";
 let dashboardDataCache = null;
 let dashboardStreamPreset = "all";
+let dashboardMenuContext = "main";
+let dashboardPeriodView = "day";
 let proShopProductsCache = [];
 let proShopCart = [];
 
@@ -140,6 +142,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     setupNavigation();
     setupDashboardStreamFilters();
+    setupDashboardPeriodFilters();
     setupCloseModals();
     updateTime();
     setInterval(updateTime, 1000);
@@ -497,6 +500,7 @@ function setupNavigation() {
 
             if (page === "dashboard") {
                 const nextStream = streamPreset || "all";
+                dashboardMenuContext = nextStream === "all" ? "main" : "operation";
                 setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
             }
 
@@ -569,7 +573,9 @@ function showPage(pageName) {
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
 
     if (pageName === "dashboard" && dashboardDataCache) {
+        applyDashboardEntryVisibility();
         applyDashboardStreamButtonState();
+        applyDashboardPeriodButtonState();
         applyDashboardStreamView(dashboardDataCache);
     }
 }
@@ -589,6 +595,45 @@ function setupDashboardStreamFilters() {
     });
 }
 
+function setupDashboardPeriodFilters() {
+    const buttons = document.querySelectorAll(".dashboard-period-btn");
+    if (!buttons.length) return;
+    const valid = new Set(["day", "week", "month"]);
+    const stored = String(localStorage.getItem("dashboard_period_view") || "").toLowerCase();
+    setDashboardPeriodViewState(valid.has(stored) ? stored : "day", { persist: false });
+
+    buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const next = String(btn.dataset.period || "day").toLowerCase();
+            setDashboardPeriodViewState(next, { persist: true });
+        });
+    });
+}
+
+function setDashboardPeriodViewState(period, options = {}) {
+    const valid = new Set(["day", "week", "month"]);
+    dashboardPeriodView = valid.has(String(period || "").toLowerCase()) ? String(period || "").toLowerCase() : "day";
+    if (options.persist !== false) {
+        localStorage.setItem("dashboard_period_view", dashboardPeriodView);
+    }
+    applyDashboardPeriodButtonState();
+    if (dashboardDataCache) {
+        applyDashboardStreamView(dashboardDataCache);
+    }
+}
+
+function applyDashboardPeriodButtonState() {
+    document.querySelectorAll(".dashboard-period-btn").forEach(btn => {
+        btn.classList.toggle("active", String(btn.dataset.period || "day") === dashboardPeriodView);
+    });
+}
+
+function applyDashboardEntryVisibility() {
+    const card = document.querySelector(".dashboard-stream-card");
+    if (!(card instanceof HTMLElement)) return;
+    card.style.display = dashboardMenuContext === "main" ? "" : "none";
+}
+
 function setDashboardStreamViewState(stream, options = {}) {
     const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const next = valid.has(String(stream || "").toLowerCase()) ? String(stream || "").toLowerCase() : "all";
@@ -606,6 +651,7 @@ function setDashboardStreamViewState(stream, options = {}) {
     if (persist) {
         localStorage.setItem("dashboard_stream_view", dashboardStreamView);
     }
+    applyDashboardEntryVisibility();
     applyDashboardStreamButtonState();
     if (dashboardDataCache) {
         applyDashboardStreamView(dashboardDataCache);
@@ -676,6 +722,45 @@ function resolveDashboardStreamMetrics(data, streamKey) {
 
     const key = String(streamKey || "all").toLowerCase();
     const selected = streams[key] || fallback[key] || fallback.all;
+    const rawPeriods = (selected && typeof selected.periods === "object" && selected.periods)
+        ? selected.periods
+        : {};
+    const fallbackPeriods = {
+        day: {
+            revenue: safeNumber(selected.today_revenue),
+            transactions: safeNumber(selected.today_transactions),
+            avg_ticket: 0,
+            vs_prior: Number.isFinite(Number(selected.day_vs_prior_day)) ? Number(selected.day_vs_prior_day) : null,
+            prior_revenue: 0,
+        },
+        week: {
+            revenue: safeNumber(selected.week_revenue),
+            transactions: safeNumber(selected.week_transactions),
+            avg_ticket: safeNumber(selected.avg_ticket_week),
+            vs_prior: Number.isFinite(Number(selected.week_vs_prior_week)) ? Number(selected.week_vs_prior_week) : null,
+            prior_revenue: 0,
+        },
+        month: {
+            revenue: safeNumber(selected.month_revenue ?? selected.week_revenue),
+            transactions: safeNumber(selected.month_transactions ?? selected.week_transactions),
+            avg_ticket: safeNumber(selected.avg_ticket_month),
+            vs_prior: Number.isFinite(Number(selected.month_vs_prior_month)) ? Number(selected.month_vs_prior_month) : null,
+            prior_revenue: 0,
+        }
+    };
+    const periods = {};
+    ["day", "week", "month"].forEach(periodKey => {
+        const raw = (rawPeriods && typeof rawPeriods[periodKey] === "object") ? rawPeriods[periodKey] : {};
+        const fallbackPeriod = fallbackPeriods[periodKey];
+        periods[periodKey] = {
+            revenue: safeNumber(raw?.revenue ?? fallbackPeriod.revenue),
+            transactions: safeNumber(raw?.transactions ?? fallbackPeriod.transactions),
+            avg_ticket: safeNumber(raw?.avg_ticket ?? fallbackPeriod.avg_ticket),
+            vs_prior: Number.isFinite(Number(raw?.vs_prior)) ? Number(raw.vs_prior) : fallbackPeriod.vs_prior,
+            prior_revenue: safeNumber(raw?.prior_revenue ?? fallbackPeriod.prior_revenue),
+        };
+    });
+
     return {
         label: String(selected.label || fallback[key]?.label || "Operations"),
         total_revenue: safeNumber(selected.total_revenue),
@@ -685,6 +770,7 @@ function resolveDashboardStreamMetrics(data, streamKey) {
         week_transactions: safeNumber(selected.week_transactions),
         avg_ticket_week: safeNumber(selected.avg_ticket_week),
         week_vs_prior_week: Number.isFinite(Number(selected.week_vs_prior_week)) ? Number(selected.week_vs_prior_week) : null,
+        periods,
         key,
     };
 }
@@ -700,12 +786,36 @@ function formatDashboardMetric(metric) {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
-function formatTrendDelta(value) {
+function formatTrendDelta(value, periodSingular = "Week") {
+    const periodWord = String(periodSingular || "Week").toLowerCase();
     const num = Number(value);
-    if (!Number.isFinite(num)) return "No prior-week baseline";
+    if (!Number.isFinite(num)) return `No prior-${periodWord} baseline`;
     const pct = (num * 100).toFixed(0);
     const sign = num > 0 ? "+" : "";
-    return `${sign}${pct}% vs prior 7 days`;
+    return `${sign}${pct}% vs prior ${periodWord}`;
+}
+
+function dashboardPeriodMeta(periodKey) {
+    const key = String(periodKey || "").toLowerCase();
+    if (key === "week") return { key: "week", label: "Weekly", singular: "Week" };
+    if (key === "month") return { key: "month", label: "Monthly", singular: "Month" };
+    return { key: "day", label: "Daily", singular: "Day" };
+}
+
+function resolveDashboardSelectedPeriod(selected, periodKey) {
+    const meta = dashboardPeriodMeta(periodKey);
+    const periods = (selected && selected.periods && typeof selected.periods === "object")
+        ? selected.periods
+        : {};
+    const row = periods[meta.key] || periods.day || { revenue: selected.today_revenue, transactions: selected.today_transactions, avg_ticket: 0, vs_prior: null, prior_revenue: 0 };
+    return {
+        ...meta,
+        revenue: safeNumber(row.revenue),
+        transactions: safeNumber(row.transactions),
+        avg_ticket: safeNumber(row.avg_ticket),
+        vs_prior: Number.isFinite(Number(row.vs_prior)) ? Number(row.vs_prior) : null,
+        prior_revenue: safeNumber(row.prior_revenue),
+    };
 }
 
 function renderDashboardHighlights(data, streamKey) {
@@ -840,16 +950,6 @@ function applyDashboardOperationLayout(data, streamKey) {
         }
     }
 
-    const todayPrimaryLabelEl = document.getElementById("today-primary-label");
-    const todayPrimaryValueEl = document.getElementById("today-bookings");
-    const primaryMetric = cards[0] || null;
-    if (todayPrimaryLabelEl && primaryMetric) {
-        todayPrimaryLabelEl.textContent = String(primaryMetric.label || "Today's Activity");
-    }
-    if (todayPrimaryValueEl && primaryMetric) {
-        todayPrimaryValueEl.textContent = formatDashboardMetric(primaryMetric);
-    }
-
     const showGolfSections = streamKey === "all" || streamKey === "golf";
     document.querySelectorAll(".dashboard-golf-only").forEach(el => {
         if (el instanceof HTMLElement) el.style.display = showGolfSections ? "" : "none";
@@ -863,31 +963,38 @@ function applyDashboardOperationLayout(data, streamKey) {
 function applyDashboardStreamView(data) {
     const selected = resolveDashboardStreamMetrics(data, dashboardStreamView);
     const label = selected.label;
+    const selectedPeriod = resolveDashboardSelectedPeriod(selected, dashboardPeriodView);
     applyDashboardStreamButtonState();
+    applyDashboardPeriodButtonState();
+    applyDashboardEntryVisibility();
 
     const totalRevenueEl = document.getElementById("total-revenue");
     const todayRevenueEl = document.getElementById("today-revenue");
     const weekRevenueEl = document.getElementById("week-revenue");
+    const todayPrimaryLabelEl = document.getElementById("today-primary-label");
+    const todayPrimaryValueEl = document.getElementById("today-bookings");
     const totalRevenueLabelEl = document.getElementById("total-revenue-label");
     const todayRevenueLabelEl = document.getElementById("today-revenue-label");
     const weekRevenueLabelEl = document.getElementById("week-revenue-label");
     const noteEl = document.getElementById("dashboard-stream-note");
 
     if (totalRevenueEl) totalRevenueEl.textContent = selected.total_revenue.toFixed(2);
-    if (todayRevenueEl) todayRevenueEl.textContent = selected.today_revenue.toFixed(2);
-    if (weekRevenueEl) weekRevenueEl.textContent = selected.week_revenue.toFixed(2);
+    if (todayPrimaryValueEl) todayPrimaryValueEl.textContent = String(Math.round(selectedPeriod.transactions));
+    if (todayRevenueEl) todayRevenueEl.textContent = selectedPeriod.revenue.toFixed(2);
+    if (weekRevenueEl) weekRevenueEl.textContent = selectedPeriod.prior_revenue.toFixed(2);
 
     if (totalRevenueLabelEl) totalRevenueLabelEl.textContent = `${label} Revenue`;
-    if (todayRevenueLabelEl) todayRevenueLabelEl.textContent = `Today's Revenue (${label})`;
-    if (weekRevenueLabelEl) weekRevenueLabelEl.textContent = `This Week (${label})`;
+    if (todayPrimaryLabelEl) todayPrimaryLabelEl.textContent = `${selectedPeriod.label} Transactions (${label})`;
+    if (todayRevenueLabelEl) todayRevenueLabelEl.textContent = `${selectedPeriod.label} Revenue (${label})`;
+    if (weekRevenueLabelEl) weekRevenueLabelEl.textContent = `Prior ${selectedPeriod.singular} Revenue (${label})`;
 
     if (noteEl) {
         const fromSidebarPreset = dashboardStreamPreset !== "custom" && dashboardStreamPreset !== "all" && dashboardStreamPreset === selected.key;
-        const trendText = formatTrendDelta(selected.week_vs_prior_week);
+        const trendText = formatTrendDelta(selectedPeriod.vs_prior, selectedPeriod.singular);
         if (selected.key === "all") {
-            noteEl.textContent = `Showing combined operations view. ${trendText}.`;
+            noteEl.textContent = `Showing combined operations view on ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
         } else if (fromSidebarPreset) {
-            noteEl.textContent = `Loaded ${label} dashboard preset. ${trendText}. Use Operations View to switch anytime.`;
+            noteEl.textContent = `Loaded ${label} dashboard preset on ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
         } else if (selected.key === "golf") {
             noteEl.textContent = `Golf view uses occupancy, paid rounds, and no-show control. ${trendText}.`;
         } else if (selected.key === "pro_shop") {
