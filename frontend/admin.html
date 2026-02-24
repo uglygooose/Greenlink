@@ -23,6 +23,7 @@
                     <summary class="nav-group-toggle">General</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
+                        <a href="#revenue" class="nav-item" data-page="revenue">Revenue Analytics</a>
                         <a href="#operations-config" class="nav-item" data-page="operations-config">Operations Config</a>
                     </div>
                 </details>
@@ -33,7 +34,6 @@
                         <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
                         <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
                         <a href="#players" class="nav-item" data-page="players">People</a>
-                        <a href="#revenue" class="nav-item" data-page="revenue">Revenue</a>
                         <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
                         <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
                         <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
@@ -333,8 +333,8 @@
 
                             <label for="ops-allow-stream-override">Use stream from CSV</label>
                             <select id="ops-allow-stream-override">
-                                <option value="true" selected>Yes</option>
-                                <option value="false">No</option>
+                                <option value="false" selected>No</option>
+                                <option value="true">Yes</option>
                             </select>
 
                             <label for="ops-dedupe">Auto-dedupe if no external ID</label>
@@ -354,13 +354,24 @@
                         <div class="action-note" id="ops-settings-hint"></div>
                     </div>
 
+                    <div class="dashboard-card" style="margin-top: 16px;">
+                        <h3>Import Revenue CSV</h3>
+                        <div class="filters" style="flex-wrap: wrap; gap: 10px;">
+                            <span class="action-note" id="ops-import-stream-label">Selected operation: Other</span>
+                            <input type="file" id="ops-revenue-import-file" accept=".csv" />
+                            <button class="btn-primary" id="ops-revenue-import-btn" type="button">Import</button>
+                            <span class="action-note" id="ops-revenue-import-status"></span>
+                        </div>
+                        <div class="action-note" id="ops-revenue-upload-flow-note">Select operation above, then import one CSV per operation for clean reconciliation.</div>
+                    </div>
+
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Import Workflow</h3>
                         <ol class="flow-steps">
                             <li>Select operation and confirm the import profile fields above.</li>
-                            <li>Open <code>Revenue</code> and import the operation CSV.</li>
+                            <li>Import the CSV in this page (one operation at a time).</li>
                             <li>GreenLink reuses saved settings so daily/weekly imports map consistently.</li>
-                            <li>Review inserted/updated counts and validate totals in Revenue Analytics.</li>
+                            <li>Review inserted/updated counts and validate totals in <code>Revenue Analytics</code>.</li>
                         </ol>
                     </div>
                 </section>
@@ -466,31 +477,13 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card" style="margin-bottom: 16px;">
-                        <h3>Import Revenue CSV</h3>
-                        <div class="filters" style="flex-wrap: wrap; gap: 10px;">
-                            <label for="revenue-import-stream">Stream</label>
-                            <select id="revenue-import-stream">
-                                <option value="golf">Golf</option>
-                                <option value="pro_shop">Pro Shop</option>
-                                <option value="pub">Pub</option>
-                                <option value="bowls">Bowls</option>
-                                <option value="other" selected>Other</option>
-                            </select>
-                            <input type="file" id="revenue-import-file" accept=".csv" />
-                            <button class="btn-primary" id="revenue-import-btn" type="button">Import</button>
-                            <span class="action-note" id="revenue-import-status"></span>
-                        </div>
-                    </div>
                     <div class="dashboard-card revenue-upload-flow">
-                        <h3>Other Revenue Upload Flow</h3>
+                        <h3>Revenue Data Flow</h3>
                         <ol class="flow-steps">
-                            <li>Select stream first, then keep import profile updated in <code>General → Operations Config</code>.</li>
-                            <li>Upload the CSV for that stream (date, description, amount format).</li>
-                            <li>Click <code>Import</code>, then confirm rows inserted/updated in the status line.</li>
-                            <li>Validate results in <code>Other Revenue by Stream</code> and the Dashboard <code>Operations View</code> toggle.</li>
+                            <li>Use <code>General → Operations Config</code> to import non-booking revenue per operation.</li>
+                            <li>Golf paid revenue is captured from bookings and ledger entries automatically.</li>
+                            <li>Use this page to validate trends, collection rate, and stream mix.</li>
                         </ol>
-                        <div class="action-note" id="revenue-upload-flow-note">Tip: import one stream at a time for cleaner reconciliation.</div>
                     </div>
 
                     <div class="cashbook-summary">
@@ -1328,6 +1321,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-02-24-08"></script>
+	    <script src="admin.js?v=2026-02-24-09"></script>
 	</body>
 	</html>

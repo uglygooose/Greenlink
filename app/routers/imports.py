@@ -167,7 +167,7 @@ def _default_revenue_import_settings(stream: str) -> dict[str, Any]:
         "amount_basis": "gross",  # gross | net
         "tax_adjustment": "ignore",  # ignore | add | subtract
         "tax_rate": 0.15,  # decimal form
-        "allow_stream_override": True,
+        "allow_stream_override": False,
         "dedupe_without_external_id": True,
     }
 
@@ -205,7 +205,7 @@ def _normalize_revenue_import_settings(raw: Any, stream: str) -> dict[str, Any]:
     except Exception:
         out["tax_rate"] = 0.15
 
-    out["allow_stream_override"] = bool(raw.get("allow_stream_override", True))
+    out["allow_stream_override"] = bool(raw.get("allow_stream_override", False))
     out["dedupe_without_external_id"] = bool(raw.get("dedupe_without_external_id", True))
     return out
 
@@ -322,7 +322,7 @@ class RevenueImportSettingsPayload(BaseModel):
     amount_basis: str = "gross"
     tax_adjustment: str = "ignore"
     tax_rate: float = 0.15
-    allow_stream_override: bool = True
+    allow_stream_override: bool = False
     dedupe_without_external_id: bool = True
 
 
@@ -483,7 +483,7 @@ async def import_revenue_csv(
                     str(effective_settings.get("stream_field") or ""),
                     ["stream", "source", "department", "revenue_stream", "business_unit"],
                 )
-                if bool(effective_settings.get("allow_stream_override", True))
+                if bool(effective_settings.get("allow_stream_override", False))
                 else None
             )
             row_stream = _norm_stream(row_stream_raw)

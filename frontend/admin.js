@@ -1290,7 +1290,7 @@ async function loadDashboard() {
         const lastRevenue = data?.imports?.revenue || null;
         if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
         if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
-        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, Revenue > Import Revenue CSV for pub/bowls/other/pro shop, and Pro Shop Sales for direct checkout.";
+        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, General > Operations Config for non-booking revenue imports, and Pro Shop Sales for direct checkout.";
 
         renderTargetsTable(data.targets);
 
@@ -2596,18 +2596,29 @@ function setupRevenueFilters() {
 }
 
 function updateRevenueUploadFlowHint() {
-    const streamSelect = document.getElementById("revenue-import-stream");
-    const note = document.getElementById("revenue-upload-flow-note");
-    if (!streamSelect || !note) return;
+    const opsStreamSelect = document.getElementById("ops-import-stream");
+    const legacyStreamSelect = document.getElementById("revenue-import-stream");
+    const streamSelect = opsStreamSelect || legacyStreamSelect;
+    const note = document.getElementById("ops-revenue-upload-flow-note") || document.getElementById("revenue-upload-flow-note");
+    const streamLabel = document.getElementById("ops-import-stream-label");
+    if (!streamSelect) return;
 
     const stream = String(streamSelect.value || "other").trim().toLowerCase();
     const label = revenueImportStreamLabel(stream);
+    if (streamLabel) {
+        streamLabel.textContent = `Selected operation: ${label}`;
+    }
+
+    if (!note) return;
+
     if (stream === "golf") {
-        note.textContent = "Selected stream: Golf. Use this only for non-booking golf revenue adjustments.";
+        note.textContent = "Selected operation: Golf. Import only true non-booking golf adjustments here (not tee-sheet bookings).";
     } else if (stream === "pro_shop") {
-        note.textContent = "Selected stream: Pro Shop. Use this for external POS imports when sales are not captured in GreenLink checkout.";
+        note.textContent = "Selected operation: Pro Shop. Use this for external POS files when sales were not captured in GreenLink checkout.";
+    } else if (stream === "pub" || stream === "bowls" || stream === "other") {
+        note.textContent = `Selected operation: ${label}. Import one CSV per operation for cleaner reconciliation and audit trails.`;
     } else {
-        note.textContent = `Selected stream: ${label}. Import one stream at a time for cleaner reconciliation.`;
+        note.textContent = "Select an operation, then import one CSV at a time for cleaner reconciliation.";
     }
 }
 
@@ -2634,7 +2645,7 @@ function normalizeRevenueImportSettings(stream, raw = {}) {
         amount_basis: "gross",
         tax_adjustment: "ignore",
         tax_rate: 0.15,
-        allow_stream_override: true,
+        allow_stream_override: false,
         dedupe_without_external_id: true,
     };
     const out = { ...fallback, ...(raw || {}) };
@@ -2658,7 +2669,7 @@ function normalizeRevenueImportSettings(stream, raw = {}) {
 }
 
 function getOpsSettingsStream() {
-    const streamSelect = document.getElementById("ops-import-stream");
+    const streamSelect = document.getElementById("ops-import-stream") || document.getElementById("revenue-import-stream");
     return String(streamSelect?.value || "other").trim().toLowerCase() || "other";
 }
 
@@ -2709,15 +2720,18 @@ function renderOpsImportSettingsHint(stream, settings, configured) {
     if (!String(settings?.date_field || "").trim()) requiredMissing.push("date field");
     if (!String(settings?.amount_field || "").trim()) requiredMissing.push("amount field");
     const label = revenueImportStreamLabel(stream);
+    const overrideNote = settings?.allow_stream_override
+        ? " Stream override is ON, so CSV rows can route into other operations."
+        : "";
     if (!configured) {
-        hintEl.textContent = `${label}: profile not saved yet. Import once with "Save detected columns on import" enabled, then review and save.`;
+        hintEl.textContent = `${label}: profile not saved yet. Import once with "Save detected columns on import" enabled, then review and save.${overrideNote}`;
         return;
     }
     if (requiredMissing.length) {
-        hintEl.textContent = `${label}: profile saved but missing ${requiredMissing.join(" and ")}. Imports will fall back to default field guesses.`;
+        hintEl.textContent = `${label}: profile saved but missing ${requiredMissing.join(" and ")}. Imports will fall back to default field guesses.${overrideNote}`;
         return;
     }
-    hintEl.textContent = `${label}: profile saved. Future daily/weekly imports will apply this mapping automatically.`;
+    hintEl.textContent = `${label}: profile saved. Future daily/weekly imports will apply this mapping automatically.${overrideNote}`;
 }
 
 async function loadOpsImportSettings(options = {}) {
@@ -2765,12 +2779,14 @@ async function saveOpsImportSettings() {
 }
 
 function setupRevenueImport() {
-    const btn = document.getElementById("revenue-import-btn");
-    if (!btn) return;
-    const streamSelect = document.getElementById("revenue-import-stream");
+    const btn = document.getElementById("ops-revenue-import-btn") || document.getElementById("revenue-import-btn");
+    const streamSelect = document.getElementById("ops-import-stream") || document.getElementById("revenue-import-stream");
+    const legacyStreamSelect = document.getElementById("revenue-import-stream");
     const opsStreamSelect = document.getElementById("ops-import-stream");
     const opsReloadBtn = document.getElementById("ops-load-settings-btn");
     const opsSaveBtn = document.getElementById("ops-save-settings-btn");
+    const fileInput = document.getElementById("ops-revenue-import-file") || document.getElementById("revenue-import-file");
+    const statusEl = document.getElementById("ops-revenue-import-status") || document.getElementById("revenue-import-status");
 
     streamSelect?.addEventListener("change", () => {
         updateRevenueUploadFlowHint();
@@ -2779,25 +2795,26 @@ function setupRevenueImport() {
             loadOpsImportSettings({ stream: streamSelect.value, silent: true });
         }
     });
-    opsStreamSelect?.addEventListener("change", () => {
-        if (streamSelect && streamSelect.value !== opsStreamSelect.value) {
-            streamSelect.value = opsStreamSelect.value;
+    opsStreamSelect?.addEventListener("change", (event) => {
+        const selected = String(event?.target?.value || opsStreamSelect.value || "other");
+        if (legacyStreamSelect && legacyStreamSelect.value !== selected) {
+            legacyStreamSelect.value = selected;
             updateRevenueUploadFlowHint();
         }
-        loadOpsImportSettings({ stream: opsStreamSelect.value });
+        loadOpsImportSettings({ stream: selected });
     });
     opsReloadBtn?.addEventListener("click", () => loadOpsImportSettings({ stream: getOpsSettingsStream() }));
     opsSaveBtn?.addEventListener("click", () => saveOpsImportSettings());
 
     updateRevenueUploadFlowHint();
-    loadOpsImportSettings({ stream: streamSelect?.value || "other", silent: true });
+    loadOpsImportSettings({ stream: getOpsSettingsStream(), silent: true });
+
+    if (!btn) return;
 
     btn.addEventListener("click", async () => {
         const token = localStorage.getItem("token");
         const stream = (streamSelect?.value || "other").trim();
         const saveOnImport = Boolean(document.getElementById("revenue-import-save-on-import")?.checked);
-        const fileInput = document.getElementById("revenue-import-file");
-        const statusEl = document.getElementById("revenue-import-status");
 
         const file = fileInput?.files?.[0];
         if (!file) {
