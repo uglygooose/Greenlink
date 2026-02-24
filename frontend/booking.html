@@ -670,6 +670,14 @@
 const API_PREFIX = '/tsheet';
 const token = localStorage.getItem('token');
 if(!token) location.href='/frontend/index.html';
+const role = String(localStorage.getItem('user_role') || 'player').toLowerCase();
+
+if (role === 'player') {
+  const p = new URLSearchParams(window.location.search || "");
+  p.set("tab", "book");
+  const next = `/frontend/dashboard.html?${p.toString()}`;
+  window.location.replace(next);
+}
 
 let clubConfig = null;
 let typeLabels = {

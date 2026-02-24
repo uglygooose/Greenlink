@@ -1288,11 +1288,17 @@
 		const API_PREFIX = '/tsheet';
 		const token = localStorage.getItem('token');
 		if(!token) location.href='/frontend/index.html';
-		const role = localStorage.getItem('user_role') || 'player';
-		const isAdmin = role === 'admin';
-		const isSuperAdmin = role === 'super_admin';
-		const isStaff = isAdmin || role === 'club_staff' || isSuperAdmin;
-		document.body.classList.add(isStaff ? 'admin' : 'player');
+			const role = localStorage.getItem('user_role') || 'player';
+			const isAdmin = role === 'admin';
+			const isSuperAdmin = role === 'super_admin';
+			const isStaff = isAdmin || role === 'club_staff' || isSuperAdmin;
+			if (!isStaff) {
+			  const p = new URLSearchParams(window.location.search || "");
+			  p.set("tab", "book");
+			  const next = `/frontend/dashboard.html?${p.toString()}`;
+			  window.location.replace(next);
+			}
+			document.body.classList.add(isStaff ? 'admin' : 'player');
 
 		(function installAuthFetch() {
 		  const originalFetch = window.fetch.bind(window);
