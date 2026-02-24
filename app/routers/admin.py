@@ -569,38 +569,45 @@ async def get_dashboard_stats(
 
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
-    
-    # Bookings by status
-    booked_count = (
-        db.query(func.count(Booking.id))
-        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.booked)
-        .scalar()
-        or 0
-    )
-    checked_in_count = (
-        db.query(func.count(Booking.id))
-        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.checked_in)
-        .scalar()
-        or 0
-    )
-    completed_count = (
-        db.query(func.count(Booking.id))
-        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.completed)
-        .scalar()
-        or 0
-    )
-    cancelled_count = (
-        db.query(func.count(Booking.id))
-        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.cancelled)
-        .scalar()
-        or 0
-    )
-    no_show_count = (
-        db.query(func.count(Booking.id))
-        .filter(Booking.club_id == club_id, Booking.status == BookingStatus.no_show)
-        .scalar()
-        or 0
-    )
+
+    def _empty_status_counts() -> dict[str, int]:
+        return {
+            "booked": 0,
+            "checked_in": 0,
+            "completed": 0,
+            "no_show": 0,
+            "cancelled": 0,
+        }
+
+    def _booking_status_counts(start_d: date | None = None, end_d: date | None = None) -> dict[str, int]:
+        counts = _empty_status_counts()
+        try:
+            q = db.query(Booking.status, func.count(Booking.id)).filter(Booking.club_id == club_id)
+            if start_d is not None or end_d is not None:
+                q = q.join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.club_id == club_id)
+                if start_d is not None:
+                    q = q.filter(func.date(TeeTime.tee_time) >= start_d)
+                if end_d is not None:
+                    q = q.filter(func.date(TeeTime.tee_time) <= end_d)
+
+            for status, count in q.group_by(Booking.status).all():
+                if isinstance(status, BookingStatus):
+                    key = str(status.value or "").strip().lower()
+                else:
+                    key = str(status or "").strip().lower().replace("bookingstatus.", "")
+                if key in counts:
+                    counts[key] = int(count or 0)
+        except Exception:
+            _safe_rollback(db)
+            return counts
+        return counts
+
+    bookings_by_status = _booking_status_counts()
+    booked_count = int(bookings_by_status.get("booked", 0))
+    checked_in_count = int(bookings_by_status.get("checked_in", 0))
+    completed_count = int(bookings_by_status.get("completed", 0))
+    cancelled_count = int(bookings_by_status.get("cancelled", 0))
+    no_show_count = int(bookings_by_status.get("no_show", 0))
     
     # Total golf revenue (cashbook basis = payment date / ledger entries)
     total_revenue = (
@@ -1007,6 +1014,11 @@ async def get_dashboard_stats(
     month_start = today.replace(day=1)
     prior_month_end = month_start - timedelta(days=1)
     prior_month_start = prior_month_end.replace(day=1)
+    bookings_by_status_periods = {
+        "day": _booking_status_counts(today, today),
+        "week": _booking_status_counts(today - timedelta(days=6), today),
+        "month": _booking_status_counts(month_start, today),
+    }
 
     day_stream_stats = today_stream_stats
     prior_day_stream_stats = _stream_amounts_and_transactions(yesterday, yesterday)
@@ -1433,13 +1445,8 @@ async def get_dashboard_stats(
         "revenue_streams": revenue_streams,
         "operation_insights": operation_insights,
         "imports": imports,
-        "bookings_by_status": {
-            "booked": booked_count,
-            "checked_in": checked_in_count,
-            "completed": completed_count,
-            "no_show": no_show_count,
-            "cancelled": cancelled_count
-        },
+        "bookings_by_status": bookings_by_status,
+        "bookings_by_status_periods": bookings_by_status_periods,
         "completed_rounds": completed_rounds,
         "today_bookings": today_bookings,
         "targets": {

@@ -940,7 +940,7 @@ function buildDashboardOperationCards(data, streamKey, selectedPeriod) {
     if (stream === "golf") {
         return [
             { label: `${periodLabel} Golf Revenue`, value: revenue, format: "currency" },
-            { label: `${periodLabel} Paid Rounds`, value: transactions, format: "number" },
+            { label: `${periodLabel} Paid Rounds`, value: benchmark.rounds_actual, format: "number" },
             { label: `${periodLabel} Revenue Target`, value: targetRevenueAttainment, format: "percent" },
             { label: `${periodLabel} Rounds Target`, value: targetRoundsAttainment, format: "percent" },
         ];
@@ -1021,6 +1021,44 @@ function applyDashboardOperationLayout(data, streamKey, selectedPeriod) {
     });
 }
 
+function resolveBookingStatusCounts(data, periodKey) {
+    const key = String(periodKey || "day").toLowerCase();
+    const periods = (data && data.bookings_by_status_periods && typeof data.bookings_by_status_periods === "object")
+        ? data.bookings_by_status_periods
+        : {};
+    const fallback = (data && data.bookings_by_status && typeof data.bookings_by_status === "object")
+        ? data.bookings_by_status
+        : {};
+    const row = (periods && typeof periods[key] === "object") ? periods[key] : fallback;
+    return {
+        booked: safeNumber(row?.booked ?? fallback?.booked),
+        checked_in: safeNumber(row?.checked_in ?? fallback?.checked_in),
+        completed: safeNumber(row?.completed ?? fallback?.completed),
+        no_show: safeNumber(row?.no_show ?? fallback?.no_show),
+        cancelled: safeNumber(row?.cancelled ?? fallback?.cancelled),
+    };
+}
+
+function renderBookingStatusCounts(data, periodKey) {
+    const counts = resolveBookingStatusCounts(data, periodKey);
+    const total = Object.values(counts).reduce((sum, value) => sum + safeNumber(value), 0) || 1;
+    const statuses = [
+        { key: "booked", elId: "status-booked", countId: "status-booked-count" },
+        { key: "checked_in", elId: "status-checked-in", countId: "status-checked-in-count" },
+        { key: "completed", elId: "status-completed", countId: "status-completed-count" },
+        { key: "no_show", elId: "status-no-show", countId: "status-no-show-count" },
+        { key: "cancelled", elId: "status-cancelled", countId: "status-cancelled-count" }
+    ];
+    statuses.forEach(({ key, elId, countId }) => {
+        const count = safeNumber(counts[key]);
+        const width = (count / total) * 100;
+        const el = document.getElementById(elId);
+        if (el) el.style.width = `${width}%`;
+        const countEl = document.getElementById(countId);
+        if (countEl) countEl.textContent = formatInteger(count);
+    });
+}
+
 function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
     const titleEl = document.getElementById("dashboard-secondary-title");
     const bookingStatusEl = document.getElementById("dashboard-booking-status-breakdown");
@@ -1038,10 +1076,13 @@ function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
     const streamInsight = (insights && typeof insights[stream] === "object") ? insights[stream] : {};
 
     if (stream === "golf") {
-        titleEl.textContent = "Booking Status";
+        const counts = resolveBookingStatusCounts(data, periodMeta.key);
+        const paidRoundsFromStatus = safeNumber(counts.checked_in) + safeNumber(counts.completed);
+        titleEl.textContent = `${periodLabel} Booking Status`;
         bookingStatusEl.style.display = "";
         focusEl.style.display = "none";
-        noteEl.style.display = "none";
+        noteEl.style.display = "";
+        noteEl.textContent = `${periodLabel} paid rounds = Checked In + Completed (${formatInteger(paidRoundsFromStatus)}).`;
         return;
     }
 
@@ -1129,6 +1170,7 @@ function applyDashboardStreamView(data) {
     const selected = resolveDashboardStreamMetrics(data, dashboardStreamView);
     const label = selected.label;
     const selectedPeriod = resolveDashboardSelectedPeriod(selected, dashboardPeriodView);
+    renderBookingStatusCounts(data, selectedPeriod.key);
     applyDashboardStreamButtonState();
     applyDashboardPeriodButtonState();
     applyDashboardEntryVisibility();
@@ -1208,24 +1250,6 @@ async function loadDashboard() {
         if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, Revenue > Import Revenue CSV for pub/bowls/other/pro shop, and Pro Shop Sales for direct checkout.";
 
         renderTargetsTable(data.targets);
-
-        // Status bars
-        const total = Object.values(data.bookings_by_status).reduce((a, b) => a + b, 0) || 1;
-        const statuses = [
-            { key: "booked", elId: "status-booked", countId: "status-booked-count" },
-            { key: "checked_in", elId: "status-checked-in", countId: "status-checked-in-count" },
-            { key: "completed", elId: "status-completed", countId: "status-completed-count" },
-            { key: "no_show", elId: "status-no-show", countId: "status-no-show-count" },
-            { key: "cancelled", elId: "status-cancelled", countId: "status-cancelled-count" }
-        ];
-        statuses.forEach(({ key, elId, countId }) => {
-            const count = data.bookings_by_status[key] || 0;
-            const width = (count / total) * 100;
-            const el = document.getElementById(elId);
-            if (el) el.style.width = width + "%";
-            const countEl = document.getElementById(countId);
-            if (countEl) countEl.textContent = formatInteger(count);
-        });
 
         // Revenue chart
         loadRevenueChart();
