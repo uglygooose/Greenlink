@@ -2559,7 +2559,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
 
     const groupByTime = String(selectedTee) === "all";
     let prevTimeKey = null;
-    const allowDetails = currentUserRole === "admin" || currentUserRole === "club_staff";
+    const allowDetails = currentUserRole === "admin" || currentUserRole === "club_staff" || currentUserRole === "super_admin";
 
     const html = [];
     for (const tt of dayTeeTimes) {
