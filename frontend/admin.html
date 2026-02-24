@@ -144,6 +144,7 @@
                                     <button class="tee-btn dashboard-period-btn active" type="button" data-period="day">Daily</button>
                                     <button class="tee-btn dashboard-period-btn" type="button" data-period="week">Weekly</button>
                                     <button class="tee-btn dashboard-period-btn" type="button" data-period="month">Monthly</button>
+                                    <button class="tee-btn dashboard-period-btn" type="button" data-period="ytd">YTD</button>
                                 </div>
                             </div>
                             <div class="today-stats">
@@ -215,7 +216,15 @@
                     </div>
 
                     <div class="dashboard-card full-width dashboard-highlights-card">
-                        <h3 id="dashboard-highlights-title">Operational Highlights</h3>
+                        <div class="dashboard-performance-header">
+                            <h3 id="dashboard-highlights-title">Operational Highlights</h3>
+                            <div class="tee-toggle dashboard-period-toggle" role="group" aria-label="Dashboard highlights window">
+                                <button class="tee-btn dashboard-period-btn active" type="button" data-period="day">Daily</button>
+                                <button class="tee-btn dashboard-period-btn" type="button" data-period="week">Weekly</button>
+                                <button class="tee-btn dashboard-period-btn" type="button" data-period="month">Monthly</button>
+                                <button class="tee-btn dashboard-period-btn" type="button" data-period="ytd">YTD</button>
+                            </div>
+                        </div>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
@@ -365,6 +374,7 @@
                                 <button class="tee-btn booking-period-btn active" type="button" data-period="day">Day</button>
                                 <button class="tee-btn booking-period-btn" type="button" data-period="week">Week</button>
                                 <button class="tee-btn booking-period-btn" type="button" data-period="month">Month</button>
+                                <button class="tee-btn booking-period-btn" type="button" data-period="ytd">YTD</button>
                             </div>
                             <label for="bookings-date">Date</label>
                             <input type="date" id="bookings-date" />
@@ -799,6 +809,7 @@
                                 <button class="tee-btn ledger-period-btn active" type="button" data-period="day">Day</button>
                                 <button class="tee-btn ledger-period-btn" type="button" data-period="week">Week</button>
                                 <button class="tee-btn ledger-period-btn" type="button" data-period="month">Month</button>
+                                <button class="tee-btn ledger-period-btn" type="button" data-period="ytd">YTD</button>
                             </div>
                             <label for="ledger-date">Date</label>
                             <input type="date" id="ledger-date" />

@@ -1014,16 +1014,26 @@ async def get_dashboard_stats(
     month_start = today.replace(day=1)
     prior_month_end = month_start - timedelta(days=1)
     prior_month_start = prior_month_end.replace(day=1)
+    ytd_start = date(today.year, 1, 1)
+    ytd_days_elapsed = (today - ytd_start).days + 1
+    prior_ytd_start = date(today.year - 1, 1, 1)
+    prior_ytd_end = prior_ytd_start + timedelta(days=max(0, ytd_days_elapsed - 1))
+    prior_ytd_year_end = date(today.year - 1, 12, 31)
+    if prior_ytd_end > prior_ytd_year_end:
+        prior_ytd_end = prior_ytd_year_end
     bookings_by_status_periods = {
         "day": _booking_status_counts(today, today),
         "week": _booking_status_counts(today - timedelta(days=6), today),
         "month": _booking_status_counts(month_start, today),
+        "ytd": _booking_status_counts(ytd_start, today),
     }
 
     day_stream_stats = today_stream_stats
     prior_day_stream_stats = _stream_amounts_and_transactions(yesterday, yesterday)
     month_stream_stats = _stream_amounts_and_transactions(month_start, today)
     prior_month_stream_stats = _stream_amounts_and_transactions(prior_month_start, prior_month_end)
+    ytd_stream_stats = _stream_amounts_and_transactions(ytd_start, today)
+    prior_ytd_stream_stats = _stream_amounts_and_transactions(prior_ytd_start, prior_ytd_end)
 
     def _period_rollup(current_revenue: float, current_txns: int, prior_revenue: float) -> dict[str, float | int | None]:
         return {
@@ -1046,6 +1056,11 @@ async def get_dashboard_stats(
         prior_month_start,
         prior_month_end,
     )
+    golf_paid_ytd_revenue, golf_paid_ytd_rounds = _golf_paid_amounts_and_rounds(ytd_start, today)
+    golf_paid_prior_ytd_revenue, golf_paid_prior_ytd_rounds = _golf_paid_amounts_and_rounds(
+        prior_ytd_start,
+        prior_ytd_end,
+    )
 
     golf_periods = {
         "day": _period_rollup(
@@ -1062,6 +1077,11 @@ async def get_dashboard_stats(
             golf_paid_month_revenue + _stream_amount(month_stream_stats, "golf"),
             golf_paid_month_rounds + _stream_txns(month_stream_stats, "golf"),
             golf_paid_prior_month_revenue + _stream_amount(prior_month_stream_stats, "golf"),
+        ),
+        "ytd": _period_rollup(
+            golf_paid_ytd_revenue + _stream_amount(ytd_stream_stats, "golf"),
+            golf_paid_ytd_rounds + _stream_txns(ytd_stream_stats, "golf"),
+            golf_paid_prior_ytd_revenue + _stream_amount(prior_ytd_stream_stats, "golf"),
         ),
     }
 
@@ -1080,6 +1100,11 @@ async def get_dashboard_stats(
             _stream_amount(month_stream_stats, "pro_shop"),
             _stream_txns(month_stream_stats, "pro_shop"),
             _stream_amount(prior_month_stream_stats, "pro_shop"),
+        ),
+        "ytd": _period_rollup(
+            _stream_amount(ytd_stream_stats, "pro_shop"),
+            _stream_txns(ytd_stream_stats, "pro_shop"),
+            _stream_amount(prior_ytd_stream_stats, "pro_shop"),
         ),
     }
 
@@ -1116,12 +1141,17 @@ async def get_dashboard_stats(
                     _stream_txns(month_stream_stats, stream_key),
                     _stream_amount(prior_month_stream_stats, stream_key),
                 ),
+                "ytd": _period_rollup(
+                    _stream_amount(ytd_stream_stats, stream_key),
+                    _stream_txns(ytd_stream_stats, stream_key),
+                    _stream_amount(prior_ytd_stream_stats, stream_key),
+                ),
             },
         }
 
     combined_total_revenue = float(sum(float(stream_rollups[k]["total_revenue"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
     combined_periods: dict[str, dict[str, float | int | None]] = {}
-    for period_key in ("day", "week", "month"):
+    for period_key in ("day", "week", "month", "ytd"):
         combined_revenue = float(sum(float(stream_rollups[k]["periods"][period_key]["revenue"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
         combined_txns = int(sum(int(stream_rollups[k]["periods"][period_key]["transactions"]) for k in ["golf", "pro_shop", "pub", "bowls", "other"]))
         combined_prior_revenue = float(
@@ -1185,7 +1215,7 @@ async def get_dashboard_stats(
     for stream_key in ("all", "golf", "pro_shop", "pub", "bowls", "other"):
         stream_data = stream_rollups[stream_key]
         periods_payload: dict[str, dict[str, float | int | None]] = {}
-        for period_key in ("day", "week", "month"):
+        for period_key in ("day", "week", "month", "ytd"):
             period_data = stream_data["periods"][period_key]
             periods_payload[period_key] = {
                 "revenue": float(period_data["revenue"]),
@@ -1201,14 +1231,18 @@ async def get_dashboard_stats(
             "today_revenue": float(periods_payload["day"]["revenue"]),
             "week_revenue": float(periods_payload["week"]["revenue"]),
             "month_revenue": float(periods_payload["month"]["revenue"]),
+            "ytd_revenue": float(periods_payload["ytd"]["revenue"]),
             "today_transactions": int(periods_payload["day"]["transactions"]),
             "week_transactions": int(periods_payload["week"]["transactions"]),
             "month_transactions": int(periods_payload["month"]["transactions"]),
+            "ytd_transactions": int(periods_payload["ytd"]["transactions"]),
             "avg_ticket_week": float(periods_payload["week"]["avg_ticket"]),
             "avg_ticket_month": float(periods_payload["month"]["avg_ticket"]),
+            "avg_ticket_ytd": float(periods_payload["ytd"]["avg_ticket"]),
             "day_vs_prior_day": periods_payload["day"]["vs_prior"],
             "week_vs_prior_week": periods_payload["week"]["vs_prior"],
             "month_vs_prior_month": periods_payload["month"]["vs_prior"],
+            "ytd_vs_prior_ytd": periods_payload["ytd"]["vs_prior"],
             "periods": periods_payload,
         }
 
@@ -1508,7 +1542,7 @@ async def get_all_bookings(
     status: str = None,
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
-    period: Optional[str] = None,  # day | week | month
+    period: Optional[str] = None,  # day | week | month | ytd
     anchor_date: Optional[date] = None,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff)
@@ -1525,14 +1559,14 @@ async def get_all_bookings(
         query = query.filter(Booking.status == status)
 
     # Filter by tee time range (inclusive start, exclusive end).
-    # This is used by the admin UI for daily/weekly/monthly views.
+    # This is used by the admin UI for day/week/month/ytd views.
     if start and end:
         query = query.filter(TeeTime.tee_time >= start, TeeTime.tee_time < end)
         query = query.order_by(TeeTime.tee_time, Booking.id)
     elif period and anchor_date:
         period = period.lower().strip()
-        if period not in {"day", "week", "month"}:
-            raise HTTPException(status_code=400, detail="Invalid period (use day, week, or month)")
+        if period not in {"day", "week", "month", "ytd"}:
+            raise HTTPException(status_code=400, detail="Invalid period (use day, week, month, or ytd)")
 
         if period == "day":
             range_start = datetime.combine(anchor_date, datetime.min.time())
@@ -1542,7 +1576,7 @@ async def get_all_bookings(
             monday = anchor_date - timedelta(days=anchor_date.weekday())
             range_start = datetime.combine(monday, datetime.min.time())
             range_end = range_start + timedelta(days=7)
-        else:  # month
+        elif period == "month":
             month_start = anchor_date.replace(day=1)
             if month_start.month == 12:
                 next_month = date(month_start.year + 1, 1, 1)
@@ -1550,6 +1584,10 @@ async def get_all_bookings(
                 next_month = date(month_start.year, month_start.month + 1, 1)
             range_start = datetime.combine(month_start, datetime.min.time())
             range_end = datetime.combine(next_month, datetime.min.time())
+        else:  # ytd
+            ytd_start = date(anchor_date.year, 1, 1)
+            range_start = datetime.combine(ytd_start, datetime.min.time())
+            range_end = datetime.combine(anchor_date + timedelta(days=1), datetime.min.time())
 
         query = query.filter(TeeTime.tee_time >= range_start, TeeTime.tee_time < range_end)
         query = query.order_by(TeeTime.tee_time, Booking.id)

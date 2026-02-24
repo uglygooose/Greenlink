@@ -616,7 +616,7 @@ function setupDashboardStreamFilters() {
 function setupDashboardPeriodFilters() {
     const buttons = document.querySelectorAll(".dashboard-period-btn");
     if (!buttons.length) return;
-    const valid = new Set(["day", "week", "month"]);
+    const valid = new Set(["day", "week", "month", "ytd"]);
     const stored = String(localStorage.getItem("dashboard_period_view") || "").toLowerCase();
     setDashboardPeriodViewState(valid.has(stored) ? stored : "day", { persist: false });
 
@@ -629,7 +629,7 @@ function setupDashboardPeriodFilters() {
 }
 
 function setDashboardPeriodViewState(period, options = {}) {
-    const valid = new Set(["day", "week", "month"]);
+    const valid = new Set(["day", "week", "month", "ytd"]);
     dashboardPeriodView = valid.has(String(period || "").toLowerCase()) ? String(period || "").toLowerCase() : "day";
     if (options.persist !== false) {
         localStorage.setItem("dashboard_period_view", dashboardPeriodView);
@@ -764,10 +764,17 @@ function resolveDashboardStreamMetrics(data, streamKey) {
             avg_ticket: safeNumber(selected.avg_ticket_month),
             vs_prior: Number.isFinite(Number(selected.month_vs_prior_month)) ? Number(selected.month_vs_prior_month) : null,
             prior_revenue: 0,
+        },
+        ytd: {
+            revenue: safeNumber(selected.ytd_revenue ?? selected.month_revenue ?? selected.week_revenue),
+            transactions: safeNumber(selected.ytd_transactions ?? selected.month_transactions ?? selected.week_transactions),
+            avg_ticket: safeNumber(selected.avg_ticket_ytd ?? selected.avg_ticket_month),
+            vs_prior: Number.isFinite(Number(selected.ytd_vs_prior_ytd)) ? Number(selected.ytd_vs_prior_ytd) : null,
+            prior_revenue: 0,
         }
     };
     const periods = {};
-    ["day", "week", "month"].forEach(periodKey => {
+    ["day", "week", "month", "ytd"].forEach(periodKey => {
         const raw = (rawPeriods && typeof rawPeriods[periodKey] === "object") ? rawPeriods[periodKey] : {};
         const fallbackPeriod = fallbackPeriods[periodKey];
         periods[periodKey] = {
@@ -817,6 +824,7 @@ function dashboardPeriodMeta(periodKey) {
     const key = String(periodKey || "").toLowerCase();
     if (key === "week") return { key: "week", label: "Weekly", singular: "Week" };
     if (key === "month") return { key: "month", label: "Monthly", singular: "Month" };
+    if (key === "ytd") return { key: "ytd", label: "YTD", singular: "YTD" };
     return { key: "day", label: "Daily", singular: "Day" };
 }
 
@@ -840,6 +848,7 @@ function dashboardTargetPeriodKey(periodKey) {
     const key = String(periodKey || "day").toLowerCase();
     if (key === "week") return "wtd";
     if (key === "month") return "mtd";
+    if (key === "ytd") return "ytd";
     return "day";
 }
 
@@ -866,7 +875,34 @@ function resolveDashboardTargetBenchmark(data, periodKey) {
     };
 }
 
-function renderDashboardHighlights(data, streamKey) {
+function buildAllOperationsMixHighlights(data, periodKey, periodLabel) {
+    const streamKeys = [
+        { key: "golf", label: "Golf" },
+        { key: "pro_shop", label: "Pro Shop" },
+        { key: "pub", label: "Pub" },
+        { key: "bowls", label: "Bowls" },
+        { key: "other", label: "Other" },
+    ];
+    const rows = streamKeys.map(entry => {
+        const period = data?.revenue_streams?.[entry.key]?.periods?.[periodKey];
+        const revenue = safeNumber(period?.revenue);
+        const transactions = safeNumber(period?.transactions);
+        return {
+            ...entry,
+            revenue,
+            transactions,
+        };
+    });
+    const totalRevenue = rows.reduce((sum, row) => sum + safeNumber(row.revenue), 0);
+    return rows.map(row => ({
+        name: `${row.label} Revenue Mix (${periodLabel})`,
+        current: totalRevenue > 0 ? (safeNumber(row.revenue) / totalRevenue) : 0,
+        format: "percent",
+        context: `${formatInteger(row.transactions)} transactions | ${formatCurrencyZAR(row.revenue)}`,
+    }));
+}
+
+function renderDashboardHighlights(data, streamKey, selectedPeriod) {
     const body = document.getElementById("dashboard-highlights-body");
     const titleEl = document.getElementById("dashboard-highlights-title");
     const noteEl = document.getElementById("dashboard-highlights-note");
@@ -880,14 +916,21 @@ function renderDashboardHighlights(data, streamKey) {
         : {};
     const row = insights[streamKey] || insights.all || null;
     const label = resolveDashboardStreamMetrics(data, streamKey).label;
+    const periodMeta = dashboardPeriodMeta(selectedPeriod?.key || dashboardPeriodView);
+    const stream = String(streamKey || "all").toLowerCase();
+    const isAllStream = stream === "all";
 
-    titleEl.textContent = `${label} Highlights`;
-    noteEl.textContent = row?.note ? String(row.note) : "No additional highlights available yet.";
+    titleEl.textContent = `${label} Highlights (${periodMeta.label})`;
+    noteEl.textContent = isAllStream
+        ? `Revenue mix by operation for the selected ${periodMeta.label.toLowerCase()} window.`
+        : (row?.note ? String(row.note) : "No additional highlights available yet.");
     if (metricColEl) metricColEl.textContent = "Metric";
-    if (currentColEl) currentColEl.textContent = "Current";
+    if (currentColEl) currentColEl.textContent = isAllStream ? `${periodMeta.label} Current` : "Current";
     if (contextColEl) contextColEl.textContent = "Context";
 
-    const highlights = Array.isArray(row?.highlights) ? row.highlights : [];
+    const highlights = isAllStream
+        ? buildAllOperationsMixHighlights(data, periodMeta.key, periodMeta.label)
+        : (Array.isArray(row?.highlights) ? row.highlights : []);
     if (!highlights.length) {
         body.innerHTML = `
             <tr class="empty-row">
@@ -1213,7 +1256,7 @@ function applyDashboardStreamView(data) {
 
     applyDashboardOperationLayout(data, selected.key, selectedPeriod);
     renderDashboardSecondaryCard(data, selected.key, selectedPeriod);
-    renderDashboardHighlights(data, selected.key);
+    renderDashboardHighlights(data, selected.key, selectedPeriod);
 
     if (currentActivePage === "dashboard") {
         const titleEl = document.getElementById("page-title");
@@ -1419,6 +1462,9 @@ function buildBookingRange(dateStr, period) {
     } else if (p === "month") {
         rangeStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
         rangeEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
+    } else if (p === "ytd") {
+        rangeStart = new Date(anchor.getFullYear(), 0, 1);
+        rangeEnd = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + 1);
     } else {
         return null;
     }
