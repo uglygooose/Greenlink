@@ -14,6 +14,7 @@ This is intentionally a script (not an API) so it can be used safely on a local 
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import sys
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import Base, SessionLocal, engine
 from app import models
 
 try:
@@ -34,6 +35,48 @@ except Exception:  # pragma: no cover
 
 PAYMENT_METHODS = ("CARD", "CASH", "EFT", "ONLINE")
 
+def _resolve_seed_club_id(db: Session, *, explicit_club_id: int | None = None) -> int:
+    """
+    Resolve a club_id to seed into.
+
+    If no clubs exist yet, create a single default active club so the rest of
+    the app (which is club-scoped) can render seeded data.
+    """
+    if explicit_club_id is not None:
+        cid = int(explicit_club_id)
+        club = db.query(models.Club).filter(models.Club.id == cid).first()
+        if not club:
+            raise SystemExit(f"--club-id {cid} not found")
+        if getattr(club, "active", 1) != 1:
+            print(f"[seed] Warning: club #{cid} is not active; continuing anyway.")
+        return int(club.id)
+
+    clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
+    if len(clubs) == 1:
+        return int(clubs[0].id)
+
+    preferred_slug = (os.getenv("GREENLINK_DEFAULT_CLUB_SLUG") or "").strip().lower() or None
+    if preferred_slug and clubs:
+        for c in clubs:
+            if str(getattr(c, "slug", "") or "").strip().lower() == preferred_slug:
+                return int(c.id)
+
+    if len(clubs) > 1:
+        chosen = int(clubs[0].id)
+        print(f"[seed] Multiple active clubs found; defaulting to club_id={chosen}. Pass --club-id to control this.")
+        return chosen
+
+    # No active clubs yet: create one.
+    name = "GreenLink Demo Club"
+    slug = preferred_slug or "greenlink-demo"
+    club = models.Club(name=name, slug=slug, active=1)
+    db.add(club)
+    db.commit()
+    db.refresh(club)
+    print(f"[seed] Created default active club: {club.name} (#{club.id})")
+    return int(club.id)
+
+
 def _utcnow_naive() -> datetime:
     # Store naive UTC timestamps (DB columns are TIMESTAMP WITHOUT TIME ZONE).
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -43,11 +86,27 @@ def _dt(d: date, hh: int, mm: int) -> datetime:
     return datetime.combine(d, time(hour=hh, minute=mm))
 
 
-def _get_or_create_member(db: Session, member_number: str, first: str, last: str, email: str) -> models.Member:
-    m = db.query(models.Member).filter(models.Member.member_number == member_number).first()
+def _get_or_create_member(
+    db: Session, *, club_id: int, member_number: str, first: str, last: str, email: str
+) -> models.Member:
+    m = (
+        db.query(models.Member)
+        .filter(models.Member.club_id == int(club_id), models.Member.member_number == member_number)
+        .first()
+    )
     if m:
         return m
+    # Backfill older seeded members that predate club scoping.
+    m = (
+        db.query(models.Member)
+        .filter(models.Member.club_id.is_(None), models.Member.member_number == member_number)
+        .first()
+    )
+    if m:
+        m.club_id = int(club_id)
+        return m
     m = models.Member(
+        club_id=int(club_id),
         member_number=member_number,
         first_name=first,
         last_name=last,
@@ -160,15 +219,25 @@ def _ensure_fee_type_enum_values(db: Session) -> None:
         pass
 
 
-def _get_or_create_tee_time(db: Session, when: datetime, hole: str) -> models.TeeTime:
+def _get_or_create_tee_time(db: Session, *, club_id: int, when: datetime, hole: str) -> models.TeeTime:
     existing = (
         db.query(models.TeeTime)
-        .filter(models.TeeTime.tee_time == when, models.TeeTime.hole == hole)
+        .filter(models.TeeTime.club_id == int(club_id), models.TeeTime.tee_time == when, models.TeeTime.hole == hole)
         .first()
     )
     if existing:
         return existing
-    tt = models.TeeTime(tee_time=when, hole=hole, capacity=4, status="open")
+    # Backfill older seeded tee times that predate club scoping.
+    existing = (
+        db.query(models.TeeTime)
+        .filter(models.TeeTime.club_id.is_(None), models.TeeTime.tee_time == when, models.TeeTime.hole == hole)
+        .first()
+    )
+    if existing:
+        existing.club_id = int(club_id)
+        return existing
+
+    tt = models.TeeTime(club_id=int(club_id), tee_time=when, hole=hole, capacity=4, status="open")
     db.add(tt)
     db.flush()
     return tt
@@ -177,6 +246,7 @@ def _get_or_create_tee_time(db: Session, when: datetime, hole: str) -> models.Te
 def _seed_booking_with_payment(
     db: Session,
     *,
+    club_id: int,
     tee_time: models.TeeTime,
     player_name: str,
     player_email: str,
@@ -198,12 +268,26 @@ def _seed_booking_with_payment(
     existing = (
         db.query(models.Booking)
         .filter(
+            models.Booking.club_id == int(club_id),
             models.Booking.external_provider == "seed",
             models.Booking.external_booking_id == seed_key,
         )
         .first()
     )
+    if not existing:
+        # Backfill older seeded rows that predate club scoping.
+        existing = (
+            db.query(models.Booking)
+            .filter(
+                models.Booking.club_id.is_(None),
+                models.Booking.external_provider == "seed",
+                models.Booking.external_booking_id == seed_key,
+            )
+            .first()
+        )
     if existing:
+        if getattr(existing, "club_id", None) is None:
+            existing.club_id = int(club_id)
         # Keep seeded records up to date (price/add-ons/notes) across re-runs.
         existing.price = float(price)
         existing.cart = bool(cart)
@@ -212,11 +296,23 @@ def _seed_booking_with_payment(
         if notes:
             existing.notes = notes
 
-        le = db.query(models.LedgerEntry).filter(models.LedgerEntry.booking_id == existing.id).first()
+        le = (
+            db.query(models.LedgerEntry)
+            .filter(models.LedgerEntry.booking_id == existing.id)
+            .first()
+        )
         if not le:
-            le = models.LedgerEntry(booking_id=existing.id, description="Seed payment", amount=price, created_at=payment_dt)
+            le = models.LedgerEntry(
+                club_id=int(club_id),
+                booking_id=existing.id,
+                description="Seed payment",
+                amount=price,
+                created_at=payment_dt,
+            )
             db.add(le)
             db.flush()
+        elif getattr(le, "club_id", None) is None:
+            le.club_id = int(club_id)
         meta = db.query(models.LedgerEntryMeta).filter(models.LedgerEntryMeta.ledger_entry_id == le.id).first()
         if not meta:
             db.add(models.LedgerEntryMeta(ledger_entry_id=le.id, payment_method=payment_method, updated_at=payment_dt))
@@ -227,6 +323,7 @@ def _seed_booking_with_payment(
         return existing, le
 
     b = models.Booking(
+        club_id=int(club_id),
         tee_time_id=tee_time.id,
         member_id=member_id,
         created_by_user_id=None,
@@ -261,6 +358,7 @@ def _seed_booking_with_payment(
     db.flush()
 
     le = models.LedgerEntry(
+        club_id=int(club_id),
         booking_id=b.id,
         description=f"Seed payment {player_name}",
         amount=float(price),
@@ -278,6 +376,33 @@ def _seed_booking_with_payment(
     )
     db.add(meta)
     return b, le
+
+
+def _seed_booking_exists(db: Session, *, club_id: int, seed_key: str) -> models.Booking | None:
+    row = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.club_id == int(club_id),
+            models.Booking.external_provider == "seed",
+            models.Booking.external_booking_id == seed_key,
+        )
+        .first()
+    )
+    if row:
+        return row
+    row = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.club_id.is_(None),
+            models.Booking.external_provider == "seed",
+            models.Booking.external_booking_id == seed_key,
+        )
+        .first()
+    )
+    if row:
+        row.club_id = int(club_id)
+        return row
+    return None
 
 
 @dataclass(frozen=True)
@@ -331,6 +456,7 @@ def backfill_missing_payment_methods(
 
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser()
+    p.add_argument("--club-id", type=int, default=None, help="Club ID to seed into (defaults to the only active club, or the first active club).")
     p.add_argument("--payment-date", help="Payment date to seed (YYYY-MM-DD). Default: today.")
     p.add_argument("--include-historical-days", type=int, default=3, help="Also seed payment dates N days back.")
     p.add_argument("--include-future-tee-days", type=int, default=14, help="Create some future tee times paid on the payment date.")
@@ -388,6 +514,9 @@ def main(argv: list[str]) -> int:
                 return 2
 
     with SessionLocal() as db:
+        # Allow running this script directly against a fresh DB file/URL.
+        Base.metadata.create_all(bind=engine)
+        seed_club_id = _resolve_seed_club_id(db, explicit_club_id=args.club_id)
         _ensure_fee_type_enum_values(db)
 
         # Ensure some fee categories exist for variety (only if fee table is present).
@@ -404,8 +533,8 @@ def main(argv: list[str]) -> int:
         )
 
         # Seed some members.
-        m1 = _get_or_create_member(db, "M-1001", "Alice", "Member", "alice.member@example.com")
-        m2 = _get_or_create_member(db, "M-1002", "Bob", "Member", "bob.member@example.com")
+        m1 = _get_or_create_member(db, club_id=seed_club_id, member_number="M-1001", first="Alice", last="Member", email="alice.member@example.com")
+        m2 = _get_or_create_member(db, club_id=seed_club_id, member_number="M-1002", first="Bob", last="Member", email="bob.member@example.com")
 
         db.commit()
 
@@ -433,7 +562,7 @@ def main(argv: list[str]) -> int:
             for i in range(n):
                 hole = "1" if i % 2 == 0 else "10"
                 tee_when = base_times[i % len(base_times)]
-                tt = _get_or_create_tee_time(db, tee_when, hole)
+                tt = _get_or_create_tee_time(db, club_id=seed_club_id, when=tee_when, hole=hole)
 
                 pt = player_types[i % len(player_types)]
                 is_member = pt == "member"
@@ -445,10 +574,26 @@ def main(argv: list[str]) -> int:
 
                 existing = (
                     db.query(models.Booking)
-                    .filter(models.Booking.external_provider == "seed", models.Booking.external_booking_id == seed_key)
+                    .filter(
+                        models.Booking.club_id == int(seed_club_id),
+                        models.Booking.external_provider == "seed",
+                        models.Booking.external_booking_id == seed_key,
+                    )
                     .first()
                 )
+                if not existing:
+                    existing = (
+                        db.query(models.Booking)
+                        .filter(
+                            models.Booking.club_id.is_(None),
+                            models.Booking.external_provider == "seed",
+                            models.Booking.external_booking_id == seed_key,
+                        )
+                        .first()
+                    )
                 if existing:
+                    if getattr(existing, "club_id", None) is None:
+                        existing.club_id = int(seed_club_id)
                     continue
 
                 wants_cart = bool(i % 5 == 0)
@@ -466,6 +611,7 @@ def main(argv: list[str]) -> int:
                     notes = f"{notes}\nCaddy amount: {float(args.caddy_price):.2f}"
 
                 b = models.Booking(
+                    club_id=int(seed_club_id),
                     tee_time_id=tt.id,
                     member_id=member_id,
                     created_by_user_id=None,
@@ -507,7 +653,7 @@ def main(argv: list[str]) -> int:
                 hole = "1" if i % 2 == 0 else "10"
                 tee_day = tee_day_today if i % 4 != 3 else tee_day_future  # every 4th booking: future tee-time paid today
                 tee_when = _dt(tee_day, 8 + (i % 6), (i % 2) * 10)
-                tt = _get_or_create_tee_time(db, tee_when, hole)
+                tt = _get_or_create_tee_time(db, club_id=seed_club_id, when=tee_when, hole=hole)
 
                 is_member = sc.is_member
                 member_id = (m1.id if i % 3 == 0 else m2.id) if is_member else None
@@ -533,6 +679,7 @@ def main(argv: list[str]) -> int:
 
                 b, le = _seed_booking_with_payment(
                     db,
+                    club_id=seed_club_id,
                     tee_time=tt,
                     player_name=name,
                     player_email=email,
@@ -555,48 +702,54 @@ def main(argv: list[str]) -> int:
 
                 # Add a couple of non-paid bookings (should not export).
                 if i == 0:
-                    b2 = models.Booking(
-                        tee_time_id=tt.id,
-                        member_id=None,
-                        created_by_user_id=None,
-                        player_name="Booked Not Paid",
-                        player_email=f"seed.unpaid.{d.strftime('%Y%m%d')}@example.com",
-                        source=models.BookingSource.proshop,
-                        external_provider="seed",
-                        external_booking_id=f"CASHBOOK_UNPAID_{d.strftime('%Y%m%d')}",
-                        party_size=1,
-                        fee_category_id=fee_ids.get("golf"),
-                        price=350.0,
-                        status=models.BookingStatus.booked,
-                        player_type="visitor",
-                        holes=18,
-                        prepaid=False,
-                        notes="Seeded unpaid booking (should not export)",
-                        created_at=_utcnow_naive(),
-                    )
-                    db.add(b2)
+                    unpaid_key = f"CASHBOOK_UNPAID_{d.strftime('%Y%m%d')}"
+                    if not _seed_booking_exists(db, club_id=seed_club_id, seed_key=unpaid_key):
+                        b2 = models.Booking(
+                            club_id=int(seed_club_id),
+                            tee_time_id=tt.id,
+                            member_id=None,
+                            created_by_user_id=None,
+                            player_name="Booked Not Paid",
+                            player_email=f"seed.unpaid.{d.strftime('%Y%m%d')}@example.com",
+                            source=models.BookingSource.proshop,
+                            external_provider="seed",
+                            external_booking_id=unpaid_key,
+                            party_size=1,
+                            fee_category_id=fee_ids.get("golf"),
+                            price=350.0,
+                            status=models.BookingStatus.booked,
+                            player_type="visitor",
+                            holes=18,
+                            prepaid=False,
+                            notes="Seeded unpaid booking (should not export)",
+                            created_at=_utcnow_naive(),
+                        )
+                        db.add(b2)
 
                 if i == 1:
-                    b3 = models.Booking(
-                        tee_time_id=tt.id,
-                        member_id=None,
-                        created_by_user_id=None,
-                        player_name="Cancelled",
-                        player_email=f"seed.cancelled.{d.strftime('%Y%m%d')}@example.com",
-                        source=models.BookingSource.proshop,
-                        external_provider="seed",
-                        external_booking_id=f"CASHBOOK_CANCELLED_{d.strftime('%Y%m%d')}",
-                        party_size=1,
-                        fee_category_id=fee_ids.get("golf"),
-                        price=350.0,
-                        status=models.BookingStatus.cancelled,
-                        player_type="visitor",
-                        holes=18,
-                        prepaid=False,
-                        notes="Seeded cancelled booking (should not export)",
-                        created_at=_utcnow_naive(),
-                    )
-                    db.add(b3)
+                    cancelled_key = f"CASHBOOK_CANCELLED_{d.strftime('%Y%m%d')}"
+                    if not _seed_booking_exists(db, club_id=seed_club_id, seed_key=cancelled_key):
+                        b3 = models.Booking(
+                            club_id=int(seed_club_id),
+                            tee_time_id=tt.id,
+                            member_id=None,
+                            created_by_user_id=None,
+                            player_name="Cancelled",
+                            player_email=f"seed.cancelled.{d.strftime('%Y%m%d')}@example.com",
+                            source=models.BookingSource.proshop,
+                            external_provider="seed",
+                            external_booking_id=cancelled_key,
+                            party_size=1,
+                            fee_category_id=fee_ids.get("golf"),
+                            price=350.0,
+                            status=models.BookingStatus.cancelled,
+                            player_type="visitor",
+                            holes=18,
+                            prepaid=False,
+                            notes="Seeded cancelled booking (should not export)",
+                            created_at=_utcnow_naive(),
+                        )
+                        db.add(b3)
 
         # Main payment date (used by your export screen).
         seed_for_payment_date(pay_date, max(1, int(args.seed_count)))

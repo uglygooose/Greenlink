@@ -1268,18 +1268,70 @@
     </div>
   </div>
 
-	<script>
-	const API_PREFIX = '/tsheet';
-	const token = localStorage.getItem('token');
-	if(!token) location.href='/frontend/index.html';
-	const role = localStorage.getItem('user_role') || 'player';
-	const isAdmin = role === 'admin';
-	const isStaff = isAdmin || role === 'club_staff';
-	document.body.classList.add(isStaff ? 'admin' : 'player');
+		<script>
+		const API_PREFIX = '/tsheet';
+		const token = localStorage.getItem('token');
+		if(!token) location.href='/frontend/index.html';
+		const role = localStorage.getItem('user_role') || 'player';
+		const isAdmin = role === 'admin';
+		const isSuperAdmin = role === 'super_admin';
+		const isStaff = isAdmin || role === 'club_staff' || isSuperAdmin;
+		document.body.classList.add(isStaff ? 'admin' : 'player');
 
-let selectedDate = new Date();
-let bookingWindowDays = 14;
-let bookingWindowMaxDate = null;
+		(function installAuthFetch() {
+		  const originalFetch = window.fetch.bind(window);
+		  window.fetch = (input, init) => {
+		    let url = "";
+		    if (typeof input === "string") url = input;
+		    else if (input && typeof input.url === "string") url = input.url;
+
+		    try {
+		      const resolved = new URL(url, window.location.origin);
+		      if (resolved.origin !== window.location.origin) {
+		        return originalFetch(input, init);
+		      }
+		    } catch {
+		      return originalFetch(input, init);
+		    }
+
+		    const nextInit = init ? { ...init } : {};
+		    const headers = new Headers(nextInit.headers || {});
+		    if (!headers.has("Authorization")) {
+		      headers.set("Authorization", `Bearer ${token}`);
+		    }
+
+		    const activeClubId = localStorage.getItem("active_club_id");
+		    if (isSuperAdmin && activeClubId && !headers.has("X-Club-Id")) {
+		      headers.set("X-Club-Id", String(activeClubId));
+		    }
+
+		    nextInit.headers = headers;
+		    return originalFetch(input, nextInit);
+		  };
+		})();
+
+		async function ensureActiveClubIdForSuperAdmin() {
+		  if (!isSuperAdmin) return;
+		  const existing = localStorage.getItem("active_club_id");
+		  if (existing) return;
+		  try {
+		    const res = await fetch("/api/super/clubs", {
+		      headers: { Authorization: `Bearer ${token}` }
+		    });
+		    if (!res.ok) return;
+		    const clubs = await res.json();
+		    const active = (Array.isArray(clubs) ? clubs : []).filter(c => c && (c.active === 1 || c.active === true));
+		    if (active.length) {
+		      localStorage.setItem("active_club_id", String(active[0].id));
+		    }
+		  } catch {
+		    // Non-blocking
+		  }
+		}
+	
+	let selectedDate = new Date();
+	let bookingWindowDays = 14;
+	let bookingWindowMaxDate = null;
 let bookingWindowType = 'visitor';
 
 let clubConfig = null;
@@ -2279,13 +2331,14 @@ async function checkIn(bookingId) {
   }
 }
 
-	// Initialize
-	(async () => {
-	  try {
-	    clubConfig = await window.Greenlink?.loadClubConfig?.();
-	    if (clubConfig?.labels) typeLabels = { ...typeLabels, ...clubConfig.labels };
-	    if (clubConfig) window.Greenlink?.applyClubBranding?.(clubConfig);
-	  } catch {}
+		// Initialize
+		(async () => {
+		  try {
+		    await ensureActiveClubIdForSuperAdmin();
+		    clubConfig = await window.Greenlink?.loadClubConfig?.();
+		    if (clubConfig?.labels) typeLabels = { ...typeLabels, ...clubConfig.labels };
+		    if (clubConfig) window.Greenlink?.applyClubBranding?.(clubConfig);
+		  } catch {}
 
 	  setupTeeSheetDragDrop();
 	  await loadBookingWindow();

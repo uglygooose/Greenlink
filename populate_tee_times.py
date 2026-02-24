@@ -8,6 +8,20 @@ from app import models
 
 db = SessionLocal()
 
+def _resolve_seed_club_id() -> int:
+    clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
+    if len(clubs) == 1:
+        return int(clubs[0].id)
+    if len(clubs) > 1:
+        return int(clubs[0].id)
+    club = models.Club(name="GreenLink Demo Club", slug="greenlink-demo", active=1)
+    db.add(club)
+    db.commit()
+    db.refresh(club)
+    return int(club.id)
+
+club_id = _resolve_seed_club_id()
+
 # Get today's date
 today = datetime.now().date()
 
@@ -30,11 +44,12 @@ try:
         
         # Check if already exists
         existing = db.query(models.TeeTime).filter(
+            models.TeeTime.club_id == club_id,
             models.TeeTime.tee_time == tee_time
         ).first()
         
         if not existing:
-            tt = models.TeeTime(tee_time=tee_time)
+            tt = models.TeeTime(club_id=club_id, tee_time=tee_time, hole="1", capacity=4, status="open")
             db.add(tt)
             print(f"Added: {tee_time.strftime('%I:%M %p')}")
         else:

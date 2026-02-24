@@ -72,6 +72,34 @@ def run_auto_migrations(engine) -> None:
         END $$;
         """,
         # ----------------------------
+        # Enum extensions (userrole)
+        # ----------------------------
+        # Older DBs may have a `userrole` enum missing newer values (super_admin/club_staff).
+        """
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'userrole' AND e.enumlabel = 'club_staff'
+            ) THEN
+              ALTER TYPE userrole ADD VALUE 'club_staff';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_enum e
+              JOIN pg_type t ON t.oid = e.enumtypid
+              WHERE t.typname = 'userrole' AND e.enumlabel = 'super_admin'
+            ) THEN
+              ALTER TYPE userrole ADD VALUE 'super_admin';
+            END IF;
+          END IF;
+        END $$;
+        """,
+        # ----------------------------
         # Targets + settings tables
         # ----------------------------
         """
@@ -135,6 +163,54 @@ def run_auto_migrations(engine) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS revenue_transactions_source_external_id_uniq
           ON revenue_transactions (source, external_id)
           WHERE external_id IS NOT NULL;
+        """,
+        # ----------------------------
+        # Multi-tenant scoping (club_id)
+        # ----------------------------
+        # Older/demo DBs predate club scoping and may be missing `club_id` on core tables.
+        # Add the columns in an idempotent way so the live UI can filter per club.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE day_closures ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE accounting_settings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE fee_categories ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE club_settings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE revenue_transactions ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
+        "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
+        "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
+        "CREATE INDEX IF NOT EXISTS bookings_club_id_idx ON bookings (club_id);",
+        "CREATE INDEX IF NOT EXISTS ledger_entries_club_id_idx ON ledger_entries (club_id);",
+        "CREATE INDEX IF NOT EXISTS day_closures_club_id_idx ON day_closures (club_id);",
+        "CREATE INDEX IF NOT EXISTS accounting_settings_club_id_idx ON accounting_settings (club_id);",
+        "CREATE INDEX IF NOT EXISTS fee_categories_club_id_idx ON fee_categories (club_id);",
+        "CREATE INDEX IF NOT EXISTS club_settings_club_id_idx ON club_settings (club_id);",
+        "CREATE INDEX IF NOT EXISTS import_batches_club_id_idx ON import_batches (club_id);",
+        "CREATE INDEX IF NOT EXISTS revenue_transactions_club_id_idx ON revenue_transactions (club_id);",
+        # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
+        """
+        DO $$
+        DECLARE cid integer;
+        DECLARE n integer;
+        BEGIN
+          SELECT count(*) INTO n FROM clubs WHERE active = 1;
+          IF n = 1 THEN
+            SELECT id INTO cid FROM clubs WHERE active = 1 ORDER BY id ASC LIMIT 1;
+            UPDATE tee_times SET club_id = cid WHERE club_id IS NULL;
+            UPDATE bookings SET club_id = cid WHERE club_id IS NULL;
+            UPDATE members SET club_id = cid WHERE club_id IS NULL;
+            UPDATE ledger_entries SET club_id = cid WHERE club_id IS NULL;
+            UPDATE day_closures SET club_id = cid WHERE club_id IS NULL;
+            UPDATE accounting_settings SET club_id = cid WHERE club_id IS NULL;
+            UPDATE import_batches SET club_id = cid WHERE club_id IS NULL;
+            UPDATE revenue_transactions SET club_id = cid WHERE club_id IS NULL;
+            UPDATE club_settings SET club_id = cid WHERE club_id IS NULL;
+          END IF;
+        END $$;
         """,
         # ----------------------------
         # Users additions

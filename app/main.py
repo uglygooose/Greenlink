@@ -82,6 +82,7 @@ def health(db: Session = Depends(get_db)):
     """
     Lightweight health check for Render/Supabase debugging.
     """
+    auto_migrate = str(os.getenv("AUTO_MIGRATE", "")).strip()
     demo_seed_admin = str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"}
     demo_admin_present = None
     if demo_seed_admin:
@@ -106,6 +107,7 @@ def health(db: Session = Depends(get_db)):
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
             "prefer_local_db": str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"},
             "force_sqlite": str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"},
+            "auto_migrate": auto_migrate or None,
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
             "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
@@ -121,6 +123,7 @@ def health(db: Session = Depends(get_db)):
             "database_url_strict": str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() in {"1", "true", "yes"},
             "prefer_local_db": str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"},
             "force_sqlite": str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"},
+            "auto_migrate": auto_migrate or None,
             "demo_seed_admin": demo_seed_admin,
             "demo_admin_present": demo_admin_present,
             "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
