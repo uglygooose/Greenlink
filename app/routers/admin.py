@@ -47,6 +47,15 @@ router = APIRouter(
 )
 
 
+def _safe_rollback(db: Session | None) -> None:
+    if db is None:
+        return
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     """Verify current user is admin"""
     if current_user.role not in {UserRole.super_admin, UserRole.admin}:
@@ -121,7 +130,7 @@ def _annual_target(db: Session, year: int, metric: str, default: float | None = 
             return float(row.annual_target)
     except Exception:
         # In offline/demo modes or before tables exist, fall back to defaults.
-        pass
+        _safe_rollback(db)
     return default
 
 
@@ -165,7 +174,7 @@ def _member_green_fee_18(db: Session) -> float:
         if fee and getattr(fee, "price", None) is not None:
             return float(fee.price)
     except Exception:
-        pass
+        _safe_rollback(db)
 
     # Default from the 2026 price list (member 18 holes).
     return 340.0
@@ -187,6 +196,7 @@ def _float_setting(db: Session, key: str, default: float) -> float:
             return float(default)
         return float(raw)
     except Exception:
+        _safe_rollback(db)
         return float(default)
 
 
@@ -610,6 +620,7 @@ async def get_dashboard_stats(
             or 0.0
         )
     except Exception:
+        _safe_rollback(db)
         other_total_revenue = 0.0
     
     # Completed rounds (admin expectation = bookings marked completed)
@@ -663,6 +674,7 @@ async def get_dashboard_stats(
             or 0.0
         )
     except Exception:
+        _safe_rollback(db)
         today_other_revenue = 0.0
     
     # Last 7 days golf revenue (payment date)
@@ -690,6 +702,7 @@ async def get_dashboard_stats(
             or 0.0
         )
     except Exception:
+        _safe_rollback(db)
         week_other_revenue = 0.0
 
     def _other_revenue_by_stream(start_d: date | None = None, end_d: date | None = None) -> dict[str, float]:
@@ -712,6 +725,7 @@ async def get_dashboard_stats(
                 key = _normalize_revenue_stream(source)
                 out[key] = float(out.get(key, 0.0)) + float(amount or 0.0)
         except Exception:
+            _safe_rollback(db)
             return {}
         return out
 
@@ -780,6 +794,7 @@ async def get_dashboard_stats(
             "bookings": last_bookings.imported_at.isoformat() if last_bookings and last_bookings.imported_at else None,
         }
     except Exception:
+        _safe_rollback(db)
         imports = {}
 
     def _stream_amounts_and_transactions(start_d: date, end_d: date) -> dict[str, dict[str, float | int]]:
@@ -806,6 +821,7 @@ async def get_dashboard_stats(
                 cur["transactions"] = int(cur["transactions"]) + int(txns or 0)
                 out[stream] = cur
         except Exception:
+            _safe_rollback(db)
             return {}
         return out
 
@@ -857,6 +873,7 @@ async def get_dashboard_stats(
             or 0
         )
     except Exception:
+        _safe_rollback(db)
         golf_today_paid_rounds = 0
         golf_today_no_shows = 0
         golf_today_slot_capacity = 0
@@ -968,6 +985,7 @@ async def get_dashboard_stats(
             for r in top_rows
         ]
     except Exception:
+        _safe_rollback(db)
         pro_shop_txns_today = 0
         pro_shop_txns_7d = 0
         pro_shop_avg_basket_30d = 0.0
@@ -1018,6 +1036,7 @@ async def get_dashboard_stats(
         for key in ("pub", "bowls", "other"):
             stream_highlights[key] = grouped.get(key, [])
     except Exception:
+        _safe_rollback(db)
         stream_highlights = {"pub": [], "bowls": [], "other": []}
 
     def _stream_today_amount(stream: str) -> float:
@@ -2851,6 +2870,7 @@ async def get_revenue_analytics(
             .all()
         )
     except Exception:
+        _safe_rollback(db)
         other_daily_revenue = []
     
     # Revenue by booking status
@@ -2914,6 +2934,7 @@ async def get_revenue_analytics(
             reverse=True,
         )
     except Exception:
+        _safe_rollback(db)
         other_by_stream = []
 	    
     return {
