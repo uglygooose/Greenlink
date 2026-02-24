@@ -1962,6 +1962,44 @@ body.drag-active .slot-card.open {
     min-width: 86px;
 }
 
+.dashboard-stream-card.locked .dashboard-stream-toggle {
+    opacity: 0.85;
+}
+
+.dashboard-stream-card.locked .dashboard-stream-toggle .tee-btn {
+    cursor: not-allowed;
+}
+
+.pro-shop-form-grid {
+    grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr);
+}
+
+.pro-shop-stock-low {
+    color: #b42318;
+    font-weight: 700;
+}
+
+.pro-shop-qty {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pro-shop-cart-total {
+    margin-top: 14px;
+    font-size: 16px;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+#pro-shop .data-table td {
+    vertical-align: middle;
+}
+
+#pro-shop .filters input[type="text"] {
+    min-width: 220px;
+}
+
 .revenue-flow-card {
     margin-top: 10px;
     margin-bottom: 16px;

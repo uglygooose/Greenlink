@@ -94,6 +94,9 @@ _TENANT_SCOPED_MODELS = (
     models.ClubSetting,
     models.ImportBatch,
     models.RevenueTransaction,
+    models.ProShopProduct,
+    models.ProShopSale,
+    models.ProShopSaleItem,
 )
 
 

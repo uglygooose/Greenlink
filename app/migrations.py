@@ -165,6 +165,76 @@ def run_auto_migrations(engine) -> None:
           WHERE external_id IS NOT NULL;
         """,
         # ----------------------------
+        # Pro shop (inventory + sales)
+        # ----------------------------
+        """
+        CREATE TABLE IF NOT EXISTS pro_shop_products (
+          id bigserial PRIMARY KEY,
+          club_id integer NULL,
+          sku text NOT NULL,
+          name text NOT NULL,
+          category text NULL,
+          unit_price double precision NOT NULL DEFAULT 0,
+          cost_price double precision NULL,
+          stock_qty integer NOT NULL DEFAULT 0,
+          reorder_level integer NOT NULL DEFAULT 0,
+          active integer NOT NULL DEFAULT 1,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS pro_shop_products_club_sku_uniq
+          ON pro_shop_products (club_id, sku);
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS pro_shop_products_club_active_name_idx
+          ON pro_shop_products (club_id, active, name);
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS pro_shop_sales (
+          id bigserial PRIMARY KEY,
+          club_id integer NULL,
+          sold_by_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
+          customer_name text NULL,
+          notes text NULL,
+          payment_method text NOT NULL DEFAULT 'card',
+          subtotal double precision NOT NULL DEFAULT 0,
+          discount double precision NOT NULL DEFAULT 0,
+          tax double precision NOT NULL DEFAULT 0,
+          total double precision NOT NULL DEFAULT 0,
+          sold_at timestamptz NOT NULL DEFAULT now(),
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS pro_shop_sales_club_sold_at_idx
+          ON pro_shop_sales (club_id, sold_at DESC);
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS pro_shop_sale_items (
+          id bigserial PRIMARY KEY,
+          club_id integer NULL,
+          sale_id bigint NOT NULL REFERENCES pro_shop_sales(id) ON DELETE CASCADE,
+          product_id bigint NULL REFERENCES pro_shop_products(id) ON DELETE SET NULL,
+          sku_snapshot text NULL,
+          name_snapshot text NOT NULL,
+          category_snapshot text NULL,
+          quantity integer NOT NULL DEFAULT 1,
+          unit_price double precision NOT NULL DEFAULT 0,
+          line_total double precision NOT NULL DEFAULT 0,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS pro_shop_sale_items_sale_id_idx
+          ON pro_shop_sale_items (sale_id);
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx
+          ON pro_shop_sale_items (club_id);
+        """,
+        # ----------------------------
         # Multi-tenant scoping (club_id)
         # ----------------------------
         # Older/demo DBs predate club scoping and may be missing `club_id` on core tables.
@@ -181,6 +251,9 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE revenue_transactions ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE kpi_targets ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE pro_shop_products ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE pro_shop_sales ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE pro_shop_sale_items ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
         "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
         "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
@@ -193,6 +266,9 @@ def run_auto_migrations(engine) -> None:
         "CREATE INDEX IF NOT EXISTS import_batches_club_id_idx ON import_batches (club_id);",
         "CREATE INDEX IF NOT EXISTS revenue_transactions_club_id_idx ON revenue_transactions (club_id);",
         "CREATE INDEX IF NOT EXISTS kpi_targets_club_id_idx ON kpi_targets (club_id);",
+        "CREATE INDEX IF NOT EXISTS pro_shop_products_club_id_idx ON pro_shop_products (club_id);",
+        "CREATE INDEX IF NOT EXISTS pro_shop_sales_club_id_idx ON pro_shop_sales (club_id);",
+        "CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx ON pro_shop_sale_items (club_id);",
         # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
         """
         DO $$
@@ -212,6 +288,9 @@ def run_auto_migrations(engine) -> None:
             UPDATE revenue_transactions SET club_id = cid WHERE club_id IS NULL;
             UPDATE club_settings SET club_id = cid WHERE club_id IS NULL;
             UPDATE kpi_targets SET club_id = cid WHERE club_id IS NULL;
+            UPDATE pro_shop_products SET club_id = cid WHERE club_id IS NULL;
+            UPDATE pro_shop_sales SET club_id = cid WHERE club_id IS NULL;
+            UPDATE pro_shop_sale_items SET club_id = cid WHERE club_id IS NULL;
           END IF;
         END $$;
         """,
@@ -293,6 +372,9 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE IF EXISTS public.club_settings ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.import_batches ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.revenue_transactions ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.pro_shop_products ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.pro_shop_sales ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.pro_shop_sale_items ENABLE ROW LEVEL SECURITY;",
     ]
 
     with engine.begin() as conn:

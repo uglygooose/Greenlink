@@ -283,3 +283,61 @@ class RevenueTransaction(Base):
     amount = Column(Float, default=0.0)
     import_batch_id = Column(BigInteger, ForeignKey("import_batches.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProShopProduct(Base):
+    __tablename__ = "pro_shop_products"
+    __table_args__ = (
+        UniqueConstraint("club_id", "sku", name="uq_pro_shop_products_club_sku"),
+    )
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    sku = Column(String(80), nullable=False)
+    name = Column(String(200), nullable=False, index=True)
+    category = Column(String(120), nullable=True, index=True)
+    unit_price = Column(Float, default=0.0)
+    cost_price = Column(Float, nullable=True)
+    stock_qty = Column(Integer, default=0)
+    reorder_level = Column(Integer, default=0)
+    active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProShopSale(Base):
+    __tablename__ = "pro_shop_sales"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    sold_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    customer_name = Column(String(200), nullable=True)
+    notes = Column(Text, nullable=True)
+    payment_method = Column(String(30), default="card")
+    subtotal = Column(Float, default=0.0)
+    discount = Column(Float, default=0.0)
+    tax = Column(Float, default=0.0)
+    total = Column(Float, default=0.0)
+    sold_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    items = relationship("ProShopSaleItem", back_populates="sale", cascade="all, delete-orphan")
+
+
+class ProShopSaleItem(Base):
+    __tablename__ = "pro_shop_sale_items"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    sale_id = Column(BigInteger, ForeignKey("pro_shop_sales.id"), nullable=False, index=True)
+    product_id = Column(BigInteger, ForeignKey("pro_shop_products.id"), nullable=True, index=True)
+    sku_snapshot = Column(String(80), nullable=True)
+    name_snapshot = Column(String(200), nullable=False)
+    category_snapshot = Column(String(120), nullable=True)
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0.0)
+    line_total = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    sale = relationship("ProShopSale", back_populates="items")
+    product = relationship("ProShopProduct")

@@ -30,6 +30,9 @@ from app.models import (
     ClubSetting,
     ImportBatch,
     RevenueTransaction,
+    ProShopProduct,
+    ProShopSale,
+    ProShopSaleItem,
 )
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db, get_password_hash
@@ -204,6 +207,19 @@ def _upsert_setting(db: Session, key: str, value: int | float | str) -> None:
         row.updated_at = datetime.utcnow()
     else:
         db.add(ClubSetting(club_id=int(club_id), key=key, value=str(value)))
+
+
+def _normalize_revenue_stream(raw: str | None) -> str:
+    source = (raw or "").strip().lower()
+    if source in {"golf", "green_fee", "green_fees", "proshop", "pro_shop", "golf_shop", "shop", "retail"}:
+        return "golf"
+    if source in {"pub", "bar", "fnb", "food", "restaurant"}:
+        return "pub"
+    if source in {"bowls", "lawn_bowls", "lawn-bowls"}:
+        return "bowls"
+    if source in {"", "other", "misc", "unknown"}:
+        return "other"
+    return source
 
 
 def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds_target: float | None) -> float | None:
@@ -635,7 +651,8 @@ async def get_dashboard_stats(
         or 0.0
     )
 
-    # Today's other revenue (transaction date)
+    # Today's non-booking revenue (transaction date)
+    # Includes imports (pub/bowls/other) and now pro shop POS rows.
     try:
         today_other_revenue = (
             db.query(func.sum(RevenueTransaction.amount))
@@ -659,7 +676,7 @@ async def get_dashboard_stats(
         or 0.0
     )
 
-    # Last 7 days other revenue (transaction date)
+    # Last 7 days non-booking revenue (transaction date)
     try:
         week_other_revenue = (
             db.query(func.sum(RevenueTransaction.amount))
@@ -672,16 +689,6 @@ async def get_dashboard_stats(
         )
     except Exception:
         week_other_revenue = 0.0
-
-    def _normalize_stream_name(raw: str | None) -> str:
-        source = (raw or "").strip().lower()
-        if source in {"pub", "bar", "fnb", "food", "restaurant"}:
-            return "pub"
-        if source in {"bowls", "lawn_bowls", "lawn-bowls"}:
-            return "bowls"
-        if source in {"", "other", "misc", "unknown"}:
-            return "other"
-        return source
 
     def _other_revenue_by_stream(start_d: date | None = None, end_d: date | None = None) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -700,7 +707,7 @@ async def get_dashboard_stats(
 
             rows = q.group_by(RevenueTransaction.source).all()
             for source, amount in rows:
-                key = _normalize_stream_name(source)
+                key = _normalize_revenue_stream(source)
                 out[key] = float(out.get(key, 0.0)) + float(amount or 0.0)
         except Exception:
             return {}
@@ -710,18 +717,34 @@ async def get_dashboard_stats(
     other_today_by_stream = _other_revenue_by_stream(today, today)
     other_week_by_stream = _other_revenue_by_stream(today - timedelta(days=6), today)
 
+    imported_golf_total = float(other_total_by_stream.get("golf", 0.0))
+    imported_golf_today = float(other_today_by_stream.get("golf", 0.0))
+    imported_golf_week = float(other_week_by_stream.get("golf", 0.0))
+
+    other_total_revenue = float(sum(v for k, v in other_total_by_stream.items() if k != "golf"))
+    today_other_revenue = float(sum(v for k, v in other_today_by_stream.items() if k != "golf"))
+    week_other_revenue = float(sum(v for k, v in other_week_by_stream.items() if k != "golf"))
+
+    golf_total_revenue = float(total_revenue) + imported_golf_total
+    golf_today_revenue = float(today_revenue) + imported_golf_today
+    golf_week_revenue = float(week_revenue) + imported_golf_week
+
+    combined_total_revenue = golf_total_revenue + float(other_total_revenue)
+    combined_today_revenue = golf_today_revenue + float(today_other_revenue)
+    combined_week_revenue = golf_week_revenue + float(week_other_revenue)
+
     revenue_streams = {
         "all": {
             "label": "All Operations",
-            "total_revenue": float(total_revenue) + float(other_total_revenue),
-            "today_revenue": float(today_revenue) + float(today_other_revenue),
-            "week_revenue": float(week_revenue) + float(week_other_revenue),
+            "total_revenue": combined_total_revenue,
+            "today_revenue": combined_today_revenue,
+            "week_revenue": combined_week_revenue,
         },
         "golf": {
             "label": "Golf / Pro Shop",
-            "total_revenue": float(total_revenue),
-            "today_revenue": float(today_revenue),
-            "week_revenue": float(week_revenue),
+            "total_revenue": golf_total_revenue,
+            "today_revenue": golf_today_revenue,
+            "week_revenue": golf_week_revenue,
         },
     }
 
@@ -800,15 +823,15 @@ async def get_dashboard_stats(
         "total_bookings": total_bookings,
         "total_players": total_players,
         "total_members": total_members,
-        "golf_revenue_total": float(total_revenue),
-        "golf_revenue_today": float(today_revenue),
-        "golf_revenue_week": float(week_revenue),
+        "golf_revenue_total": float(golf_total_revenue),
+        "golf_revenue_today": float(golf_today_revenue),
+        "golf_revenue_week": float(golf_week_revenue),
         "other_revenue_total": float(other_total_revenue),
         "other_revenue_today": float(today_other_revenue),
         "other_revenue_week": float(week_other_revenue),
-        "total_revenue": float(total_revenue) + float(other_total_revenue),
-        "today_revenue": float(today_revenue) + float(today_other_revenue),
-        "week_revenue": float(week_revenue) + float(week_other_revenue),
+        "total_revenue": float(combined_total_revenue),
+        "today_revenue": float(combined_today_revenue),
+        "week_revenue": float(combined_week_revenue),
         "revenue_streams": revenue_streams,
         "imports": imports,
         "bookings_by_status": {
@@ -1935,6 +1958,488 @@ async def update_staff_user_for_club(
     return {"status": "success"}
 
 
+class ProShopProductUpsertPayload(BaseModel):
+    sku: str
+    name: str
+    category: Optional[str] = None
+    unit_price: float = 0.0
+    cost_price: Optional[float] = None
+    stock_qty: int = 0
+    reorder_level: int = 0
+    active: bool = True
+
+
+class ProShopProductUpdatePayload(BaseModel):
+    sku: Optional[str] = None
+    name: Optional[str] = None
+    category: Optional[str] = None
+    unit_price: Optional[float] = None
+    cost_price: Optional[float] = None
+    stock_qty: Optional[int] = None
+    reorder_level: Optional[int] = None
+    active: Optional[bool] = None
+
+
+class ProShopStockAdjustPayload(BaseModel):
+    delta: int
+    reason: Optional[str] = None
+
+
+class ProShopSaleItemPayload(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: Optional[float] = None
+
+
+class ProShopSaleCreatePayload(BaseModel):
+    customer_name: Optional[str] = None
+    payment_method: Optional[str] = "card"
+    notes: Optional[str] = None
+    discount: Optional[float] = 0.0
+    tax: Optional[float] = 0.0
+    items: list[ProShopSaleItemPayload]
+
+
+def _serialize_pro_shop_product(product: ProShopProduct) -> dict:
+    return {
+        "id": int(product.id),
+        "sku": str(product.sku or ""),
+        "name": str(product.name or ""),
+        "category": str(product.category or "") if product.category else None,
+        "unit_price": float(product.unit_price or 0.0),
+        "cost_price": float(product.cost_price) if product.cost_price is not None else None,
+        "stock_qty": int(product.stock_qty or 0),
+        "reorder_level": int(product.reorder_level or 0),
+        "active": bool(int(product.active or 0) == 1),
+        "updated_at": product.updated_at.isoformat() if product.updated_at else None,
+    }
+
+
+def _serialize_pro_shop_sale(sale: ProShopSale) -> dict:
+    return {
+        "id": int(sale.id),
+        "sold_at": sale.sold_at.isoformat() if sale.sold_at else None,
+        "customer_name": sale.customer_name,
+        "payment_method": sale.payment_method,
+        "subtotal": float(sale.subtotal or 0.0),
+        "discount": float(sale.discount or 0.0),
+        "tax": float(sale.tax or 0.0),
+        "total": float(sale.total or 0.0),
+        "items": [
+            {
+                "id": int(item.id),
+                "product_id": int(item.product_id) if item.product_id is not None else None,
+                "sku": item.sku_snapshot,
+                "name": item.name_snapshot,
+                "category": item.category_snapshot,
+                "quantity": int(item.quantity or 0),
+                "unit_price": float(item.unit_price or 0.0),
+                "line_total": float(item.line_total or 0.0),
+            }
+            for item in sorted((sale.items or []), key=lambda row: int(row.id or 0))
+        ],
+    }
+
+
+def _normalize_payment_method(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in {"cash", "card", "account", "eft"}:
+        return value
+    return "other"
+
+
+@router.get("/pro-shop/products")
+async def list_pro_shop_products(
+    q: Optional[str] = None,
+    active_only: bool = False,
+    limit: int = 250,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    q = (q or "").strip()
+    safe_limit = max(1, min(int(limit or 250), 500))
+    query = db.query(ProShopProduct).filter(ProShopProduct.club_id == club_id)
+    if active_only:
+        query = query.filter(ProShopProduct.active == 1)
+    if q:
+        q_like = f"%{q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(ProShopProduct.sku).like(q_like),
+                func.lower(ProShopProduct.name).like(q_like),
+                func.lower(func.coalesce(ProShopProduct.category, "")).like(q_like),
+            )
+        )
+
+    rows = (
+        query
+        .order_by(ProShopProduct.active.desc(), ProShopProduct.name.asc(), ProShopProduct.id.asc())
+        .limit(safe_limit)
+        .all()
+    )
+    low_stock_count = (
+        db.query(func.count(ProShopProduct.id))
+        .filter(
+            ProShopProduct.club_id == club_id,
+            ProShopProduct.active == 1,
+            ProShopProduct.stock_qty <= func.coalesce(ProShopProduct.reorder_level, 0),
+        )
+        .scalar()
+        or 0
+    )
+
+    return {
+        "products": [_serialize_pro_shop_product(row) for row in rows],
+        "low_stock_count": int(low_stock_count or 0),
+    }
+
+
+@router.post("/pro-shop/products")
+async def create_pro_shop_product(
+    payload: ProShopProductUpsertPayload,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    sku = (payload.sku or "").strip()
+    name = (payload.name or "").strip()
+    if not sku:
+        raise HTTPException(status_code=400, detail="sku is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    unit_price = float(payload.unit_price or 0.0)
+    cost_price = payload.cost_price
+    stock_qty = int(payload.stock_qty or 0)
+    reorder_level = int(payload.reorder_level or 0)
+    if unit_price < 0:
+        raise HTTPException(status_code=400, detail="unit_price must be >= 0")
+    if cost_price is not None and float(cost_price) < 0:
+        raise HTTPException(status_code=400, detail="cost_price must be >= 0")
+    if stock_qty < 0:
+        raise HTTPException(status_code=400, detail="stock_qty must be >= 0")
+    if reorder_level < 0:
+        raise HTTPException(status_code=400, detail="reorder_level must be >= 0")
+
+    exists = (
+        db.query(ProShopProduct.id)
+        .filter(ProShopProduct.club_id == club_id, func.lower(ProShopProduct.sku) == sku.lower())
+        .first()
+    )
+    if exists:
+        raise HTTPException(status_code=409, detail=f"Product with sku '{sku}' already exists")
+
+    now = datetime.utcnow()
+    row = ProShopProduct(
+        club_id=club_id,
+        sku=sku,
+        name=name,
+        category=(payload.category or "").strip() or None,
+        unit_price=unit_price,
+        cost_price=(float(cost_price) if cost_price is not None else None),
+        stock_qty=stock_qty,
+        reorder_level=reorder_level,
+        active=1 if payload.active else 0,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    return {"status": "success", "product": _serialize_pro_shop_product(row)}
+
+
+@router.put("/pro-shop/products/{product_id}")
+async def update_pro_shop_product(
+    product_id: int,
+    payload: ProShopProductUpdatePayload,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    row = db.query(ProShopProduct).filter(ProShopProduct.club_id == club_id, ProShopProduct.id == int(product_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if payload.sku is not None:
+        sku = (payload.sku or "").strip()
+        if not sku:
+            raise HTTPException(status_code=400, detail="sku cannot be empty")
+        dup = (
+            db.query(ProShopProduct.id)
+            .filter(
+                ProShopProduct.club_id == club_id,
+                func.lower(ProShopProduct.sku) == sku.lower(),
+                ProShopProduct.id != row.id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(status_code=409, detail=f"Product with sku '{sku}' already exists")
+        row.sku = sku
+
+    if payload.name is not None:
+        name = (payload.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name cannot be empty")
+        row.name = name
+
+    if payload.category is not None:
+        row.category = (payload.category or "").strip() or None
+
+    if payload.unit_price is not None:
+        unit_price = float(payload.unit_price)
+        if unit_price < 0:
+            raise HTTPException(status_code=400, detail="unit_price must be >= 0")
+        row.unit_price = unit_price
+
+    if payload.cost_price is not None:
+        cost_price = float(payload.cost_price)
+        if cost_price < 0:
+            raise HTTPException(status_code=400, detail="cost_price must be >= 0")
+        row.cost_price = cost_price
+
+    if payload.stock_qty is not None:
+        stock_qty = int(payload.stock_qty)
+        if stock_qty < 0:
+            raise HTTPException(status_code=400, detail="stock_qty must be >= 0")
+        row.stock_qty = stock_qty
+
+    if payload.reorder_level is not None:
+        reorder_level = int(payload.reorder_level)
+        if reorder_level < 0:
+            raise HTTPException(status_code=400, detail="reorder_level must be >= 0")
+        row.reorder_level = reorder_level
+
+    if payload.active is not None:
+        row.active = 1 if payload.active else 0
+
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return {"status": "success", "product": _serialize_pro_shop_product(row)}
+
+
+@router.post("/pro-shop/products/{product_id}/adjust-stock")
+async def adjust_pro_shop_stock(
+    product_id: int,
+    payload: ProShopStockAdjustPayload,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    row = db.query(ProShopProduct).filter(ProShopProduct.club_id == club_id, ProShopProduct.id == int(product_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    delta = int(payload.delta or 0)
+    if delta == 0:
+        raise HTTPException(status_code=400, detail="delta must be non-zero")
+
+    next_qty = int(row.stock_qty or 0) + delta
+    if next_qty < 0:
+        raise HTTPException(status_code=409, detail="Stock cannot be negative")
+
+    row.stock_qty = next_qty
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return {
+        "status": "success",
+        "reason": (payload.reason or "").strip() or None,
+        "product": _serialize_pro_shop_product(row),
+    }
+
+
+@router.get("/pro-shop/sales")
+async def list_pro_shop_sales(
+    limit: int = 25,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    safe_limit = max(1, min(int(limit or 25), 200))
+    safe_days = max(1, min(int(days or 30), 365))
+    start_dt = datetime.utcnow() - timedelta(days=safe_days)
+    today = datetime.utcnow().date()
+
+    query = (
+        db.query(ProShopSale)
+        .options(selectinload(ProShopSale.items))
+        .filter(ProShopSale.club_id == club_id, ProShopSale.sold_at >= start_dt)
+    )
+    rows = query.order_by(desc(ProShopSale.sold_at), desc(ProShopSale.id)).limit(safe_limit).all()
+
+    period_total = (
+        db.query(func.sum(ProShopSale.total))
+        .filter(ProShopSale.club_id == club_id, ProShopSale.sold_at >= start_dt)
+        .scalar()
+        or 0.0
+    )
+    period_transactions = (
+        db.query(func.count(ProShopSale.id))
+        .filter(ProShopSale.club_id == club_id, ProShopSale.sold_at >= start_dt)
+        .scalar()
+        or 0
+    )
+    today_total = (
+        db.query(func.sum(ProShopSale.total))
+        .filter(ProShopSale.club_id == club_id, func.date(ProShopSale.sold_at) == today)
+        .scalar()
+        or 0.0
+    )
+    today_transactions = (
+        db.query(func.count(ProShopSale.id))
+        .filter(ProShopSale.club_id == club_id, func.date(ProShopSale.sold_at) == today)
+        .scalar()
+        or 0
+    )
+
+    return {
+        "sales": [_serialize_pro_shop_sale(row) for row in rows],
+        "summary": {
+            "today_total": float(today_total or 0.0),
+            "today_transactions": int(today_transactions or 0),
+            "period_total": float(period_total or 0.0),
+            "period_transactions": int(period_transactions or 0),
+            "period_days": int(safe_days),
+        },
+    }
+
+
+@router.post("/pro-shop/sales")
+async def create_pro_shop_sale(
+    payload: ProShopSaleCreatePayload,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    items = payload.items or []
+    if not items:
+        raise HTTPException(status_code=400, detail="At least one sale item is required")
+
+    discount = max(0.0, float(payload.discount or 0.0))
+    tax = max(0.0, float(payload.tax or 0.0))
+    payment_method = _normalize_payment_method(payload.payment_method)
+    sold_at = datetime.utcnow()
+
+    try:
+        line_items: list[dict] = []
+        for raw_item in items:
+            product = (
+                db.query(ProShopProduct)
+                .filter(ProShopProduct.club_id == club_id, ProShopProduct.id == int(raw_item.product_id))
+                .first()
+            )
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {raw_item.product_id} not found")
+
+            quantity = int(raw_item.quantity or 0)
+            if quantity <= 0:
+                raise HTTPException(status_code=400, detail="quantity must be >= 1")
+
+            stock_qty = int(product.stock_qty or 0)
+            if stock_qty < quantity:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Insufficient stock for '{product.name}' (available {stock_qty}, requested {quantity})",
+                )
+
+            unit_price = float(raw_item.unit_price) if raw_item.unit_price is not None else float(product.unit_price or 0.0)
+            if unit_price < 0:
+                raise HTTPException(status_code=400, detail="unit_price must be >= 0")
+
+            line_total = round(unit_price * float(quantity), 2)
+            line_items.append(
+                {
+                    "product": product,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "line_total": line_total,
+                }
+            )
+
+        subtotal = round(sum(float(item["line_total"]) for item in line_items), 2)
+        total = round(subtotal - discount + tax, 2)
+        if total < 0:
+            raise HTTPException(status_code=400, detail="Total cannot be negative")
+
+        sale = ProShopSale(
+            club_id=club_id,
+            sold_by_user_id=int(staff.id),
+            customer_name=(payload.customer_name or "").strip() or None,
+            notes=(payload.notes or "").strip() or None,
+            payment_method=payment_method,
+            subtotal=subtotal,
+            discount=discount,
+            tax=tax,
+            total=total,
+            sold_at=sold_at,
+            created_at=sold_at,
+        )
+        db.add(sale)
+        db.flush()
+
+        for line in line_items:
+            product = line["product"]
+            quantity = int(line["quantity"])
+            unit_price = float(line["unit_price"])
+            line_total = float(line["line_total"])
+
+            db.add(
+                ProShopSaleItem(
+                    club_id=club_id,
+                    sale_id=int(sale.id),
+                    product_id=int(product.id),
+                    sku_snapshot=str(product.sku or ""),
+                    name_snapshot=str(product.name or ""),
+                    category_snapshot=str(product.category or "") if product.category else None,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    line_total=line_total,
+                    created_at=sold_at,
+                )
+            )
+
+            product.stock_qty = int(product.stock_qty or 0) - quantity
+            product.updated_at = sold_at
+
+        db.add(
+            RevenueTransaction(
+                club_id=club_id,
+                source="pro_shop",
+                transaction_date=sold_at.date(),
+                external_id=f"proshop-sale-{int(sale.id)}",
+                description=f"Pro shop sale #{int(sale.id)}",
+                category=payment_method,
+                amount=total,
+                created_at=sold_at,
+            )
+        )
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    saved = (
+        db.query(ProShopSale)
+        .options(selectinload(ProShopSale.items))
+        .filter(ProShopSale.club_id == club_id, ProShopSale.id == int(sale.id))
+        .first()
+    )
+    if not saved:
+        raise HTTPException(status_code=500, detail="Sale created but could not be reloaded")
+
+    return {"status": "success", "sale": _serialize_pro_shop_sale(saved)}
+
+
 @router.get("/revenue")
 async def get_revenue_analytics(
     days: int = 30,
@@ -2049,15 +2554,38 @@ async def get_revenue_analytics(
             RevenueTransaction.source,
             func.sum(RevenueTransaction.amount).label("amount"),
             func.count(RevenueTransaction.id).label("transactions"),
-        ).filter(RevenueTransaction.transaction_date >= start_date.date())
+        ).filter(
+            RevenueTransaction.club_id == club_id,
+            RevenueTransaction.transaction_date >= start_date.date(),
+        )
 
         if end_date_exclusive is not None:
             other_stream_query = other_stream_query.filter(RevenueTransaction.transaction_date < end_date_exclusive.date())
 
-        other_by_stream = (
+        raw_by_stream = (
             other_stream_query.group_by(RevenueTransaction.source)
             .order_by(desc(func.sum(RevenueTransaction.amount)))
             .all()
+        )
+
+        by_stream: dict[str, dict[str, float | int]] = {}
+        for source, amount, transactions in raw_by_stream:
+            stream = _normalize_revenue_stream(source)
+            current = by_stream.get(stream, {"amount": 0.0, "transactions": 0})
+            current["amount"] = float(current["amount"]) + float(amount or 0.0)
+            current["transactions"] = int(current["transactions"]) + int(transactions or 0)
+            by_stream[stream] = current
+        other_by_stream = sorted(
+            [
+                {
+                    "stream": stream,
+                    "amount": float(stats.get("amount", 0.0)),
+                    "transactions": int(stats.get("transactions", 0)),
+                }
+                for stream, stats in by_stream.items()
+            ],
+            key=lambda row: float(row["amount"]),
+            reverse=True,
         )
     except Exception:
         other_by_stream = []
@@ -2093,10 +2621,7 @@ async def get_revenue_analytics(
             }
             for dr in other_daily_revenue
         ],
-        "other_revenue_by_stream": [
-            {"stream": str(r[0] or ""), "amount": float(r[1] or 0.0), "transactions": int(r[2] or 0)}
-            for r in other_by_stream
-        ],
+        "other_revenue_by_stream": other_by_stream,
         "revenue_by_status": [
             {
                 "status": sr[0],

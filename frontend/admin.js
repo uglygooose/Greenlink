@@ -33,6 +33,9 @@ let authFetchInstalled = false;
 let currentMemberDetail = null;
 let dashboardStreamView = "all";
 let dashboardDataCache = null;
+let dashboardStreamLocked = false;
+let proShopProductsCache = [];
+let proShopCart = [];
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -311,7 +314,7 @@ function applyStaffMode(role) {
     if (role !== "club_staff") return;
 
     // Limit sidebar to operational pages for pro shop staff.
-    const allowed = new Set(["bookings", "tee-times", "players"]);
+    const allowed = new Set(["bookings", "tee-times", "players", "pro-shop"]);
     document.querySelectorAll(".nav-item[data-page]").forEach(item => {
         const page = item.getAttribute("data-page");
         if (!allowed.has(page)) {
@@ -489,6 +492,16 @@ function setupNavigation() {
 
             e.preventDefault();
             const page = item.dataset.page;
+            const streamPreset = String(item.dataset.dashboardStream || "").toLowerCase();
+            if (!page) return;
+
+            if (page === "dashboard") {
+                const nextStream = streamPreset || "all";
+                setDashboardStreamViewState(nextStream, {
+                    persist: true,
+                    lock: nextStream !== "all"
+                });
+            }
 
             // Update active nav
             document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
@@ -510,6 +523,9 @@ function setupNavigation() {
                     break;
                 case "revenue":
                     loadRevenue();
+                    break;
+                case "pro-shop":
+                    initProShopPage();
                     break;
                 case "tee-times":
                     loadTeeTimes();
@@ -543,6 +559,7 @@ function showPage(pageName) {
         dashboard: "Dashboard",
         bookings: "Bookings",
         players: "People",
+        "pro-shop": "Pro Shop Sales",
         revenue: "Revenue Analytics",
         "tee-times": "Tee Sheet",
         ledger: "Ledger",
@@ -553,6 +570,11 @@ function showPage(pageName) {
         "other-ops": "Other Operations",
     };
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
+
+    if (pageName === "dashboard" && dashboardDataCache) {
+        applyDashboardStreamLockState();
+        applyDashboardStreamView(dashboardDataCache);
+    }
 }
 
 function setupDashboardStreamFilters() {
@@ -560,23 +582,43 @@ function setupDashboardStreamFilters() {
     if (!buttons.length) return;
     const valid = new Set(["all", "golf", "pub", "bowls", "other"]);
     const stored = String(localStorage.getItem("dashboard_stream_view") || "").toLowerCase();
-    if (valid.has(stored)) {
-        dashboardStreamView = stored;
-    }
-    buttons.forEach(btn => {
-        btn.classList.toggle("active", String(btn.dataset.stream || "all") === dashboardStreamView);
-    });
+    setDashboardStreamViewState(valid.has(stored) ? stored : "all", { persist: false, lock: false });
 
     buttons.forEach(btn => {
         btn.addEventListener("click", () => {
-            buttons.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            dashboardStreamView = String(btn.dataset.stream || "all");
-            localStorage.setItem("dashboard_stream_view", dashboardStreamView);
-            if (dashboardDataCache) {
-                applyDashboardStreamView(dashboardDataCache);
-            }
+            if (dashboardStreamLocked) return;
+            const nextStream = String(btn.dataset.stream || "all").toLowerCase();
+            setDashboardStreamViewState(nextStream, { persist: true, lock: false });
         });
+    });
+}
+
+function setDashboardStreamViewState(stream, options = {}) {
+    const valid = new Set(["all", "golf", "pub", "bowls", "other"]);
+    const next = valid.has(String(stream || "").toLowerCase()) ? String(stream || "").toLowerCase() : "all";
+    const persist = options.persist !== false;
+    const lock = Boolean(options.lock) && next !== "all";
+
+    dashboardStreamView = next;
+    dashboardStreamLocked = lock;
+    if (persist) {
+        localStorage.setItem("dashboard_stream_view", dashboardStreamView);
+    }
+    applyDashboardStreamLockState();
+    if (dashboardDataCache) {
+        applyDashboardStreamView(dashboardDataCache);
+    }
+}
+
+function applyDashboardStreamLockState() {
+    const card = document.querySelector(".dashboard-stream-card");
+    const buttons = document.querySelectorAll(".dashboard-stream-btn");
+    if (card) {
+        card.classList.toggle("locked", dashboardStreamLocked);
+    }
+    buttons.forEach(btn => {
+        const stream = String(btn.dataset.stream || "all").toLowerCase();
+        btn.disabled = dashboardStreamLocked && stream !== dashboardStreamView;
     });
 }
 
@@ -643,12 +685,21 @@ function applyDashboardStreamView(data) {
     if (weekRevenueLabelEl) weekRevenueLabelEl.textContent = `This Week (${label})`;
 
     if (noteEl) {
-        if (selected.key === "all") {
+        if (dashboardStreamLocked) {
+            noteEl.textContent = `Locked to ${label} from the left menu.`;
+        } else if (selected.key === "all") {
             noteEl.textContent = "Showing combined operations view.";
         } else if (selected.key === "golf") {
             noteEl.textContent = "Golf / Pro Shop view uses bookings + paid golf cashbook data.";
         } else {
             noteEl.textContent = `${label} view uses imported non-golf revenue transactions.`;
+        }
+    }
+
+    if (currentActivePage === "dashboard") {
+        const titleEl = document.getElementById("page-title");
+        if (titleEl) {
+            titleEl.textContent = dashboardStreamLocked && selected.key !== "all" ? `${label} Dashboard` : "Dashboard";
         }
     }
 }
@@ -2071,6 +2122,405 @@ function setupRevenueImport() {
             if (fileInput) fileInput.value = "";
         }
     });
+}
+
+// Pro Shop
+function parseCurrencyInput(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function proShopFindProduct(productId) {
+    const id = Number(productId);
+    return proShopProductsCache.find(p => Number(p?.id) === id) || null;
+}
+
+function reconcileProShopCartWithStock() {
+    proShopCart = proShopCart
+        .map(item => {
+            const product = proShopFindProduct(item.product_id);
+            if (!product || !product.active) return null;
+            const maxQty = Math.max(0, Number(product.stock_qty || 0));
+            const qty = Math.min(Math.max(1, Number(item.quantity || 1)), maxQty);
+            if (qty <= 0) return null;
+            return {
+                ...item,
+                sku: product.sku,
+                name: product.name,
+                category: product.category || null,
+                unit_price: Number(product.unit_price || 0),
+                quantity: qty,
+                max_qty: maxQty,
+            };
+        })
+        .filter(Boolean);
+}
+
+function resetProShopProductForm() {
+    const fields = {
+        "pro-shop-product-id": "",
+        "pro-shop-sku": "",
+        "pro-shop-name": "",
+        "pro-shop-category": "",
+        "pro-shop-unit-price": "",
+        "pro-shop-cost-price": "",
+        "pro-shop-stock-qty": "0",
+        "pro-shop-reorder-level": "0",
+        "pro-shop-active": "1",
+    };
+    Object.entries(fields).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    });
+    const statusEl = document.getElementById("pro-shop-product-status");
+    if (statusEl) statusEl.textContent = "";
+}
+
+function editProShopProduct(productId) {
+    const product = proShopFindProduct(productId);
+    if (!product) return;
+    const idEl = document.getElementById("pro-shop-product-id");
+    const skuEl = document.getElementById("pro-shop-sku");
+    const nameEl = document.getElementById("pro-shop-name");
+    const categoryEl = document.getElementById("pro-shop-category");
+    const priceEl = document.getElementById("pro-shop-unit-price");
+    const costEl = document.getElementById("pro-shop-cost-price");
+    const stockEl = document.getElementById("pro-shop-stock-qty");
+    const reorderEl = document.getElementById("pro-shop-reorder-level");
+    const activeEl = document.getElementById("pro-shop-active");
+    const statusEl = document.getElementById("pro-shop-product-status");
+
+    if (idEl) idEl.value = String(product.id);
+    if (skuEl) skuEl.value = String(product.sku || "");
+    if (nameEl) nameEl.value = String(product.name || "");
+    if (categoryEl) categoryEl.value = String(product.category || "");
+    if (priceEl) priceEl.value = Number(product.unit_price || 0).toFixed(2);
+    if (costEl) costEl.value = product.cost_price == null ? "" : Number(product.cost_price).toFixed(2);
+    if (stockEl) stockEl.value = String(product.stock_qty ?? 0);
+    if (reorderEl) reorderEl.value = String(product.reorder_level ?? 0);
+    if (activeEl) activeEl.value = product.active ? "1" : "0";
+    if (statusEl) statusEl.textContent = `Editing ${product.sku} - ${product.name}`;
+}
+
+function renderProShopProducts() {
+    const body = document.getElementById("pro-shop-products-body");
+    const lowStockEl = document.getElementById("pro-shop-low-stock");
+    if (!body) return;
+
+    const rows = Array.isArray(proShopProductsCache) ? proShopProductsCache : [];
+    const lowStockCount = rows.filter(row => row.active && Number(row.stock_qty || 0) <= Number(row.reorder_level || 0)).length;
+    if (lowStockEl) lowStockEl.textContent = String(lowStockCount);
+
+    if (!rows.length) {
+        body.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="6"><div class="empty-state">No products found. Add your first product on the right.</div></td>
+            </tr>
+        `;
+        return;
+    }
+
+    body.innerHTML = rows.map(row => {
+        const stockQty = Number(row.stock_qty || 0);
+        const reorder = Number(row.reorder_level || 0);
+        const low = row.active && stockQty <= reorder;
+        const addDisabled = !row.active || stockQty <= 0;
+        const activeTag = row.active ? "" : " <span class=\"muted\">(Inactive)</span>";
+        return `
+            <tr>
+                <td>${escapeHtml(String(row.sku || ""))}</td>
+                <td>${escapeHtml(String(row.name || ""))}${activeTag}</td>
+                <td>${row.category ? escapeHtml(String(row.category)) : "-"}</td>
+                <td>${escapeHtml(formatCurrencyZAR(row.unit_price || 0))}</td>
+                <td class="${low ? "pro-shop-stock-low" : ""}">${escapeHtml(String(stockQty))}</td>
+                <td>
+                    <button class="btn-secondary btn-small" type="button" onclick="addProShopCartItem(${Number(row.id)})" ${addDisabled ? "disabled" : ""}>Add</button>
+                    <button class="btn-secondary btn-small" type="button" onclick="editProShopProduct(${Number(row.id)})">Edit</button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderProShopCart() {
+    const body = document.getElementById("pro-shop-cart-body");
+    const totalEl = document.getElementById("pro-shop-cart-total");
+    if (!body || !totalEl) return;
+
+    if (!proShopCart.length) {
+        body.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="5"><div class="empty-state">Cart is empty. Add products from inventory.</div></td>
+            </tr>
+        `;
+        totalEl.textContent = "R0.00";
+        return;
+    }
+
+    body.innerHTML = proShopCart.map(item => {
+        const line = Number(item.quantity || 0) * Number(item.unit_price || 0);
+        return `
+            <tr>
+                <td>${escapeHtml(String(item.name || ""))}</td>
+                <td>
+                    <div class="pro-shop-qty">
+                        <button class="btn-secondary btn-small" type="button" onclick="changeProShopCartQty(${Number(item.product_id)}, -1)">-</button>
+                        <span>${escapeHtml(String(item.quantity || 0))}</span>
+                        <button class="btn-secondary btn-small" type="button" onclick="changeProShopCartQty(${Number(item.product_id)}, 1)">+</button>
+                    </div>
+                </td>
+                <td>${escapeHtml(formatCurrencyZAR(item.unit_price || 0))}</td>
+                <td>${escapeHtml(formatCurrencyZAR(line))}</td>
+                <td><button class="btn-secondary btn-small" type="button" onclick="removeProShopCartItem(${Number(item.product_id)})">Remove</button></td>
+            </tr>
+        `;
+    }).join("");
+
+    const total = proShopCart.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0);
+    totalEl.textContent = formatCurrencyZAR(total);
+}
+
+function addProShopCartItem(productId) {
+    const product = proShopFindProduct(productId);
+    if (!product) {
+        toastError("Product not found");
+        return;
+    }
+    if (!product.active) {
+        toastError("Product is inactive");
+        return;
+    }
+    const stockQty = Number(product.stock_qty || 0);
+    if (stockQty <= 0) {
+        toastError("Out of stock");
+        return;
+    }
+
+    const existing = proShopCart.find(item => Number(item.product_id) === Number(product.id));
+    if (existing) {
+        if (Number(existing.quantity || 0) >= stockQty) {
+            toastError("No more stock available");
+            return;
+        }
+        existing.quantity = Number(existing.quantity || 0) + 1;
+    } else {
+        proShopCart.push({
+            product_id: Number(product.id),
+            sku: String(product.sku || ""),
+            name: String(product.name || ""),
+            category: product.category || null,
+            unit_price: Number(product.unit_price || 0),
+            quantity: 1,
+            max_qty: stockQty,
+        });
+    }
+    renderProShopCart();
+}
+
+function changeProShopCartQty(productId, delta) {
+    const item = proShopCart.find(row => Number(row.product_id) === Number(productId));
+    if (!item) return;
+    const product = proShopFindProduct(productId);
+    const maxQty = Number(product?.stock_qty || item.max_qty || 0);
+    const nextQty = Number(item.quantity || 0) + Number(delta || 0);
+    if (nextQty <= 0) {
+        proShopCart = proShopCart.filter(row => Number(row.product_id) !== Number(productId));
+    } else {
+        item.quantity = Math.min(nextQty, maxQty);
+    }
+    renderProShopCart();
+}
+
+function removeProShopCartItem(productId) {
+    proShopCart = proShopCart.filter(row => Number(row.product_id) !== Number(productId));
+    renderProShopCart();
+}
+
+function clearProShopCart() {
+    proShopCart = [];
+    renderProShopCart();
+}
+
+async function loadProShopProducts() {
+    const searchEl = document.getElementById("pro-shop-search");
+    const q = (searchEl?.value || "").trim();
+    const params = new URLSearchParams({ active_only: "false", limit: "500" });
+    if (q) params.set("q", q);
+
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/pro-shop/products?${params.toString()}`);
+        proShopProductsCache = Array.isArray(data?.products) ? data.products : [];
+        reconcileProShopCartWithStock();
+        renderProShopProducts();
+        renderProShopCart();
+    } catch (error) {
+        console.error("Failed to load pro shop products:", error);
+        toastError(error?.message || "Failed to load pro shop products");
+    }
+}
+
+async function saveProShopProduct() {
+    const idEl = document.getElementById("pro-shop-product-id");
+    const skuEl = document.getElementById("pro-shop-sku");
+    const nameEl = document.getElementById("pro-shop-name");
+    const categoryEl = document.getElementById("pro-shop-category");
+    const priceEl = document.getElementById("pro-shop-unit-price");
+    const costEl = document.getElementById("pro-shop-cost-price");
+    const stockEl = document.getElementById("pro-shop-stock-qty");
+    const reorderEl = document.getElementById("pro-shop-reorder-level");
+    const activeEl = document.getElementById("pro-shop-active");
+    const statusEl = document.getElementById("pro-shop-product-status");
+
+    const payload = {
+        sku: String(skuEl?.value || "").trim(),
+        name: String(nameEl?.value || "").trim(),
+        category: String(categoryEl?.value || "").trim() || null,
+        unit_price: parseCurrencyInput(priceEl?.value),
+        cost_price: String(costEl?.value || "").trim() === "" ? null : parseCurrencyInput(costEl?.value),
+        stock_qty: Number(stockEl?.value || 0),
+        reorder_level: Number(reorderEl?.value || 0),
+        active: String(activeEl?.value || "1") === "1",
+    };
+
+    if (!payload.sku) {
+        toastError("SKU is required");
+        return;
+    }
+    if (!payload.name) {
+        toastError("Name is required");
+        return;
+    }
+    if (payload.unit_price < 0 || payload.stock_qty < 0 || payload.reorder_level < 0 || (payload.cost_price != null && payload.cost_price < 0)) {
+        toastError("Price and stock values must be >= 0");
+        return;
+    }
+
+    if (statusEl) statusEl.textContent = "Saving...";
+    try {
+        const productId = Number(idEl?.value || 0);
+        const isEdit = productId > 0;
+        const method = isEdit ? "PUT" : "POST";
+        const url = isEdit
+            ? `${API_BASE}/api/admin/pro-shop/products/${productId}`
+            : `${API_BASE}/api/admin/pro-shop/products`;
+
+        await fetchJson(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (statusEl) statusEl.textContent = isEdit ? "Product updated" : "Product created";
+        toastSuccess(isEdit ? "Product updated" : "Product created");
+        if (!isEdit) resetProShopProductForm();
+        await loadProShopProducts();
+    } catch (error) {
+        console.error("Failed to save pro shop product:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Save failed";
+        toastError(error?.message || "Failed to save product");
+    }
+}
+
+async function loadProShopSales() {
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/pro-shop/sales?limit=20&days=30`);
+        const sales = Array.isArray(data?.sales) ? data.sales : [];
+        const summary = data?.summary || {};
+        const salesBody = document.getElementById("pro-shop-sales-body");
+        const todayTotalEl = document.getElementById("pro-shop-today-total");
+        const todayTxEl = document.getElementById("pro-shop-today-transactions");
+        const periodTotalEl = document.getElementById("pro-shop-period-total");
+
+        if (todayTotalEl) todayTotalEl.textContent = formatCurrencyZAR(summary.today_total || 0);
+        if (todayTxEl) todayTxEl.textContent = String(summary.today_transactions || 0);
+        if (periodTotalEl) periodTotalEl.textContent = formatCurrencyZAR(summary.period_total || 0);
+
+        if (salesBody) {
+            if (!sales.length) {
+                salesBody.innerHTML = `
+                    <tr class="empty-row">
+                        <td colspan="5"><div class="empty-state">No sales recorded yet.</div></td>
+                    </tr>
+                `;
+            } else {
+                salesBody.innerHTML = sales.map(row => {
+                    const items = Array.isArray(row.items)
+                        ? row.items.map(item => `${item.name} x${item.quantity}`).join(", ")
+                        : "-";
+                    return `
+                        <tr>
+                            <td>${escapeHtml(formatDateTimeDMY(row.sold_at))}</td>
+                            <td>${row.customer_name ? escapeHtml(String(row.customer_name)) : "-"}</td>
+                            <td>${escapeHtml(items)}</td>
+                            <td>${escapeHtml(String(row.payment_method || "-").toUpperCase())}</td>
+                            <td>${escapeHtml(formatCurrencyZAR(row.total || 0))}</td>
+                        </tr>
+                    `;
+                }).join("");
+            }
+        }
+    } catch (error) {
+        console.error("Failed to load pro shop sales:", error);
+        toastError(error?.message || "Failed to load pro shop sales");
+    }
+}
+
+async function checkoutProShopSale() {
+    const statusEl = document.getElementById("pro-shop-checkout-status");
+    if (!proShopCart.length) {
+        toastError("Cart is empty");
+        return;
+    }
+
+    const payload = {
+        customer_name: String(document.getElementById("pro-shop-customer")?.value || "").trim() || null,
+        payment_method: String(document.getElementById("pro-shop-payment-method")?.value || "card").trim().toLowerCase(),
+        notes: null,
+        discount: 0,
+        tax: 0,
+        items: proShopCart.map(item => ({
+            product_id: Number(item.product_id),
+            quantity: Number(item.quantity || 0),
+            unit_price: Number(item.unit_price || 0),
+        })),
+    };
+
+    if (statusEl) statusEl.textContent = "Completing sale...";
+    try {
+        await fetchJson(`${API_BASE}/api/admin/pro-shop/sales`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        clearProShopCart();
+        const customerEl = document.getElementById("pro-shop-customer");
+        if (customerEl) customerEl.value = "";
+        if (statusEl) statusEl.textContent = "Sale completed";
+        toastSuccess("Pro shop sale captured");
+        await Promise.allSettled([loadProShopProducts(), loadProShopSales(), loadDashboard()]);
+    } catch (error) {
+        console.error("Pro shop checkout failed:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Checkout failed";
+        toastError(error?.message || "Checkout failed");
+    }
+}
+
+async function initProShopPage() {
+    const searchEl = document.getElementById("pro-shop-search");
+    if (searchEl && !searchEl.dataset.bound) {
+        let timer = null;
+        searchEl.addEventListener("input", () => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                loadProShopProducts();
+            }, 180);
+        });
+        searchEl.dataset.bound = "1";
+    }
+
+    renderProShopCart();
+    await Promise.allSettled([loadProShopProducts(), loadProShopSales()]);
 }
 
 // Tee Sheet
