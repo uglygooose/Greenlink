@@ -652,59 +652,6 @@ async def get_dashboard_stats(
         or 0
     )
     
-    # Today's golf revenue (payment date)
-    today_revenue = (
-        db.query(func.sum(LedgerEntry.amount))
-        .filter(
-            LedgerEntry.club_id == club_id,
-            LedgerEntry.booking_id.isnot(None),
-            func.date(LedgerEntry.created_at) == today,
-        )
-        .scalar()
-        or 0.0
-    )
-
-    # Today's non-booking revenue (transaction date)
-    # Includes imports (pub/bowls/other) and now pro shop POS rows.
-    try:
-        today_other_revenue = (
-            db.query(func.sum(RevenueTransaction.amount))
-            .filter(RevenueTransaction.club_id == club_id, RevenueTransaction.transaction_date == today)
-            .scalar()
-            or 0.0
-        )
-    except Exception:
-        _safe_rollback(db)
-        today_other_revenue = 0.0
-    
-    # Last 7 days golf revenue (payment date)
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    week_revenue = (
-        db.query(func.sum(LedgerEntry.amount))
-        .filter(
-            LedgerEntry.club_id == club_id,
-            LedgerEntry.booking_id.isnot(None),
-            LedgerEntry.created_at >= week_ago,
-        )
-        .scalar()
-        or 0.0
-    )
-
-    # Last 7 days non-booking revenue (transaction date)
-    try:
-        week_other_revenue = (
-            db.query(func.sum(RevenueTransaction.amount))
-            .filter(
-                RevenueTransaction.club_id == club_id,
-                RevenueTransaction.transaction_date >= (today - timedelta(days=6)),
-            )
-            .scalar()
-            or 0.0
-        )
-    except Exception:
-        _safe_rollback(db)
-        week_other_revenue = 0.0
-
     def _other_revenue_by_stream(start_d: date | None = None, end_d: date | None = None) -> dict[str, float]:
         out: dict[str, float] = {}
         try:
@@ -730,59 +677,11 @@ async def get_dashboard_stats(
         return out
 
     other_total_by_stream = _other_revenue_by_stream()
-    other_today_by_stream = _other_revenue_by_stream(today, today)
-    other_week_by_stream = _other_revenue_by_stream(today - timedelta(days=6), today)
 
     imported_golf_total = float(other_total_by_stream.get("golf", 0.0))
-    imported_golf_today = float(other_today_by_stream.get("golf", 0.0))
-    imported_golf_week = float(other_week_by_stream.get("golf", 0.0))
     imported_pro_shop_total = float(other_total_by_stream.get("pro_shop", 0.0))
-    imported_pro_shop_today = float(other_today_by_stream.get("pro_shop", 0.0))
-    imported_pro_shop_week = float(other_week_by_stream.get("pro_shop", 0.0))
-
-    other_total_revenue = float(sum(v for k, v in other_total_by_stream.items() if k not in {"golf", "pro_shop"}))
-    today_other_revenue = float(sum(v for k, v in other_today_by_stream.items() if k not in {"golf", "pro_shop"}))
-    week_other_revenue = float(sum(v for k, v in other_week_by_stream.items() if k not in {"golf", "pro_shop"}))
-
     golf_total_revenue = float(total_revenue) + imported_golf_total
-    golf_today_revenue = float(today_revenue) + imported_golf_today
-    golf_week_revenue = float(week_revenue) + imported_golf_week
     pro_shop_total_revenue = imported_pro_shop_total
-    pro_shop_today_revenue = imported_pro_shop_today
-    pro_shop_week_revenue = imported_pro_shop_week
-
-    combined_total_revenue = golf_total_revenue + pro_shop_total_revenue + float(other_total_revenue)
-    combined_today_revenue = golf_today_revenue + pro_shop_today_revenue + float(today_other_revenue)
-    combined_week_revenue = golf_week_revenue + pro_shop_week_revenue + float(week_other_revenue)
-
-    revenue_streams = {
-        "all": {
-            "label": "All Operations",
-            "total_revenue": combined_total_revenue,
-            "today_revenue": combined_today_revenue,
-            "week_revenue": combined_week_revenue,
-        },
-        "golf": {
-            "label": "Golf",
-            "total_revenue": golf_total_revenue,
-            "today_revenue": golf_today_revenue,
-            "week_revenue": golf_week_revenue,
-        },
-        "pro_shop": {
-            "label": "Pro Shop",
-            "total_revenue": pro_shop_total_revenue,
-            "today_revenue": pro_shop_today_revenue,
-            "week_revenue": pro_shop_week_revenue,
-        },
-    }
-
-    for stream_key, stream_label in [("pub", "Pub"), ("bowls", "Bowls"), ("other", "Other")]:
-        revenue_streams[stream_key] = {
-            "label": stream_label,
-            "total_revenue": float(other_total_by_stream.get(stream_key, 0.0)),
-            "today_revenue": float(other_today_by_stream.get(stream_key, 0.0)),
-            "week_revenue": float(other_week_by_stream.get(stream_key, 0.0)),
-        }
 
     # Import freshness (best-effort; OK if tables not present on older DBs)
     imports = {}
@@ -824,6 +723,35 @@ async def get_dashboard_stats(
             _safe_rollback(db)
             return {}
         return out
+
+    def _golf_paid_amounts_and_rounds(start_d: date, end_d: date) -> tuple[float, int]:
+        try:
+            paid_revenue = (
+                db.query(func.sum(LedgerEntry.amount))
+                .filter(
+                    LedgerEntry.club_id == club_id,
+                    LedgerEntry.booking_id.isnot(None),
+                    func.date(LedgerEntry.created_at) >= start_d,
+                    func.date(LedgerEntry.created_at) <= end_d,
+                )
+                .scalar()
+                or 0.0
+            )
+            paid_rounds = (
+                db.query(func.count(LedgerEntry.id))
+                .filter(
+                    LedgerEntry.club_id == club_id,
+                    LedgerEntry.booking_id.isnot(None),
+                    func.date(LedgerEntry.created_at) >= start_d,
+                    func.date(LedgerEntry.created_at) <= end_d,
+                )
+                .scalar()
+                or 0
+            )
+            return float(paid_revenue), int(paid_rounds)
+        except Exception:
+            _safe_rollback(db)
+            return 0.0, 0
 
     golf_today_paid_rounds = 0
     golf_today_no_shows = 0
@@ -879,15 +807,11 @@ async def get_dashboard_stats(
         golf_today_slot_capacity = 0
         golf_today_slot_booked = 0
 
-    golf_today_occupancy_rate = (
-        float(golf_today_slot_booked) / float(golf_today_slot_capacity)
-        if float(golf_today_slot_capacity) > 0
-        else 0.0
-    )
-
     pro_shop_txns_today = 0
     pro_shop_txns_7d = 0
     pro_shop_avg_basket_30d = 0.0
+    pro_shop_units_sold_30d = 0
+    pro_shop_days_of_cover: float | None = None
     pro_shop_active_products = 0
     pro_shop_low_stock_items = 0
     pro_shop_stock_units = 0
@@ -931,6 +855,17 @@ async def get_dashboard_stats(
             if int(pro_shop_txns_30d) > 0
             else 0.0
         )
+        pro_shop_units_sold_30d = (
+            db.query(func.sum(ProShopSaleItem.quantity))
+            .join(ProShopSale, ProShopSaleItem.sale_id == ProShopSale.id)
+            .filter(
+                ProShopSaleItem.club_id == club_id,
+                ProShopSale.sold_at >= start_30,
+                ProShopSale.sold_at < end_exclusive,
+            )
+            .scalar()
+            or 0
+        )
         pro_shop_active_products = (
             db.query(func.count(ProShopProduct.id))
             .filter(ProShopProduct.club_id == club_id, ProShopProduct.active == 1)
@@ -959,6 +894,15 @@ async def get_dashboard_stats(
             .scalar()
             or 0.0
         )
+        if int(pro_shop_units_sold_30d) > 0:
+            daily_velocity_30d = float(pro_shop_units_sold_30d) / 30.0
+            pro_shop_days_of_cover = (
+                float(pro_shop_stock_units) / daily_velocity_30d
+                if daily_velocity_30d > 0
+                else None
+            )
+        else:
+            pro_shop_days_of_cover = None
         top_rows = (
             db.query(
                 ProShopSaleItem.name_snapshot,
@@ -989,6 +933,8 @@ async def get_dashboard_stats(
         pro_shop_txns_today = 0
         pro_shop_txns_7d = 0
         pro_shop_avg_basket_30d = 0.0
+        pro_shop_units_sold_30d = 0
+        pro_shop_days_of_cover = None
         pro_shop_active_products = 0
         pro_shop_low_stock_items = 0
         pro_shop_stock_units = 0
@@ -997,6 +943,7 @@ async def get_dashboard_stats(
 
     today_stream_stats = _stream_amounts_and_transactions(today, today)
     week_stream_stats = _stream_amounts_and_transactions(today - timedelta(days=6), today)
+    prior_week_stream_stats = _stream_amounts_and_transactions(today - timedelta(days=13), today - timedelta(days=7))
     stream_highlights: dict[str, list[dict[str, float | int | str]]] = {"pub": [], "bowls": [], "other": []}
 
     try:
@@ -1027,9 +974,10 @@ async def get_dashboard_stats(
                 continue
             rows.append(
                 {
-                    "name": str(category or "Uncategorized"),
-                    "units": int(txns or 0),
-                    "revenue": float(amount or 0.0),
+                    "name": f"Top Category: {str(category or 'Uncategorized')}",
+                    "current": float(amount or 0.0),
+                    "format": "currency",
+                    "context": f"{int(txns or 0)} transactions in last 30 days",
                 }
             )
             grouped[stream] = rows
@@ -1039,74 +987,314 @@ async def get_dashboard_stats(
         _safe_rollback(db)
         stream_highlights = {"pub": [], "bowls": [], "other": []}
 
-    def _stream_today_amount(stream: str) -> float:
-        return float((today_stream_stats.get(stream) or {}).get("amount", 0.0))
+    def _stream_amount(stats: dict[str, dict[str, float | int]], stream: str) -> float:
+        return float((stats.get(stream) or {}).get("amount", 0.0))
 
-    def _stream_week_amount(stream: str) -> float:
-        return float((week_stream_stats.get(stream) or {}).get("amount", 0.0))
+    def _stream_txns(stats: dict[str, dict[str, float | int]], stream: str) -> int:
+        return int((stats.get(stream) or {}).get("transactions", 0))
 
-    def _stream_today_txns(stream: str) -> int:
-        return int((today_stream_stats.get(stream) or {}).get("transactions", 0))
+    def _avg_ticket(amount: float, txns: int) -> float:
+        return (float(amount) / float(txns)) if int(txns) > 0 else 0.0
 
-    def _stream_week_txns(stream: str) -> int:
-        return int((week_stream_stats.get(stream) or {}).get("transactions", 0))
+    def _delta_ratio(current: float, previous: float) -> float | None:
+        prev = float(previous or 0.0)
+        cur = float(current or 0.0)
+        if prev <= 0:
+            return 1.0 if cur > 0 else None
+        return (cur - prev) / prev
+
+    golf_paid_today_revenue, golf_paid_today_rounds = _golf_paid_amounts_and_rounds(today, today)
+    golf_paid_week_revenue, golf_paid_week_rounds = _golf_paid_amounts_and_rounds(today - timedelta(days=6), today)
+    golf_paid_prior_week_revenue, golf_paid_prior_week_rounds = _golf_paid_amounts_and_rounds(
+        today - timedelta(days=13),
+        today - timedelta(days=7),
+    )
+
+    golf_today_revenue = float(golf_paid_today_revenue + _stream_amount(today_stream_stats, "golf"))
+    golf_week_revenue = float(golf_paid_week_revenue + _stream_amount(week_stream_stats, "golf"))
+    golf_prior_week_revenue = float(golf_paid_prior_week_revenue + _stream_amount(prior_week_stream_stats, "golf"))
+    golf_today_transactions = int(golf_paid_today_rounds + _stream_txns(today_stream_stats, "golf"))
+    golf_week_transactions = int(golf_paid_week_rounds + _stream_txns(week_stream_stats, "golf"))
+    golf_prior_week_transactions = int(golf_paid_prior_week_rounds + _stream_txns(prior_week_stream_stats, "golf"))
+    golf_week_vs_prior = _delta_ratio(golf_week_revenue, golf_prior_week_revenue)
+    golf_avg_ticket_7d = _avg_ticket(golf_week_revenue, golf_week_transactions)
+
+    pro_shop_today_revenue = float(_stream_amount(today_stream_stats, "pro_shop"))
+    pro_shop_week_revenue = float(_stream_amount(week_stream_stats, "pro_shop"))
+    pro_shop_prior_week_revenue = float(_stream_amount(prior_week_stream_stats, "pro_shop"))
+    pro_shop_today_transactions = int(_stream_txns(today_stream_stats, "pro_shop"))
+    pro_shop_week_transactions = int(_stream_txns(week_stream_stats, "pro_shop"))
+    pro_shop_prior_week_transactions = int(_stream_txns(prior_week_stream_stats, "pro_shop"))
+    pro_shop_week_vs_prior = _delta_ratio(pro_shop_week_revenue, pro_shop_prior_week_revenue)
+    pro_shop_avg_ticket_7d = _avg_ticket(pro_shop_week_revenue, pro_shop_week_transactions)
+
+    other_streams: list[tuple[str, str]] = [("pub", "Pub"), ("bowls", "Bowls"), ("other", "Other")]
+    stream_operational: dict[str, dict[str, float | int | str | None]] = {}
+    for stream_key, stream_label in other_streams:
+        today_amount = float(_stream_amount(today_stream_stats, stream_key))
+        week_amount = float(_stream_amount(week_stream_stats, stream_key))
+        prior_week_amount = float(_stream_amount(prior_week_stream_stats, stream_key))
+        today_txns = int(_stream_txns(today_stream_stats, stream_key))
+        week_txns = int(_stream_txns(week_stream_stats, stream_key))
+        prior_week_txns = int(_stream_txns(prior_week_stream_stats, stream_key))
+        stream_operational[stream_key] = {
+            "label": stream_label,
+            "total_revenue": float(other_total_by_stream.get(stream_key, 0.0)),
+            "today_revenue": today_amount,
+            "week_revenue": week_amount,
+            "prior_week_revenue": prior_week_amount,
+            "today_transactions": today_txns,
+            "week_transactions": week_txns,
+            "prior_week_transactions": prior_week_txns,
+            "avg_ticket_week": _avg_ticket(week_amount, week_txns),
+            "week_vs_prior_week": _delta_ratio(week_amount, prior_week_amount),
+        }
+
+    other_total_revenue = float(sum(float(stream_operational[k]["total_revenue"]) for k, _ in other_streams))
+    today_other_revenue = float(sum(float(stream_operational[k]["today_revenue"]) for k, _ in other_streams))
+    week_other_revenue = float(sum(float(stream_operational[k]["week_revenue"]) for k, _ in other_streams))
+    other_prior_week_revenue = float(sum(float(stream_operational[k]["prior_week_revenue"]) for k, _ in other_streams))
+
+    combined_total_revenue = float(golf_total_revenue + pro_shop_total_revenue + other_total_revenue)
+    combined_today_revenue = float(golf_today_revenue + pro_shop_today_revenue + today_other_revenue)
+    combined_week_revenue = float(golf_week_revenue + pro_shop_week_revenue + week_other_revenue)
+    combined_prior_week_revenue = float(golf_prior_week_revenue + pro_shop_prior_week_revenue + other_prior_week_revenue)
+
+    combined_today_transactions = int(
+        golf_today_transactions + pro_shop_today_transactions + sum(int(stream_operational[k]["today_transactions"]) for k, _ in other_streams)
+    )
+    combined_week_transactions = int(
+        golf_week_transactions + pro_shop_week_transactions + sum(int(stream_operational[k]["week_transactions"]) for k, _ in other_streams)
+    )
+    combined_week_vs_prior = _delta_ratio(combined_week_revenue, combined_prior_week_revenue)
+    combined_avg_ticket_7d = _avg_ticket(combined_week_revenue, combined_week_transactions)
+
+    golf_today_occupancy_rate = (
+        float(golf_today_slot_booked) / float(golf_today_slot_capacity)
+        if float(golf_today_slot_capacity) > 0
+        else 0.0
+    )
+    golf_no_show_rate_today = (
+        float(golf_today_no_shows) / float(golf_today_paid_rounds + golf_today_no_shows)
+        if int(golf_today_paid_rounds + golf_today_no_shows) > 0
+        else 0.0
+    )
+    golf_revenue_per_paid_round = (
+        float(golf_today_revenue) / float(golf_today_paid_rounds)
+        if int(golf_today_paid_rounds) > 0
+        else 0.0
+    )
+    pro_shop_low_stock_rate = (
+        float(pro_shop_low_stock_items) / float(pro_shop_active_products)
+        if int(pro_shop_active_products) > 0
+        else 0.0
+    )
+
+    revenue_streams = {
+        "all": {
+            "label": "All Operations",
+            "total_revenue": float(combined_total_revenue),
+            "today_revenue": float(combined_today_revenue),
+            "week_revenue": float(combined_week_revenue),
+            "today_transactions": int(combined_today_transactions),
+            "week_transactions": int(combined_week_transactions),
+            "avg_ticket_week": float(combined_avg_ticket_7d),
+            "week_vs_prior_week": combined_week_vs_prior,
+        },
+        "golf": {
+            "label": "Golf",
+            "total_revenue": float(golf_total_revenue),
+            "today_revenue": float(golf_today_revenue),
+            "week_revenue": float(golf_week_revenue),
+            "today_transactions": int(golf_today_transactions),
+            "week_transactions": int(golf_week_transactions),
+            "avg_ticket_week": float(golf_avg_ticket_7d),
+            "week_vs_prior_week": golf_week_vs_prior,
+        },
+        "pro_shop": {
+            "label": "Pro Shop",
+            "total_revenue": float(pro_shop_total_revenue),
+            "today_revenue": float(pro_shop_today_revenue),
+            "week_revenue": float(pro_shop_week_revenue),
+            "today_transactions": int(pro_shop_today_transactions),
+            "week_transactions": int(pro_shop_week_transactions),
+            "avg_ticket_week": float(pro_shop_avg_ticket_7d),
+            "week_vs_prior_week": pro_shop_week_vs_prior,
+        },
+    }
+    for stream_key, stream_label in other_streams:
+        stream_info = stream_operational[stream_key]
+        revenue_streams[stream_key] = {
+            "label": stream_label,
+            "total_revenue": float(stream_info["total_revenue"]),
+            "today_revenue": float(stream_info["today_revenue"]),
+            "week_revenue": float(stream_info["week_revenue"]),
+            "today_transactions": int(stream_info["today_transactions"]),
+            "week_transactions": int(stream_info["week_transactions"]),
+            "avg_ticket_week": float(stream_info["avg_ticket_week"]),
+            "week_vs_prior_week": stream_info["week_vs_prior_week"],
+        }
+
+    def _stream_mix(amt: float) -> float:
+        return (float(amt) / float(combined_today_revenue)) if float(combined_today_revenue) > 0 else 0.0
+
+    all_highlights: list[dict[str, float | int | str | None]] = [
+        {
+            "name": "Golf Revenue Mix (Today)",
+            "current": _stream_mix(golf_today_revenue),
+            "format": "percent",
+            "context": f"{golf_today_transactions} transactions | R{golf_today_revenue:.2f}",
+        },
+        {
+            "name": "Pro Shop Revenue Mix (Today)",
+            "current": _stream_mix(pro_shop_today_revenue),
+            "format": "percent",
+            "context": f"{pro_shop_today_transactions} transactions | R{pro_shop_today_revenue:.2f}",
+        },
+    ]
+    for stream_key, stream_label in other_streams:
+        stream_info = stream_operational[stream_key]
+        all_highlights.append(
+            {
+                "name": f"{stream_label} Revenue Mix (Today)",
+                "current": _stream_mix(float(stream_info["today_revenue"])),
+                "format": "percent",
+                "context": f"{int(stream_info['today_transactions'])} transactions | R{float(stream_info['today_revenue']):.2f}",
+            }
+        )
+
+    pro_shop_highlights: list[dict[str, float | int | str | None]] = [
+        {
+            "name": "Avg Basket (30d)",
+            "current": float(pro_shop_avg_basket_30d),
+            "format": "currency",
+            "context": f"{int(pro_shop_txns_7d)} POS transactions in last 7 days",
+        },
+        {
+            "name": "Inventory Value",
+            "current": float(pro_shop_stock_value),
+            "format": "currency",
+            "context": f"{int(pro_shop_stock_units)} units on hand",
+        },
+        {
+            "name": "Days of Cover",
+            "current": float(pro_shop_days_of_cover) if pro_shop_days_of_cover is not None else 0.0,
+            "format": "number",
+            "context": (
+                "Based on 30-day unit velocity"
+                if pro_shop_days_of_cover is not None
+                else "Insufficient 30-day sales history"
+            ),
+        },
+    ]
+    for row in pro_shop_top_sellers[:3]:
+        pro_shop_highlights.append(
+            {
+                "name": f"Top Seller: {str(row['name'])}",
+                "current": float(row["revenue"]),
+                "format": "currency",
+                "context": f"{int(row['units'])} units in last 30 days",
+            }
+        )
 
     operation_insights = {
         "all": {
             "cards": [
                 {"label": "Revenue Today", "value": float(combined_today_revenue), "format": "currency"},
-                {"label": "Golf Today", "value": float(golf_today_revenue), "format": "currency"},
-                {"label": "Pro Shop Today", "value": float(pro_shop_today_revenue), "format": "currency"},
-                {"label": "Other Streams Today", "value": float(today_other_revenue), "format": "currency"},
+                {"label": "Transactions Today", "value": int(combined_today_transactions), "format": "number"},
+                {"label": "Avg Ticket (7d)", "value": float(combined_avg_ticket_7d), "format": "currency"},
+                {"label": "7d vs Prior 7d", "value": combined_week_vs_prior, "format": "percent"},
             ],
-            "note": "Use stream dashboards to drill into Golf, Pro Shop, Pub, Bowls, and Other operations.",
-            "highlights": [],
+            "note": "Executive view across golf, pro shop, and imported operations. Switch streams above for operational detail.",
+            "highlights": all_highlights,
         },
         "golf": {
             "cards": [
-                {"label": "Bookings Today", "value": int(today_bookings), "format": "number"},
                 {"label": "Tee Occupancy Today", "value": float(golf_today_occupancy_rate), "format": "percent"},
                 {"label": "Paid Rounds Today", "value": int(golf_today_paid_rounds), "format": "number"},
-                {"label": "No-shows Today", "value": int(golf_today_no_shows), "format": "number"},
+                {"label": "Revenue / Paid Round", "value": float(golf_revenue_per_paid_round), "format": "currency"},
+                {"label": "No-show Rate Today", "value": float(golf_no_show_rate_today), "format": "percent"},
             ],
-            "note": "Golf dashboard focuses on tee-sheet utilization, paid rounds, and no-show control.",
-            "highlights": [],
+            "note": "Golf dashboard tracks utilization, conversion to paid rounds, and no-show leakage.",
+            "highlights": [
+                {
+                    "name": "Booked Slots Today",
+                    "current": int(golf_today_slot_booked),
+                    "format": "number",
+                    "context": f"{int(golf_today_slot_capacity)} total slot capacity",
+                },
+                {
+                    "name": "Revenue 7d",
+                    "current": float(golf_week_revenue),
+                    "format": "currency",
+                    "context": (
+                        f"{golf_week_transactions} transactions | trend {(golf_week_vs_prior or 0.0):+.0%}"
+                        if golf_week_vs_prior is not None
+                        else f"{golf_week_transactions} transactions | no prior-week baseline"
+                    ),
+                },
+                {
+                    "name": "No-shows Today",
+                    "current": int(golf_today_no_shows),
+                    "format": "number",
+                    "context": f"{golf_today_paid_rounds + golf_today_no_shows} attended + no-show records",
+                },
+            ],
         },
         "pro_shop": {
             "cards": [
                 {"label": "Sales Today", "value": float(pro_shop_today_revenue), "format": "currency"},
-                {"label": "Transactions Today", "value": int(pro_shop_txns_today), "format": "number"},
-                {"label": "Avg Basket (30d)", "value": float(pro_shop_avg_basket_30d), "format": "currency"},
-                {"label": "Low Stock Items", "value": int(pro_shop_low_stock_items), "format": "number"},
+                {"label": "Transactions Today", "value": int(pro_shop_today_transactions), "format": "number"},
+                {"label": "Avg Basket (7d)", "value": float(pro_shop_avg_ticket_7d), "format": "currency"},
+                {"label": "Low-stock Rate", "value": float(pro_shop_low_stock_rate), "format": "percent"},
             ],
-            "note": "Pro shop dashboard focuses on sell-through, basket value, and stock risk.",
-            "highlights": pro_shop_top_sellers,
+            "note": "Pro shop dashboard tracks POS throughput, basket value, and stock risk.",
+            "highlights": pro_shop_highlights,
             "inventory": {
                 "active_products": int(pro_shop_active_products),
                 "stock_units": int(pro_shop_stock_units),
                 "stock_value": float(pro_shop_stock_value),
                 "low_stock_items": int(pro_shop_low_stock_items),
-                "transactions_7d": int(pro_shop_txns_7d),
+                "low_stock_rate": float(pro_shop_low_stock_rate),
+                "transactions_7d": int(pro_shop_week_transactions),
+                "transactions_7d_pos": int(pro_shop_txns_7d),
+                "transactions_today_pos": int(pro_shop_txns_today),
+                "avg_basket_30d": float(pro_shop_avg_basket_30d),
+                "units_sold_30d": int(pro_shop_units_sold_30d),
+                "days_of_cover": float(pro_shop_days_of_cover) if pro_shop_days_of_cover is not None else None,
+                "week_vs_prior_week": pro_shop_week_vs_prior,
             },
         },
     }
 
-    for stream_key, stream_label in [("pub", "Pub"), ("bowls", "Bowls"), ("other", "Other")]:
-        stream_today_amount = float(_stream_today_amount(stream_key))
-        stream_week_amount = float(_stream_week_amount(stream_key))
-        stream_today_txns = int(_stream_today_txns(stream_key))
-        stream_week_txns = int(_stream_week_txns(stream_key))
-        avg_ticket_week = (stream_week_amount / float(stream_week_txns)) if stream_week_txns > 0 else 0.0
+    for stream_key, stream_label in other_streams:
+        stream_info = stream_operational[stream_key]
+        stream_today_amount = float(stream_info["today_revenue"])
+        stream_week_amount = float(stream_info["week_revenue"])
+        stream_today_txns = int(stream_info["today_transactions"])
+        stream_week_txns = int(stream_info["week_transactions"])
+        stream_avg_ticket_week = float(stream_info["avg_ticket_week"])
+        stream_week_vs_prior = stream_info["week_vs_prior_week"]
 
         operation_insights[stream_key] = {
             "cards": [
                 {"label": f"{stream_label} Revenue Today", "value": stream_today_amount, "format": "currency"},
                 {"label": "Transactions Today", "value": stream_today_txns, "format": "number"},
-                {"label": "Revenue 7 Days", "value": stream_week_amount, "format": "currency"},
-                {"label": "Avg Ticket (7d)", "value": avg_ticket_week, "format": "currency"},
+                {"label": "Avg Ticket (7d)", "value": stream_avg_ticket_week, "format": "currency"},
+                {"label": "7d vs Prior 7d", "value": stream_week_vs_prior, "format": "percent"},
             ],
-            "note": f"{stream_label} dashboard focuses on revenue velocity, ticket size, and transaction count.",
-            "highlights": stream_highlights.get(stream_key, []),
+            "note": f"{stream_label} dashboard tracks revenue pace, ticket quality, and 7-day trend versus prior week.",
+            "highlights": (
+                stream_highlights.get(stream_key, [])
+                or [
+                    {
+                        "name": "Revenue 7d",
+                        "current": stream_week_amount,
+                        "format": "currency",
+                        "context": f"{stream_week_txns} transactions",
+                    }
+                ]
+            ),
         }
     
     # KPI targets vs actuals (Day/WTD/MTD/YTD)

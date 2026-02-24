@@ -33,7 +33,7 @@ let authFetchInstalled = false;
 let currentMemberDetail = null;
 let dashboardStreamView = "all";
 let dashboardDataCache = null;
-let dashboardStreamLocked = false;
+let dashboardStreamPreset = "all";
 let proShopProductsCache = [];
 let proShopCart = [];
 
@@ -497,10 +497,7 @@ function setupNavigation() {
 
             if (page === "dashboard") {
                 const nextStream = streamPreset || "all";
-                setDashboardStreamViewState(nextStream, {
-                    persist: true,
-                    lock: nextStream !== "all"
-                });
+                setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
             }
 
             // Update active nav
@@ -572,7 +569,7 @@ function showPage(pageName) {
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
 
     if (pageName === "dashboard" && dashboardDataCache) {
-        applyDashboardStreamLockState();
+        applyDashboardStreamButtonState();
         applyDashboardStreamView(dashboardDataCache);
     }
 }
@@ -582,13 +579,12 @@ function setupDashboardStreamFilters() {
     if (!buttons.length) return;
     const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const stored = String(localStorage.getItem("dashboard_stream_view") || "").toLowerCase();
-    setDashboardStreamViewState(valid.has(stored) ? stored : "all", { persist: false, lock: false });
+    setDashboardStreamViewState(valid.has(stored) ? stored : "all", { persist: false, source: "stored" });
 
     buttons.forEach(btn => {
         btn.addEventListener("click", () => {
-            if (dashboardStreamLocked) return;
             const nextStream = String(btn.dataset.stream || "all").toLowerCase();
-            setDashboardStreamViewState(nextStream, { persist: true, lock: false });
+            setDashboardStreamViewState(nextStream, { persist: true, source: "toggle" });
         });
     });
 }
@@ -597,28 +593,34 @@ function setDashboardStreamViewState(stream, options = {}) {
     const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const next = valid.has(String(stream || "").toLowerCase()) ? String(stream || "").toLowerCase() : "all";
     const persist = options.persist !== false;
-    const lock = Boolean(options.lock) && next !== "all";
+    const source = String(options.source || "").toLowerCase();
 
     dashboardStreamView = next;
-    dashboardStreamLocked = lock;
+    if (source === "sidebar") {
+        dashboardStreamPreset = next;
+    } else if (source === "toggle") {
+        dashboardStreamPreset = "custom";
+    } else if (source === "stored") {
+        dashboardStreamPreset = next === "all" ? "all" : "custom";
+    }
     if (persist) {
         localStorage.setItem("dashboard_stream_view", dashboardStreamView);
     }
-    applyDashboardStreamLockState();
+    applyDashboardStreamButtonState();
     if (dashboardDataCache) {
         applyDashboardStreamView(dashboardDataCache);
     }
 }
 
-function applyDashboardStreamLockState() {
+function applyDashboardStreamButtonState() {
     const card = document.querySelector(".dashboard-stream-card");
     const buttons = document.querySelectorAll(".dashboard-stream-btn");
     if (card) {
-        card.classList.toggle("locked", dashboardStreamLocked);
+        card.classList.remove("locked");
     }
     buttons.forEach(btn => {
-        const stream = String(btn.dataset.stream || "all").toLowerCase();
-        btn.disabled = dashboardStreamLocked && stream !== dashboardStreamView;
+        btn.disabled = false;
+        btn.classList.toggle("active", String(btn.dataset.stream || "all") === dashboardStreamView);
     });
 }
 
@@ -633,27 +635,43 @@ function resolveDashboardStreamMetrics(data, streamKey) {
             total_revenue: safeNumber(data?.total_revenue),
             today_revenue: safeNumber(data?.today_revenue),
             week_revenue: safeNumber(data?.week_revenue),
+            today_transactions: 0,
+            week_transactions: 0,
+            avg_ticket_week: 0,
+            week_vs_prior_week: null,
         },
         golf: {
             label: "Golf",
             total_revenue: safeNumber(data?.golf_revenue_total),
             today_revenue: safeNumber(data?.golf_revenue_today),
             week_revenue: safeNumber(data?.golf_revenue_week),
+            today_transactions: 0,
+            week_transactions: 0,
+            avg_ticket_week: 0,
+            week_vs_prior_week: null,
         },
         pro_shop: {
             label: "Pro Shop",
             total_revenue: safeNumber(data?.pro_shop_revenue_total),
             today_revenue: safeNumber(data?.pro_shop_revenue_today),
             week_revenue: safeNumber(data?.pro_shop_revenue_week),
+            today_transactions: 0,
+            week_transactions: 0,
+            avg_ticket_week: 0,
+            week_vs_prior_week: null,
         },
         other: {
             label: "Other Operations",
             total_revenue: safeNumber(data?.other_revenue_total),
             today_revenue: safeNumber(data?.other_revenue_today),
             week_revenue: safeNumber(data?.other_revenue_week),
+            today_transactions: 0,
+            week_transactions: 0,
+            avg_ticket_week: 0,
+            week_vs_prior_week: null,
         },
-        pub: { label: "Pub", total_revenue: 0, today_revenue: 0, week_revenue: 0 },
-        bowls: { label: "Bowls", total_revenue: 0, today_revenue: 0, week_revenue: 0 },
+        pub: { label: "Pub", total_revenue: 0, today_revenue: 0, week_revenue: 0, today_transactions: 0, week_transactions: 0, avg_ticket_week: 0, week_vs_prior_week: null },
+        bowls: { label: "Bowls", total_revenue: 0, today_revenue: 0, week_revenue: 0, today_transactions: 0, week_transactions: 0, avg_ticket_week: 0, week_vs_prior_week: null },
     };
 
     const key = String(streamKey || "all").toLowerCase();
@@ -663,23 +681,40 @@ function resolveDashboardStreamMetrics(data, streamKey) {
         total_revenue: safeNumber(selected.total_revenue),
         today_revenue: safeNumber(selected.today_revenue),
         week_revenue: safeNumber(selected.week_revenue),
+        today_transactions: safeNumber(selected.today_transactions),
+        week_transactions: safeNumber(selected.week_transactions),
+        avg_ticket_week: safeNumber(selected.avg_ticket_week),
+        week_vs_prior_week: Number.isFinite(Number(selected.week_vs_prior_week)) ? Number(selected.week_vs_prior_week) : null,
         key,
     };
 }
 
 function formatDashboardMetric(metric) {
     const format = String(metric?.format || "number").toLowerCase();
-    const value = safeNumber(metric?.value);
+    const raw = metric?.value;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return "-";
     if (format === "currency") return formatCurrencyZAR(value);
     if (format === "percent") return formatPct(value);
     if (format === "ratio") return `${value.toFixed(2)}x`;
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+function formatTrendDelta(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "No prior-week baseline";
+    const pct = (num * 100).toFixed(0);
+    const sign = num > 0 ? "+" : "";
+    return `${sign}${pct}% vs prior 7 days`;
+}
+
 function renderDashboardHighlights(data, streamKey) {
     const body = document.getElementById("dashboard-highlights-body");
     const titleEl = document.getElementById("dashboard-highlights-title");
     const noteEl = document.getElementById("dashboard-highlights-note");
+    const metricColEl = document.getElementById("dashboard-highlights-col-metric");
+    const currentColEl = document.getElementById("dashboard-highlights-col-current");
+    const contextColEl = document.getElementById("dashboard-highlights-col-context");
     if (!body || !titleEl || !noteEl) return;
 
     const insights = (data && data.operation_insights && typeof data.operation_insights === "object")
@@ -690,6 +725,9 @@ function renderDashboardHighlights(data, streamKey) {
 
     titleEl.textContent = `${label} Highlights`;
     noteEl.textContent = row?.note ? String(row.note) : "No additional highlights available yet.";
+    if (metricColEl) metricColEl.textContent = "Metric";
+    if (currentColEl) currentColEl.textContent = "Current";
+    if (contextColEl) contextColEl.textContent = "Context";
 
     const highlights = Array.isArray(row?.highlights) ? row.highlights : [];
     if (!highlights.length) {
@@ -704,8 +742,27 @@ function renderDashboardHighlights(data, streamKey) {
     body.innerHTML = highlights.map(item => `
         <tr>
             <td>${escapeHtml(String(item?.name || item?.label || "Item"))}</td>
-            <td>${escapeHtml(String(item?.units ?? item?.transactions ?? "-"))}</td>
-            <td>${escapeHtml(formatCurrencyZAR(item?.revenue ?? item?.amount ?? 0))}</td>
+            <td>${escapeHtml((() => {
+                const modernCurrent = (item && Object.prototype.hasOwnProperty.call(item, "current"))
+                    ? formatDashboardMetric({ value: item.current, format: item?.format || "number" })
+                    : null;
+                if (modernCurrent != null) return modernCurrent;
+                if (item && Object.prototype.hasOwnProperty.call(item, "value")) {
+                    return formatDashboardMetric({ value: item.value, format: item?.format || "number" });
+                }
+                const legacyCurrent = item?.revenue ?? item?.amount ?? item?.transactions ?? item?.units;
+                const legacyFormat = (item?.revenue != null || item?.amount != null) ? "currency" : "number";
+                return legacyCurrent == null
+                    ? "-"
+                    : formatDashboardMetric({ value: legacyCurrent, format: legacyFormat });
+            })())}</td>
+            <td>${escapeHtml((() => {
+                if (item?.context != null && String(item.context).trim()) return String(item.context);
+                if (item?.units != null && item?.transactions != null) return `${item.units} units | ${item.transactions} txns`;
+                if (item?.units != null) return `${item.units} units`;
+                if (item?.transactions != null) return `${item.transactions} txns`;
+                return "-";
+            })())}</td>
         </tr>
     `).join("");
 }
@@ -806,9 +863,7 @@ function applyDashboardOperationLayout(data, streamKey) {
 function applyDashboardStreamView(data) {
     const selected = resolveDashboardStreamMetrics(data, dashboardStreamView);
     const label = selected.label;
-    document.querySelectorAll(".dashboard-stream-btn").forEach(btn => {
-        btn.classList.toggle("active", String(btn.dataset.stream || "all") === selected.key);
-    });
+    applyDashboardStreamButtonState();
 
     const totalRevenueEl = document.getElementById("total-revenue");
     const todayRevenueEl = document.getElementById("today-revenue");
@@ -827,16 +882,18 @@ function applyDashboardStreamView(data) {
     if (weekRevenueLabelEl) weekRevenueLabelEl.textContent = `This Week (${label})`;
 
     if (noteEl) {
-        if (dashboardStreamLocked) {
-            noteEl.textContent = `Locked to ${label} from the left menu.`;
-        } else if (selected.key === "all") {
-            noteEl.textContent = "Showing combined operations view.";
+        const fromSidebarPreset = dashboardStreamPreset !== "custom" && dashboardStreamPreset !== "all" && dashboardStreamPreset === selected.key;
+        const trendText = formatTrendDelta(selected.week_vs_prior_week);
+        if (selected.key === "all") {
+            noteEl.textContent = `Showing combined operations view. ${trendText}.`;
+        } else if (fromSidebarPreset) {
+            noteEl.textContent = `Loaded ${label} dashboard preset. ${trendText}. Use Operations View to switch anytime.`;
         } else if (selected.key === "golf") {
-            noteEl.textContent = "Golf view uses bookings, paid rounds, and tee-sheet utilization.";
+            noteEl.textContent = `Golf view uses occupancy, paid rounds, and no-show control. ${trendText}.`;
         } else if (selected.key === "pro_shop") {
-            noteEl.textContent = "Pro shop view uses POS sales, basket value, and stock-risk metrics.";
+            noteEl.textContent = `Pro shop view uses POS sales, basket value, and stock-risk metrics. ${trendText}.`;
         } else {
-            noteEl.textContent = `${label} view uses imported non-golf revenue transactions.`;
+            noteEl.textContent = `${label} view uses imported non-golf revenue transactions. ${trendText}.`;
         }
     }
 
@@ -846,7 +903,7 @@ function applyDashboardStreamView(data) {
     if (currentActivePage === "dashboard") {
         const titleEl = document.getElementById("page-title");
         if (titleEl) {
-            titleEl.textContent = dashboardStreamLocked && selected.key !== "all" ? `${label} Dashboard` : "Dashboard";
+            titleEl.textContent = selected.key === "all" ? "Dashboard" : `${label} Dashboard`;
         }
     }
 }

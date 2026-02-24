@@ -1962,14 +1962,6 @@ body.drag-active .slot-card.open {
     min-width: 86px;
 }
 
-.dashboard-stream-card.locked .dashboard-stream-toggle {
-    opacity: 0.85;
-}
-
-.dashboard-stream-card.locked .dashboard-stream-toggle .tee-btn {
-    cursor: not-allowed;
-}
-
 .pro-shop-form-grid {
     grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr);
 }

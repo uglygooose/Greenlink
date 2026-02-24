@@ -44,11 +44,18 @@ This guide maps each GreenLink operation to practical dashboard KPIs and workflo
 
 - Stream split now includes `golf` and `pro_shop` as separate dashboard streams.
 - Sidebar now has separate `Golf` and `Pro Shop` groups with dedicated dashboard links.
-- Dashboard cards are now stream-aware and update to operation-specific KPI labels/values.
+- Dashboard cards are stream-aware and now prioritize operational KPIs:
+  - All: revenue today, transactions today, avg ticket (7d), 7d trend vs prior week.
+  - Golf: tee occupancy, paid rounds, revenue per paid round, no-show rate.
+  - Pro Shop: sales today, transactions today, avg basket (7d), low-stock rate.
+  - Pub/Bowls/Other: revenue today, transactions today, avg ticket (7d), 7d trend.
 - Golf-only sections (targets + monthly golf trend + booking-status card) hide automatically on non-golf dashboards.
 - Added operational highlights table:
-  - Pro Shop: top sellers.
-  - Pub/Bowls/Other: top imported categories.
+  - All: revenue-mix split by operation.
+  - Golf: tee-sheet and conversion signals.
+  - Pro Shop: inventory health + top sellers.
+  - Pub/Bowls/Other: top imported categories + transaction context.
+- Dashboard stream switching is always available (no lock mode), including when entering from individual operation dashboard links.
 - Revenue import stream options now include `pro_shop`.
 
 ## AI quick wins (low-effort, high-value)
