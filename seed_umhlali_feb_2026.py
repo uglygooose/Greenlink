@@ -41,10 +41,25 @@ def _env_truthy(key: str) -> bool:
     return str(os.getenv(key, "")).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _configure_local_sqlite(db_url: str) -> None:
-    os.environ.setdefault("PREFER_LOCAL_DB", "1")
-    os.environ.setdefault("FORCE_SQLITE", "1")
-    os.environ["SQLITE_FALLBACK_URL"] = db_url
+def _configure_db(db_url: str) -> None:
+    """
+    Configure app.database selection for the given SQLAlchemy URL.
+
+    - sqlite:///... uses the SQLite fallback URL (local/dev)
+    - any other URL is treated as DATABASE_URL (Postgres/MySQL), with strict mode enabled
+      so we never silently fall back to an unrelated local DB.
+    """
+    raw = str(db_url or "").strip()
+    if raw.lower().startswith("sqlite"):
+        os.environ.setdefault("PREFER_LOCAL_DB", "1")
+        os.environ.setdefault("FORCE_SQLITE", "1")
+        os.environ["SQLITE_FALLBACK_URL"] = raw
+        return
+
+    os.environ["DATABASE_URL"] = raw
+    os.environ.setdefault("DATABASE_URL_STRICT", "1")
+    os.environ["PREFER_LOCAL_DB"] = "0"
+    os.environ["FORCE_SQLITE"] = "0"
 
 
 @dataclass(frozen=True)
@@ -1236,7 +1251,7 @@ def main(argv: list[str]) -> int:
 
     # Ensure relative paths (like sqlite:///./...) resolve the same way as dev.ps1.
     os.chdir(Path(__file__).resolve().parent)
-    _configure_local_sqlite(str(args.db))
+    _configure_db(str(args.db))
 
     from app.database import Base, SessionLocal, engine
     from app.models import User, UserRole

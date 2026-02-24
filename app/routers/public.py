@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, get_db
 from app.club_config import club_config_response
 from app.models import Club, User
+from app.tenancy import get_active_club_id
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -43,8 +44,18 @@ def get_club_profile(
 
 
 @router.get("/club/me")
-def get_my_club_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    club_id = getattr(current_user, "club_id", None)
-    if not club_id:
-        return club_config_response(db, club_id=None)
-    return club_config_response(db, club_id=int(club_id))
+def get_my_club_profile(
+    club_id: int | None = Query(None),
+    x_club_id: str | None = Header(None, alias="X-Club-Id"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Authenticated club config.
+
+    - Regular users: resolves from `current_user.club_id` (rejects overrides).
+    - Super admins: resolves from `club_id` query param or `X-Club-Id` header (or
+      auto-selects the only active club if there is exactly one).
+    """
+    resolved = get_active_club_id(db=db, current_user=current_user, club_id=club_id, x_club_id=x_club_id)
+    return club_config_response(db, club_id=int(resolved))

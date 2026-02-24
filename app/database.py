@@ -15,6 +15,14 @@ DATABASE_URL_STRICT = str(os.getenv("DATABASE_URL_STRICT", "")).strip().lower() 
 PREFER_LOCAL_DB = str(os.getenv("PREFER_LOCAL_DB", "")).strip().lower() in {"1", "true", "yes"}
 FORCE_SQLITE = str(os.getenv("FORCE_SQLITE", "")).strip().lower() in {"1", "true", "yes"}
 
+# On hosted environments, silently falling back to a local SQLite DB (or MySQL) produces
+# "wrong data" situations that look like broken seeding. If DATABASE_URL is present and
+# we're running on a typical cloud host, default to strict mode unless explicitly disabled.
+_CLOUD_HINTS = ("RENDER", "RENDER_SERVICE_ID", "RENDER_INSTANCE_ID", "K_SERVICE", "GOOGLE_CLOUD_PROJECT")
+_IS_CLOUD = any(os.getenv(k) for k in _CLOUD_HINTS)
+if DATABASE_URL and _IS_CLOUD and ("DATABASE_URL_STRICT" not in os.environ):
+    DATABASE_URL_STRICT = True
+
 def _normalize_database_url(url: str | None) -> str | None:
     """
     Render/Supabase often provides Postgres URLs as:
