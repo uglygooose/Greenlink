@@ -663,12 +663,75 @@ async def get_dashboard_stats(
     try:
         week_other_revenue = (
             db.query(func.sum(RevenueTransaction.amount))
-            .filter(RevenueTransaction.transaction_date >= (today - timedelta(days=6)))
+            .filter(
+                RevenueTransaction.club_id == club_id,
+                RevenueTransaction.transaction_date >= (today - timedelta(days=6)),
+            )
             .scalar()
             or 0.0
         )
     except Exception:
         week_other_revenue = 0.0
+
+    def _normalize_stream_name(raw: str | None) -> str:
+        source = (raw or "").strip().lower()
+        if source in {"pub", "bar", "fnb", "food", "restaurant"}:
+            return "pub"
+        if source in {"bowls", "lawn_bowls", "lawn-bowls"}:
+            return "bowls"
+        if source in {"", "other", "misc", "unknown"}:
+            return "other"
+        return source
+
+    def _other_revenue_by_stream(start_d: date | None = None, end_d: date | None = None) -> dict[str, float]:
+        out: dict[str, float] = {}
+        try:
+            q = (
+                db.query(
+                    RevenueTransaction.source,
+                    func.sum(RevenueTransaction.amount).label("amount"),
+                )
+                .filter(RevenueTransaction.club_id == club_id)
+            )
+            if start_d is not None:
+                q = q.filter(RevenueTransaction.transaction_date >= start_d)
+            if end_d is not None:
+                q = q.filter(RevenueTransaction.transaction_date <= end_d)
+
+            rows = q.group_by(RevenueTransaction.source).all()
+            for source, amount in rows:
+                key = _normalize_stream_name(source)
+                out[key] = float(out.get(key, 0.0)) + float(amount or 0.0)
+        except Exception:
+            return {}
+        return out
+
+    other_total_by_stream = _other_revenue_by_stream()
+    other_today_by_stream = _other_revenue_by_stream(today, today)
+    other_week_by_stream = _other_revenue_by_stream(today - timedelta(days=6), today)
+
+    revenue_streams = {
+        "all": {
+            "label": "All Operations",
+            "total_revenue": float(total_revenue) + float(other_total_revenue),
+            "today_revenue": float(today_revenue) + float(today_other_revenue),
+            "week_revenue": float(week_revenue) + float(week_other_revenue),
+        },
+        "golf": {
+            "label": "Golf / Pro Shop",
+            "total_revenue": float(total_revenue),
+            "today_revenue": float(today_revenue),
+            "week_revenue": float(week_revenue),
+        },
+    }
+
+    for stream_key, stream_label in [("pub", "Pub"), ("bowls", "Bowls"), ("other", "Other")]:
+        revenue_streams[stream_key] = {
+            "label": stream_label,
+            "total_revenue": float(other_total_by_stream.get(stream_key, 0.0)),
+            "today_revenue": float(other_today_by_stream.get(stream_key, 0.0)),
+            "week_revenue": float(other_week_by_stream.get(stream_key, 0.0)),
+        }
 
     # Import freshness (best-effort; OK if tables not present on older DBs)
     imports = {}
@@ -746,6 +809,7 @@ async def get_dashboard_stats(
         "total_revenue": float(total_revenue) + float(other_total_revenue),
         "today_revenue": float(today_revenue) + float(today_other_revenue),
         "week_revenue": float(week_revenue) + float(week_other_revenue),
+        "revenue_streams": revenue_streams,
         "imports": imports,
         "bookings_by_status": {
             "booked": booked_count,

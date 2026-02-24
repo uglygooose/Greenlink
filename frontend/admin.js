@@ -31,6 +31,8 @@ let currentActivePage = "dashboard";
 let superAdminClubsCache = [];
 let authFetchInstalled = false;
 let currentMemberDetail = null;
+let dashboardStreamView = "all";
+let dashboardDataCache = null;
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -134,9 +136,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!role) return;
 
     setupNavigation();
+    setupDashboardStreamFilters();
     setupCloseModals();
     updateTime();
     setInterval(updateTime, 1000);
+    refreshNavGroupVisibility();
 
     // Operational pages (admin + club_staff)
     setupBookingFilters();
@@ -295,6 +299,14 @@ async function checkAuth() {
     }
 }
 
+function refreshNavGroupVisibility() {
+    document.querySelectorAll(".nav-group").forEach(group => {
+        const visibleItems = Array.from(group.querySelectorAll(".nav-item[data-page]"))
+            .filter(item => item instanceof HTMLElement && item.style.display !== "none");
+        group.style.display = visibleItems.length ? "" : "none";
+    });
+}
+
 function applyStaffMode(role) {
     if (role !== "club_staff") return;
 
@@ -328,11 +340,14 @@ function applyStaffMode(role) {
     document.querySelectorAll('button[onclick="openImportLog()"]').forEach(el => {
         el.style.display = "none";
     });
+
+    refreshNavGroupVisibility();
 }
 
 async function initSuperAdminContext() {
     const nav = document.getElementById("nav-super-admin");
     if (nav) nav.style.display = "";
+    refreshNavGroupVisibility();
 
     const clubSwitcher = document.getElementById("club-switcher");
     const staffClub = document.getElementById("super-staff-club");
@@ -509,6 +524,10 @@ function setupNavigation() {
                     initSuperAdminContext();
                     superRefreshStaff();
                     break;
+                case "pub-ops":
+                case "bowls-ops":
+                case "other-ops":
+                    break;
             }
         });
     });
@@ -528,9 +547,110 @@ function showPage(pageName) {
         "tee-times": "Tee Sheet",
         ledger: "Ledger",
         cashbook: "Cashbook Export",
-        "super-admin": "Super Admin"
+        "super-admin": "Super Admin",
+        "pub-ops": "Pub Operations",
+        "bowls-ops": "Bowls Operations",
+        "other-ops": "Other Operations",
     };
     document.getElementById("page-title").textContent = titles[pageName] || pageName;
+}
+
+function setupDashboardStreamFilters() {
+    const buttons = document.querySelectorAll(".dashboard-stream-btn");
+    if (!buttons.length) return;
+    const valid = new Set(["all", "golf", "pub", "bowls", "other"]);
+    const stored = String(localStorage.getItem("dashboard_stream_view") || "").toLowerCase();
+    if (valid.has(stored)) {
+        dashboardStreamView = stored;
+    }
+    buttons.forEach(btn => {
+        btn.classList.toggle("active", String(btn.dataset.stream || "all") === dashboardStreamView);
+    });
+
+    buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+            buttons.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            dashboardStreamView = String(btn.dataset.stream || "all");
+            localStorage.setItem("dashboard_stream_view", dashboardStreamView);
+            if (dashboardDataCache) {
+                applyDashboardStreamView(dashboardDataCache);
+            }
+        });
+    });
+}
+
+function resolveDashboardStreamMetrics(data, streamKey) {
+    const streams = (data && typeof data === "object" && data.revenue_streams && typeof data.revenue_streams === "object")
+        ? data.revenue_streams
+        : {};
+
+    const fallback = {
+        all: {
+            label: "All Operations",
+            total_revenue: safeNumber(data?.total_revenue),
+            today_revenue: safeNumber(data?.today_revenue),
+            week_revenue: safeNumber(data?.week_revenue),
+        },
+        golf: {
+            label: "Golf / Pro Shop",
+            total_revenue: safeNumber(data?.golf_revenue_total),
+            today_revenue: safeNumber(data?.golf_revenue_today),
+            week_revenue: safeNumber(data?.golf_revenue_week),
+        },
+        other: {
+            label: "Other Operations",
+            total_revenue: safeNumber(data?.other_revenue_total),
+            today_revenue: safeNumber(data?.other_revenue_today),
+            week_revenue: safeNumber(data?.other_revenue_week),
+        },
+        pub: { label: "Pub", total_revenue: 0, today_revenue: 0, week_revenue: 0 },
+        bowls: { label: "Bowls", total_revenue: 0, today_revenue: 0, week_revenue: 0 },
+    };
+
+    const key = String(streamKey || "all").toLowerCase();
+    const selected = streams[key] || fallback[key] || fallback.all;
+    return {
+        label: String(selected.label || fallback[key]?.label || "Operations"),
+        total_revenue: safeNumber(selected.total_revenue),
+        today_revenue: safeNumber(selected.today_revenue),
+        week_revenue: safeNumber(selected.week_revenue),
+        key,
+    };
+}
+
+function applyDashboardStreamView(data) {
+    const selected = resolveDashboardStreamMetrics(data, dashboardStreamView);
+    const label = selected.label;
+    document.querySelectorAll(".dashboard-stream-btn").forEach(btn => {
+        btn.classList.toggle("active", String(btn.dataset.stream || "all") === selected.key);
+    });
+
+    const totalRevenueEl = document.getElementById("total-revenue");
+    const todayRevenueEl = document.getElementById("today-revenue");
+    const weekRevenueEl = document.getElementById("week-revenue");
+    const totalRevenueLabelEl = document.getElementById("total-revenue-label");
+    const todayRevenueLabelEl = document.getElementById("today-revenue-label");
+    const weekRevenueLabelEl = document.getElementById("week-revenue-label");
+    const noteEl = document.getElementById("dashboard-stream-note");
+
+    if (totalRevenueEl) totalRevenueEl.textContent = selected.total_revenue.toFixed(2);
+    if (todayRevenueEl) todayRevenueEl.textContent = selected.today_revenue.toFixed(2);
+    if (weekRevenueEl) weekRevenueEl.textContent = selected.week_revenue.toFixed(2);
+
+    if (totalRevenueLabelEl) totalRevenueLabelEl.textContent = `${label} Revenue`;
+    if (todayRevenueLabelEl) todayRevenueLabelEl.textContent = `Today's Revenue (${label})`;
+    if (weekRevenueLabelEl) weekRevenueLabelEl.textContent = `This Week (${label})`;
+
+    if (noteEl) {
+        if (selected.key === "all") {
+            noteEl.textContent = "Showing combined operations view.";
+        } else if (selected.key === "golf") {
+            noteEl.textContent = "Golf / Pro Shop view uses bookings + paid golf cashbook data.";
+        } else {
+            noteEl.textContent = `${label} view uses imported non-golf revenue transactions.`;
+        }
+    }
 }
 
 // Dashboard
@@ -544,11 +664,10 @@ async function loadDashboard() {
 
         document.getElementById("total-bookings").textContent = data.total_bookings;
         document.getElementById("total-members").textContent = data.total_members ?? data.total_players;
-        document.getElementById("total-revenue").textContent = data.total_revenue.toFixed(2);
         document.getElementById("completed-rounds").textContent = data.completed_rounds;
         document.getElementById("today-bookings").textContent = data.today_bookings;
-        document.getElementById("today-revenue").textContent = data.today_revenue.toFixed(2);
-        document.getElementById("week-revenue").textContent = data.week_revenue.toFixed(2);
+        dashboardDataCache = data;
+        applyDashboardStreamView(data);
 
         // Import freshness (parallel mirror run)
         const lastBookingsEl = document.getElementById("last-bookings-import");
@@ -558,7 +677,7 @@ async function loadDashboard() {
         const lastRevenue = data?.imports?.revenue || null;
         if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
         if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
-        if (hintEl) hintEl.textContent = "Use Tee Sheet → Manage Tee Sheet to import bookings, and Revenue → Import Revenue CSV for other streams.";
+        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, and Revenue > Import Revenue CSV for non-golf streams.";
 
         renderTargetsTable(data.targets);
 
@@ -1834,7 +1953,7 @@ async function loadRevenue() {
                 otherBody.innerHTML = `
                     <tr class="empty-row">
                         <td colspan="6">
-                            <div class="empty-state">No imported revenue yet. Use “Import Revenue CSV” above.</div>
+                            <div class="empty-state">No imported revenue yet. Use "Import Revenue CSV" above.</div>
                         </td>
                     </tr>
                 `;
@@ -1878,13 +1997,30 @@ function setupRevenueFilters() {
     });
 }
 
+function updateRevenueUploadFlowHint() {
+    const streamSelect = document.getElementById("revenue-import-stream");
+    const note = document.getElementById("revenue-upload-flow-note");
+    if (!streamSelect || !note) return;
+
+    const stream = String(streamSelect.value || "other").trim().toLowerCase();
+    const label = stream === "pub" ? "Pub" : (stream === "bowls" ? "Bowls" : (stream === "golf" ? "Golf" : "Other"));
+    if (stream === "golf") {
+        note.textContent = "Selected stream: Golf. Use this only for non-booking golf revenue adjustments.";
+    } else {
+        note.textContent = `Selected stream: ${label}. Import one stream at a time for cleaner reconciliation.`;
+    }
+}
+
 function setupRevenueImport() {
     const btn = document.getElementById("revenue-import-btn");
     if (!btn) return;
+    const streamSelect = document.getElementById("revenue-import-stream");
+    streamSelect?.addEventListener("change", updateRevenueUploadFlowHint);
+    updateRevenueUploadFlowHint();
 
     btn.addEventListener("click", async () => {
         const token = localStorage.getItem("token");
-        const stream = (document.getElementById("revenue-import-stream")?.value || "other").trim();
+        const stream = (streamSelect?.value || "other").trim();
         const fileInput = document.getElementById("revenue-import-file");
         const statusEl = document.getElementById("revenue-import-status");
 
@@ -1921,7 +2057,7 @@ function setupRevenueImport() {
             }
 
             if (statusEl) {
-                statusEl.textContent = `Imported: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
+                statusEl.textContent = `Imported to ${stream}: ${data.rows_inserted ?? 0} new, ${data.rows_updated ?? 0} updated, ${data.rows_failed ?? 0} failed`;
             }
 
             loadRevenue();

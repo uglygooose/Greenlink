@@ -114,6 +114,43 @@ body {
     padding: 20px 0;
 }
 
+.nav-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.nav-group:first-child {
+    border-top: none;
+}
+
+.nav-group-toggle {
+    padding: 12px 25px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+}
+
+.nav-group-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.nav-group-toggle::after {
+    content: "▾";
+    float: right;
+    opacity: 0.8;
+}
+
+.nav-group:not([open]) > .nav-group-toggle::after {
+    content: "▸";
+}
+
+.nav-group-items .nav-item {
+    padding-left: 36px;
+}
+
 .nav-item {
     padding: 15px 25px;
     color: rgba(255, 255, 255, 0.8);
@@ -1913,6 +1950,18 @@ body.drag-active .slot-card.open {
     line-height: 1.3;
 }
 
+.dashboard-stream-card {
+    margin-bottom: 16px;
+}
+
+.dashboard-stream-toggle {
+    margin-top: 10px;
+}
+
+.dashboard-stream-toggle .tee-btn {
+    min-width: 86px;
+}
+
 .revenue-flow-card {
     margin-top: 10px;
     margin-bottom: 16px;
@@ -1922,6 +1971,28 @@ body.drag-active .slot-card.open {
     margin-top: 8px;
     color: #556270;
     line-height: 1.45;
+}
+
+.revenue-upload-flow {
+    margin-bottom: 16px;
+}
+
+.flow-steps {
+    margin: 8px 0 0 20px;
+    color: #556270;
+    line-height: 1.45;
+}
+
+.flow-steps li + li {
+    margin-top: 6px;
+}
+
+.flow-steps code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(6, 79, 50, 0.08);
+    color: #064f32;
+    font-size: 12px;
 }
 
 .page-header .filters {
@@ -2030,18 +2101,17 @@ body.drag-active .slot-card.open {
     .sidebar {
         width: 100%;
         height: auto;
-        display: flex;
-        align-items: center;
+        display: block;
     }
 
     .nav-menu {
-        flex-direction: row;
-        flex: 1;
+        flex-direction: column;
+        flex: initial;
     }
 
     .nav-item {
-        flex: 1;
-        text-align: center;
+        flex: initial;
+        text-align: left;
     }
 
     .analytics-grid {
