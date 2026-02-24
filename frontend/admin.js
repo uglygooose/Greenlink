@@ -584,6 +584,7 @@ async function loadDashboard() {
         loadRevenueChart();
     } catch (error) {
         console.error("Failed to load dashboard:", error);
+        toastError(error?.message || "Dashboard failed to load");
     }
 }
 

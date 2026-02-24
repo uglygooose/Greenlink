@@ -907,7 +907,12 @@ def _seed_bookings_and_finance(
             day_end_idx += 1
         day_rows = tee_times[day_start_idx:day_end_idx]
 
+        # Progress logging (important for hosted DB runs where this step can take several minutes).
+        print(f"[SEED] bookings: {day.isoformat()} tee_times={len(day_rows)} ...")
+
         bookings_to_add: list[models.Booking] = []
+        day_bookings = 0
+        day_rounds = 0
 
         for tt in day_rows:
             tee_dt = tt.tee_time
@@ -1060,20 +1065,24 @@ def _seed_bookings_and_finance(
                         created_at=tee_dt + timedelta(hours=2),
                     )
                     created_rounds += 1
+                    day_rounds += 1
 
                 bookings_to_add.append(b)
                 created_bookings += 1
+                day_bookings += 1
 
         if bookings_to_add:
             db.add_all(bookings_to_add)
             db.flush()
 
             ledger_rows: list[models.LedgerEntry] = []
+            day_paid = 0
             for b in bookings_to_add:
                 raw_status = str(getattr(getattr(b, "status", None), "value", getattr(b, "status", None)) or "")
                 if raw_status not in {"checked_in", "completed"}:
                     continue
                 created_paid += 1
+                day_paid += 1
 
                 tee_dt = next((t.tee_time for t in day_rows if int(t.id) == int(b.tee_time_id)), _dt(day, 8, 0))
                 pay_dt = tee_dt + timedelta(minutes=rng.randint(-20, 90))
@@ -1111,6 +1120,12 @@ def _seed_bookings_and_finance(
                 created_ledger += len(ledger_rows)
 
             db.commit()
+            print(
+                f"[SEED] bookings: {day.isoformat()} created={day_bookings} paid={day_paid} "
+                f"ledger={len(ledger_rows)} rounds={day_rounds}"
+            )
+        else:
+            print(f"[SEED] bookings: {day.isoformat()} created=0 (no slots chosen)")
 
         day_start_idx = day_end_idx
 

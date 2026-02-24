@@ -180,6 +180,7 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE club_settings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE revenue_transactions ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE kpi_targets ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
         "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
         "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
@@ -191,6 +192,7 @@ def run_auto_migrations(engine) -> None:
         "CREATE INDEX IF NOT EXISTS club_settings_club_id_idx ON club_settings (club_id);",
         "CREATE INDEX IF NOT EXISTS import_batches_club_id_idx ON import_batches (club_id);",
         "CREATE INDEX IF NOT EXISTS revenue_transactions_club_id_idx ON revenue_transactions (club_id);",
+        "CREATE INDEX IF NOT EXISTS kpi_targets_club_id_idx ON kpi_targets (club_id);",
         # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
         """
         DO $$
@@ -209,6 +211,7 @@ def run_auto_migrations(engine) -> None:
             UPDATE import_batches SET club_id = cid WHERE club_id IS NULL;
             UPDATE revenue_transactions SET club_id = cid WHERE club_id IS NULL;
             UPDATE club_settings SET club_id = cid WHERE club_id IS NULL;
+            UPDATE kpi_targets SET club_id = cid WHERE club_id IS NULL;
           END IF;
         END $$;
         """,
