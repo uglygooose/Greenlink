@@ -49,30 +49,6 @@
                     </div>
                 </details>
 
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Pub</summary>
-                    <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pub">Pub Dashboard</a>
-                        <a href="#pub-ops" class="nav-item" data-page="pub-ops">Overview (Coming Soon)</a>
-                    </div>
-                </details>
-
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Bowls</summary>
-                    <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="bowls">Bowls Dashboard</a>
-                        <a href="#bowls-ops" class="nav-item" data-page="bowls-ops">Overview (Coming Soon)</a>
-                    </div>
-                </details>
-
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Other Operations</summary>
-                    <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="other">Other Dashboard</a>
-                        <a href="#other-ops" class="nav-item" data-page="other-ops">Overview (Coming Soon)</a>
-                    </div>
-                </details>
-
                 <a href="#logout" class="nav-item logout" id="logoutBtn">Logout</a>
             </nav>
         </aside>
@@ -101,12 +77,6 @@
                         <optgroup label="Operations">
                             <option value="dashboard|pro_shop">Pro Shop Dashboard</option>
                             <option value="pro-shop">Pro Shop Sales</option>
-                            <option value="dashboard|pub">Pub Dashboard</option>
-                            <option value="pub-ops">Pub Operations</option>
-                            <option value="dashboard|bowls">Bowls Dashboard</option>
-                            <option value="bowls-ops">Bowls Operations</option>
-                            <option value="dashboard|other">Other Dashboard</option>
-                            <option value="other-ops">Other Operations</option>
                         </optgroup>
                     </select>
                     <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
@@ -159,9 +129,6 @@
                             <button class="tee-btn dashboard-stream-btn active" type="button" data-stream="all">All</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="golf">Golf</button>
                             <button class="tee-btn dashboard-stream-btn" type="button" data-stream="pro_shop">Pro Shop</button>
-                            <button class="tee-btn dashboard-stream-btn" type="button" data-stream="pub">Pub</button>
-                            <button class="tee-btn dashboard-stream-btn" type="button" data-stream="bowls">Bowls</button>
-                            <button class="tee-btn dashboard-stream-btn" type="button" data-stream="other">Other</button>
                         </div>
                         <div class="action-note" id="dashboard-stream-note">Showing combined operations view.</div>
                     </div>
@@ -337,11 +304,8 @@
                         <div class="filters">
                             <label for="ops-import-stream">Operation</label>
                             <select id="ops-import-stream">
-                                <option value="golf">Golf</option>
+                                <option value="golf" selected>Golf</option>
                                 <option value="pro_shop">Pro Shop</option>
-                                <option value="pub">Pub</option>
-                                <option value="bowls">Bowls</option>
-                                <option value="other" selected>Other</option>
                             </select>
                             <button class="btn-secondary" id="ops-load-settings-btn" type="button">Reload Settings</button>
                         </div>
@@ -420,7 +384,7 @@
                     <div class="dashboard-card" style="margin-top: 16px;">
                         <h3>Import Revenue CSV</h3>
                         <div class="filters" style="flex-wrap: wrap; gap: 10px;">
-                            <span class="action-note" id="ops-import-stream-label">Selected operation: Other</span>
+                            <span class="action-note" id="ops-import-stream-label">Selected operation: Golf</span>
                             <input type="file" id="ops-revenue-import-file" accept=".csv" />
                             <button class="btn-primary" id="ops-revenue-import-btn" type="button">Import</button>
                             <span class="action-note" id="ops-revenue-import-status"></span>
@@ -561,11 +525,8 @@
                             <select id="revenue-stream-focus">
                                 <option value="all" selected>All Streams</option>
                                 <option value="golf_paid">Golf Paid Only</option>
-                                <option value="other_imported">Imported Non-Booking</option>
+                                <option value="other_imported">Imported Non-Booking (All)</option>
                                 <option value="pro_shop">Pro Shop Imported</option>
-                                <option value="pub">Pub Imported</option>
-                                <option value="bowls">Bowls Imported</option>
-                                <option value="other">Other Imported</option>
                             </select>
                         </div>
                     </div>

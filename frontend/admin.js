@@ -52,6 +52,14 @@ const operationPageState = {
     bowls: "week",
     other: "week",
 };
+const PRIMARY_OPERATIONS = Object.freeze([
+    { key: "golf", label: "Golf" },
+    { key: "pro_shop", label: "Pro Shop" },
+]);
+const PRIMARY_OPERATION_KEYS = Object.freeze(PRIMARY_OPERATIONS.map(op => op.key));
+const DASHBOARD_STREAM_KEYS = Object.freeze(["all", ...PRIMARY_OPERATION_KEYS]);
+const REVENUE_FOCUS_KEYS = Object.freeze(["all", "golf_paid", "other_imported", "pro_shop"]);
+const DEFAULT_IMPORT_STREAM = "golf";
 let teeSheetProfile = null;
 
 function installAuthFetch() {
@@ -250,6 +258,26 @@ function statusToClass(status) {
 
 function statusToLabel(status) {
     return String(status || "").replaceAll("_", " ");
+}
+
+function isPrimaryOperationStream(stream) {
+    return PRIMARY_OPERATION_KEYS.includes(String(stream || "").toLowerCase());
+}
+
+function normalizeDashboardStreamKey(raw, fallback = "all") {
+    const key = String(raw || "").toLowerCase();
+    if (DASHBOARD_STREAM_KEYS.includes(key)) return key;
+    return DASHBOARD_STREAM_KEYS.includes(String(fallback || "").toLowerCase()) ? String(fallback || "").toLowerCase() : "all";
+}
+
+function normalizeImportStreamKey(raw, fallback = DEFAULT_IMPORT_STREAM) {
+    const key = String(raw || "").toLowerCase();
+    if (isPrimaryOperationStream(key)) return key;
+    return isPrimaryOperationStream(fallback) ? String(fallback).toLowerCase() : DEFAULT_IMPORT_STREAM;
+}
+
+function primaryOperationRows() {
+    return PRIMARY_OPERATIONS.map(op => ({ ...op }));
 }
 
 function formatNumber(value, minFractionDigits = 0, maxFractionDigits = minFractionDigits) {
@@ -543,7 +571,7 @@ function setupNavigation() {
             if (!page) return;
 
             if (page === "dashboard") {
-                const nextStream = streamPreset || "all";
+                const nextStream = normalizeDashboardStreamKey(streamPreset || "all", "all");
                 dashboardMenuContext = nextStream === "all" ? "main" : "operation";
                 setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
             }
@@ -613,7 +641,7 @@ function applyQuickNavigationValue(raw) {
     if (!value) return false;
     const [pageName, stream] = value.split("|");
     if (pageName === "dashboard") {
-        const nextStream = String(stream || "all").toLowerCase();
+        const nextStream = normalizeDashboardStreamKey(stream || "all", "all");
         dashboardMenuContext = nextStream === "all" ? "main" : "operation";
         setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
         const nav = document.querySelector(`.nav-item[data-page="dashboard"][data-dashboard-stream="${nextStream}"]`) || document.querySelector('.nav-item[data-page="dashboard"]');
@@ -757,9 +785,8 @@ function setupAiAssistantActions() {
 function setupDashboardStreamFilters() {
     const buttons = document.querySelectorAll(".dashboard-stream-btn");
     if (!buttons.length) return;
-    const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
     const stored = String(localStorage.getItem("dashboard_stream_view") || "").toLowerCase();
-    setDashboardStreamViewState(valid.has(stored) ? stored : "all", { persist: false, source: "stored" });
+    setDashboardStreamViewState(normalizeDashboardStreamKey(stored, "all"), { persist: false, source: "stored" });
 
     buttons.forEach(btn => {
         btn.addEventListener("click", () => {
@@ -809,8 +836,7 @@ function applyDashboardEntryVisibility() {
 }
 
 function setDashboardStreamViewState(stream, options = {}) {
-    const valid = new Set(["all", "golf", "pro_shop", "pub", "bowls", "other"]);
-    const next = valid.has(String(stream || "").toLowerCase()) ? String(stream || "").toLowerCase() : "all";
+    const next = normalizeDashboardStreamKey(stream, "all");
     const persist = options.persist !== false;
     const source = String(options.source || "").toLowerCase();
 
@@ -894,8 +920,65 @@ function resolveDashboardStreamMetrics(data, streamKey) {
         bowls: { label: "Bowls", total_revenue: 0, today_revenue: 0, week_revenue: 0, today_transactions: 0, week_transactions: 0, avg_ticket_week: 0, week_vs_prior_week: null },
     };
 
-    const key = String(streamKey || "all").toLowerCase();
-    const selected = streams[key] || fallback[key] || fallback.all;
+    const key = normalizeDashboardStreamKey(streamKey, "all");
+    let selected = streams[key] || fallback[key] || fallback.all;
+
+    if (key === "all") {
+        const periodKeys = ["day", "week", "month", "ytd"];
+        const aggregatePeriods = Object.fromEntries(periodKeys.map(periodKey => [periodKey, {
+            revenue: 0,
+            transactions: 0,
+            avg_ticket: 0,
+            prior_revenue: 0,
+            vs_prior: null,
+        }]));
+
+        const aggregateSource = primaryOperationRows().map(entry => streams[entry.key] || fallback[entry.key] || {});
+        let totalRevenue = 0;
+
+        aggregateSource.forEach(source => {
+            totalRevenue += safeNumber(source.total_revenue);
+            periodKeys.forEach(periodKey => {
+                const sourcePeriods = (source && typeof source.periods === "object" && source.periods) ? source.periods : {};
+                const sourcePeriod = (sourcePeriods && typeof sourcePeriods[periodKey] === "object") ? sourcePeriods[periodKey] : {};
+                const revenueFallback = periodKey === "day"
+                    ? safeNumber(source.today_revenue)
+                    : periodKey === "week"
+                        ? safeNumber(source.week_revenue)
+                        : periodKey === "month"
+                            ? safeNumber(source.month_revenue ?? source.week_revenue)
+                            : safeNumber(source.ytd_revenue ?? source.month_revenue ?? source.week_revenue);
+                const txFallback = periodKey === "day"
+                    ? safeNumber(source.today_transactions)
+                    : periodKey === "week"
+                        ? safeNumber(source.week_transactions)
+                        : periodKey === "month"
+                            ? safeNumber(source.month_transactions ?? source.week_transactions)
+                            : safeNumber(source.ytd_transactions ?? source.month_transactions ?? source.week_transactions);
+                aggregatePeriods[periodKey].revenue += safeNumber(sourcePeriod.revenue ?? revenueFallback);
+                aggregatePeriods[periodKey].transactions += safeNumber(sourcePeriod.transactions ?? txFallback);
+                aggregatePeriods[periodKey].prior_revenue += safeNumber(sourcePeriod.prior_revenue);
+            });
+        });
+
+        periodKeys.forEach(periodKey => {
+            const row = aggregatePeriods[periodKey];
+            row.avg_ticket = row.transactions > 0 ? (row.revenue / row.transactions) : 0;
+            row.vs_prior = row.prior_revenue > 0 ? ((row.revenue - row.prior_revenue) / row.prior_revenue) : null;
+        });
+
+        selected = {
+            label: "All Operations",
+            total_revenue: totalRevenue,
+            today_revenue: aggregatePeriods.day.revenue,
+            week_revenue: aggregatePeriods.week.revenue,
+            today_transactions: aggregatePeriods.day.transactions,
+            week_transactions: aggregatePeriods.week.transactions,
+            avg_ticket_week: aggregatePeriods.week.avg_ticket,
+            week_vs_prior_week: aggregatePeriods.week.vs_prior,
+            periods: aggregatePeriods,
+        };
+    }
     const rawPeriods = (selected && typeof selected.periods === "object" && selected.periods)
         ? selected.periods
         : {};
@@ -1032,14 +1115,7 @@ function resolveDashboardTargetBenchmark(data, periodKey) {
 }
 
 function buildAllOperationsMixHighlights(data, periodKey, periodLabel) {
-    const streamKeys = [
-        { key: "golf", label: "Golf" },
-        { key: "pro_shop", label: "Pro Shop" },
-        { key: "pub", label: "Pub" },
-        { key: "bowls", label: "Bowls" },
-        { key: "other", label: "Other" },
-    ];
-    const rows = streamKeys.map(entry => {
+    const rows = primaryOperationRows().map(entry => {
         const period = data?.revenue_streams?.[entry.key]?.periods?.[periodKey];
         const revenue = safeNumber(period?.revenue);
         const transactions = safeNumber(period?.transactions);
@@ -1296,14 +1372,7 @@ function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
     if (stream === "all") {
         title = `${periodLabel} Operations Mix`;
         note = "Revenue mix by operation for the selected performance window.";
-        const streamKeys = [
-            { key: "golf", label: "Golf" },
-            { key: "pro_shop", label: "Pro Shop" },
-            { key: "pub", label: "Pub" },
-            { key: "bowls", label: "Bowls" },
-            { key: "other", label: "Other" },
-        ];
-        const amounts = streamKeys.map(entry => ({
+        const amounts = primaryOperationRows().map(entry => ({
             ...entry,
             amount: safeNumber(data?.revenue_streams?.[entry.key]?.periods?.[periodMeta.key]?.revenue),
         }));
@@ -1698,14 +1767,21 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
     };
 
     const panelImport = (targetStream) => {
-        const summary = (importCopilot && typeof importCopilot.summary === "object") ? importCopilot.summary : {};
+        const scopedRows = importRows.filter(row => isPrimaryOperationStream(row?.stream));
         if (targetStream === "all") {
-            const configured = safeNumber(summary?.configured_streams);
-            const totalStreams = safeNumber(summary?.total_streams || 5);
-            const staleStreams = safeNumber(summary?.stale_streams);
-            const highFailStreams = safeNumber(summary?.high_failure_streams);
+            const configured = scopedRows.filter(row => Boolean(row?.configured)).length;
+            const totalStreams = PRIMARY_OPERATION_KEYS.length;
+            const staleStreams = scopedRows.filter(row => {
+                const daysSince = Number(row?.days_since_import);
+                return !Number.isFinite(daysSince) || daysSince > 14;
+            }).length;
+            const highFailStreams = scopedRows.filter(row => {
+                const rows30d = safeNumber(row?.rows_total_30d);
+                const failureRate = safeNumber(row?.failure_rate_30d);
+                return rows30d >= 20 && failureRate >= 0.08;
+            }).length;
             const status = highFailStreams > 0 ? "critical" : (staleStreams > 0 ? "warning" : "healthy");
-            const orderedRows = [...importRows].sort((a, b) => {
+            const orderedRows = [...scopedRows].sort((a, b) => {
                 const rank = (v) => {
                     const s = String(v || "").toLowerCase();
                     if (s === "critical") return 0;
@@ -1728,10 +1804,9 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
             };
         }
 
-        const row = importRows.find(r => String(r?.stream || "").toLowerCase() === targetStream) || null;
+        const row = scopedRows.find(r => String(r?.stream || "").toLowerCase() === targetStream) || null;
         if (!row) return null;
-        const include = ["pub", "bowls", "other"].includes(targetStream)
-            || String(row?.health || "").toLowerCase() !== "healthy"
+        const include = String(row?.health || "").toLowerCase() !== "healthy"
             || safeNumber(row?.rows_total_30d) > 0;
         if (!include) return null;
 
@@ -1845,8 +1920,9 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
         panels = [panelRevenueIntegrity(), panelNoShow(), panelImport("all")];
         const revScore = safeNumber(revenue?.health_score);
         const highRisk72 = safeNumber(noShow?.high_risk_next_72h);
-        const configured = safeNumber(importCopilot?.summary?.configured_streams);
-        const totalStreams = safeNumber(importCopilot?.summary?.total_streams || 5);
+        const scopedRows = importRows.filter(row => isPrimaryOperationStream(row?.stream));
+        const configured = scopedRows.filter(row => Boolean(row?.configured)).length;
+        const totalStreams = PRIMARY_OPERATION_KEYS.length;
         summaryEl.textContent = `${label} AI summary (${period.label}) | Revenue health ${formatInteger(revScore)}/100 | ${formatInteger(highRisk72)} high-risk no-shows (72h) | Imports ${formatInteger(configured)}/${formatInteger(totalStreams)} configured`;
     } else if (stream === "golf") {
         panels = [panelNoShow(), panelGolfUtilization(), panelRevenueIntegrity()];
@@ -3106,8 +3182,9 @@ async function loadRevenue() {
         });
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
         const otherRowsRaw = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
+        const scopedOtherRows = otherRowsRaw.filter(row => isPrimaryOperationStream(row?.stream));
         const importedByStream = Object.fromEntries(
-            otherRowsRaw.map(row => [
+            scopedOtherRows.map(row => [
                 String(row?.stream || "").toLowerCase(),
                 { amount: safeNumber(row?.amount), transactions: safeNumber(row?.transactions) },
             ])
@@ -3115,9 +3192,9 @@ async function loadRevenue() {
 
         const bookedTotal = series.booked.reduce((sum, v) => sum + safeNumber(v), 0);
         const actualPaid = series.paid.reduce((sum, v) => sum + safeNumber(v), 0);
-        const actualOther = (series.other || []).reduce((sum, v) => sum + safeNumber(v), 0);
+        const actualOther = scopedOtherRows.reduce((sum, row) => sum + safeNumber(row?.amount), 0);
         const combinedActual = actualPaid + actualOther;
-        const focusSet = new Set(["all", "golf_paid", "other_imported", "pro_shop", "pub", "bowls", "other"]);
+        const focusSet = new Set(REVENUE_FOCUS_KEYS);
         const focus = focusSet.has(String(revenueStreamFocus || "").toLowerCase())
             ? String(revenueStreamFocus || "").toLowerCase()
             : "all";
@@ -3125,19 +3202,13 @@ async function loadRevenue() {
 
         const focusImportedLabel = focus === "pro_shop"
             ? "Pro Shop Imported"
-            : focus === "pub"
-                ? "Pub Imported"
-                : focus === "bowls"
-                    ? "Bowls Imported"
-                    : focus === "other"
-                        ? "Other Imported"
-                        : "Imported Non-Booking";
+            : "Imported Non-Booking";
         const selectedImported = importedByStream[focus] || { amount: 0, transactions: 0 };
         const focusedActual = focus === "golf_paid"
             ? actualPaid
             : focus === "other_imported"
                 ? actualOther
-                : ["pro_shop", "pub", "bowls", "other"].includes(focus)
+                : ["pro_shop"].includes(focus)
                     ? safeNumber(selectedImported.amount)
                     : combinedActual;
         const focusedCollectionRate = (focus === "all" || focus === "golf_paid")
@@ -3145,7 +3216,7 @@ async function loadRevenue() {
             : null;
         const focusedOtherMix = focus === "all"
             ? (combinedActual > 0 ? (actualOther / combinedActual) : null)
-            : (["other_imported", "pro_shop", "pub", "bowls", "other"].includes(focus)
+            : (["other_imported", "pro_shop"].includes(focus)
                 ? (actualOther > 0
                     ? (focus === "other_imported" ? 1 : safeNumber(selectedImported.amount) / actualOther)
                     : null)
@@ -3190,7 +3261,7 @@ async function loadRevenue() {
                 flowEl.textContent =
                     `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
                     `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${focusedCollectionRate == null ? "-" : formatPct(focusedCollectionRate)}). ` +
-                    `Pro shop + imported non-booking streams: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+                    `Imported Golf/Pro Shop adjustments: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
             } else if (focus === "golf_paid") {
                 flowEl.textContent = `Golf-paid focus: ${formatCurrencyZAR(actualPaid)} collected from booked demand ${formatCurrencyZAR(bookedTotal)}. ${targetSummary}`;
             } else if (focus === "other_imported") {
@@ -3202,7 +3273,7 @@ async function loadRevenue() {
         if (golfEl) golfEl.textContent = formatCurrencyZAR(actualPaid);
         if (otherEl) {
             otherEl.textContent = formatCurrencyZAR(
-                ["pro_shop", "pub", "bowls", "other"].includes(focus) ? selectedImported.amount : actualOther
+                ["pro_shop"].includes(focus) ? selectedImported.amount : actualOther
             );
         }
         if (actualEl) actualEl.textContent = formatCurrencyZAR(focusedActual);
@@ -3214,9 +3285,9 @@ async function loadRevenue() {
         const dailyRequired = data?.daily_revenue_required;
         const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
         const combinedSeries = series.labels.map((_, idx) => safeNumber(series.paid[idx]) + safeNumber(series.other[idx]));
-        const showPaidDataset = focus !== "other_imported" && !["pro_shop", "pub", "bowls", "other"].includes(focus);
+        const showPaidDataset = focus !== "other_imported" && !["pro_shop"].includes(focus);
         const showOtherDataset = focus !== "golf_paid";
-        const showCombinedDataset = focus === "all" || focus === "other_imported" || ["pro_shop", "pub", "bowls", "other"].includes(focus);
+        const showCombinedDataset = focus === "all" || focus === "other_imported" || ["pro_shop"].includes(focus);
         const showBookedDataset = focus === "all" || focus === "golf_paid";
 
         window.dailyChart = new Chart(dailyCtx, {
@@ -3303,9 +3374,9 @@ async function loadRevenue() {
 
         const otherBody = document.getElementById("other-revenue-streams-body");
         if (otherBody) {
-            let rows = [...otherRowsRaw];
+            let rows = [...scopedOtherRows];
             if (focus === "golf_paid") rows = [];
-            if (["pro_shop", "pub", "bowls", "other"].includes(focus)) {
+            if (["pro_shop"].includes(focus)) {
                 rows = rows.filter(r => String(r?.stream || "").toLowerCase() === focus);
             }
             const otherTotal = rows.reduce((sum, r) => sum + safeNumber(r?.amount), 0);
@@ -3344,7 +3415,11 @@ function setupRevenueFilters() {
         dateInput.value = new Date().toISOString().split("T")[0];
     }
     if (streamFocusSelect instanceof HTMLSelectElement) {
-        revenueStreamFocus = String(streamFocusSelect.value || "all").toLowerCase();
+        const selected = String(streamFocusSelect.value || "all").toLowerCase();
+        revenueStreamFocus = REVENUE_FOCUS_KEYS.includes(selected) ? selected : "all";
+        if (streamFocusSelect.value !== revenueStreamFocus) {
+            streamFocusSelect.value = revenueStreamFocus;
+        }
     }
 
     dateInput?.addEventListener("change", () => {
@@ -3361,7 +3436,11 @@ function setupRevenueFilters() {
     });
 
     streamFocusSelect?.addEventListener("change", () => {
-        revenueStreamFocus = String(streamFocusSelect.value || "all").toLowerCase();
+        const selected = String(streamFocusSelect.value || "all").toLowerCase();
+        revenueStreamFocus = REVENUE_FOCUS_KEYS.includes(selected) ? selected : "all";
+        if (streamFocusSelect.value !== revenueStreamFocus) {
+            streamFocusSelect.value = revenueStreamFocus;
+        }
         loadRevenue();
     });
 }
@@ -3374,7 +3453,10 @@ function updateRevenueUploadFlowHint() {
     const streamLabel = document.getElementById("ops-import-stream-label");
     if (!streamSelect) return;
 
-    const stream = String(streamSelect.value || "other").trim().toLowerCase();
+    const stream = normalizeImportStreamKey(streamSelect.value || DEFAULT_IMPORT_STREAM, DEFAULT_IMPORT_STREAM);
+    if (String(streamSelect.value || "").toLowerCase() !== stream) {
+        streamSelect.value = stream;
+    }
     const label = revenueImportStreamLabel(stream);
     if (streamLabel) {
         streamLabel.textContent = `Selected operation: ${label}`;
@@ -3384,27 +3466,22 @@ function updateRevenueUploadFlowHint() {
 
     if (stream === "golf") {
         note.textContent = "Selected operation: Golf. Import only true non-booking golf adjustments here (not tee-sheet bookings).";
-    } else if (stream === "pro_shop") {
-        note.textContent = "Selected operation: Pro Shop. Use this for external POS files when sales were not captured in GreenLink checkout.";
-    } else if (stream === "pub" || stream === "bowls" || stream === "other") {
-        note.textContent = `Selected operation: ${label}. Import one CSV per operation for cleaner reconciliation and audit trails.`;
     } else {
-        note.textContent = "Select an operation, then import one CSV at a time for cleaner reconciliation.";
+        note.textContent = "Selected operation: Pro Shop. Use this for external POS files when sales were not captured in GreenLink checkout.";
     }
 }
 
 function revenueImportStreamLabel(stream) {
-    const key = String(stream || "other").trim().toLowerCase();
+    const key = normalizeImportStreamKey(stream, DEFAULT_IMPORT_STREAM);
     if (key === "golf") return "Golf";
     if (key === "pro_shop") return "Pro Shop";
-    if (key === "pub") return "Pub";
-    if (key === "bowls") return "Bowls";
-    return "Other";
+    return "Operation";
 }
 
 function normalizeRevenueImportSettings(stream, raw = {}) {
+    const normalizedStream = normalizeImportStreamKey(stream, DEFAULT_IMPORT_STREAM);
     const fallback = {
-        stream: String(stream || "other").trim().toLowerCase() || "other",
+        stream: normalizedStream,
         date_field: "",
         amount_field: "",
         description_field: "",
@@ -3441,7 +3518,7 @@ function normalizeRevenueImportSettings(stream, raw = {}) {
 
 function getOpsSettingsStream() {
     const streamSelect = document.getElementById("ops-import-stream") || document.getElementById("revenue-import-stream");
-    return String(streamSelect?.value || "other").trim().toLowerCase() || "other";
+    return normalizeImportStreamKey(streamSelect?.value || DEFAULT_IMPORT_STREAM, DEFAULT_IMPORT_STREAM);
 }
 
 function populateOpsImportSettingsForm(settings) {
@@ -3492,7 +3569,7 @@ function renderOpsImportSettingsHint(stream, settings, configured) {
     if (!String(settings?.amount_field || "").trim()) requiredMissing.push("amount field");
     const label = revenueImportStreamLabel(stream);
     const overrideNote = settings?.allow_stream_override
-        ? " Stream override is ON, so CSV rows can route into other operations."
+        ? " Stream override is ON, so CSV stream values can reroute rows between Golf and Pro Shop."
         : "";
     if (!configured) {
         hintEl.textContent = `${label}: profile not saved yet. Import once with "Save detected columns on import" enabled, then review and save.${overrideNote}`;
@@ -3506,7 +3583,7 @@ function renderOpsImportSettingsHint(stream, settings, configured) {
 }
 
 async function loadOpsImportSettings(options = {}) {
-    const stream = String(options?.stream || getOpsSettingsStream()).trim().toLowerCase() || "other";
+    const stream = normalizeImportStreamKey(options?.stream || getOpsSettingsStream(), DEFAULT_IMPORT_STREAM);
     const statusEl = document.getElementById("ops-settings-status");
     try {
         if (statusEl && !options?.silent) statusEl.textContent = "Loading settings...";
@@ -3560,14 +3637,17 @@ function setupRevenueImport() {
     const statusEl = document.getElementById("ops-revenue-import-status") || document.getElementById("revenue-import-status");
 
     streamSelect?.addEventListener("change", () => {
+        const selected = normalizeImportStreamKey(streamSelect.value || DEFAULT_IMPORT_STREAM, DEFAULT_IMPORT_STREAM);
+        if (streamSelect.value !== selected) streamSelect.value = selected;
         updateRevenueUploadFlowHint();
-        if (opsStreamSelect && opsStreamSelect.value !== streamSelect.value) {
-            opsStreamSelect.value = streamSelect.value;
-            loadOpsImportSettings({ stream: streamSelect.value, silent: true });
+        if (opsStreamSelect && opsStreamSelect.value !== selected) {
+            opsStreamSelect.value = selected;
+            loadOpsImportSettings({ stream: selected, silent: true });
         }
     });
     opsStreamSelect?.addEventListener("change", (event) => {
-        const selected = String(event?.target?.value || opsStreamSelect.value || "other");
+        const selected = normalizeImportStreamKey(event?.target?.value || opsStreamSelect.value || DEFAULT_IMPORT_STREAM, DEFAULT_IMPORT_STREAM);
+        if (opsStreamSelect.value !== selected) opsStreamSelect.value = selected;
         if (legacyStreamSelect && legacyStreamSelect.value !== selected) {
             legacyStreamSelect.value = selected;
             updateRevenueUploadFlowHint();
@@ -3584,7 +3664,7 @@ function setupRevenueImport() {
 
     btn.addEventListener("click", async () => {
         const token = localStorage.getItem("token");
-        const stream = (streamSelect?.value || "other").trim();
+        const stream = normalizeImportStreamKey(streamSelect?.value || DEFAULT_IMPORT_STREAM, DEFAULT_IMPORT_STREAM);
         const saveOnImport = Boolean(document.getElementById("revenue-import-save-on-import")?.checked);
 
         const file = fileInput?.files?.[0];
@@ -3601,7 +3681,7 @@ function setupRevenueImport() {
             form.append("file", file);
 
             const query = new URLSearchParams({
-                stream: String(stream || "other"),
+                stream: String(stream || DEFAULT_IMPORT_STREAM),
                 use_saved_settings: "true",
                 save_settings: saveOnImport ? "true" : "false",
             });
