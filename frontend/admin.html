@@ -19,7 +19,7 @@
                 <h2>GreenLink Admin</h2>
             </div>
             <nav class="nav-menu">
-                <details class="nav-group" open>
+                <details class="nav-group">
                     <summary class="nav-group-toggle">General</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
@@ -28,7 +28,7 @@
                     </div>
                 </details>
 
-                <details class="nav-group" open>
+                <details class="nav-group">
                     <summary class="nav-group-toggle">Golf</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
@@ -41,7 +41,7 @@
                     </div>
                 </details>
 
-                <details class="nav-group" open>
+                <details class="nav-group">
                     <summary class="nav-group-toggle">Pro Shop</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Pro Shop Dashboard</a>
@@ -196,7 +196,7 @@
                             <div class="action-note" id="dashboard-operation-focus-note" style="display:none;"></div>
                         </div>
 
-                        <div class="dashboard-card">
+                        <div class="dashboard-card" id="dashboard-freshness-card">
                             <h3>Data Freshness</h3>
                             <div class="today-stats">
                                 <div class="today-stat">
@@ -221,28 +221,28 @@
                             <div class="action-note" id="ai-assistant-summary">Rule-based recommendations based on live GreenLink data.</div>
                         </div>
                         <div class="ai-assistant-grid">
-                            <div class="ai-assistant-panel">
-                                <h4>Revenue Integrity</h4>
-                                <div class="action-note" id="ai-revenue-integrity-status">Checking...</div>
-                                <div class="ai-assistant-list" id="ai-revenue-integrity-alerts"></div>
+                            <div class="ai-assistant-panel" id="ai-panel-1">
+                                <h4 id="ai-panel-1-title">Assistant</h4>
+                                <div class="action-note" id="ai-panel-1-status">Checking...</div>
+                                <div class="ai-assistant-list" id="ai-panel-1-list"></div>
                                 <div class="ai-assistant-actions">
-                                    <button class="btn-secondary" type="button" data-ai-nav="ledger">Open Ledger</button>
+                                    <button class="btn-secondary" id="ai-panel-1-action" type="button" data-ai-nav="">Open</button>
                                 </div>
                             </div>
-                            <div class="ai-assistant-panel">
-                                <h4>No-show Risk</h4>
-                                <div class="action-note" id="ai-no-show-status">Checking...</div>
-                                <div class="ai-assistant-list" id="ai-no-show-list"></div>
+                            <div class="ai-assistant-panel" id="ai-panel-2">
+                                <h4 id="ai-panel-2-title">Assistant</h4>
+                                <div class="action-note" id="ai-panel-2-status">Checking...</div>
+                                <div class="ai-assistant-list" id="ai-panel-2-list"></div>
                                 <div class="ai-assistant-actions">
-                                    <button class="btn-secondary" type="button" data-ai-nav="tee-times">Open Tee Sheet</button>
+                                    <button class="btn-secondary" id="ai-panel-2-action" type="button" data-ai-nav="">Open</button>
                                 </div>
                             </div>
-                            <div class="ai-assistant-panel">
-                                <h4>Import Copilot</h4>
-                                <div class="action-note" id="ai-import-copilot-status">Checking...</div>
-                                <div class="ai-assistant-list" id="ai-import-copilot-list"></div>
+                            <div class="ai-assistant-panel" id="ai-panel-3">
+                                <h4 id="ai-panel-3-title">Assistant</h4>
+                                <div class="action-note" id="ai-panel-3-status">Checking...</div>
+                                <div class="ai-assistant-list" id="ai-panel-3-list"></div>
                                 <div class="ai-assistant-actions">
-                                    <button class="btn-secondary" type="button" data-ai-nav="operations-config">Open Operations Config</button>
+                                    <button class="btn-secondary" id="ai-panel-3-action" type="button" data-ai-nav="">Open</button>
                                 </div>
                             </div>
                         </div>

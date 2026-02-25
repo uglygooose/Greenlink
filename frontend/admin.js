@@ -1316,7 +1316,13 @@ function applyDashboardStreamView(data) {
 
     applyDashboardOperationLayout(data, selected.key, selectedPeriod);
     renderDashboardSecondaryCard(data, selected.key, selectedPeriod);
+    renderAiAssistant(data, selected.key, selectedPeriod);
     renderDashboardHighlights(data, selected.key, selectedPeriod);
+
+    const freshnessCard = document.getElementById("dashboard-freshness-card");
+    if (freshnessCard) {
+        freshnessCard.style.display = selected.key === "all" ? "" : "none";
+    }
 
     if (currentActivePage === "dashboard") {
         const titleEl = document.getElementById("page-title");
@@ -1333,7 +1339,7 @@ function aiSeverityClass(value) {
     return "warn";
 }
 
-function renderAiAssistant(data) {
+function _renderAiAssistantLegacy_unused(data) {
     const summaryEl = document.getElementById("ai-assistant-summary");
     const revenueStatusEl = document.getElementById("ai-revenue-integrity-status");
     const revenueListEl = document.getElementById("ai-revenue-integrity-alerts");
@@ -1432,6 +1438,322 @@ function renderAiAssistant(data) {
     }
 }
 
+function renderAiAssistantPanel(slot, panel) {
+    const panelEl = document.getElementById(`ai-panel-${slot}`);
+    const titleEl = document.getElementById(`ai-panel-${slot}-title`);
+    const statusEl = document.getElementById(`ai-panel-${slot}-status`);
+    const listEl = document.getElementById(`ai-panel-${slot}-list`);
+    const actionBtn = document.getElementById(`ai-panel-${slot}-action`);
+    if (!panelEl || !titleEl || !statusEl || !listEl || !actionBtn) return false;
+
+    if (!panel) {
+        panelEl.style.display = "none";
+        return false;
+    }
+
+    panelEl.style.display = "";
+    titleEl.textContent = String(panel.title || "Assistant");
+    statusEl.innerHTML = String(panel.status || "");
+
+    const items = Array.isArray(panel.items) ? panel.items : [];
+    if (!items.length) {
+        listEl.innerHTML = `
+            <div class="ai-assistant-item">
+                <div class="title">No actions right now</div>
+                <div class="detail">This stream has no immediate AI recommendations.</div>
+            </div>
+        `;
+    } else {
+        listEl.innerHTML = items.slice(0, 3).map(item => `
+            <div class="ai-assistant-item">
+                <div class="title">${item?.severity ? `<span class="ai-pill ${aiSeverityClass(item.severity)}">${escapeHtml(String(item.severity))}</span>` : ""}${escapeHtml(String(item?.title || "Insight"))}</div>
+                <div class="detail">${escapeHtml(String(item?.detail || ""))}</div>
+            </div>
+        `).join("");
+    }
+
+    const actionPage = String(panel.actionPage || "").trim();
+    const actionLabel = String(panel.actionLabel || "Open").trim();
+    if (actionPage) {
+        actionBtn.style.display = "";
+        actionBtn.dataset.aiNav = actionPage;
+        actionBtn.textContent = actionLabel;
+    } else {
+        actionBtn.style.display = "none";
+        actionBtn.dataset.aiNav = "";
+    }
+    return true;
+}
+
+function insightCardValue(data, streamKey, labelToken) {
+    const cards = data?.operation_insights?.[streamKey]?.cards;
+    if (!Array.isArray(cards)) return null;
+    const token = String(labelToken || "").trim().toLowerCase();
+    if (!token) return null;
+    const row = cards.find(c => String(c?.label || "").toLowerCase().includes(token));
+    if (!row) return null;
+    const value = Number(row?.value);
+    return Number.isFinite(value) ? value : null;
+}
+
+function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
+    const cardEl = document.getElementById("ai-assistant-card");
+    const summaryEl = document.getElementById("ai-assistant-summary");
+    if (!cardEl || !summaryEl) return;
+
+    const stream = String(streamKey || "all").toLowerCase();
+    const period = selectedPeriod || {
+        key: "day",
+        label: "Daily",
+        singular: "Day",
+        revenue: 0,
+        transactions: 0,
+        avg_ticket: 0,
+        vs_prior: null,
+        prior_revenue: 0,
+    };
+    const label = resolveDashboardStreamMetrics(data, stream).label;
+    const ai = (data && typeof data === "object" && data.ai_assistant && typeof data.ai_assistant === "object")
+        ? data.ai_assistant
+        : {};
+    const revenue = (ai && typeof ai.revenue_integrity === "object") ? ai.revenue_integrity : {};
+    const noShow = (ai && typeof ai.no_show === "object") ? ai.no_show : {};
+    const importCopilot = (ai && typeof ai.import_copilot === "object") ? ai.import_copilot : {};
+    const importRows = Array.isArray(importCopilot?.streams) ? importCopilot.streams : [];
+
+    const panelRevenueIntegrity = () => {
+        const status = String(revenue?.status || "warning").toLowerCase();
+        const score = safeNumber(revenue?.health_score);
+        const alerts = Array.isArray(revenue?.alerts) ? revenue.alerts : [];
+        const periodRows = Array.isArray(revenue?.period_alignment) ? revenue.period_alignment : [];
+        const periodRow = periodRows.find(r => String(r?.period_key || "").toLowerCase() === String(period.key || "").toLowerCase()) || null;
+        const items = alerts.slice(0, 2).map(a => ({
+            title: String(a?.title || "Integrity alert"),
+            detail: String(a?.detail || ""),
+            severity: String(a?.severity || "warning"),
+        }));
+        if (!items.length && periodRow) {
+            items.push({
+                title: `${period.label} paid-round alignment`,
+                detail: `Ledger ${formatInteger(periodRow.ledger_paid_rounds)} vs status ${formatInteger(periodRow.status_paid_rounds)} (${formatInteger(periodRow.delta_rounds)} delta).`,
+                severity: String(periodRow.severity || "good"),
+            });
+        }
+        return {
+            title: "Revenue Integrity",
+            status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(status)}</span>Health score ${formatInteger(score)}/100`,
+            items,
+            actionPage: "ledger",
+            actionLabel: "Open Ledger",
+        };
+    };
+
+    const panelNoShow = () => {
+        const upcoming = safeNumber(noShow?.upcoming_bookings);
+        const high72 = safeNumber(noShow?.high_risk_next_72h);
+        const medium72 = safeNumber(noShow?.medium_risk_next_72h);
+        const predictions = Array.isArray(noShow?.predictions) ? noShow.predictions : [];
+        const items = predictions.slice(0, 3).map(p => ({
+            title: `${String(p?.player_name || "Player")} (${formatInteger(Math.round(safeNumber(p?.risk_score) * 100))}%)`,
+            detail: `${p?.tee_time ? formatDateTimeDMY(p.tee_time) : "-"} | Tee ${String(p?.tee || "1")} | ${Array.isArray(p?.reasons) ? p.reasons.slice(0, 2).join(" | ") : ""}`,
+            severity: String(p?.risk_level || "low"),
+        }));
+        if (!items.length) {
+            const rec = Array.isArray(noShow?.recommendations) ? noShow.recommendations : [];
+            items.push({
+                title: "No immediate no-show actions",
+                detail: String(rec[0] || "No upcoming booking risk data available."),
+                severity: "good",
+            });
+        }
+        const status = high72 > 0 ? "high" : (medium72 > 0 ? "warning" : "healthy");
+        return {
+            title: "No-show Risk",
+            status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(high72 > 0 ? "high" : medium72 > 0 ? "watch" : "clear")}</span>${formatInteger(upcoming)} upcoming booking(s) over ${formatInteger(noShow?.window_days || 7)} days`,
+            items,
+            actionPage: "tee-times",
+            actionLabel: "Open Tee Sheet",
+        };
+    };
+
+    const panelImport = (targetStream) => {
+        const summary = (importCopilot && typeof importCopilot.summary === "object") ? importCopilot.summary : {};
+        if (targetStream === "all") {
+            const configured = safeNumber(summary?.configured_streams);
+            const totalStreams = safeNumber(summary?.total_streams || 5);
+            const staleStreams = safeNumber(summary?.stale_streams);
+            const highFailStreams = safeNumber(summary?.high_failure_streams);
+            const status = highFailStreams > 0 ? "critical" : (staleStreams > 0 ? "warning" : "healthy");
+            const orderedRows = [...importRows].sort((a, b) => {
+                const rank = (v) => {
+                    const s = String(v || "").toLowerCase();
+                    if (s === "critical") return 0;
+                    if (s === "warning") return 1;
+                    return 2;
+                };
+                return rank(a?.health) - rank(b?.health);
+            });
+            const items = orderedRows.slice(0, 3).map(row => ({
+                title: `${String(row?.label || row?.stream || "Stream")}`,
+                detail: `${String(row?.recommendation || "No recommendation")} | 30d fail-rate ${formatPct(safeNumber(row?.failure_rate_30d))}`,
+                severity: String(row?.health || "warning"),
+            }));
+            return {
+                title: "Import Copilot",
+                status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(status)}</span>${formatInteger(configured)}/${formatInteger(totalStreams)} streams configured | ${formatInteger(staleStreams)} stale | ${formatInteger(highFailStreams)} high-fail`,
+                items,
+                actionPage: "operations-config",
+                actionLabel: "Open Operations Config",
+            };
+        }
+
+        const row = importRows.find(r => String(r?.stream || "").toLowerCase() === targetStream) || null;
+        if (!row) return null;
+        const include = ["pub", "bowls", "other"].includes(targetStream)
+            || String(row?.health || "").toLowerCase() !== "healthy"
+            || safeNumber(row?.rows_total_30d) > 0;
+        if (!include) return null;
+
+        const items = [
+            {
+                title: `${String(row?.label || revenueImportStreamLabel(targetStream))} import quality`,
+                detail: `${String(row?.recommendation || "No recommendation")} | 30d fail-rate ${formatPct(safeNumber(row?.failure_rate_30d))}`,
+                severity: String(row?.health || "warning"),
+            },
+            {
+                title: "Last import",
+                detail: row?.last_import_at ? formatDateTimeDMY(row.last_import_at) : "No imports captured yet",
+                severity: row?.last_import_at ? "good" : "warning",
+            },
+        ];
+        return {
+            title: `${revenueImportStreamLabel(targetStream)} Import Copilot`,
+            status: `<span class="ai-pill ${aiSeverityClass(row?.health)}">${escapeHtml(String(row?.health || "warning"))}</span>${formatInteger(row?.rows_total_30d)} rows in last 30 days`,
+            items,
+            actionPage: "operations-config",
+            actionLabel: "Configure Imports",
+        };
+    };
+
+    const panelStreamPace = (streamLabel, actionPage) => {
+        const trendClass = safeNumber(period?.vs_prior) >= 0 ? "good" : "warning";
+        return {
+            title: `${streamLabel} Pace`,
+            status: `<span class="ai-pill ${aiSeverityClass(trendClass)}">${escapeHtml(trendClass)}</span>${period.label} revenue ${formatCurrencyZAR(period.revenue)} | ${formatTrendDelta(period.vs_prior, period.singular)}`,
+            items: [
+                { title: `${period.label} Transactions`, detail: formatInteger(period.transactions), severity: "good" },
+                { title: `${period.label} Avg Ticket`, detail: formatCurrencyZAR(period.avg_ticket), severity: "good" },
+                { title: `Prior ${period.singular} Revenue`, detail: formatCurrencyZAR(period.prior_revenue), severity: "warning" },
+            ],
+            actionPage,
+            actionLabel: actionPage === "pro-shop" ? "Open Pro Shop" : "Open Revenue",
+        };
+    };
+
+    const panelGolfUtilization = () => {
+        const counts = resolveBookingStatusCounts(data, period.key);
+        const paid = safeNumber(counts.checked_in) + safeNumber(counts.completed);
+        const noShowCount = safeNumber(counts.no_show);
+        const noShowRate = (paid + noShowCount) > 0 ? (noShowCount / (paid + noShowCount)) : 0;
+        const occupancy = insightCardValue(data, "golf", "occupancy");
+        const revPerRound = paid > 0 ? (safeNumber(period.revenue) / paid) : (insightCardValue(data, "golf", "revenue / paid round") || 0);
+        const occupancyClass = occupancy == null ? "warning" : occupancy >= 0.75 ? "good" : (occupancy >= 0.55 ? "warning" : "high");
+        return {
+            title: "Tee Utilization",
+            status: `<span class="ai-pill ${aiSeverityClass(occupancyClass)}">${escapeHtml(occupancy == null ? "watch" : occupancy >= 0.75 ? "healthy" : "optimize")}</span>${occupancy == null ? "Occupancy baseline unavailable" : `Today occupancy ${formatPct(occupancy)}`}`,
+            items: [
+                { title: `${period.label} Paid Rounds`, detail: formatInteger(paid), severity: "good" },
+                { title: `${period.label} No-show Rate`, detail: formatPct(noShowRate), severity: noShowRate >= 0.12 ? "high" : (noShowRate >= 0.06 ? "warning" : "good") },
+                { title: "Revenue / Paid Round", detail: formatCurrencyZAR(revPerRound), severity: "good" },
+            ],
+            actionPage: "tee-times",
+            actionLabel: "Manage Tee Sheet",
+        };
+    };
+
+    const panelProShopInventory = () => {
+        const inventory = data?.operation_insights?.pro_shop?.inventory || {};
+        const lowStockRate = safeNumber(inventory?.low_stock_rate);
+        const daysCover = Number(inventory?.days_of_cover);
+        const daysCoverValue = Number.isFinite(daysCover) ? daysCover : null;
+        const inventoryStatus = lowStockRate >= 0.25 || (daysCoverValue != null && daysCoverValue < 14)
+            ? "high"
+            : (lowStockRate >= 0.12 || (daysCoverValue != null && daysCoverValue < 28) ? "warning" : "healthy");
+        const highlights = Array.isArray(data?.operation_insights?.pro_shop?.highlights)
+            ? data.operation_insights.pro_shop.highlights
+            : [];
+        const topSeller = highlights.find(h => String(h?.name || "").toLowerCase().includes("top seller"));
+        return {
+            title: "Inventory Risk",
+            status: `<span class="ai-pill ${aiSeverityClass(inventoryStatus)}">${escapeHtml(inventoryStatus)}</span>${formatInteger(inventory?.low_stock_items)} low-stock item(s) of ${formatInteger(inventory?.active_products)} active`,
+            items: [
+                { title: "Stock Value", detail: formatCurrencyZAR(inventory?.stock_value), severity: "good" },
+                { title: "Days of Cover", detail: daysCoverValue == null ? "Insufficient sales history" : `${formatNumber(daysCoverValue, 1, 1)} days`, severity: daysCoverValue != null && daysCoverValue < 14 ? "high" : "good" },
+                {
+                    title: topSeller ? String(topSeller?.name || "Top seller") : "Top seller signal",
+                    detail: topSeller ? formatDashboardMetric({ value: topSeller?.current, format: topSeller?.format || "currency" }) : "No top-seller signal yet",
+                    severity: "good",
+                },
+            ],
+            actionPage: "pro-shop",
+            actionLabel: "Open Pro Shop",
+        };
+    };
+
+    const panelCategoryOpportunity = () => {
+        const highlights = Array.isArray(data?.operation_insights?.[stream]?.highlights)
+            ? data.operation_insights[stream].highlights
+            : [];
+        const categories = highlights.filter(h => String(h?.name || "").toLowerCase().includes("top category"));
+        if (!categories.length) return null;
+        return {
+            title: "Category Opportunities",
+            status: `<span class="ai-pill ${aiSeverityClass("warning")}">focus</span>Use top categories to drive bundles and promotions.`,
+            items: categories.slice(0, 3).map(h => ({
+                title: String(h?.name || "Category"),
+                detail: `${formatDashboardMetric({ value: h?.current, format: h?.format || "currency" })} | ${String(h?.context || "")}`,
+                severity: "warning",
+            })),
+            actionPage: "revenue",
+            actionLabel: "Open Revenue",
+        };
+    };
+
+    let panels = [];
+    if (stream === "all") {
+        panels = [panelRevenueIntegrity(), panelNoShow(), panelImport("all")];
+        const revScore = safeNumber(revenue?.health_score);
+        const highRisk72 = safeNumber(noShow?.high_risk_next_72h);
+        const configured = safeNumber(importCopilot?.summary?.configured_streams);
+        const totalStreams = safeNumber(importCopilot?.summary?.total_streams || 5);
+        summaryEl.textContent = `${label} AI summary (${period.label}) | Revenue health ${formatInteger(revScore)}/100 | ${formatInteger(highRisk72)} high-risk no-shows (72h) | Imports ${formatInteger(configured)}/${formatInteger(totalStreams)} configured`;
+    } else if (stream === "golf") {
+        panels = [panelNoShow(), panelGolfUtilization(), panelRevenueIntegrity()];
+        summaryEl.textContent = `${label} AI summary (${period.label}) | Focus: no-show control, tee utilization, and payment-status alignment.`;
+    } else if (stream === "pro_shop") {
+        panels = [panelProShopInventory(), panelStreamPace("Pro Shop", "pro-shop"), panelImport("pro_shop")];
+        summaryEl.textContent = `${label} AI summary (${period.label}) | Focus: stock health, basket quality, and sales velocity.`;
+    } else if (stream === "pub" || stream === "bowls" || stream === "other") {
+        panels = [
+            panelStreamPace(revenueImportStreamLabel(stream), "revenue"),
+            panelCategoryOpportunity(),
+            panelImport(stream),
+        ];
+        summaryEl.textContent = `${label} AI summary (${period.label}) | Focus: import quality, category mix, and revenue pace.`;
+    } else {
+        panels = [panelRevenueIntegrity(), panelImport("all"), null];
+        summaryEl.textContent = `${label} AI summary`;
+    }
+
+    const visibleCount = [
+        renderAiAssistantPanel(1, panels[0] || null),
+        renderAiAssistantPanel(2, panels[1] || null),
+        renderAiAssistantPanel(3, panels[2] || null),
+    ].filter(Boolean).length;
+
+    cardEl.style.display = visibleCount > 0 ? "" : "none";
+}
+
 // Dashboard
 async function loadDashboard() {
     const token = localStorage.getItem("token");
@@ -1447,7 +1769,6 @@ async function loadDashboard() {
         document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
         dashboardDataCache = data;
         applyDashboardStreamView(data);
-        renderAiAssistant(data);
 
         // Import freshness (parallel mirror run)
         const lastBookingsEl = document.getElementById("last-bookings-import");
