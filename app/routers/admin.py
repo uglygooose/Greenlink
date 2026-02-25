@@ -749,7 +749,8 @@ async def get_dashboard_stats(
     )
     
     # Today's bookings
-    today = datetime.utcnow().date()
+    now_utc = datetime.utcnow()
+    today = now_utc.date()
     today_bookings = (
         db.query(func.count(Booking.id))
         .join(TeeTime, Booking.tee_time_id == TeeTime.id)
@@ -1507,6 +1508,597 @@ async def get_dashboard_stats(
                 ]
             ),
         }
+
+    ai_no_show: dict[str, Any] = {
+        "window_days": 7,
+        "upcoming_bookings": 0,
+        "high_risk_next_72h": 0,
+        "medium_risk_next_72h": 0,
+        "predictions": [],
+        "recommendations": [],
+    }
+
+    ai_revenue_integrity: dict[str, Any] = {
+        "status": "healthy",
+        "health_score": 100,
+        "alerts": [],
+        "period_alignment": [],
+        "window_days": 30,
+        "metrics": {},
+        "recommendations": [],
+    }
+
+    ai_import_copilot: dict[str, Any] = {
+        "summary": {
+            "configured_streams": 0,
+            "total_streams": 5,
+            "stale_streams": 0,
+            "high_failure_streams": 0,
+        },
+        "streams": [],
+        "freshness": {},
+        "recommendations": [],
+    }
+
+    # Lightweight no-show risk model (rule-based; no external AI/API costs).
+    try:
+        risk_window_days = 7
+        risk_window_end = now_utc + timedelta(days=risk_window_days)
+        high_risk_window_end = now_utc + timedelta(hours=72)
+        upcoming_rows = (
+            db.query(Booking, TeeTime)
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .filter(
+                Booking.club_id == club_id,
+                TeeTime.club_id == club_id,
+                Booking.status == BookingStatus.booked,
+                TeeTime.tee_time >= now_utc,
+                TeeTime.tee_time <= risk_window_end,
+            )
+            .order_by(TeeTime.tee_time.asc(), Booking.id.asc())
+            .limit(250)
+            .all()
+        )
+
+        player_keys: set[str] = set()
+        upcoming_entries: list[tuple[Booking, TeeTime, str]] = []
+        for booking_row, tee_row in upcoming_rows:
+            player_key = (
+                str(getattr(booking_row, "player_email", "") or "").strip().lower()
+                or str(getattr(booking_row, "player_name", "") or "").strip().lower()
+            )
+            if not player_key:
+                continue
+            player_keys.add(player_key)
+            upcoming_entries.append((booking_row, tee_row, player_key))
+
+        history_by_player: dict[str, dict[str, int]] = {}
+        if player_keys:
+            player_key_expr = func.coalesce(
+                func.nullif(func.lower(Booking.player_email), ""),
+                func.lower(cast(Booking.player_name, String)),
+            )
+            history_rows = (
+                db.query(
+                    player_key_expr.label("player_key"),
+                    func.count(Booking.id).label("total_bookings"),
+                    func.sum(case((Booking.status == BookingStatus.no_show, 1), else_=0)).label("no_show_count"),
+                    func.sum(case((Booking.status == BookingStatus.cancelled, 1), else_=0)).label("cancelled_count"),
+                )
+                .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+                .filter(
+                    Booking.club_id == club_id,
+                    TeeTime.club_id == club_id,
+                    TeeTime.tee_time < now_utc,
+                    player_key_expr.in_(list(player_keys)),
+                )
+                .group_by(player_key_expr)
+                .all()
+            )
+            for player_key, total_bookings_hist, no_show_hist, cancelled_hist in history_rows:
+                key = str(player_key or "").strip().lower()
+                if not key:
+                    continue
+                history_by_player[key] = {
+                    "total_bookings": int(total_bookings_hist or 0),
+                    "no_show_count": int(no_show_hist or 0),
+                    "cancelled_count": int(cancelled_hist or 0),
+                }
+
+        predictions: list[dict[str, Any]] = []
+        high_risk_72h = 0
+        medium_risk_72h = 0
+        for booking_row, tee_row, player_key in upcoming_entries:
+            history = history_by_player.get(
+                player_key,
+                {"total_bookings": 0, "no_show_count": 0, "cancelled_count": 0},
+            )
+            history_total = int(history.get("total_bookings") or 0)
+            history_no_show = int(history.get("no_show_count") or 0)
+            history_cancelled = int(history.get("cancelled_count") or 0)
+            no_show_rate = (float(history_no_show) / float(history_total)) if history_total > 0 else 0.0
+            cancel_rate = (float(history_cancelled) / float(history_total)) if history_total > 0 else 0.0
+
+            created_at = getattr(booking_row, "created_at", None) or now_utc
+            tee_dt = getattr(tee_row, "tee_time", None) or now_utc
+            lead_hours = max(0.0, (tee_dt - created_at).total_seconds() / 3600.0)
+
+            score = 0.08
+            reasons: list[str] = []
+            if history_total < 3:
+                score += 0.12
+                reasons.append("Limited history")
+            if no_show_rate > 0:
+                score += min(0.45, no_show_rate * 0.70)
+                reasons.append(f"Prior no-show rate {no_show_rate:.0%}")
+            if cancel_rate >= 0.25:
+                score += min(0.15, cancel_rate * 0.30)
+                reasons.append(f"Cancellation rate {cancel_rate:.0%}")
+            if lead_hours < 6:
+                score += 0.22
+                reasons.append("Short lead time (<6h)")
+            elif lead_hours < 24:
+                score += 0.12
+                reasons.append("Short lead time (<24h)")
+            elif lead_hours >= 24 * 14:
+                score += 0.06
+                reasons.append("Long lead time (>14d)")
+            if getattr(booking_row, "member_id", None) is None:
+                score += 0.08
+                reasons.append("Guest booking")
+            source_value = str(getattr(getattr(booking_row, "source", None), "value", getattr(booking_row, "source", "")) or "").strip().lower()
+            if source_value == "external":
+                score += 0.06
+                reasons.append("External mirror booking")
+            if int(getattr(booking_row, "party_size", 1) or 1) >= 3:
+                score += 0.06
+                reasons.append("Large party size")
+
+            score = max(0.02, min(0.95, score))
+            risk_level = "high" if score >= 0.65 else ("medium" if score >= 0.40 else "low")
+            if tee_dt <= high_risk_window_end:
+                if risk_level == "high":
+                    high_risk_72h += 1
+                elif risk_level == "medium":
+                    medium_risk_72h += 1
+
+            predictions.append(
+                {
+                    "booking_id": int(getattr(booking_row, "id", 0) or 0),
+                    "player_name": str(getattr(booking_row, "player_name", "") or "Player"),
+                    "player_email": str(getattr(booking_row, "player_email", "") or ""),
+                    "tee_time": tee_dt.isoformat() if tee_dt else None,
+                    "tee": str(getattr(tee_row, "hole", "") or "1"),
+                    "risk_level": risk_level,
+                    "risk_score": float(round(score, 4)),
+                    "lead_hours": float(round(lead_hours, 1)),
+                    "history": {
+                        "total_bookings": history_total,
+                        "no_show_count": history_no_show,
+                        "cancelled_count": history_cancelled,
+                        "no_show_rate": float(round(no_show_rate, 4)),
+                    },
+                    "reasons": reasons[:4],
+                }
+            )
+
+        predictions.sort(key=lambda r: (-float(r.get("risk_score") or 0.0), str(r.get("tee_time") or "")))
+        recommendations: list[str] = []
+        if high_risk_72h > 0:
+            recommendations.append(
+                f"Send confirmation reminders and deposit prompts for {high_risk_72h} high-risk booking(s) in next 72h."
+            )
+        if medium_risk_72h >= 3:
+            recommendations.append(
+                "Queue medium-risk bookings for automated reconfirmation messages 24h before tee-off."
+            )
+        if not recommendations:
+            recommendations.append("No immediate no-show intervention required in the next 72 hours.")
+
+        ai_no_show = {
+            "window_days": risk_window_days,
+            "upcoming_bookings": int(len(upcoming_entries)),
+            "high_risk_next_72h": int(high_risk_72h),
+            "medium_risk_next_72h": int(medium_risk_72h),
+            "predictions": predictions[:8],
+            "recommendations": recommendations,
+        }
+    except Exception:
+        _safe_rollback(db)
+
+    # Revenue integrity monitor (ledger vs booking-status and settlement consistency).
+    try:
+        alignment_rows: list[dict[str, Any]] = []
+        period_specs = [
+            ("day", "Daily", int(golf_paid_day_rounds)),
+            ("week", "Weekly", int(golf_paid_week_rounds)),
+            ("month", "Monthly", int(golf_paid_month_rounds)),
+            ("ytd", "YTD", int(golf_paid_ytd_rounds)),
+        ]
+        for period_key, period_label, ledger_paid_rounds in period_specs:
+            status_row = bookings_by_status_periods.get(period_key, {}) or {}
+            status_paid_rounds = int(status_row.get("checked_in", 0)) + int(status_row.get("completed", 0))
+            delta = int(ledger_paid_rounds) - int(status_paid_rounds)
+            delta_abs = abs(delta)
+            delta_pct = (float(delta_abs) / float(max(1, status_paid_rounds)))
+            if delta_abs >= 20 and delta_pct >= 0.20:
+                severity = "high"
+            elif delta_abs >= 8 and delta_pct >= 0.12:
+                severity = "medium"
+            elif delta_abs >= 3 and delta_pct >= 0.08:
+                severity = "low"
+            else:
+                severity = "ok"
+            note = (
+                "Ledger paid rounds exceed tee-time status paid rounds (prepayments/timing shift likely)."
+                if delta > 0
+                else (
+                    "Tee-time status paid rounds exceed ledger paid rounds (payment capture lag possible)."
+                    if delta < 0
+                    else "Ledger and tee-time status paid rounds are aligned."
+                )
+            )
+            alignment_rows.append(
+                {
+                    "period_key": period_key,
+                    "period_label": period_label,
+                    "ledger_paid_rounds": int(ledger_paid_rounds),
+                    "status_paid_rounds": int(status_paid_rounds),
+                    "delta_rounds": int(delta),
+                    "delta_pct": float(round(delta_pct, 4)),
+                    "severity": severity,
+                    "note": note,
+                }
+            )
+
+        integrity_window_days = 30
+        integrity_start = today - timedelta(days=integrity_window_days - 1)
+        ledger_counts_sq = (
+            db.query(
+                LedgerEntry.booking_id.label("booking_id"),
+                func.count(LedgerEntry.id).label("payment_count"),
+                func.sum(LedgerEntry.amount).label("paid_amount"),
+            )
+            .filter(
+                LedgerEntry.club_id == club_id,
+                LedgerEntry.booking_id.isnot(None),
+            )
+            .group_by(LedgerEntry.booking_id)
+            .subquery()
+        )
+
+        unpaid_attended_row = (
+            db.query(
+                func.count(Booking.id).label("count"),
+                func.coalesce(func.sum(Booking.price), 0.0).label("amount"),
+            )
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .outerjoin(ledger_counts_sq, ledger_counts_sq.c.booking_id == Booking.id)
+            .filter(
+                Booking.club_id == club_id,
+                TeeTime.club_id == club_id,
+                Booking.status.in_(paid_statuses),
+                func.date(TeeTime.tee_time) >= integrity_start,
+                func.coalesce(ledger_counts_sq.c.payment_count, 0) == 0,
+            )
+            .first()
+        )
+        unpaid_attended_count = int(getattr(unpaid_attended_row, "count", 0) or 0)
+        unpaid_attended_amount = float(getattr(unpaid_attended_row, "amount", 0.0) or 0.0)
+
+        paid_without_attendance_row = (
+            db.query(
+                func.count(LedgerEntry.id).label("count"),
+                func.coalesce(func.sum(LedgerEntry.amount), 0.0).label("amount"),
+            )
+            .join(Booking, Booking.id == LedgerEntry.booking_id)
+            .filter(
+                LedgerEntry.club_id == club_id,
+                Booking.club_id == club_id,
+                func.date(LedgerEntry.created_at) >= integrity_start,
+                ~Booking.status.in_(paid_statuses),
+            )
+            .first()
+        )
+        paid_without_attendance_count = int(getattr(paid_without_attendance_row, "count", 0) or 0)
+        paid_without_attendance_amount = float(getattr(paid_without_attendance_row, "amount", 0.0) or 0.0)
+
+        future_paid_row = (
+            db.query(
+                func.count(LedgerEntry.id).label("count"),
+                func.coalesce(func.sum(LedgerEntry.amount), 0.0).label("amount"),
+            )
+            .join(Booking, Booking.id == LedgerEntry.booking_id)
+            .join(TeeTime, TeeTime.id == Booking.tee_time_id)
+            .filter(
+                LedgerEntry.club_id == club_id,
+                Booking.club_id == club_id,
+                TeeTime.club_id == club_id,
+                func.date(LedgerEntry.created_at) >= integrity_start,
+                TeeTime.tee_time > (now_utc + timedelta(days=1)),
+                Booking.status.in_([BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed]),
+            )
+            .first()
+        )
+        future_paid_count = int(getattr(future_paid_row, "count", 0) or 0)
+        future_paid_amount = float(getattr(future_paid_row, "amount", 0.0) or 0.0)
+
+        alerts: list[dict[str, Any]] = []
+        for row in alignment_rows:
+            severity = str(row.get("severity") or "ok")
+            if severity == "ok":
+                continue
+            alerts.append(
+                {
+                    "scope": "period_alignment",
+                    "severity": severity,
+                    "title": f"{row.get('period_label')} paid-round variance",
+                    "detail": (
+                        f"Ledger {int(row.get('ledger_paid_rounds', 0))} vs "
+                        f"status {int(row.get('status_paid_rounds', 0))} "
+                        f"(delta {int(row.get('delta_rounds', 0)):+d})."
+                    ),
+                    "context": str(row.get("note") or ""),
+                }
+            )
+
+        if unpaid_attended_count > 0:
+            alerts.append(
+                {
+                    "scope": "settlement_gap",
+                    "severity": "high" if unpaid_attended_count >= 8 else "medium",
+                    "title": "Attended rounds without payment",
+                    "detail": (
+                        f"{unpaid_attended_count} checked-in/completed booking(s) in last {integrity_window_days} days "
+                        f"have no linked ledger payment."
+                    ),
+                    "context": f"Approx value at risk: R{unpaid_attended_amount:.2f}",
+                }
+            )
+
+        if paid_without_attendance_count > 0:
+            alerts.append(
+                {
+                    "scope": "status_gap",
+                    "severity": "medium",
+                    "title": "Payments linked to non-paid statuses",
+                    "detail": (
+                        f"{paid_without_attendance_count} ledger payment(s) in last {integrity_window_days} days "
+                        f"are linked to bookings not marked checked-in/completed."
+                    ),
+                    "context": f"Value to verify: R{paid_without_attendance_amount:.2f}",
+                }
+            )
+
+        if future_paid_count >= 10:
+            alerts.append(
+                {
+                    "scope": "prepayment_pipeline",
+                    "severity": "low",
+                    "title": "High future prepayment pipeline",
+                    "detail": (
+                        f"{future_paid_count} payment(s) are posted for tee times more than one day ahead."
+                    ),
+                    "context": f"Pipeline value: R{future_paid_amount:.2f}",
+                }
+            )
+
+        severity_penalty = {"high": 24, "medium": 12, "low": 5}
+        health_score = 100
+        for alert in alerts:
+            health_score -= int(severity_penalty.get(str(alert.get("severity") or "low"), 5))
+        health_score = max(0, min(100, int(health_score)))
+
+        status = "healthy"
+        if any(str(a.get("severity")) == "high" for a in alerts) or health_score < 65:
+            status = "critical"
+        elif alerts or health_score < 82:
+            status = "warning"
+
+        recommendations: list[str] = []
+        if unpaid_attended_count > 0:
+            recommendations.append("Settle checked-in/completed bookings missing ledger payments.")
+        if paid_without_attendance_count > 0:
+            recommendations.append("Align booking statuses with posted payments before closeout.")
+        if any(str(r.get("severity")) in {"high", "medium"} for r in alignment_rows):
+            recommendations.append("Review prepayment timing so dashboard periods compare like-for-like.")
+        if not recommendations:
+            recommendations.append("Revenue integrity checks are stable for the current data window.")
+
+        ai_revenue_integrity = {
+            "status": status,
+            "health_score": int(health_score),
+            "alerts": alerts[:8],
+            "period_alignment": alignment_rows,
+            "window_days": integrity_window_days,
+            "metrics": {
+                "unpaid_attended_count": unpaid_attended_count,
+                "unpaid_attended_amount": float(unpaid_attended_amount),
+                "paid_without_attendance_count": paid_without_attendance_count,
+                "paid_without_attendance_amount": float(paid_without_attendance_amount),
+                "future_prepaid_count": future_paid_count,
+                "future_prepaid_amount": float(future_paid_amount),
+            },
+            "recommendations": recommendations,
+        }
+    except Exception:
+        _safe_rollback(db)
+
+    # Import copilot (mapping + freshness + failure-rate guidance).
+    try:
+        stream_defs = [
+            ("golf", "Golf"),
+            ("pro_shop", "Pro Shop"),
+            ("pub", "Pub"),
+            ("bowls", "Bowls"),
+            ("other", "Other"),
+        ]
+
+        settings_rows = (
+            db.query(ClubSetting.key, ClubSetting.value)
+            .filter(
+                ClubSetting.club_id == club_id,
+                ClubSetting.key.like("revenue_import_settings:%"),
+            )
+            .all()
+        )
+        settings_by_stream: dict[str, dict[str, Any]] = {}
+        for key, value in settings_rows:
+            raw_key = str(key or "")
+            stream_key = raw_key.split(":", 1)[1].strip().lower() if ":" in raw_key else ""
+            if not stream_key:
+                continue
+            parsed: dict[str, Any] = {}
+            try:
+                parsed = json.loads(value or "{}")
+            except Exception:
+                parsed = {}
+            settings_by_stream[stream_key] = parsed
+
+        imports_60d = (
+            db.query(ImportBatch)
+            .filter(
+                ImportBatch.club_id == club_id,
+                ImportBatch.imported_at >= (now_utc - timedelta(days=60)),
+            )
+            .order_by(desc(ImportBatch.imported_at))
+            .all()
+        )
+        imports_30d_cutoff = now_utc - timedelta(days=30)
+        stream_health: list[dict[str, Any]] = []
+        recommendations: list[str] = []
+        configured_streams = 0
+        stale_streams = 0
+        high_failure_streams = 0
+
+        for stream_key, stream_label in stream_defs:
+            settings = settings_by_stream.get(stream_key) or {}
+            has_date = bool(str(settings.get("date_field") or "").strip())
+            has_amount = bool(str(settings.get("amount_field") or "").strip())
+            configured = has_date and has_amount
+            if configured:
+                configured_streams += 1
+
+            stream_batches = [
+                b
+                for b in imports_60d
+                if str(getattr(b, "kind", "") or "").strip().lower() == "revenue"
+                and _normalize_revenue_stream(getattr(b, "source", None)) == stream_key
+            ]
+            last_import = next(
+                (b.imported_at for b in stream_batches if getattr(b, "imported_at", None) is not None),
+                None,
+            )
+            days_since = (today - last_import.date()).days if last_import else None
+
+            rows_total_30d = 0
+            rows_failed_30d = 0
+            for batch in stream_batches:
+                imported_at = getattr(batch, "imported_at", None)
+                if imported_at is None or imported_at < imports_30d_cutoff:
+                    continue
+                rows_total_30d += int(getattr(batch, "rows_total", 0) or 0)
+                rows_failed_30d += int(getattr(batch, "rows_failed", 0) or 0)
+            failure_rate = (float(rows_failed_30d) / float(rows_total_30d)) if rows_total_30d > 0 else 0.0
+
+            health = "healthy"
+            recommendation = "No action needed."
+            if not configured:
+                health = "critical"
+                recommendation = "Save date/amount mapping in Operations Config."
+                recommendations.append(f"{stream_label}: save import settings before next file upload.")
+            elif rows_total_30d >= 20 and failure_rate >= 0.08:
+                health = "critical"
+                recommendation = "High fail-rate; review column mapping and tax settings."
+                high_failure_streams += 1
+                recommendations.append(f"{stream_label}: review mapping (30d fail rate {failure_rate:.0%}).")
+            elif rows_total_30d >= 10 and failure_rate >= 0.03:
+                health = "warning"
+                recommendation = "Moderate fail-rate; validate CSV schema before import."
+            elif days_since is None:
+                health = "warning"
+                recommendation = "No recent imports detected."
+                stale_streams += 1
+                recommendations.append(f"{stream_label}: no imports found in last 60 days.")
+            elif days_since > 14:
+                health = "warning"
+                recommendation = "Import is stale (>14 days)."
+                stale_streams += 1
+                recommendations.append(f"{stream_label}: import is stale ({days_since} days).")
+
+            stream_health.append(
+                {
+                    "stream": stream_key,
+                    "label": stream_label,
+                    "configured": configured,
+                    "health": health,
+                    "last_import_at": last_import.isoformat() if last_import else None,
+                    "days_since_import": int(days_since) if days_since is not None else None,
+                    "rows_total_30d": int(rows_total_30d),
+                    "rows_failed_30d": int(rows_failed_30d),
+                    "failure_rate_30d": float(round(failure_rate, 4)),
+                    "recommendation": recommendation,
+                }
+            )
+
+        last_bookings_batch = (
+            db.query(ImportBatch)
+            .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "bookings")
+            .order_by(desc(ImportBatch.imported_at))
+            .first()
+        )
+        last_members_batch = (
+            db.query(ImportBatch)
+            .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "members")
+            .order_by(desc(ImportBatch.imported_at))
+            .first()
+        )
+
+        def _freshness_payload(batch: ImportBatch | None) -> dict[str, Any]:
+            if not batch or not getattr(batch, "imported_at", None):
+                return {"imported_at": None, "days_since": None}
+            imported_at = batch.imported_at
+            return {
+                "imported_at": imported_at.isoformat(),
+                "days_since": int((today - imported_at.date()).days),
+            }
+
+        freshness = {
+            "bookings": _freshness_payload(last_bookings_batch),
+            "members": _freshness_payload(last_members_batch),
+        }
+        if freshness["bookings"]["days_since"] is not None and int(freshness["bookings"]["days_since"]) > 2:
+            recommendations.append(
+                f"Bookings mirror import is {freshness['bookings']['days_since']} days old; run mirror sync."
+            )
+
+        if freshness["members"]["days_since"] is not None and int(freshness["members"]["days_since"]) > 30:
+            recommendations.append(
+                f"Members import is {freshness['members']['days_since']} days old; refresh directory."
+            )
+
+        deduped_recommendations: list[str] = []
+        for rec in recommendations:
+            if rec not in deduped_recommendations:
+                deduped_recommendations.append(rec)
+
+        ai_import_copilot = {
+            "summary": {
+                "configured_streams": int(configured_streams),
+                "total_streams": int(len(stream_defs)),
+                "stale_streams": int(stale_streams),
+                "high_failure_streams": int(high_failure_streams),
+            },
+            "streams": stream_health,
+            "freshness": freshness,
+            "recommendations": (
+                deduped_recommendations[:6]
+                if deduped_recommendations
+                else ["Import profiles are configured and recent files are healthy."]
+            ),
+        }
+    except Exception:
+        _safe_rollback(db)
     
     # KPI targets vs actuals (Day/WTD/MTD/YTD)
     anchor = datetime.utcnow().date()
@@ -1582,6 +2174,11 @@ async def get_dashboard_stats(
         "bookings_by_status_periods": bookings_by_status_periods,
         "completed_rounds": completed_rounds,
         "today_bookings": today_bookings,
+        "ai_assistant": {
+            "no_show": ai_no_show,
+            "revenue_integrity": ai_revenue_integrity,
+            "import_copilot": ai_import_copilot,
+        },
         "targets": {
             "year": year,
         "annual": {

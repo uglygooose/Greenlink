@@ -145,6 +145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupNavigation();
     setupDashboardStreamFilters();
     setupDashboardPeriodFilters();
+    setupAiAssistantActions();
     setupCloseModals();
     updateTime();
     setInterval(updateTime, 1000);
@@ -598,6 +599,63 @@ function showPage(pageName) {
         applyDashboardPeriodButtonState();
         applyDashboardStreamView(dashboardDataCache);
     }
+}
+
+function navigateToAdminPage(pageName) {
+    const target = String(pageName || "").trim();
+    if (!target) return;
+    const navItem = document.querySelector(`.nav-item[data-page="${target}"]`);
+    if (navItem instanceof HTMLElement) {
+        navItem.click();
+        return;
+    }
+
+    showPage(target);
+    switch (target) {
+        case "dashboard":
+            loadDashboard();
+            break;
+        case "bookings":
+            loadBookings();
+            break;
+        case "players":
+            loadPlayers();
+            break;
+        case "revenue":
+            loadRevenue();
+            break;
+        case "operations-config":
+            loadOpsImportSettings();
+            break;
+        case "pro-shop":
+            initProShopPage();
+            break;
+        case "tee-times":
+            loadTeeTimes();
+            break;
+        case "ledger":
+            loadLedger();
+            break;
+        case "cashbook":
+            initCashbook();
+            break;
+        default:
+            break;
+    }
+}
+
+function setupAiAssistantActions() {
+    const root = document.getElementById("ai-assistant-card");
+    if (!(root instanceof HTMLElement)) return;
+    root.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const button = target.closest("button[data-ai-nav]");
+        if (!(button instanceof HTMLButtonElement)) return;
+        const page = String(button.dataset.aiNav || "").trim();
+        if (!page) return;
+        navigateToAdminPage(page);
+    });
 }
 
 function setupDashboardStreamFilters() {
@@ -1268,6 +1326,112 @@ function applyDashboardStreamView(data) {
     }
 }
 
+function aiSeverityClass(value) {
+    const severity = String(value || "").toLowerCase();
+    if (severity === "healthy" || severity === "good" || severity === "ok" || severity === "low") return "good";
+    if (severity === "critical" || severity === "high" || severity === "bad") return "bad";
+    return "warn";
+}
+
+function renderAiAssistant(data) {
+    const summaryEl = document.getElementById("ai-assistant-summary");
+    const revenueStatusEl = document.getElementById("ai-revenue-integrity-status");
+    const revenueListEl = document.getElementById("ai-revenue-integrity-alerts");
+    const noShowStatusEl = document.getElementById("ai-no-show-status");
+    const noShowListEl = document.getElementById("ai-no-show-list");
+    const importStatusEl = document.getElementById("ai-import-copilot-status");
+    const importListEl = document.getElementById("ai-import-copilot-list");
+    if (!summaryEl || !revenueStatusEl || !revenueListEl || !noShowStatusEl || !noShowListEl || !importStatusEl || !importListEl) return;
+
+    const ai = (data && typeof data === "object" && data.ai_assistant && typeof data.ai_assistant === "object")
+        ? data.ai_assistant
+        : {};
+    const revenue = (ai && typeof ai.revenue_integrity === "object") ? ai.revenue_integrity : {};
+    const noShow = (ai && typeof ai.no_show === "object") ? ai.no_show : {};
+    const importCopilot = (ai && typeof ai.import_copilot === "object") ? ai.import_copilot : {};
+
+    const revenueStatus = String(revenue?.status || "warning").toLowerCase();
+    const revenueScore = safeNumber(revenue?.health_score);
+    const highRisk72h = safeNumber(noShow?.high_risk_next_72h);
+    const mediumRisk72h = safeNumber(noShow?.medium_risk_next_72h);
+    const importSummary = (importCopilot && typeof importCopilot.summary === "object") ? importCopilot.summary : {};
+    summaryEl.textContent = [
+        `Revenue health ${formatInteger(revenueScore)}/100`,
+        `${formatInteger(highRisk72h)} high-risk booking(s) in next 72h`,
+        `${formatInteger(importSummary.configured_streams)}/${formatInteger(importSummary.total_streams || 5)} import streams configured`,
+    ].join(" • ");
+
+    revenueStatusEl.innerHTML = `<span class="ai-pill ${aiSeverityClass(revenueStatus)}">${escapeHtml(revenueStatus)}</span>Revenue health score ${formatInteger(revenueScore)}/100`;
+    const revenueAlerts = Array.isArray(revenue?.alerts) ? revenue.alerts : [];
+    if (!revenueAlerts.length) {
+        revenueListEl.innerHTML = `
+            <div class="ai-assistant-item">
+                <div class="title">No integrity alerts</div>
+                <div class="detail">Ledger and booking settlement checks are currently stable.</div>
+            </div>
+        `;
+    } else {
+        revenueListEl.innerHTML = revenueAlerts.slice(0, 3).map(alert => `
+            <div class="ai-assistant-item">
+                <div class="title"><span class="ai-pill ${aiSeverityClass(alert?.severity)}">${escapeHtml(String(alert?.severity || "warn"))}</span>${escapeHtml(String(alert?.title || "Alert"))}</div>
+                <div class="detail">${escapeHtml(String(alert?.detail || ""))}</div>
+            </div>
+        `).join("");
+    }
+
+    const upcomingCount = safeNumber(noShow?.upcoming_bookings);
+    noShowStatusEl.innerHTML = `<span class="ai-pill ${highRisk72h > 0 ? "bad" : mediumRisk72h > 0 ? "warn" : "good"}">${highRisk72h > 0 ? "high" : mediumRisk72h > 0 ? "watch" : "clear"}</span>${formatInteger(upcomingCount)} upcoming booking(s) analysed over ${formatInteger(noShow?.window_days || 7)} day(s)`;
+    const predictions = Array.isArray(noShow?.predictions) ? noShow.predictions : [];
+    if (!predictions.length) {
+        noShowListEl.innerHTML = `
+            <div class="ai-assistant-item">
+                <div class="title">No upcoming booking risk data</div>
+                <div class="detail">Add or import future bookings to activate no-show predictions.</div>
+            </div>
+        `;
+    } else {
+        noShowListEl.innerHTML = predictions.slice(0, 3).map(row => {
+            const scorePct = `${formatInteger(Math.round(safeNumber(row?.risk_score) * 100))}%`;
+            const teeTimeText = row?.tee_time ? formatDateTimeDMY(row.tee_time) : "-";
+            const player = String(row?.player_name || "Player");
+            const reasons = Array.isArray(row?.reasons) ? row.reasons.filter(Boolean).slice(0, 2).join(" • ") : "";
+            return `
+                <div class="ai-assistant-item">
+                    <div class="title"><span class="ai-pill ${aiSeverityClass(row?.risk_level)}">${escapeHtml(String(row?.risk_level || "low"))}</span>${escapeHtml(player)} (${escapeHtml(scorePct)})</div>
+                    <div class="detail">${escapeHtml(teeTimeText)} • Tee ${escapeHtml(String(row?.tee || "1"))}${reasons ? ` • ${escapeHtml(reasons)}` : ""}</div>
+                </div>
+            `;
+        }).join("");
+    }
+
+    const configured = safeNumber(importSummary?.configured_streams);
+    const totalStreams = safeNumber(importSummary?.total_streams || 5);
+    const staleStreams = safeNumber(importSummary?.stale_streams);
+    const highFailStreams = safeNumber(importSummary?.high_failure_streams);
+    const importHealth = highFailStreams > 0 ? "critical" : (staleStreams > 0 ? "warning" : "healthy");
+    importStatusEl.innerHTML = `<span class="ai-pill ${aiSeverityClass(importHealth)}">${escapeHtml(importHealth)}</span>${formatInteger(configured)}/${formatInteger(totalStreams)} streams configured • ${formatInteger(staleStreams)} stale • ${formatInteger(highFailStreams)} high-fail`;
+    const streamRows = Array.isArray(importCopilot?.streams) ? importCopilot.streams : [];
+    if (!streamRows.length) {
+        importListEl.innerHTML = `
+            <div class="ai-assistant-item">
+                <div class="title">No import profile diagnostics</div>
+                <div class="detail">Open Operations Config and load stream settings.</div>
+            </div>
+        `;
+    } else {
+        importListEl.innerHTML = streamRows.slice(0, 3).map(row => {
+            const last = row?.last_import_at ? formatDateTimeDMY(row.last_import_at) : "No import";
+            const failRate = safeNumber(row?.failure_rate_30d);
+            return `
+                <div class="ai-assistant-item">
+                    <div class="title"><span class="ai-pill ${aiSeverityClass(row?.health)}">${escapeHtml(String(row?.health || "warn"))}</span>${escapeHtml(String(row?.label || row?.stream || "Stream"))}</div>
+                    <div class="detail">${escapeHtml(String(row?.recommendation || ""))} • Last: ${escapeHtml(last)} • 30d fail-rate: ${escapeHtml(formatPct(failRate))}</div>
+                </div>
+            `;
+        }).join("");
+    }
+}
+
 // Dashboard
 async function loadDashboard() {
     const token = localStorage.getItem("token");
@@ -1283,6 +1447,7 @@ async function loadDashboard() {
         document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
         dashboardDataCache = data;
         applyDashboardStreamView(data);
+        renderAiAssistant(data);
 
         // Import freshness (parallel mirror run)
         const lastBookingsEl = document.getElementById("last-bookings-import");
