@@ -753,6 +753,42 @@
                             </div>
                         </div>
                     </div>
+                    <div class="tee-sheet-actions" id="tee-sheet-actions" data-tee-action-root aria-label="Manage Tee Sheet">
+                        <div class="tee-action-group">
+                            <h3>Schedule Controls</h3>
+                            <div class="tee-action-row">
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="generate">
+                                    <span class="title">Generate Tee Times</span>
+                                    <span class="hint">Create missing tee slots for the selected date.</span>
+                                </button>
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="booking-window">
+                                    <span class="title">Booking Window</span>
+                                    <span class="hint">Set advance booking and cancellation/no-show rules.</span>
+                                </button>
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="tee-profile">
+                                    <span class="title">Tee Schedule</span>
+                                    <span class="hint">Adjust tee mode, intervals, and operational windows.</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="tee-action-group">
+                            <h3>Operations</h3>
+                            <div class="tee-action-row">
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="bulk-book">
+                                    <span class="title">Bulk Book / Golf Day</span>
+                                    <span class="hint">Block tee ranges for groups, golf days, and PMG.</span>
+                                </button>
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="import-bookings">
+                                    <span class="title">Import Mirror Bookings CSV</span>
+                                    <span class="hint">Sync external bookings into the tee sheet.</span>
+                                </button>
+                                <button type="button" class="btn-secondary tee-action-btn" data-action="import-members">
+                                    <span class="title">Import Members CSV</span>
+                                    <span class="hint">Update member directory used by tee booking search.</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="tee-sheet-legend">
                         <span class="legend-item"><span class="legend-dot open"></span>Open</span>
                         <span class="legend-item"><span class="legend-dot booked"></span>Booked</span>

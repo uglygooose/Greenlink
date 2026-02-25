@@ -356,7 +356,7 @@ function applyStaffMode(role) {
     }
 
     // Hide admin-only import actions for staff (admin can still use them).
-    document.querySelectorAll('#tee-manage-menu [data-action="import-members"]').forEach(el => {
+    document.querySelectorAll('[data-tee-action-root] [data-action="import-members"], #tee-manage-menu [data-action="import-members"]').forEach(el => {
         el.style.display = "none";
     });
     document.querySelectorAll('button[onclick="openImportLog()"]').forEach(el => {
@@ -3572,34 +3572,16 @@ function setupTeeSheetFilters() {
 }
 
 function setupTeeManageMenu() {
-    const btn = document.getElementById("tee-manage-btn");
-    const menu = document.getElementById("tee-manage-menu");
-    if (!btn || !menu) return;
+    const root = document.querySelector("[data-tee-action-root]");
+    if (!root) return;
 
-    const closeMenu = () => {
-        menu.classList.remove("show");
-        btn.setAttribute("aria-expanded", "false");
-    };
-
-    const openMenu = () => {
-        menu.classList.add("show");
-        btn.setAttribute("aria-expanded", "true");
-    };
-
-    btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (menu.classList.contains("show")) closeMenu();
-        else openMenu();
-    });
-
-    menu.addEventListener("click", async (e) => {
+    root.addEventListener("click", async (e) => {
         const target = e.target;
         if (!(target instanceof HTMLElement)) return;
         const item = target.closest("button[data-action]");
-        if (!item) return;
+        if (!(item instanceof HTMLButtonElement) || !root.contains(item)) return;
 
         const action = item.getAttribute("data-action") || "";
-        closeMenu();
 
         if (action === "booking-window") {
             document.getElementById("booking-window-modal")?.classList.add("show");
@@ -3629,27 +3611,19 @@ function setupTeeManageMenu() {
         }
 
         if (action === "generate") {
+            if (item.disabled) return;
             const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
             try {
+                item.disabled = true;
                 const created = await generateDaySheet(dateStr, new Set());
-                alert(`Generated ${created} tee times`);
+                toastSuccess(`Generated ${created.toLocaleString()} tee times`);
                 loadTeeTimes();
             } catch (err) {
-                alert(err?.message || "Failed to generate tee times");
+                toastError(err?.message || "Failed to generate tee times");
+            } finally {
+                item.disabled = false;
             }
         }
-    });
-
-    document.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!(target instanceof HTMLElement)) return;
-        if (!menu.classList.contains("show")) return;
-        if (target.closest("#tee-manage-menu") || target.closest("#tee-manage-btn")) return;
-        closeMenu();
-    });
-
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeMenu();
     });
 }
 
