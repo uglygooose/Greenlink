@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
-    <link rel="stylesheet" href="admin-style.css?v=2026-02-24-08" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-02-25-ux-01" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -83,6 +83,36 @@
             <div class="top-bar">
                 <h1 id="page-title">Dashboard</h1>
                 <div class="user-info">
+                    <select id="quick-nav" class="club-switcher quick-nav" aria-label="Quick navigation">
+                        <option value="">Quick Nav</option>
+                        <optgroup label="General">
+                            <option value="dashboard|all">Dashboard (All)</option>
+                            <option value="revenue">Revenue Analytics</option>
+                            <option value="operations-config">Operations Config</option>
+                        </optgroup>
+                        <optgroup label="Golf">
+                            <option value="dashboard|golf">Golf Dashboard</option>
+                            <option value="bookings">Bookings</option>
+                            <option value="players">People</option>
+                            <option value="tee-times">Tee Sheet</option>
+                            <option value="ledger">Ledger</option>
+                            <option value="cashbook">Cashbook</option>
+                        </optgroup>
+                        <optgroup label="Operations">
+                            <option value="dashboard|pro_shop">Pro Shop Dashboard</option>
+                            <option value="pro-shop">Pro Shop Sales</option>
+                            <option value="dashboard|pub">Pub Dashboard</option>
+                            <option value="pub-ops">Pub Operations</option>
+                            <option value="dashboard|bowls">Bowls Dashboard</option>
+                            <option value="bowls-ops">Bowls Operations</option>
+                            <option value="dashboard|other">Other Dashboard</option>
+                            <option value="other-ops">Other Operations</option>
+                        </optgroup>
+                    </select>
+                    <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
+                        <option value="comfortable">Comfortable</option>
+                        <option value="compact">Compact</option>
+                    </select>
                     <select id="club-switcher" class="club-switcher" style="display:none"></select>
                     <span id="admin-name">Admin</span>
                     <span class="timestamp" id="current-time"></span>
@@ -422,6 +452,18 @@
                             </div>
                             <label for="bookings-date">Date</label>
                             <input type="date" id="bookings-date" />
+                            <label for="bookings-date-basis">Date Basis</label>
+                            <select id="bookings-date-basis">
+                                <option value="created" selected>Created Date</option>
+                                <option value="tee_time">Tee Time Date</option>
+                            </select>
+                            <label for="bookings-sort">Sort</label>
+                            <select id="bookings-sort">
+                                <option value="created_desc" selected>Newest Created First</option>
+                                <option value="created_asc">Oldest Created First</option>
+                                <option value="tee_asc">Earliest Tee First</option>
+                                <option value="tee_desc">Latest Tee First</option>
+                            </select>
                             <select id="filter-status">
                                 <option value="">All Status</option>
                                 <option value="booked">Booked</option>
@@ -477,6 +519,14 @@
                                 <option value="affiliated">Affiliated guests</option>
                                 <option value="non_affiliated">Non-affiliated guests</option>
                             </select>
+                            <label for="people-sort">Sort</label>
+                            <select id="people-sort">
+                                <option value="recent_activity" selected>Recent Activity</option>
+                                <option value="bookings_desc">Most Bookings</option>
+                                <option value="spend_desc">Highest Spend</option>
+                                <option value="name_asc">Name A-Z</option>
+                                <option value="name_desc">Name Z-A</option>
+                            </select>
                             <input type="text" id="people-search" placeholder="Search name / email..." />
                             <button class="btn-secondary" id="people-add-btn" type="button" style="display:none"></button>
                         </div>
@@ -507,6 +557,16 @@
                             </div>
                             <label for="revenue-anchor-date">Date</label>
                             <input type="date" id="revenue-anchor-date" />
+                            <label for="revenue-stream-focus">Focus</label>
+                            <select id="revenue-stream-focus">
+                                <option value="all" selected>All Streams</option>
+                                <option value="golf_paid">Golf Paid Only</option>
+                                <option value="other_imported">Imported Non-Booking</option>
+                                <option value="pro_shop">Pro Shop Imported</option>
+                                <option value="pub">Pub Imported</option>
+                                <option value="bowls">Bowls Imported</option>
+                                <option value="other">Other Imported</option>
+                            </select>
                         </div>
                     </div>
 
@@ -521,15 +581,15 @@
 
                     <div class="cashbook-summary">
                         <div class="summary-stat">
-                            <span>Golf (Paid)</span>
+                            <span id="revenue-golf-paid-label">Golf (Paid)</span>
                             <strong id="revenue-golf-paid">R0.00</strong>
                         </div>
                         <div class="summary-stat">
-                            <span>Non-Booking (Imported)</span>
+                            <span id="revenue-other-label">Non-Booking (Imported)</span>
                             <strong id="revenue-other">R0.00</strong>
                         </div>
                         <div class="summary-stat">
-                            <span>Combined</span>
+                            <span id="revenue-actual-label">Combined</span>
                             <strong id="revenue-actual">R0.00</strong>
                         </div>
                         <div class="summary-stat">
@@ -593,6 +653,25 @@
                         <h2>Pro Shop Sales</h2>
                         <div class="filters">
                             <input type="text" id="pro-shop-search" placeholder="Search SKU / product..." />
+                            <label for="pro-shop-category-filter">Category</label>
+                            <select id="pro-shop-category-filter">
+                                <option value="all" selected>All Categories</option>
+                            </select>
+                            <label for="pro-shop-stock-filter">Stock</label>
+                            <select id="pro-shop-stock-filter">
+                                <option value="all" selected>All Stock States</option>
+                                <option value="low">Low Stock</option>
+                                <option value="out">Out of Stock</option>
+                                <option value="healthy">Healthy Stock</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                            <label for="pro-shop-sales-window">Sales Window</label>
+                            <select id="pro-shop-sales-window">
+                                <option value="7">7 Days</option>
+                                <option value="30" selected>30 Days</option>
+                                <option value="90">90 Days</option>
+                                <option value="365">YTD / 365 Days</option>
+                            </select>
                             <button class="btn-secondary" type="button" onclick="loadProShopProducts()">Refresh Products</button>
                             <button class="btn-secondary" type="button" onclick="loadProShopSales()">Refresh Sales</button>
                         </div>
@@ -608,7 +687,7 @@
                             <strong id="pro-shop-today-transactions">0</strong>
                         </div>
                         <div class="summary-stat">
-                            <span>Last 30 Days</span>
+                            <span id="pro-shop-period-label">Last 30 Days</span>
                             <strong id="pro-shop-period-total">R0.00</strong>
                         </div>
                         <div class="summary-stat">
@@ -739,30 +818,111 @@
                 <section id="pub-ops" class="page">
                     <div class="page-header">
                         <h2>Pub Operations</h2>
+                        <div class="filters">
+                            <label for="pub-ops-period">Window</label>
+                            <select id="pub-ops-period">
+                                <option value="day">Daily</option>
+                                <option value="week" selected>Weekly</option>
+                                <option value="month">Monthly</option>
+                                <option value="ytd">YTD</option>
+                            </select>
+                            <label for="pub-ops-action">Action</label>
+                            <select id="pub-ops-action">
+                                <option value="" selected>Select</option>
+                                <option value="dashboard|pub">Open Pub Dashboard</option>
+                                <option value="revenue">Open Revenue Analytics</option>
+                                <option value="operations-config">Open Operations Config</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary operation-kpi-grid" id="pub-ops-kpi-grid">
+                        <div class="summary-stat"><span>Revenue</span><strong id="pub-ops-revenue">R0.00</strong></div>
+                        <div class="summary-stat"><span>Transactions</span><strong id="pub-ops-transactions">0</strong></div>
+                        <div class="summary-stat"><span>Avg Ticket</span><strong id="pub-ops-avg-ticket">R0.00</strong></div>
+                        <div class="summary-stat"><span>Target Contribution</span><strong id="pub-ops-target">-</strong></div>
                     </div>
                     <div class="dashboard-card">
-                        <h3>Placeholder</h3>
-                        <p>Dedicated pub workflows are staged next. Revenue imports and dashboard stream views already support pub-level reporting.</p>
+                        <h3>Operational Focus</h3>
+                        <div class="today-stats" id="pub-ops-focus"></div>
+                        <div class="action-note" id="pub-ops-note"></div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3>Import Readiness</h3>
+                        <div class="today-stats" id="pub-ops-import"></div>
                     </div>
                 </section>
 
                 <section id="bowls-ops" class="page">
                     <div class="page-header">
                         <h2>Bowls Operations</h2>
+                        <div class="filters">
+                            <label for="bowls-ops-period">Window</label>
+                            <select id="bowls-ops-period">
+                                <option value="day">Daily</option>
+                                <option value="week" selected>Weekly</option>
+                                <option value="month">Monthly</option>
+                                <option value="ytd">YTD</option>
+                            </select>
+                            <label for="bowls-ops-action">Action</label>
+                            <select id="bowls-ops-action">
+                                <option value="" selected>Select</option>
+                                <option value="dashboard|bowls">Open Bowls Dashboard</option>
+                                <option value="revenue">Open Revenue Analytics</option>
+                                <option value="operations-config">Open Operations Config</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary operation-kpi-grid" id="bowls-ops-kpi-grid">
+                        <div class="summary-stat"><span>Revenue</span><strong id="bowls-ops-revenue">R0.00</strong></div>
+                        <div class="summary-stat"><span>Transactions</span><strong id="bowls-ops-transactions">0</strong></div>
+                        <div class="summary-stat"><span>Avg Ticket</span><strong id="bowls-ops-avg-ticket">R0.00</strong></div>
+                        <div class="summary-stat"><span>Target Contribution</span><strong id="bowls-ops-target">-</strong></div>
                     </div>
                     <div class="dashboard-card">
-                        <h3>Placeholder</h3>
-                        <p>Dedicated bowls workflows are staged next. Revenue imports and dashboard stream views already support bowls-level reporting.</p>
+                        <h3>Operational Focus</h3>
+                        <div class="today-stats" id="bowls-ops-focus"></div>
+                        <div class="action-note" id="bowls-ops-note"></div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3>Import Readiness</h3>
+                        <div class="today-stats" id="bowls-ops-import"></div>
                     </div>
                 </section>
 
                 <section id="other-ops" class="page">
                     <div class="page-header">
                         <h2>Other Operations</h2>
+                        <div class="filters">
+                            <label for="other-ops-period">Window</label>
+                            <select id="other-ops-period">
+                                <option value="day">Daily</option>
+                                <option value="week" selected>Weekly</option>
+                                <option value="month">Monthly</option>
+                                <option value="ytd">YTD</option>
+                            </select>
+                            <label for="other-ops-action">Action</label>
+                            <select id="other-ops-action">
+                                <option value="" selected>Select</option>
+                                <option value="dashboard|other">Open Other Dashboard</option>
+                                <option value="revenue">Open Revenue Analytics</option>
+                                <option value="operations-config">Open Operations Config</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary operation-kpi-grid" id="other-ops-kpi-grid">
+                        <div class="summary-stat"><span>Revenue</span><strong id="other-ops-revenue">R0.00</strong></div>
+                        <div class="summary-stat"><span>Transactions</span><strong id="other-ops-transactions">0</strong></div>
+                        <div class="summary-stat"><span>Avg Ticket</span><strong id="other-ops-avg-ticket">R0.00</strong></div>
+                        <div class="summary-stat"><span>Target Contribution</span><strong id="other-ops-target">-</strong></div>
                     </div>
                     <div class="dashboard-card">
-                        <h3>Placeholder</h3>
-                        <p>Additional operation modules will appear here. Use the Revenue page and Dashboard stream view for interim tracking.</p>
+                        <h3>Operational Focus</h3>
+                        <div class="today-stats" id="other-ops-focus"></div>
+                        <div class="action-note" id="other-ops-note"></div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3>Import Readiness</h3>
+                        <div class="today-stats" id="other-ops-import"></div>
                     </div>
                 </section>
 
@@ -787,29 +947,26 @@
                         </div>
                     </div>
                     <div class="tee-sheet-actions" id="tee-sheet-actions" data-tee-action-root aria-label="Manage Tee Sheet">
-                        <div class="tee-action-group">
-                            <h3>Schedule Controls</h3>
-                            <div class="tee-action-row">
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="generate">
-                                    <span class="title">Generate Tee Times</span>
-                                    <span class="hint">Create missing tee slots for the selected date.</span>
-                                </button>
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="booking-window">
-                                    <span class="title">Booking Window</span>
-                                    <span class="hint">Set advance booking and cancellation/no-show rules.</span>
-                                </button>
+                        <div class="tee-action-primary">
+                            <button type="button" class="btn-secondary tee-action-btn" data-action="generate">
+                                <span class="title">Generate Tee Times</span>
+                                <span class="hint">Create missing tee slots for the selected date.</span>
+                            </button>
+                            <button type="button" class="btn-secondary tee-action-btn" data-action="bulk-book">
+                                <span class="title">Bulk Book / Golf Day</span>
+                                <span class="hint">Block tee ranges for groups, golf days, and PMG events.</span>
+                            </button>
+                            <button type="button" class="btn-secondary tee-action-btn" data-action="booking-window">
+                                <span class="title">Booking Window</span>
+                                <span class="hint">Set advance booking and cancellation/no-show rules.</span>
+                            </button>
+                        </div>
+                        <details class="tee-action-advanced">
+                            <summary>More Tee Sheet Actions</summary>
+                            <div class="tee-action-row tee-action-advanced-row">
                                 <button type="button" class="btn-secondary tee-action-btn" data-action="tee-profile">
                                     <span class="title">Tee Schedule</span>
-                                    <span class="hint">Adjust tee mode, intervals, and operational windows.</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="tee-action-group">
-                            <h3>Operations</h3>
-                            <div class="tee-action-row">
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="bulk-book">
-                                    <span class="title">Bulk Book / Golf Day</span>
-                                    <span class="hint">Block tee ranges for groups, golf days, and PMG.</span>
+                                    <span class="hint">Adjust tee mode, intervals, and seasonal windows.</span>
                                 </button>
                                 <button type="button" class="btn-secondary tee-action-btn" data-action="import-bookings">
                                     <span class="title">Import Mirror Bookings CSV</span>
@@ -820,7 +977,7 @@
                                     <span class="hint">Update member directory used by tee booking search.</span>
                                 </button>
                             </div>
-                        </div>
+                        </details>
                     </div>
                     <div class="tee-sheet-legend">
                         <span class="legend-item"><span class="legend-dot open"></span>Open</span>
@@ -876,6 +1033,12 @@
                             </div>
                             <label for="ledger-date">Date</label>
                             <input type="date" id="ledger-date" />
+                            <label for="ledger-exported-filter">Exported</label>
+                            <select id="ledger-exported-filter">
+                                <option value="all" selected>All Entries</option>
+                                <option value="yes">Exported</option>
+                                <option value="no">Not Exported</option>
+                            </select>
                             <input type="text" id="ledger-search" placeholder="Search description / booking..." />
                         </div>
                     </div>
@@ -1474,6 +1637,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-02-25-umhlali-01"></script>
+	    <script src="admin.js?v=2026-02-25-ux-01"></script>
 	</body>
 	</html>

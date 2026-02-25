@@ -11,7 +11,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import String, cast, desc, func, or_, case
+from sqlalchemy import String, asc, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -2236,6 +2236,7 @@ async def get_all_bookings(
     skip: int = 0,
     limit: int = 50,
     status: str = None,
+    sort: Optional[str] = None,  # created_desc | created_asc | tee_asc | tee_desc
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     period: Optional[str] = None,  # day | week | month | ytd
@@ -2258,16 +2259,18 @@ async def get_all_bookings(
     basis = str(date_basis or "tee_time").strip().lower()
     if basis not in {"tee_time", "created"}:
         raise HTTPException(status_code=400, detail="Invalid date_basis (use tee_time or created)")
+    sort_key = str(sort or "").strip().lower()
+    valid_sort = {"created_desc", "created_asc", "tee_asc", "tee_desc"}
+    if sort_key and sort_key not in valid_sort:
+        raise HTTPException(status_code=400, detail="Invalid sort (use created_desc, created_asc, tee_asc, or tee_desc)")
 
     # Filter by selected date basis range (inclusive start, exclusive end).
     # Used by admin UI day/week/month/ytd views.
     if start and end:
         if basis == "created":
             query = query.filter(Booking.created_at >= start, Booking.created_at < end)
-            query = query.order_by(desc(Booking.created_at), desc(Booking.id))
         else:
             query = query.filter(TeeTime.tee_time >= start, TeeTime.tee_time < end)
-            query = query.order_by(TeeTime.tee_time, Booking.id)
     elif period and anchor_date:
         period = period.lower().strip()
         if period not in {"day", "week", "month", "ytd"}:
@@ -2296,12 +2299,18 @@ async def get_all_bookings(
 
         if basis == "created":
             query = query.filter(Booking.created_at >= range_start, Booking.created_at < range_end)
-            query = query.order_by(desc(Booking.created_at), desc(Booking.id))
         else:
             query = query.filter(TeeTime.tee_time >= range_start, TeeTime.tee_time < range_end)
-            query = query.order_by(TeeTime.tee_time, Booking.id)
+    default_sort = "created_desc" if basis == "created" else "tee_asc"
+    sort_key = sort_key or default_sort
+    if sort_key == "created_asc":
+        query = query.order_by(asc(Booking.created_at), asc(Booking.id))
+    elif sort_key == "created_desc":
+        query = query.order_by(desc(Booking.created_at), desc(Booking.id))
+    elif sort_key == "tee_desc":
+        query = query.order_by(desc(TeeTime.tee_time), desc(Booking.id))
     else:
-        query = query.order_by(desc(Booking.created_at))
+        query = query.order_by(asc(TeeTime.tee_time), asc(Booking.id))
     
     total = query.count()
     
@@ -2676,6 +2685,7 @@ async def get_members(
     skip: int = 0,
     limit: int = 50,
     q: Optional[str] = None,
+    sort: Optional[str] = "recent_activity",
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -2738,12 +2748,26 @@ async def get_members(
             )
         )
 
-    rows = (
-        query.order_by(desc(Member.active), Member.last_name, Member.first_name)
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    sort_key = str(sort or "recent_activity").strip().lower()
+    bookings_col = func.coalesce(stats.c.bookings_count, 0)
+    spent_col = func.coalesce(stats.c.total_spent, 0.0)
+    last_seen_col = stats.c.last_seen
+
+    if sort_key == "bookings_desc":
+        order = [desc(bookings_col), desc(last_seen_col), Member.last_name, Member.first_name]
+    elif sort_key == "spend_desc":
+        order = [desc(spent_col), desc(last_seen_col), Member.last_name, Member.first_name]
+    elif sort_key == "name_desc":
+        order = [Member.last_name.desc(), Member.first_name.desc()]
+    elif sort_key == "name_asc":
+        order = [Member.last_name.asc(), Member.first_name.asc()]
+    elif sort_key == "active":
+        order = [desc(Member.active), Member.last_name.asc(), Member.first_name.asc()]
+    else:
+        # Default = operational recency (who booked/played most recently).
+        order = [desc(last_seen_col), desc(bookings_col), Member.last_name.asc(), Member.first_name.asc()]
+
+    rows = query.order_by(*order).offset(skip).limit(limit).all()
 
     return {
         "total": total,
@@ -2978,6 +3002,7 @@ async def get_guest_players(
     limit: int = 50,
     q: Optional[str] = None,
     guest_type: Optional[str] = None,  # all | affiliated | non_affiliated
+    sort: Optional[str] = "recent_activity",
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -3027,7 +3052,19 @@ async def get_guest_players(
 
     total = query.count()
 
-    rows = query.order_by(desc(last_seen_expr)).offset(skip).limit(limit).all()
+    sort_key = str(sort or "recent_activity").strip().lower()
+    if sort_key == "bookings_desc":
+        order = [desc(func.count(Booking.id)), desc(last_seen_expr)]
+    elif sort_key == "spend_desc":
+        order = [desc(func.coalesce(func.sum(case((Booking.status.in_(paid_statuses), Booking.price), else_=0.0)), 0.0)), desc(last_seen_expr)]
+    elif sort_key == "name_desc":
+        order = [desc(func.max(Booking.player_name))]
+    elif sort_key == "name_asc":
+        order = [asc(func.max(Booking.player_name))]
+    else:
+        order = [desc(last_seen_expr)]
+
+    rows = query.order_by(*order).offset(skip).limit(limit).all()
 
     return {
         "total": total,
@@ -3156,6 +3193,7 @@ async def get_staff_users(
     skip: int = 0,
     limit: int = 50,
     q: Optional[str] = None,
+    sort: Optional[str] = "name_asc",
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
 ):
@@ -3179,12 +3217,13 @@ async def get_staff_users(
         query = query.filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like)))
 
     total = query.count()
-    rows = (
-        query.order_by(func.lower(cast(User.role, String)).asc(), func.lower(User.name).asc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    sort_key = str(sort or "name_asc").strip().lower()
+    if sort_key == "name_desc":
+        order = [func.lower(User.name).desc(), User.id.desc()]
+    else:
+        order = [func.lower(cast(User.role, String)).asc(), func.lower(User.name).asc(), User.id.asc()]
+
+    rows = query.order_by(*order).offset(skip).limit(limit).all()
 
     return {
         "total": total,
@@ -4060,6 +4099,7 @@ async def get_ledger_entries(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     q: Optional[str] = None,
+    exported: Optional[bool] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
@@ -4079,6 +4119,11 @@ async def get_ledger_entries(
                 func.lower(cast(LedgerEntry.booking_id, String)).like(like),
             )
         )
+
+    if exported is True:
+        query = query.filter(LedgerEntry.pastel_synced == 1)
+    elif exported is False:
+        query = query.filter(or_(LedgerEntry.pastel_synced == 0, LedgerEntry.pastel_synced.is_(None)))
 
     total = query.count()
     total_amount = query.with_entities(func.sum(LedgerEntry.amount)).scalar() or 0.0

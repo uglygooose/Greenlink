@@ -18,6 +18,8 @@ const state = {
   bookings: [],
   teeDate: todayYmd(),
   holes: 18,
+  teeFilter: "open",
+  roundsFilter: "action",
   teeTimes: [],
   selectedTeeTime: null,
   bookingDraft: [],
@@ -52,6 +54,13 @@ function dateToYmd(dateObj) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function addDaysYmd(dateYmd, days) {
+  const base = ymdToDate(dateYmd) || ymdToDate(todayYmd());
+  if (!base) return todayYmd();
+  base.setDate(base.getDate() + Number(days || 0));
+  return dateToYmd(base);
 }
 
 function escapeHtml(value) {
@@ -221,6 +230,92 @@ function setActiveView(view, { syncUrl = true } = {}) {
   if (syncUrl) pushViewToUrl(next);
 }
 
+function bookingWindowMaxYmd() {
+  const maxRaw = String(state.bookingWindow?.max_date || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(maxRaw)) return maxRaw;
+  return "";
+}
+
+function clampBookDate(dateYmd) {
+  const today = todayYmd();
+  let next = /^\d{4}-\d{2}-\d{2}$/.test(String(dateYmd || "")) ? String(dateYmd) : today;
+  if (next < today) next = today;
+  const maxYmd = bookingWindowMaxYmd();
+  if (maxYmd && next > maxYmd) next = maxYmd;
+  return next;
+}
+
+function syncBookDateConstraints() {
+  const input = document.getElementById("book-date");
+  const maxYmd = bookingWindowMaxYmd();
+  const today = todayYmd();
+  state.teeDate = clampBookDate(state.teeDate);
+  if (!input) return;
+
+  input.min = today;
+  input.max = maxYmd || "";
+  input.value = state.teeDate;
+
+  const prevBtn = document.getElementById("book-prev-day");
+  const nextBtn = document.getElementById("book-next-day");
+  if (prevBtn) prevBtn.disabled = state.teeDate <= today;
+  if (nextBtn) nextBtn.disabled = Boolean(maxYmd) && state.teeDate >= maxYmd;
+}
+
+function stepBookDate(days) {
+  const next = clampBookDate(addDaysYmd(state.teeDate, days));
+  if (next === state.teeDate) return false;
+  state.teeDate = next;
+  syncBookDateConstraints();
+  return true;
+}
+
+function upcomingBookings(limit = 0) {
+  const now = new Date();
+  const rows = (state.bookings || [])
+    .filter(row => {
+      const tee = new Date(row?.tee_time || "");
+      const status = String(row?.status || "").toLowerCase();
+      return !Number.isNaN(tee.getTime()) && tee >= now && !["cancelled", "no_show"].includes(status);
+    })
+    .sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
+  return limit > 0 ? rows.slice(0, limit) : rows;
+}
+
+function bookingNeedsRoundAction(item) {
+  return Boolean(item?.can_open_round || item?.can_submit_round);
+}
+
+function roundIsOpen(item) {
+  return Boolean(item?.round && !item?.round?.closed);
+}
+
+function roundIsClosed(item) {
+  return Boolean(item?.round?.closed);
+}
+
+function profileReadinessItems(profile = state.profile || {}) {
+  const inferredType = inferPlayerType(profile);
+  const isMember = inferredType === "member";
+  const requiresHna = inferredType !== "non_affiliated";
+  return [
+    { label: "Phone number", ok: Boolean(String(profile?.phone || "").trim()) },
+    { label: "Birth date", ok: Boolean(String(profile?.birth_date || "").trim()) },
+    { label: "Home club", ok: Boolean(String(profile?.home_course || "").trim()) },
+    { label: "Member number", ok: isMember ? Boolean(String(profile?.member_number || "").trim() || profile?.linked_member) : true },
+    { label: "HNA SA ID", ok: requiresHna ? Boolean(String(profile?.handicap_sa_id || "").trim()) : true }
+  ];
+}
+
+function teeSlotSummary(tt) {
+  const capacity = Math.max(1, Number(tt?.capacity || 4));
+  const booked = Array.isArray(tt?.bookings) ? tt.bookings.length : 0;
+  const openSpots = Math.max(0, capacity - booked);
+  const status = String(tt?.status || "open").toLowerCase();
+  const canBook = openSpots > 0 && status !== "blocked";
+  return { capacity, booked, openSpots, status, canBook };
+}
+
 function renderSummaryChips() {
   const profile = state.profile || {};
   const bookingWindow = state.bookingWindow || {};
@@ -259,6 +354,8 @@ function renderSummaryChips() {
     const maxDate = bookingWindow?.max_date ? formatDate(bookingWindow.max_date) : "-";
     note.textContent = `Your booking access: ${memberLabel}, max booking date ${maxDate}.`;
   }
+
+  syncBookDateConstraints();
 }
 
 function renderHome() {
@@ -266,6 +363,7 @@ function renderHome() {
   const greeting = document.getElementById("home-greeting");
   const subtitle = document.getElementById("home-subtitle");
   const upcomingList = document.getElementById("upcoming-list");
+  const nextCard = document.getElementById("next-booking-card");
   if (greeting) greeting.textContent = `Welcome, ${profile?.name || "Player"}`;
 
   const missing = profileCompleteness(profile);
@@ -275,14 +373,31 @@ function renderHome() {
       : "Everything for bookings, rounds, and profile in one mobile flow.";
   }
 
-  const now = new Date();
-  const upcoming = (state.bookings || [])
-    .filter(row => {
-      const t = new Date(row?.tee_time || "");
-      return !Number.isNaN(t.getTime()) && t >= now;
-    })
-    .sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time))
-    .slice(0, 5);
+  const upcoming = upcomingBookings(6);
+  const next = upcoming[0] || null;
+  const actionCount = (state.bookings || []).filter(bookingNeedsRoundAction).length;
+  const checklist = profileReadinessItems(profile);
+  const ready = checklist.filter(item => item.ok).length;
+  const readinessPct = checklist.length ? Math.round((ready / checklist.length) * 100) : 0;
+
+  const statUpcoming = document.getElementById("home-metric-upcoming");
+  const statActions = document.getElementById("home-metric-actions");
+  const statProfile = document.getElementById("home-metric-profile");
+  if (statUpcoming) statUpcoming.textContent = formatInteger(upcoming.length);
+  if (statActions) statActions.textContent = formatInteger(actionCount);
+  if (statProfile) statProfile.textContent = `${readinessPct}%`;
+
+  if (nextCard) {
+    if (!next) {
+      nextCard.innerHTML = `<div class="empty-state">No upcoming tee times. Open Book to reserve your next round.</div>`;
+    } else {
+      const status = bookingStatusLabel(next?.status);
+      nextCard.innerHTML = `
+        <div class="callout-title">${escapeHtml(formatDateTime(next?.tee_time))}</div>
+        <div class="callout-meta">${escapeHtml(next?.player_name || profile?.name || "Booking")} · ${escapeHtml(status)} · ${escapeHtml(roundStateLabel(next))}</div>
+      `;
+    }
+  }
 
   if (!upcomingList) return;
   if (!upcoming.length) {
@@ -300,9 +415,7 @@ function renderHome() {
           <div class="list-row-title">${escapeHtml(formatDateTime(item?.tee_time))}</div>
           <span class="pill ${roundClass}">${escapeHtml(roundLabel)}</span>
         </div>
-        <div class="row-meta">
-          ${escapeHtml(status)} · ${escapeHtml(item?.player_name || profile?.name || "Booking")}
-        </div>
+        <div class="row-meta">${escapeHtml(status)} · ${escapeHtml(item?.player_name || profile?.name || "Booking")}</div>
       </div>
     `;
   }).join("");
@@ -314,33 +427,67 @@ function renderTeeTimes() {
   if (!listEl) return;
 
   const rows = [...(state.teeTimes || [])].sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
-  if (countEl) countEl.textContent = `${formatInteger(rows.length)} tee times`;
+  let openCount = 0;
+  let fullCount = 0;
+  let blockedCount = 0;
+  rows.forEach(tt => {
+    const summary = teeSlotSummary(tt);
+    if (summary.status === "blocked") blockedCount += 1;
+    else if (summary.canBook) openCount += 1;
+    else fullCount += 1;
+  });
+
+  const statOpen = document.getElementById("tee-stat-open");
+  const statFull = document.getElementById("tee-stat-full");
+  const statBlocked = document.getElementById("tee-stat-blocked");
+  if (statOpen) statOpen.textContent = formatInteger(openCount);
+  if (statFull) statFull.textContent = formatInteger(fullCount);
+  if (statBlocked) statBlocked.textContent = formatInteger(blockedCount);
+
+  document.querySelectorAll(".tee-filter-btn").forEach(btn => {
+    btn.classList.toggle("active", String(btn.dataset.teeFilter || "open") === state.teeFilter);
+  });
+
+  const filtered = rows.filter(tt => {
+    const summary = teeSlotSummary(tt);
+    if (state.teeFilter === "all") return true;
+    if (state.teeFilter === "blocked") return summary.status === "blocked";
+    return summary.canBook;
+  });
+
+  if (countEl) countEl.textContent = `${formatInteger(filtered.length)} shown (${formatInteger(rows.length)} total)`;
 
   if (!rows.length) {
     listEl.innerHTML = `<div class="empty-state">No tee times available for this day.</div>`;
     return;
   }
+  if (!filtered.length) {
+    listEl.innerHTML = `<div class="empty-state">No tee times match this filter. Try “All” or another date.</div>`;
+    return;
+  }
 
-  listEl.innerHTML = rows.map(tt => {
-    const capacity = Math.max(1, Number(tt?.capacity || 4));
-    const booked = Array.isArray(tt?.bookings) ? tt.bookings.length : 0;
-    const openSpots = Math.max(0, capacity - booked);
-    const status = String(tt?.status || "open").toLowerCase();
-    const canBook = openSpots > 0 && status !== "blocked";
+  listEl.innerHTML = filtered.map(tt => {
+    const summary = teeSlotSummary(tt);
     const teeLabel = String(tt?.hole || "1");
+    const statusText = summary.status === "blocked"
+      ? "Blocked"
+      : summary.canBook
+        ? `${formatInteger(summary.openSpots)} Open`
+        : "Full";
+    const pillClass = summary.status === "blocked" ? "bad" : summary.canBook ? "ok" : "warn";
     return `
       <div class="tee-item">
         <div class="tee-main">
           <div>
             <div class="tee-time">${escapeHtml(formatTime(tt?.tee_time))}</div>
-            <div class="tee-meta">Tee ${escapeHtml(teeLabel)} · ${escapeHtml(formatDate(tt?.tee_time))}</div>
+            <div class="tee-meta">Tee ${escapeHtml(teeLabel)} · ${escapeHtml(formatDate(tt?.tee_time))} · ${state.holes} holes</div>
           </div>
-          <span class="pill ${canBook ? "ok" : "warn"}">${canBook ? `${formatInteger(openSpots)} Open` : "Full / Closed"}</span>
+          <span class="pill ${pillClass}">${escapeHtml(statusText)}</span>
         </div>
         <div class="tee-foot">
-          <span class="muted">${formatInteger(booked)} / ${formatInteger(capacity)} booked</span>
-          <button class="btn ${canBook ? "primary" : "outline"} small" type="button" data-action="book-tee" data-tee-id="${Number(tt?.id || 0)}" ${canBook ? "" : "disabled"}>
-            ${canBook ? "Book Slot" : "Unavailable"}
+          <span class="muted">${formatInteger(summary.booked)} / ${formatInteger(summary.capacity)} booked</span>
+          <button class="btn ${summary.canBook ? "primary" : "outline"} small" type="button" data-action="book-tee" data-tee-id="${Number(tt?.id || 0)}" ${summary.canBook ? "" : "disabled"}>
+            ${summary.canBook ? "Book Slot" : "Unavailable"}
           </button>
         </div>
       </div>
@@ -351,13 +498,40 @@ function renderTeeTimes() {
 function renderRounds() {
   const listEl = document.getElementById("rounds-list");
   if (!listEl) return;
-  if (!Array.isArray(state.bookings) || state.bookings.length === 0) {
+  const rows = Array.isArray(state.bookings) ? [...state.bookings] : [];
+
+  const actionCount = rows.filter(bookingNeedsRoundAction).length;
+  const openCount = rows.filter(roundIsOpen).length;
+  const closedCount = rows.filter(roundIsClosed).length;
+  const statAction = document.getElementById("rounds-stat-action");
+  const statOpen = document.getElementById("rounds-stat-open");
+  const statClosed = document.getElementById("rounds-stat-closed");
+  if (statAction) statAction.textContent = formatInteger(actionCount);
+  if (statOpen) statOpen.textContent = formatInteger(openCount);
+  if (statClosed) statClosed.textContent = formatInteger(closedCount);
+
+  document.querySelectorAll(".round-filter-btn").forEach(btn => {
+    btn.classList.toggle("active", String(btn.dataset.roundFilter || "action") === state.roundsFilter);
+  });
+
+  const filtered = rows.filter(item => {
+    if (state.roundsFilter === "all") return true;
+    if (state.roundsFilter === "open") return roundIsOpen(item) || item?.can_open_round;
+    if (state.roundsFilter === "closed") return roundIsClosed(item);
+    return bookingNeedsRoundAction(item);
+  });
+
+  if (!rows.length) {
     listEl.innerHTML = `<div class="empty-state">No rounds yet. Book a tee time and open a round when ready.</div>`;
+    return;
+  }
+  if (!filtered.length) {
+    listEl.innerHTML = `<div class="empty-state">No rounds match this view.</div>`;
     return;
   }
 
   state.bookingContextByRoundId = {};
-  listEl.innerHTML = state.bookings.map(item => {
+  listEl.innerHTML = filtered.map(item => {
     const round = item?.round || null;
     const roundLabel = roundStateLabel(item);
     const roundClass = roundPillClass(item);
@@ -416,11 +590,28 @@ function populateProfileForm() {
   }
 }
 
+function renderProfileChecklist() {
+  const wrap = document.getElementById("profile-checklist");
+  const label = document.getElementById("profile-readiness");
+  if (!wrap) return;
+  const items = profileReadinessItems(state.profile || {});
+  const ready = items.filter(item => item.ok).length;
+  const pct = items.length ? Math.round((ready / items.length) * 100) : 0;
+  if (label) label.textContent = `${formatInteger(ready)} / ${formatInteger(items.length)} complete (${pct}%)`;
+  wrap.innerHTML = items.map(item => `
+    <div class="check-item ${item.ok ? "ok" : "warn"}">
+      <span class="check-label">${escapeHtml(item.label)}</span>
+      <span class="check-state">${item.ok ? "Ready" : "Missing"}</span>
+    </div>
+  `).join("");
+}
+
 function renderAll() {
   renderSummaryChips();
   renderHome();
   renderTeeTimes();
   renderRounds();
+  renderProfileChecklist();
   populateProfileForm();
 
   const missing = profileCompleteness(state.profile || {});
@@ -457,6 +648,8 @@ async function loadMyBookings() {
 }
 
 async function loadTeeTimes() {
+  state.teeDate = clampBookDate(state.teeDate);
+  syncBookDateConstraints();
   const range = buildRangeForDate(state.teeDate);
   if (!range) {
     state.teeTimes = [];
@@ -526,41 +719,76 @@ function closeSheet(name) {
   }
 }
 
+function selectedTeeOpenSpots() {
+  if (!state.selectedTeeTime) return 0;
+  return teeSlotSummary(state.selectedTeeTime).openSpots;
+}
+
+function refreshBookingSheetMeta() {
+  const summary = document.getElementById("sheet-tee-summary");
+  const capNote = document.getElementById("booking-capacity-note");
+  const addBtn = document.getElementById("add-guest-btn");
+  if (!state.selectedTeeTime) {
+    if (summary) summary.textContent = "";
+    if (capNote) capNote.textContent = "";
+    if (addBtn) addBtn.disabled = true;
+    return;
+  }
+
+  const tee = state.selectedTeeTime;
+  const slot = teeSlotSummary(tee);
+  const remaining = Math.max(0, slot.openSpots - state.bookingDraft.length);
+
+  if (summary) {
+    summary.textContent = `${formatDateTime(tee?.tee_time)} · Tee ${tee?.hole || "1"} · ${state.holes} holes`;
+  }
+  if (capNote) {
+    capNote.textContent = `${formatInteger(slot.booked)} of ${formatInteger(slot.capacity)} booked · You can add ${formatInteger(remaining)} more player${remaining === 1 ? "" : "s"}.`;
+  }
+  if (addBtn) addBtn.disabled = remaining <= 0;
+}
+
 function renderBookingDraftRows() {
   const rowsEl = document.getElementById("booking-rows");
   if (!rowsEl) return;
-  rowsEl.innerHTML = state.bookingDraft.map((row, index) => `
-    <div class="booking-row">
-      <div class="booking-row-head">
-        <div class="booking-row-title">${row.is_self ? "You" : `Guest ${index}`}</div>
-        ${row.is_self ? `<span class="pill ok">Primary</span>` : `<button class="btn outline small" type="button" data-action="remove-draft-row" data-index="${index}">Remove</button>`}
-      </div>
-      <div class="booking-row-grid">
-        <div class="field">
-          <label>Name</label>
-          <input type="text" data-index="${index}" data-field="name" value="${escapeHtml(row.name)}" ${row.is_self ? "readonly" : ""} required>
+  let guestOrdinal = 0;
+  rowsEl.innerHTML = state.bookingDraft.map((row, index) => {
+    if (!row.is_self) guestOrdinal += 1;
+    const title = row.is_self ? "You" : `Guest ${guestOrdinal}`;
+    return `
+      <div class="booking-row">
+        <div class="booking-row-head">
+          <div class="booking-row-title">${title}</div>
+          ${row.is_self ? `<span class="pill ok">Primary</span>` : `<button class="btn outline small" type="button" data-action="remove-draft-row" data-index="${index}">Remove</button>`}
         </div>
-        <div class="field">
-          <label>Email</label>
-          <input type="email" data-index="${index}" data-field="email" value="${escapeHtml(row.email)}" ${row.is_self ? "readonly" : ""}>
+        <div class="booking-row-grid">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" data-index="${index}" data-field="name" value="${escapeHtml(row.name)}" ${row.is_self ? "readonly" : ""} required>
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input type="email" data-index="${index}" data-field="email" value="${escapeHtml(row.email)}" ${row.is_self ? "readonly" : ""}>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select data-index="${index}" data-field="player_type" ${row.is_self ? "disabled" : ""}>
+              <option value="member" ${row.player_type === "member" ? "selected" : ""}>Member</option>
+              <option value="visitor" ${row.player_type === "visitor" ? "selected" : ""}>Affiliated Visitor</option>
+              <option value="non_affiliated" ${row.player_type === "non_affiliated" ? "selected" : ""}>Visitor (No HNA)</option>
+            </select>
+          </div>
         </div>
-        <div class="field">
-          <label>Type</label>
-          <select data-index="${index}" data-field="player_type" ${row.is_self ? "disabled" : ""}>
-            <option value="member" ${row.player_type === "member" ? "selected" : ""}>Member</option>
-            <option value="visitor" ${row.player_type === "visitor" ? "selected" : ""}>Affiliated Visitor</option>
-            <option value="non_affiliated" ${row.player_type === "non_affiliated" ? "selected" : ""}>Visitor (No HNA)</option>
-          </select>
+        <div class="booking-row-toggles">
+          <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="prepaid" ${row.prepaid ? "checked" : ""}> Prepaid</label>
+          <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="cart" ${row.cart ? "checked" : ""}> Cart</label>
+          <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="push_cart" ${row.push_cart ? "checked" : ""}> Push Cart</label>
+          <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="caddy" ${row.caddy ? "checked" : ""}> Caddy</label>
         </div>
       </div>
-      <div class="booking-row-toggles">
-        <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="prepaid" ${row.prepaid ? "checked" : ""}> Prepaid</label>
-        <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="cart" ${row.cart ? "checked" : ""}> Cart</label>
-        <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="push_cart" ${row.push_cart ? "checked" : ""}> Push Cart</label>
-        <label class="toggle-pill"><input type="checkbox" data-index="${index}" data-field="caddy" ${row.caddy ? "checked" : ""}> Caddy</label>
-      </div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
+  refreshBookingSheetMeta();
 }
 
 function openBookingSheet(teeTimeId) {
@@ -568,12 +796,6 @@ function openBookingSheet(teeTimeId) {
   if (!tee) return;
   state.selectedTeeTime = tee;
   state.bookingDraft = [buildSelfDraftRow()];
-  const summary = document.getElementById("sheet-tee-summary");
-  if (summary) {
-    const cap = Number(tee?.capacity || 4);
-    const booked = Array.isArray(tee?.bookings) ? tee.bookings.length : 0;
-    summary.textContent = `${formatDateTime(tee?.tee_time)} · Tee ${tee?.hole || "1"} · ${formatInteger(booked)}/${formatInteger(cap)} booked · ${state.holes} holes`;
-  }
   renderBookingDraftRows();
   openSheet("booking");
 }
@@ -581,12 +803,15 @@ function openBookingSheet(teeTimeId) {
 function updateDraftField(target) {
   const index = Number(target?.dataset?.index || -1);
   const field = String(target?.dataset?.field || "");
-  if (!Number.isInteger(index) || index < 0) return;
-  if (!field) return;
+  if (!Number.isInteger(index) || index < 0 || !field) return;
   const row = state.bookingDraft[index];
   if (!row) return;
   const nextValue = target.type === "checkbox" ? Boolean(target.checked) : String(target.value || "");
   row[field] = nextValue;
+  if (field === "player_type" && !["member", "visitor", "non_affiliated"].includes(String(nextValue))) {
+    row[field] = "visitor";
+  }
+  refreshBookingSheetMeta();
 }
 
 async function submitBookingDraft() {
@@ -604,6 +829,11 @@ async function submitBookingDraft() {
     const profile = state.profile || {};
     const rows = state.bookingDraft || [];
     if (!rows.length) throw new Error("Add at least one player.");
+
+    const openSpots = selectedTeeOpenSpots();
+    if (rows.length > openSpots) {
+      throw new Error(`Only ${formatInteger(openSpots)} open spot${openSpots === 1 ? "" : "s"} left for this tee time.`);
+    }
 
     const errors = [];
     let created = 0;
@@ -649,7 +879,6 @@ async function submitBookingDraft() {
       await Promise.all([loadTeeTimes(), loadMyBookings()]);
       renderAll();
     }
-
     if (errors.length) {
       showToast(errors.slice(0, 2).join(" "), "error");
     }
@@ -780,6 +1009,7 @@ async function saveProfile(event) {
 
 function bindEvents() {
   document.getElementById("logout-btn")?.addEventListener("click", logout);
+
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => setActiveView(String(btn.dataset.view || "home")));
   });
@@ -791,20 +1021,30 @@ function bindEvents() {
     await loadMyBookings();
     renderAll();
   });
-
   document.getElementById("refresh-rounds-btn")?.addEventListener("click", async () => {
     await loadMyBookings();
     renderAll();
   });
-
   document.getElementById("refresh-profile-btn")?.addEventListener("click", async () => {
     await loadProfile();
     renderAll();
   });
 
-  document.getElementById("book-date")?.addEventListener("change", async (event) => {
-    state.teeDate = String(event?.target?.value || todayYmd());
+  document.getElementById("book-date")?.addEventListener("change", async event => {
+    state.teeDate = clampBookDate(String(event?.target?.value || todayYmd()));
     await loadTeeTimes();
+  });
+  document.getElementById("book-today-btn")?.addEventListener("click", async () => {
+    state.teeDate = clampBookDate(todayYmd());
+    await loadTeeTimes();
+  });
+  document.querySelectorAll("[data-step-date]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const step = Number(btn.dataset.stepDate || 0);
+      if (!Number.isFinite(step) || !step) return;
+      if (!stepBookDate(step)) return;
+      await loadTeeTimes();
+    });
   });
 
   document.querySelectorAll(".seg-btn[data-holes]").forEach(btn => {
@@ -814,6 +1054,26 @@ function bindEvents() {
       document.querySelectorAll(".seg-btn[data-holes]").forEach(b => {
         b.classList.toggle("active", Number(b.dataset.holes || 18) === holes);
       });
+      renderTeeTimes();
+      refreshBookingSheetMeta();
+    });
+  });
+
+  document.querySelectorAll(".tee-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const next = String(btn.dataset.teeFilter || "open");
+      if (!["open", "all", "blocked"].includes(next)) return;
+      state.teeFilter = next;
+      renderTeeTimes();
+    });
+  });
+
+  document.querySelectorAll(".round-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const next = String(btn.dataset.roundFilter || "action");
+      if (!["action", "open", "closed", "all"].includes(next)) return;
+      state.roundsFilter = next;
+      renderRounds();
     });
   });
 
@@ -821,7 +1081,7 @@ function bindEvents() {
     await loadTeeTimes();
   });
 
-  document.getElementById("tee-list")?.addEventListener("click", (event) => {
+  document.getElementById("tee-list")?.addEventListener("click", event => {
     const target = event.target instanceof HTMLElement ? event.target.closest("[data-action='book-tee']") : null;
     if (!target) return;
     const teeId = Number(target.getAttribute("data-tee-id") || 0);
@@ -836,11 +1096,16 @@ function bindEvents() {
   });
 
   document.getElementById("add-guest-btn")?.addEventListener("click", () => {
+    const remaining = Math.max(0, selectedTeeOpenSpots() - state.bookingDraft.length);
+    if (remaining <= 0) {
+      showToast("No remaining spots in this tee time.", "error");
+      return;
+    }
     state.bookingDraft.push(buildGuestDraftRow());
     renderBookingDraftRows();
   });
 
-  document.getElementById("booking-rows")?.addEventListener("click", (event) => {
+  document.getElementById("booking-rows")?.addEventListener("click", event => {
     const target = event.target instanceof HTMLElement ? event.target.closest("[data-action='remove-draft-row']") : null;
     if (!target) return;
     const index = Number(target.getAttribute("data-index") || -1);
@@ -849,15 +1114,13 @@ function bindEvents() {
       renderBookingDraftRows();
     }
   });
-
-  document.getElementById("booking-rows")?.addEventListener("input", (event) => {
+  document.getElementById("booking-rows")?.addEventListener("input", event => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (!target.hasAttribute("data-field")) return;
     updateDraftField(target);
   });
-
-  document.getElementById("booking-rows")?.addEventListener("change", (event) => {
+  document.getElementById("booking-rows")?.addEventListener("change", event => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (!target.hasAttribute("data-field")) return;
@@ -867,7 +1130,7 @@ function bindEvents() {
   document.getElementById("submit-booking-btn")?.addEventListener("click", submitBookingDraft);
   document.getElementById("submit-adjusted-score-btn")?.addEventListener("click", submitAdjustedScore);
 
-  document.getElementById("rounds-list")?.addEventListener("click", (event) => {
+  document.getElementById("rounds-list")?.addEventListener("click", event => {
     const target = event.target instanceof HTMLElement ? event.target.closest("[data-action]") : null;
     if (!target) return;
     const action = String(target.getAttribute("data-action") || "");
@@ -907,16 +1170,10 @@ async function initialize() {
   applyRouteState();
   bindEvents();
   await loadClubConfig();
-
-  const dateInput = document.getElementById("book-date");
-  if (dateInput) {
-    dateInput.value = state.teeDate;
-    dateInput.min = todayYmd();
-  }
-
   setActiveView(state.pendingRouteTab, { syncUrl: false });
 
   await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings()]);
+  syncBookDateConstraints();
   await loadTeeTimes();
   renderAll();
 

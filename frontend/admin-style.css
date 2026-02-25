@@ -1,4 +1,4 @@
-/* Admin Dashboard Styles */
+﻿/* Admin Dashboard Styles */
 
 * {
     margin: 0;
@@ -138,13 +138,13 @@ body {
 }
 
 .nav-group-toggle::after {
-    content: "▾";
+    content: "v";
     float: right;
     opacity: 0.8;
 }
 
 .nav-group:not([open]) > .nav-group-toggle::after {
-    content: "▸";
+    content: ">";
 }
 
 .nav-group-items .nav-item {
@@ -206,6 +206,7 @@ body {
     align-items: center;
     gap: 20px;
     font-size: 14px;
+    flex-wrap: wrap;
 }
 
 .club-switcher {
@@ -215,6 +216,15 @@ body {
     background: #ffffff;
     font-size: 13px;
     max-width: 260px;
+}
+
+.quick-nav {
+    min-width: 210px;
+}
+
+.density-switcher {
+    min-width: 140px;
+    max-width: 140px;
 }
 
 #guest-type-filter {
@@ -417,15 +427,52 @@ body {
 
 .filters {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
 }
 
-.filters select {
+.filters label {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 700;
+}
+
+.filters select,
+.filters input[type="date"],
+.filters input[type="text"] {
+    height: 38px;
     padding: 8px 12px;
     border: 1px solid #bdc3c7;
-    border-radius: 6px;
+    border-radius: 8px;
     background: white;
+    min-width: 140px;
+}
+
+.filters input[type="text"] {
+    min-width: 210px;
+}
+
+.filters select {
     cursor: pointer;
+}
+
+.operation-kpi-grid {
+    margin-bottom: 16px;
+}
+
+.operation-kpi-grid .summary-stat {
+    min-height: 78px;
+}
+
+.operation-kpi-grid .summary-stat span {
+    font-size: 12px;
+}
+
+.operation-kpi-grid .summary-stat strong {
+    font-size: 20px;
 }
 
 /* Tables */
@@ -1487,31 +1534,59 @@ body.drag-active .slot-card.open {
 
 .tee-sheet-actions {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 12px;
+    gap: 10px;
     margin: 0 0 12px;
 }
 
-.tee-action-group {
-    background: #ffffff;
-    border: 1px solid #d0d7de;
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-}
-
-.tee-action-group h3 {
-    margin: 0 0 10px;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #4b5563;
+.tee-action-primary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
 }
 
 .tee-action-row {
     display: grid;
     gap: 8px;
+}
+
+.tee-action-advanced {
+    border: 1px solid #d0d7de;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 10px 12px 12px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.tee-action-advanced > summary {
+    list-style: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #4b5563;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tee-action-advanced > summary::-webkit-details-marker {
+    display: none;
+}
+
+.tee-action-advanced > summary::after {
+    content: "▾";
+    font-size: 12px;
+    color: #64748b;
+}
+
+.tee-action-advanced:not([open]) > summary::after {
+    content: "▸";
+}
+
+.tee-action-advanced-row {
+    margin-top: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .tee-action-btn.btn-secondary {
@@ -2212,6 +2287,44 @@ body.drag-active .slot-card.open {
     font-size: 12px;
 }
 
+body.compact-density .content {
+    padding: 28px;
+}
+
+body.compact-density .stats-grid,
+body.compact-density .dashboard-grid {
+    gap: 14px;
+}
+
+body.compact-density .stat-card {
+    padding: 18px;
+}
+
+body.compact-density .stat-value {
+    font-size: 24px;
+}
+
+body.compact-density .dashboard-card {
+    padding: 22px;
+}
+
+body.compact-density .table-container {
+    margin-bottom: 14px;
+}
+
+body.compact-density .data-table {
+    font-size: 13px;
+}
+
+body.compact-density .data-table th,
+body.compact-density .data-table td {
+    padding: 10px 12px;
+}
+
+body.compact-density .page-header {
+    margin-bottom: 16px;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .admin-container {
@@ -2272,6 +2385,11 @@ body.drag-active .slot-card.open {
     }
 
     .tee-sheet-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .tee-action-primary,
+    .tee-action-advanced-row {
         grid-template-columns: 1fr;
     }
 

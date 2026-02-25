@@ -1,4 +1,4 @@
-// Admin Dashboard JavaScript
+﻿// Admin Dashboard JavaScript
 
 const API_BASE = window.location.origin;
 let currentUserRole = null;
@@ -10,8 +10,12 @@ let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
 let bookingPeriod = "day";
+let bookingDateBasis = "created";
+let bookingSort = "created_desc";
 let ledgerPeriod = "day";
+let ledgerExportFilter = "all";
 let revenuePeriod = "day"; // day | wtd | mtd | ytd
+let revenueStreamFocus = "all";
 let golfFeesCache = [];
 let cashbookHasRecords = false;
 let currentBookingDetail = null;
@@ -39,6 +43,15 @@ let dashboardPeriodView = "day";
 let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
+let peopleSort = "recent_activity";
+let proShopStockFilter = "all";
+let proShopCategoryFilter = "all";
+let proShopSalesWindowDays = 30;
+const operationPageState = {
+    pub: "week",
+    bowls: "week",
+    other: "week",
+};
 let teeSheetProfile = null;
 
 function installAuthFetch() {
@@ -143,6 +156,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!role) return;
 
     setupNavigation();
+    setupGlobalQuickControls();
     setupDashboardStreamFilters();
     setupDashboardPeriodFilters();
     setupAiAssistantActions();
@@ -157,6 +171,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeManageMenu();
     setupTeeBookingModal();
     setupPeopleFilters();
+    setupOperationWorkbenchControls();
     await loadTeeProfileSettings({ silent: true });
 
     if (role === "admin" || role === "super_admin") {
@@ -364,6 +379,18 @@ function applyStaffMode(role) {
         el.style.display = "none";
     });
 
+    const quickNav = document.getElementById("quick-nav");
+    if (quickNav instanceof HTMLSelectElement) {
+        Array.from(quickNav.querySelectorAll("option")).forEach(option => {
+            const raw = String(option.value || "");
+            if (!raw) return;
+            const page = raw.split("|")[0];
+            if (!allowed.has(page)) {
+                option.remove();
+            }
+        });
+    }
+
     refreshNavGroupVisibility();
 }
 
@@ -562,11 +589,67 @@ function setupNavigation() {
                     superRefreshStaff();
                     break;
                 case "pub-ops":
+                    loadOperationWorkbench("pub");
+                    break;
                 case "bowls-ops":
+                    loadOperationWorkbench("bowls");
+                    break;
                 case "other-ops":
+                    loadOperationWorkbench("other");
                     break;
             }
         });
+    });
+}
+
+function applyAdminDensity(value) {
+    const mode = String(value || "comfortable").toLowerCase() === "compact" ? "compact" : "comfortable";
+    document.body.classList.toggle("compact-density", mode === "compact");
+    localStorage.setItem("admin_density", mode);
+}
+
+function applyQuickNavigationValue(raw) {
+    const value = String(raw || "").trim();
+    if (!value) return false;
+    const [pageName, stream] = value.split("|");
+    if (pageName === "dashboard") {
+        const nextStream = String(stream || "all").toLowerCase();
+        dashboardMenuContext = nextStream === "all" ? "main" : "operation";
+        setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
+        const nav = document.querySelector(`.nav-item[data-page="dashboard"][data-dashboard-stream="${nextStream}"]`) || document.querySelector('.nav-item[data-page="dashboard"]');
+        if (nav instanceof HTMLElement) {
+            nav.click();
+            return true;
+        }
+        showPage("dashboard");
+        loadDashboard();
+        return true;
+    }
+    navigateToAdminPage(pageName);
+    return true;
+}
+
+function setupGlobalQuickControls() {
+    const densitySelect = document.getElementById("density-switcher");
+    const quickNavSelect = document.getElementById("quick-nav");
+
+    if (densitySelect instanceof HTMLSelectElement) {
+        const storedDensity = String(localStorage.getItem("admin_density") || "comfortable").toLowerCase();
+        densitySelect.value = storedDensity === "compact" ? "compact" : "comfortable";
+        applyAdminDensity(densitySelect.value);
+        densitySelect.addEventListener("change", () => {
+            applyAdminDensity(densitySelect.value);
+        });
+    } else {
+        applyAdminDensity(localStorage.getItem("admin_density") || "comfortable");
+    }
+
+    if (!(quickNavSelect instanceof HTMLSelectElement)) return;
+    quickNavSelect.addEventListener("change", () => {
+        const raw = String(quickNavSelect.value || "").trim();
+        if (!raw) return;
+        applyQuickNavigationValue(raw);
+        quickNavSelect.value = "";
     });
 }
 
@@ -599,6 +682,10 @@ function showPage(pageName) {
         applyDashboardPeriodButtonState();
         applyDashboardStreamView(dashboardDataCache);
     }
+
+    if (pageName === "pub-ops") loadOperationWorkbench("pub");
+    if (pageName === "bowls-ops") loadOperationWorkbench("bowls");
+    if (pageName === "other-ops") loadOperationWorkbench("other");
 }
 
 function navigateToAdminPage(pageName) {
@@ -638,6 +725,15 @@ function navigateToAdminPage(pageName) {
             break;
         case "cashbook":
             initCashbook();
+            break;
+        case "pub-ops":
+            loadOperationWorkbench("pub");
+            break;
+        case "bowls-ops":
+            loadOperationWorkbench("bowls");
+            break;
+        case "other-ops":
+            loadOperationWorkbench("other");
             break;
         default:
             break;
@@ -1332,110 +1428,135 @@ function applyDashboardStreamView(data) {
     }
 }
 
+function setupOperationWorkbenchControls() {
+    const configs = [
+        { stream: "pub", periodId: "pub-ops-period", actionId: "pub-ops-action" },
+        { stream: "bowls", periodId: "bowls-ops-period", actionId: "bowls-ops-action" },
+        { stream: "other", periodId: "other-ops-period", actionId: "other-ops-action" },
+    ];
+
+    configs.forEach(({ stream, periodId, actionId }) => {
+        const periodSelect = document.getElementById(periodId);
+        const actionSelect = document.getElementById(actionId);
+
+        if (periodSelect instanceof HTMLSelectElement) {
+            const current = operationPageState[stream] || "week";
+            periodSelect.value = current;
+            periodSelect.addEventListener("change", () => {
+                operationPageState[stream] = String(periodSelect.value || "week").toLowerCase();
+                loadOperationWorkbench(stream);
+            });
+        }
+
+        if (actionSelect instanceof HTMLSelectElement) {
+            actionSelect.addEventListener("change", () => {
+                const value = String(actionSelect.value || "").trim();
+                if (!value) return;
+                applyQuickNavigationValue(value);
+                actionSelect.value = "";
+            });
+        }
+    });
+}
+
+function formatWorkbenchHighlight(item) {
+    const current = (item && Object.prototype.hasOwnProperty.call(item, "current"))
+        ? formatDashboardMetric({ value: item.current, format: item?.format || "number" })
+        : (item && Object.prototype.hasOwnProperty.call(item, "value"))
+            ? formatDashboardMetric({ value: item.value, format: item?.format || "number" })
+            : "-";
+    const context = item?.context ? ` | ${String(item.context)}` : "";
+    return `${current}${context}`;
+}
+
+function renderOperationWorkbenchRows(elementId, rows = []) {
+    const root = document.getElementById(elementId);
+    if (!(root instanceof HTMLElement)) return;
+    if (!rows.length) {
+        root.innerHTML = `
+            <div class="today-stat">
+                <span>No data available</span>
+                <span class="stat-number">-</span>
+            </div>
+        `;
+        return;
+    }
+    root.innerHTML = rows.map((row) => `
+        <div class="today-stat">
+            <span>${escapeHtml(String(row.label || "Item"))}</span>
+            <span class="stat-number">${escapeHtml(String(row.value || "-"))}</span>
+        </div>
+    `).join("");
+}
+
+async function loadOperationWorkbench(streamKey) {
+    const stream = String(streamKey || "").toLowerCase();
+    if (!["pub", "bowls", "other"].includes(stream)) return;
+
+    if (!dashboardDataCache) {
+        try {
+            const data = await fetchJson(`${API_BASE}/api/admin/dashboard`);
+            dashboardDataCache = data;
+        } catch (error) {
+            console.error(`Failed to load ${stream} workbench:`, error);
+            return;
+        }
+    }
+
+    const data = dashboardDataCache || {};
+    const periodKey = operationPageState[stream] || "week";
+    const selected = resolveDashboardStreamMetrics(data, stream);
+    const selectedPeriod = resolveDashboardSelectedPeriod(selected, periodKey);
+    const benchmark = resolveDashboardTargetBenchmark(data, selectedPeriod.key);
+    const targetContribution = benchmark.revenue_target > 0 ? (safeNumber(selectedPeriod.revenue) / benchmark.revenue_target) : null;
+    const prefix = `${stream}-ops`;
+
+    const revenueEl = document.getElementById(`${prefix}-revenue`);
+    const txEl = document.getElementById(`${prefix}-transactions`);
+    const avgTicketEl = document.getElementById(`${prefix}-avg-ticket`);
+    const targetEl = document.getElementById(`${prefix}-target`);
+    const noteEl = document.getElementById(`${prefix}-note`);
+
+    if (revenueEl) revenueEl.textContent = formatCurrencyZAR(selectedPeriod.revenue);
+    if (txEl) txEl.textContent = formatInteger(selectedPeriod.transactions);
+    if (avgTicketEl) avgTicketEl.textContent = formatCurrencyZAR(selectedPeriod.avg_ticket);
+    if (targetEl) targetEl.textContent = targetContribution == null ? "-" : formatPct(targetContribution);
+    if (noteEl) {
+        noteEl.textContent = `${selectedPeriod.label} operational snapshot for ${selected.label}. Use this page for stream-level execution and run imports from Operations Config.`;
+    }
+
+    const streamInsight = data?.operation_insights?.[stream] || {};
+    const highlights = Array.isArray(streamInsight?.highlights) ? streamInsight.highlights : [];
+    const focusRows = [
+        { label: `${selectedPeriod.label} Revenue`, value: formatCurrencyZAR(selectedPeriod.revenue) },
+        { label: `${selectedPeriod.label} Transactions`, value: formatInteger(selectedPeriod.transactions) },
+        { label: `Avg Ticket (${selectedPeriod.label})`, value: formatCurrencyZAR(selectedPeriod.avg_ticket) },
+        ...highlights.slice(0, 2).map(item => ({ label: String(item?.name || "Highlight"), value: formatWorkbenchHighlight(item) })),
+    ];
+    renderOperationWorkbenchRows(`${prefix}-focus`, focusRows);
+
+    const streamRows = Array.isArray(data?.ai_assistant?.import_copilot?.streams) ? data.ai_assistant.import_copilot.streams : [];
+    const importRow = streamRows.find(row => String(row?.stream || "").toLowerCase() === stream) || null;
+    const importRows = importRow
+        ? [
+            { label: "Import Health", value: String(importRow.health || "warning").toUpperCase() },
+            { label: "Rows (30d)", value: formatInteger(importRow.rows_total_30d) },
+            { label: "Fail Rate (30d)", value: formatPct(safeNumber(importRow.failure_rate_30d)) },
+            { label: "Last Import", value: importRow.last_import_at ? formatDateTimeDMY(importRow.last_import_at) : "No import yet" },
+            { label: "Next Action", value: String(importRow.recommendation || "Review operation mapping in Operations Config") },
+        ]
+        : [
+            { label: "Import Health", value: "NO PROFILE" },
+            { label: "Next Action", value: "Open Operations Config and save import profile for this stream." },
+        ];
+    renderOperationWorkbenchRows(`${prefix}-import`, importRows);
+}
+
 function aiSeverityClass(value) {
     const severity = String(value || "").toLowerCase();
     if (severity === "healthy" || severity === "good" || severity === "ok" || severity === "low") return "good";
     if (severity === "critical" || severity === "high" || severity === "bad") return "bad";
     return "warn";
-}
-
-function _renderAiAssistantLegacy_unused(data) {
-    const summaryEl = document.getElementById("ai-assistant-summary");
-    const revenueStatusEl = document.getElementById("ai-revenue-integrity-status");
-    const revenueListEl = document.getElementById("ai-revenue-integrity-alerts");
-    const noShowStatusEl = document.getElementById("ai-no-show-status");
-    const noShowListEl = document.getElementById("ai-no-show-list");
-    const importStatusEl = document.getElementById("ai-import-copilot-status");
-    const importListEl = document.getElementById("ai-import-copilot-list");
-    if (!summaryEl || !revenueStatusEl || !revenueListEl || !noShowStatusEl || !noShowListEl || !importStatusEl || !importListEl) return;
-
-    const ai = (data && typeof data === "object" && data.ai_assistant && typeof data.ai_assistant === "object")
-        ? data.ai_assistant
-        : {};
-    const revenue = (ai && typeof ai.revenue_integrity === "object") ? ai.revenue_integrity : {};
-    const noShow = (ai && typeof ai.no_show === "object") ? ai.no_show : {};
-    const importCopilot = (ai && typeof ai.import_copilot === "object") ? ai.import_copilot : {};
-
-    const revenueStatus = String(revenue?.status || "warning").toLowerCase();
-    const revenueScore = safeNumber(revenue?.health_score);
-    const highRisk72h = safeNumber(noShow?.high_risk_next_72h);
-    const mediumRisk72h = safeNumber(noShow?.medium_risk_next_72h);
-    const importSummary = (importCopilot && typeof importCopilot.summary === "object") ? importCopilot.summary : {};
-    summaryEl.textContent = [
-        `Revenue health ${formatInteger(revenueScore)}/100`,
-        `${formatInteger(highRisk72h)} high-risk booking(s) in next 72h`,
-        `${formatInteger(importSummary.configured_streams)}/${formatInteger(importSummary.total_streams || 5)} import streams configured`,
-    ].join(" • ");
-
-    revenueStatusEl.innerHTML = `<span class="ai-pill ${aiSeverityClass(revenueStatus)}">${escapeHtml(revenueStatus)}</span>Revenue health score ${formatInteger(revenueScore)}/100`;
-    const revenueAlerts = Array.isArray(revenue?.alerts) ? revenue.alerts : [];
-    if (!revenueAlerts.length) {
-        revenueListEl.innerHTML = `
-            <div class="ai-assistant-item">
-                <div class="title">No integrity alerts</div>
-                <div class="detail">Ledger and booking settlement checks are currently stable.</div>
-            </div>
-        `;
-    } else {
-        revenueListEl.innerHTML = revenueAlerts.slice(0, 3).map(alert => `
-            <div class="ai-assistant-item">
-                <div class="title"><span class="ai-pill ${aiSeverityClass(alert?.severity)}">${escapeHtml(String(alert?.severity || "warn"))}</span>${escapeHtml(String(alert?.title || "Alert"))}</div>
-                <div class="detail">${escapeHtml(String(alert?.detail || ""))}</div>
-            </div>
-        `).join("");
-    }
-
-    const upcomingCount = safeNumber(noShow?.upcoming_bookings);
-    noShowStatusEl.innerHTML = `<span class="ai-pill ${highRisk72h > 0 ? "bad" : mediumRisk72h > 0 ? "warn" : "good"}">${highRisk72h > 0 ? "high" : mediumRisk72h > 0 ? "watch" : "clear"}</span>${formatInteger(upcomingCount)} upcoming booking(s) analysed over ${formatInteger(noShow?.window_days || 7)} day(s)`;
-    const predictions = Array.isArray(noShow?.predictions) ? noShow.predictions : [];
-    if (!predictions.length) {
-        noShowListEl.innerHTML = `
-            <div class="ai-assistant-item">
-                <div class="title">No upcoming booking risk data</div>
-                <div class="detail">Add or import future bookings to activate no-show predictions.</div>
-            </div>
-        `;
-    } else {
-        noShowListEl.innerHTML = predictions.slice(0, 3).map(row => {
-            const scorePct = `${formatInteger(Math.round(safeNumber(row?.risk_score) * 100))}%`;
-            const teeTimeText = row?.tee_time ? formatDateTimeDMY(row.tee_time) : "-";
-            const player = String(row?.player_name || "Player");
-            const reasons = Array.isArray(row?.reasons) ? row.reasons.filter(Boolean).slice(0, 2).join(" • ") : "";
-            return `
-                <div class="ai-assistant-item">
-                    <div class="title"><span class="ai-pill ${aiSeverityClass(row?.risk_level)}">${escapeHtml(String(row?.risk_level || "low"))}</span>${escapeHtml(player)} (${escapeHtml(scorePct)})</div>
-                    <div class="detail">${escapeHtml(teeTimeText)} • Tee ${escapeHtml(String(row?.tee || "1"))}${reasons ? ` • ${escapeHtml(reasons)}` : ""}</div>
-                </div>
-            `;
-        }).join("");
-    }
-
-    const configured = safeNumber(importSummary?.configured_streams);
-    const totalStreams = safeNumber(importSummary?.total_streams || 5);
-    const staleStreams = safeNumber(importSummary?.stale_streams);
-    const highFailStreams = safeNumber(importSummary?.high_failure_streams);
-    const importHealth = highFailStreams > 0 ? "critical" : (staleStreams > 0 ? "warning" : "healthy");
-    importStatusEl.innerHTML = `<span class="ai-pill ${aiSeverityClass(importHealth)}">${escapeHtml(importHealth)}</span>${formatInteger(configured)}/${formatInteger(totalStreams)} streams configured • ${formatInteger(staleStreams)} stale • ${formatInteger(highFailStreams)} high-fail`;
-    const streamRows = Array.isArray(importCopilot?.streams) ? importCopilot.streams : [];
-    if (!streamRows.length) {
-        importListEl.innerHTML = `
-            <div class="ai-assistant-item">
-                <div class="title">No import profile diagnostics</div>
-                <div class="detail">Open Operations Config and load stream settings.</div>
-            </div>
-        `;
-    } else {
-        importListEl.innerHTML = streamRows.slice(0, 3).map(row => {
-            const last = row?.last_import_at ? formatDateTimeDMY(row.last_import_at) : "No import";
-            const failRate = safeNumber(row?.failure_rate_30d);
-            return `
-                <div class="ai-assistant-item">
-                    <div class="title"><span class="ai-pill ${aiSeverityClass(row?.health)}">${escapeHtml(String(row?.health || "warn"))}</span>${escapeHtml(String(row?.label || row?.stream || "Stream"))}</div>
-                    <div class="detail">${escapeHtml(String(row?.recommendation || ""))} • Last: ${escapeHtml(last)} • 30d fail-rate: ${escapeHtml(formatPct(failRate))}</div>
-                </div>
-            `;
-        }).join("");
-    }
 }
 
 function renderAiAssistantPanel(slot, panel) {
@@ -1769,6 +1890,9 @@ async function loadDashboard() {
         document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
         dashboardDataCache = data;
         applyDashboardStreamView(data);
+        if (currentActivePage === "pub-ops") loadOperationWorkbench("pub");
+        if (currentActivePage === "bowls-ops") loadOperationWorkbench("bowls");
+        if (currentActivePage === "other-ops") loadOperationWorkbench("other");
 
         // Import freshness (parallel mirror run)
         const lastBookingsEl = document.getElementById("last-bookings-import");
@@ -1966,10 +2090,18 @@ function buildBookingRange(dateStr, period) {
 function setupBookingFilters() {
     const statusSelect = document.getElementById("filter-status");
     const dateInput = document.getElementById("bookings-date");
+    const dateBasisSelect = document.getElementById("bookings-date-basis");
+    const sortSelect = document.getElementById("bookings-sort");
     const periodButtons = document.querySelectorAll(".booking-period-btn");
 
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split("T")[0];
+    }
+    if (dateBasisSelect instanceof HTMLSelectElement) {
+        bookingDateBasis = String(dateBasisSelect.value || "created").toLowerCase();
+    }
+    if (sortSelect instanceof HTMLSelectElement) {
+        bookingSort = String(sortSelect.value || "created_desc").toLowerCase();
     }
 
     statusSelect?.addEventListener("change", () => {
@@ -1978,6 +2110,18 @@ function setupBookingFilters() {
     });
 
     dateInput?.addEventListener("change", () => {
+        currentPage = 1;
+        loadBookings();
+    });
+
+    dateBasisSelect?.addEventListener("change", () => {
+        bookingDateBasis = String(dateBasisSelect.value || "created").toLowerCase();
+        currentPage = 1;
+        loadBookings();
+    });
+
+    sortSelect?.addEventListener("change", () => {
+        bookingSort = String(sortSelect.value || "created_desc").toLowerCase();
         currentPage = 1;
         loadBookings();
     });
@@ -1997,9 +2141,13 @@ function setupLedgerFilters() {
     const dateInput = document.getElementById("ledger-date");
     const periodButtons = document.querySelectorAll(".ledger-period-btn");
     const searchInput = document.getElementById("ledger-search");
+    const exportedFilter = document.getElementById("ledger-exported-filter");
 
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split("T")[0];
+    }
+    if (exportedFilter instanceof HTMLSelectElement) {
+        ledgerExportFilter = String(exportedFilter.value || "all").toLowerCase();
     }
 
     dateInput?.addEventListener("change", () => {
@@ -2025,6 +2173,12 @@ function setupLedgerFilters() {
             loadLedger();
         }, 250);
     });
+
+    exportedFilter?.addEventListener("change", () => {
+        ledgerExportFilter = String(exportedFilter.value || "all").toLowerCase();
+        currentLedgerPage = 1;
+        loadLedger();
+    });
 }
 
 function renderReqPills(booking) {
@@ -2041,7 +2195,9 @@ async function loadBookings() {
     const dateStr = document.getElementById("bookings-date")?.value;
 
     try {
-        let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10&date_basis=created`;
+        let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10`;
+        url += `&date_basis=${encodeURIComponent(bookingDateBasis || "created")}`;
+        url += `&sort=${encodeURIComponent(bookingSort || "created_desc")}`;
         if (status) url += `&status=${status}`;
 
         const range = buildBookingRange(dateStr, bookingPeriod);
@@ -2066,7 +2222,7 @@ async function loadBookings() {
                 <td>${b.holes ? escapeHtml(String(b.holes)) : "-"}</td>
                 <td>${b.prepaid === true ? "Yes" : (b.prepaid === false ? "No" : "-")}</td>
                 <td>${renderReqPills(b)}</td>
-                <td>R${b.price.toFixed(2)}</td>
+                <td>${formatCurrencyZAR(b.price)}</td>
                 <td><span class="status-badge ${statusToClass(b.status)}">${statusToLabel(b.status)}</span></td>
                 <td>${b.tee_time ? formatTimeDateDMY(b.tee_time) : "-"}</td>
                 <td>${b.has_round ? (b.round_completed ? "Closed" : "Open") : "Not started"}</td>
@@ -2331,8 +2487,35 @@ function setupPeopleFilters() {
     const title = document.getElementById("people-title");
     const searchInput = document.getElementById("people-search");
     const guestFilter = document.getElementById("guest-type-filter");
+    const sortSelect = document.getElementById("people-sort");
     const addBtn = document.getElementById("people-add-btn");
     if (!buttons.length) return;
+    if (sortSelect instanceof HTMLSelectElement) {
+        peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
+    }
+
+    const applyPeopleSortOptions = () => {
+        if (!(sortSelect instanceof HTMLSelectElement)) return;
+        const optionsForView = peopleView === "staff"
+            ? [
+                { value: "name_asc", label: "Name A-Z" },
+                { value: "name_desc", label: "Name Z-A" },
+            ]
+            : [
+                { value: "recent_activity", label: "Recent Activity" },
+                { value: "bookings_desc", label: "Most Bookings" },
+                { value: "spend_desc", label: "Highest Spend" },
+                { value: "name_asc", label: "Name A-Z" },
+                { value: "name_desc", label: "Name Z-A" },
+            ];
+        const current = String(peopleSort || "").toLowerCase();
+        sortSelect.innerHTML = optionsForView
+            .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+            .join("");
+        const valid = optionsForView.some(opt => opt.value === current);
+        peopleSort = valid ? current : optionsForView[0].value;
+        sortSelect.value = peopleSort;
+    };
 
     const updateTitle = () => {
         if (!title) return;
@@ -2354,6 +2537,10 @@ function setupPeopleFilters() {
                 addBtn.style.display = "none";
             }
         }
+        if (sortSelect) {
+            sortSelect.style.display = "";
+        }
+        applyPeopleSortOptions();
     };
 
     buttons.forEach(btn => {
@@ -2383,6 +2570,12 @@ function setupPeopleFilters() {
 
     guestFilter?.addEventListener("change", () => {
         guestTypeFilter = String(guestFilter.value || "all");
+        currentPlayersPage = 1;
+        loadPlayers();
+    });
+
+    sortSelect?.addEventListener("change", () => {
+        peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
         currentPlayersPage = 1;
         loadPlayers();
     });
@@ -2418,6 +2611,7 @@ async function loadPlayers() {
             url = `${API_BASE}/api/admin/staff?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         }
         if (search) url += `&q=${encodeURIComponent(search)}`;
+        if (peopleSort) url += `&sort=${encodeURIComponent(peopleSort)}`;
 
         const data = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } });
 
@@ -2443,8 +2637,8 @@ async function loadPlayers() {
                     <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</td>
                     <td>${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</td>
                     <td>${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</td>
-                    <td>${Number(m.bookings_count || 0)}</td>
-                    <td>R${Number(m.total_spent || 0).toFixed(2)}</td>
+                    <td>${formatInteger(m.bookings_count || 0)}</td>
+                    <td>${formatCurrencyZAR(m.total_spent || 0)}</td>
                     <td>${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</td>
                     <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "-"}</td>
                     <td><button class="btn-view" onclick="viewMemberDetail(${m.id})">View</button></td>
@@ -2474,8 +2668,8 @@ async function loadPlayers() {
                     <td>${escapeHtml(g.name || "-")}</td>
                     <td>${g.email ? escapeHtml(g.email) : "-"}</td>
                     <td>${g.handicap_number ? escapeHtml(g.handicap_number) : "-"}</td>
-                    <td>${Number(g.bookings_count || 0)}</td>
-                    <td>R${Number(g.total_spent || 0).toFixed(2)}</td>
+                    <td>${formatInteger(g.bookings_count || 0)}</td>
+                    <td>${formatCurrencyZAR(g.total_spent || 0)}</td>
                     <td>${g.last_seen ? formatDateTimeDMY(g.last_seen) : "-"}</td>
                 </tr>
             `).join("");
@@ -2544,8 +2738,8 @@ async function loadPlayers() {
                     <td>${p.handicap_index == null ? "-" : Number(p.handicap_index).toFixed(1)}</td>
                     <td>${p.gender ? escapeHtml(p.gender) : "-"}</td>
                     <td>${p.player_category ? escapeHtml(p.player_category) : "-"}</td>
-                    <td>${Number(p.bookings_count || 0)}</td>
-                    <td>R${Number(p.total_spent || 0).toFixed(2)}</td>
+                    <td>${formatInteger(p.bookings_count || 0)}</td>
+                    <td>${formatCurrencyZAR(p.total_spent || 0)}</td>
                     <td><button class="btn-view" onclick="viewPlayerDetail(${p.id})">View</button></td>
                 </tr>
             `).join("");
@@ -2911,17 +3105,54 @@ async function loadRevenue() {
             headers: { Authorization: `Bearer ${token}` }
         });
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
+        const otherRowsRaw = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
+        const importedByStream = Object.fromEntries(
+            otherRowsRaw.map(row => [
+                String(row?.stream || "").toLowerCase(),
+                { amount: safeNumber(row?.amount), transactions: safeNumber(row?.transactions) },
+            ])
+        );
 
-        // Summary (combined actual vs target)
         const bookedTotal = series.booked.reduce((sum, v) => sum + safeNumber(v), 0);
         const actualPaid = series.paid.reduce((sum, v) => sum + safeNumber(v), 0);
         const actualOther = (series.other || []).reduce((sum, v) => sum + safeNumber(v), 0);
         const combinedActual = actualPaid + actualOther;
+        const focusSet = new Set(["all", "golf_paid", "other_imported", "pro_shop", "pub", "bowls", "other"]);
+        const focus = focusSet.has(String(revenueStreamFocus || "").toLowerCase())
+            ? String(revenueStreamFocus || "").toLowerCase()
+            : "all";
+        revenueStreamFocus = focus;
+
+        const focusImportedLabel = focus === "pro_shop"
+            ? "Pro Shop Imported"
+            : focus === "pub"
+                ? "Pub Imported"
+                : focus === "bowls"
+                    ? "Bowls Imported"
+                    : focus === "other"
+                        ? "Other Imported"
+                        : "Imported Non-Booking";
+        const selectedImported = importedByStream[focus] || { amount: 0, transactions: 0 };
+        const focusedActual = focus === "golf_paid"
+            ? actualPaid
+            : focus === "other_imported"
+                ? actualOther
+                : ["pro_shop", "pub", "bowls", "other"].includes(focus)
+                    ? safeNumber(selectedImported.amount)
+                    : combinedActual;
+        const focusedCollectionRate = (focus === "all" || focus === "golf_paid")
+            ? (bookedTotal > 0 ? (actualPaid / bookedTotal) : null)
+            : null;
+        const focusedOtherMix = focus === "all"
+            ? (combinedActual > 0 ? (actualOther / combinedActual) : null)
+            : (["other_imported", "pro_shop", "pub", "bowls", "other"].includes(focus)
+                ? (actualOther > 0
+                    ? (focus === "other_imported" ? 1 : safeNumber(selectedImported.amount) / actualOther)
+                    : null)
+                : null);
         const targetRevenue = data.target_revenue;
-        const pct = targetRevenue ? (combinedActual / safeNumber(targetRevenue)) : null;
-        const collectionRate = bookedTotal > 0 ? (actualPaid / bookedTotal) : null;
-        const otherMix = combinedActual > 0 ? (actualOther / combinedActual) : null;
-        const gapToTarget = targetRevenue == null ? null : (combinedActual - safeNumber(targetRevenue));
+        const pct = targetRevenue ? (focusedActual / safeNumber(targetRevenue)) : null;
+        const gapToTarget = targetRevenue == null ? null : (focusedActual - safeNumber(targetRevenue));
 
         const actualEl = document.getElementById("revenue-actual");
         const golfEl = document.getElementById("revenue-golf-paid");
@@ -2932,8 +3163,22 @@ async function loadRevenue() {
         const otherMixEl = document.getElementById("revenue-other-mix");
         const gapEl = document.getElementById("revenue-gap");
         const flowEl = document.getElementById("revenue-flow-text");
-        if (collectionEl) collectionEl.textContent = collectionRate == null ? "-" : formatPct(collectionRate);
-        if (otherMixEl) otherMixEl.textContent = otherMix == null ? "-" : formatPct(otherMix);
+        const golfLabelEl = document.getElementById("revenue-golf-paid-label");
+        const otherLabelEl = document.getElementById("revenue-other-label");
+        const actualLabelEl = document.getElementById("revenue-actual-label");
+
+        if (golfLabelEl) golfLabelEl.textContent = focus === "golf_paid" ? "Golf (Paid Focus)" : "Golf (Paid)";
+        if (otherLabelEl) otherLabelEl.textContent = focus === "all" ? "Non-Booking (Imported)" : focusImportedLabel;
+        if (actualLabelEl) {
+            actualLabelEl.textContent = focus === "all"
+                ? "Combined"
+                : (focus === "golf_paid"
+                    ? "Focus Total (Golf Paid)"
+                    : (focus === "other_imported" ? "Focus Total (Imported)" : `Focus Total (${focusImportedLabel})`));
+        }
+
+        if (collectionEl) collectionEl.textContent = focusedCollectionRate == null ? "-" : formatPct(focusedCollectionRate);
+        if (otherMixEl) otherMixEl.textContent = focusedOtherMix == null ? "-" : formatPct(focusedOtherMix);
         if (gapEl) gapEl.textContent = gapToTarget == null ? "-" : formatCurrencyZAR(gapToTarget);
         if (flowEl) {
             const targetSummary = targetRevenue == null
@@ -2941,23 +3186,38 @@ async function loadRevenue() {
                 : (gapToTarget >= 0
                     ? `You are ahead of target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`
                     : `You are below target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`);
-            flowEl.textContent =
-                `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
-                `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${collectionRate == null ? "-" : formatPct(collectionRate)}). ` +
-                `Pro shop + imported non-booking streams: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+            if (focus === "all") {
+                flowEl.textContent =
+                    `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
+                    `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${focusedCollectionRate == null ? "-" : formatPct(focusedCollectionRate)}). ` +
+                    `Pro shop + imported non-booking streams: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+            } else if (focus === "golf_paid") {
+                flowEl.textContent = `Golf-paid focus: ${formatCurrencyZAR(actualPaid)} collected from booked demand ${formatCurrencyZAR(bookedTotal)}. ${targetSummary}`;
+            } else if (focus === "other_imported") {
+                flowEl.textContent = `Imported non-booking focus: ${formatCurrencyZAR(actualOther)} across all imported streams. ${targetSummary}`;
+            } else {
+                flowEl.textContent = `${focusImportedLabel} focus: ${formatCurrencyZAR(selectedImported.amount)} across ${formatInteger(selectedImported.transactions)} transaction(s). ${targetSummary}`;
+            }
         }
         if (golfEl) golfEl.textContent = formatCurrencyZAR(actualPaid);
-        if (otherEl) otherEl.textContent = formatCurrencyZAR(actualOther);
-        if (actualEl) actualEl.textContent = formatCurrencyZAR(combinedActual);
+        if (otherEl) {
+            otherEl.textContent = formatCurrencyZAR(
+                ["pro_shop", "pub", "bowls", "other"].includes(focus) ? selectedImported.amount : actualOther
+            );
+        }
+        if (actualEl) actualEl.textContent = formatCurrencyZAR(focusedActual);
         if (targetEl) targetEl.textContent = targetRevenue == null ? "—" : formatCurrencyZAR(targetRevenue);
         if (pctEl) pctEl.textContent = pct == null ? "—" : formatPct(pct);
 
-        // Daily revenue chart
         const dailyCtx = document.getElementById("dailyRevenueChart");
         if (window.dailyChart) window.dailyChart.destroy();
         const dailyRequired = data?.daily_revenue_required;
         const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
         const combinedSeries = series.labels.map((_, idx) => safeNumber(series.paid[idx]) + safeNumber(series.other[idx]));
+        const showPaidDataset = focus !== "other_imported" && !["pro_shop", "pub", "bowls", "other"].includes(focus);
+        const showOtherDataset = focus !== "golf_paid";
+        const showCombinedDataset = focus === "all" || focus === "other_imported" || ["pro_shop", "pub", "bowls", "other"].includes(focus);
+        const showBookedDataset = focus === "all" || focus === "golf_paid";
 
         window.dailyChart = new Chart(dailyCtx, {
             type: "bar",
@@ -2968,13 +3228,15 @@ async function loadRevenue() {
                         label: "Paid Golf (R)",
                         data: series.paid,
                         backgroundColor: "rgba(30, 136, 229, 0.72)",
-                        stack: "actual"
+                        stack: "actual",
+                        hidden: !showPaidDataset,
                     },
                     {
                         label: "Other Imported (R)",
                         data: series.other,
                         backgroundColor: "rgba(242, 140, 44, 0.72)",
-                        stack: "actual"
+                        stack: "actual",
+                        hidden: !showOtherDataset,
                     },
                     {
                         type: "line",
@@ -2985,7 +3247,8 @@ async function loadRevenue() {
                         pointRadius: 2,
                         borderWidth: 2,
                         tension: 0.25,
-                        yAxisID: "y"
+                        yAxisID: "y",
+                        hidden: !showCombinedDataset,
                     },
                     {
                         type: "line",
@@ -2997,7 +3260,8 @@ async function loadRevenue() {
                         pointRadius: 1.5,
                         borderWidth: 1.8,
                         tension: 0.2,
-                        yAxisID: "y"
+                        yAxisID: "y",
+                        hidden: !showBookedDataset,
                     },
                     ...(dailyRequiredValue == null ? [] : [{
                         type: "line",
@@ -3008,7 +3272,7 @@ async function loadRevenue() {
                         borderDash: [6, 6],
                         pointRadius: 0,
                         tension: 0,
-                        yAxisID: "y"
+                        yAxisID: "y",
                     }])
                 ]
             },
@@ -3022,7 +3286,6 @@ async function loadRevenue() {
             }
         });
 
-        // Status revenue chart
         const statusCtx = document.getElementById("statusRevenueChart");
         if (window.statusChart) window.statusChart.destroy();
 
@@ -3040,13 +3303,17 @@ async function loadRevenue() {
 
         const otherBody = document.getElementById("other-revenue-streams-body");
         if (otherBody) {
-            const rows = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
+            let rows = [...otherRowsRaw];
+            if (focus === "golf_paid") rows = [];
+            if (["pro_shop", "pub", "bowls", "other"].includes(focus)) {
+                rows = rows.filter(r => String(r?.stream || "").toLowerCase() === focus);
+            }
             const otherTotal = rows.reduce((sum, r) => sum + safeNumber(r?.amount), 0);
             if (!rows.length) {
                 otherBody.innerHTML = `
                     <tr class="empty-row">
                         <td colspan="6">
-                            <div class="empty-state">No imported revenue yet. Use "Import Revenue CSV" above.</div>
+                            <div class="empty-state">${focus === "golf_paid" ? "Golf-paid focus selected: no imported stream rows in this view." : "No imported revenue yet. Use \"Import Revenue CSV\" above."}</div>
                         </td>
                     </tr>
                 `;
@@ -3071,9 +3338,13 @@ async function loadRevenue() {
 function setupRevenueFilters() {
     const dateInput = document.getElementById("revenue-anchor-date");
     const buttons = document.querySelectorAll(".revenue-period-btn");
+    const streamFocusSelect = document.getElementById("revenue-stream-focus");
 
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split("T")[0];
+    }
+    if (streamFocusSelect instanceof HTMLSelectElement) {
+        revenueStreamFocus = String(streamFocusSelect.value || "all").toLowerCase();
     }
 
     dateInput?.addEventListener("change", () => {
@@ -3087,6 +3358,11 @@ function setupRevenueFilters() {
             revenuePeriod = btn.dataset.period || "day";
             loadRevenue();
         });
+    });
+
+    streamFocusSelect?.addEventListener("change", () => {
+        revenueStreamFocus = String(streamFocusSelect.value || "all").toLowerCase();
+        loadRevenue();
     });
 }
 
@@ -3455,19 +3731,53 @@ function editProShopProduct(productId) {
     if (statusEl) statusEl.textContent = `Editing ${product.sku} - ${product.name}`;
 }
 
+function refreshProShopCategoryOptions(rows = []) {
+    const select = document.getElementById("pro-shop-category-filter");
+    if (!(select instanceof HTMLSelectElement)) return;
+    const current = String(proShopCategoryFilter || select.value || "all").trim().toLowerCase();
+    const categories = [...new Set(
+        (Array.isArray(rows) ? rows : [])
+            .map(row => String(row?.category || "").trim())
+            .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b));
+    select.innerHTML = `<option value="all">All Categories</option>${categories.map(cat => `<option value="${escapeHtml(cat.toLowerCase())}">${escapeHtml(cat)}</option>`).join("")}`;
+    select.value = categories.some(cat => cat.toLowerCase() === current) ? current : "all";
+    proShopCategoryFilter = String(select.value || "all").toLowerCase();
+}
+
+function filterProShopProducts(rows = []) {
+    const stockFilter = String(proShopStockFilter || "all").toLowerCase();
+    const categoryFilter = String(proShopCategoryFilter || "all").toLowerCase();
+    return rows.filter(row => {
+        const stockQty = Number(row?.stock_qty || 0);
+        const reorder = Number(row?.reorder_level || 0);
+        const isLow = Boolean(row?.active) && stockQty <= reorder;
+        const isOut = stockQty <= 0;
+        const categoryMatch = categoryFilter === "all"
+            || String(row?.category || "").trim().toLowerCase() === categoryFilter;
+        if (!categoryMatch) return false;
+        if (stockFilter === "low") return isLow;
+        if (stockFilter === "out") return isOut;
+        if (stockFilter === "healthy") return Boolean(row?.active) && !isLow && !isOut;
+        if (stockFilter === "inactive") return !Boolean(row?.active);
+        return true;
+    });
+}
+
 function renderProShopProducts() {
     const body = document.getElementById("pro-shop-products-body");
     const lowStockEl = document.getElementById("pro-shop-low-stock");
     if (!body) return;
 
-    const rows = Array.isArray(proShopProductsCache) ? proShopProductsCache : [];
-    const lowStockCount = rows.filter(row => row.active && Number(row.stock_qty || 0) <= Number(row.reorder_level || 0)).length;
+    const allRows = Array.isArray(proShopProductsCache) ? proShopProductsCache : [];
+    const rows = filterProShopProducts(allRows);
+    const lowStockCount = allRows.filter(row => row.active && Number(row.stock_qty || 0) <= Number(row.reorder_level || 0)).length;
     if (lowStockEl) lowStockEl.textContent = String(lowStockCount);
 
     if (!rows.length) {
         body.innerHTML = `
             <tr class="empty-row">
-                <td colspan="6"><div class="empty-state">No products found. Add your first product on the right.</div></td>
+                <td colspan="6"><div class="empty-state">No products match the selected filters.</div></td>
             </tr>
         `;
         return;
@@ -3603,6 +3913,7 @@ async function loadProShopProducts() {
     try {
         const data = await fetchJson(`${API_BASE}/api/admin/pro-shop/products?${params.toString()}`);
         proShopProductsCache = Array.isArray(data?.products) ? data.products : [];
+        refreshProShopCategoryOptions(proShopProductsCache);
         reconcileProShopCartWithStock();
         renderProShopProducts();
         renderProShopCart();
@@ -3675,18 +3986,27 @@ async function saveProShopProduct() {
 }
 
 async function loadProShopSales() {
+    const daysSelect = document.getElementById("pro-shop-sales-window");
+    const parsedDays = Number(daysSelect?.value || proShopSalesWindowDays || 30);
+    const windowDays = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(365, Math.round(parsedDays)) : 30;
+    proShopSalesWindowDays = windowDays;
+
     try {
-        const data = await fetchJson(`${API_BASE}/api/admin/pro-shop/sales?limit=20&days=30`);
+        const data = await fetchJson(`${API_BASE}/api/admin/pro-shop/sales?limit=20&days=${windowDays}`);
         const sales = Array.isArray(data?.sales) ? data.sales : [];
         const summary = data?.summary || {};
         const salesBody = document.getElementById("pro-shop-sales-body");
         const todayTotalEl = document.getElementById("pro-shop-today-total");
         const todayTxEl = document.getElementById("pro-shop-today-transactions");
         const periodTotalEl = document.getElementById("pro-shop-period-total");
+        const periodLabelEl = document.getElementById("pro-shop-period-label");
 
         if (todayTotalEl) todayTotalEl.textContent = formatCurrencyZAR(summary.today_total || 0);
         if (todayTxEl) todayTxEl.textContent = String(summary.today_transactions || 0);
         if (periodTotalEl) periodTotalEl.textContent = formatCurrencyZAR(summary.period_total || 0);
+        if (periodLabelEl) {
+            periodLabelEl.textContent = windowDays >= 365 ? "YTD / 365 Days" : `Last ${formatInteger(windowDays)} Days`;
+        }
 
         if (salesBody) {
             if (!sales.length) {
@@ -3761,6 +4081,9 @@ async function checkoutProShopSale() {
 
 async function initProShopPage() {
     const searchEl = document.getElementById("pro-shop-search");
+    const stockFilterEl = document.getElementById("pro-shop-stock-filter");
+    const categoryFilterEl = document.getElementById("pro-shop-category-filter");
+    const salesWindowEl = document.getElementById("pro-shop-sales-window");
     if (searchEl && !searchEl.dataset.bound) {
         let timer = null;
         searchEl.addEventListener("input", () => {
@@ -3770,6 +4093,30 @@ async function initProShopPage() {
             }, 180);
         });
         searchEl.dataset.bound = "1";
+    }
+    if (stockFilterEl instanceof HTMLSelectElement && !stockFilterEl.dataset.bound) {
+        proShopStockFilter = String(stockFilterEl.value || "all").toLowerCase();
+        stockFilterEl.addEventListener("change", () => {
+            proShopStockFilter = String(stockFilterEl.value || "all").toLowerCase();
+            renderProShopProducts();
+        });
+        stockFilterEl.dataset.bound = "1";
+    }
+    if (categoryFilterEl instanceof HTMLSelectElement && !categoryFilterEl.dataset.bound) {
+        proShopCategoryFilter = String(categoryFilterEl.value || "all").toLowerCase();
+        categoryFilterEl.addEventListener("change", () => {
+            proShopCategoryFilter = String(categoryFilterEl.value || "all").toLowerCase();
+            renderProShopProducts();
+        });
+        categoryFilterEl.dataset.bound = "1";
+    }
+    if (salesWindowEl instanceof HTMLSelectElement && !salesWindowEl.dataset.bound) {
+        proShopSalesWindowDays = Number(salesWindowEl.value || "30") || 30;
+        salesWindowEl.addEventListener("change", () => {
+            proShopSalesWindowDays = Number(salesWindowEl.value || "30") || 30;
+            loadProShopSales();
+        });
+        salesWindowEl.dataset.bound = "1";
     }
 
     renderProShopCart();
@@ -6617,6 +6964,8 @@ async function loadLedger() {
             url += `&start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`;
         }
         if (q) url += `&q=${encodeURIComponent(q)}`;
+        if (ledgerExportFilter === "yes") url += "&exported=true";
+        if (ledgerExportFilter === "no") url += "&exported=false";
 
         const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) {
@@ -6628,8 +6977,8 @@ async function loadLedger() {
 
         const totalAmountEl = document.getElementById("ledger-total-amount");
         const totalCountEl = document.getElementById("ledger-total-count");
-        if (totalAmountEl) totalAmountEl.textContent = `R${Number(data.total_amount || 0).toFixed(2)}`;
-        if (totalCountEl) totalCountEl.textContent = String(data.total || 0);
+        if (totalAmountEl) totalAmountEl.textContent = formatCurrencyZAR(data.total_amount || 0);
+        if (totalCountEl) totalCountEl.textContent = formatInteger(data.total || 0);
 
         const table = document.getElementById("ledger-table");
         table.innerHTML = data.ledger_entries.map(le => `
@@ -6637,7 +6986,7 @@ async function loadLedger() {
                 <td>#${le.id}</td>
                 <td>${le.booking_id ? `<button class="link-btn" onclick="viewBookingDetail(${le.booking_id})">#${le.booking_id}</button>` : "-"}</td>
                 <td>${le.description}</td>
-                <td class="amount-cell">R${le.amount.toFixed(2)}</td>
+                <td class="amount-cell">${formatCurrencyZAR(le.amount)}</td>
                 <td>${le.pastel_synced ? `<span title="${le.pastel_transaction_id ? escapeHtml(le.pastel_transaction_id) : ""}">✓</span>` : "—"}</td>
                 <td>${formatDateTimeDMY(le.created_at)}</td>
             </tr>

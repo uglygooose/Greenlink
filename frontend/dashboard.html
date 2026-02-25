@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2">
   <link rel="shortcut icon" href="assets/favicon.png?v=2">
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2">
-  <link rel="stylesheet" href="/frontend/player.css?v=2026-02-24-20">
+  <link rel="stylesheet" href="/frontend/player.css?v=2026-02-25-24">
   <script src="club-config.js"></script>
 </head>
 <body>
@@ -42,6 +42,30 @@
             <button class="btn ghost" data-go-view="rounds">My Rounds</button>
             <button class="btn outline" data-go-view="profile">Profile</button>
           </div>
+          <div class="stats-grid">
+            <div class="stat-tile">
+              <span class="stat-label">Upcoming</span>
+              <span class="stat-value" id="home-metric-upcoming">0</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-label">Round Actions</span>
+              <span class="stat-value" id="home-metric-actions">0</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-label">Profile Ready</span>
+              <span class="stat-value" id="home-metric-profile">0%</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Next Tee Time</h2>
+            <button class="btn ghost small" type="button" data-go-view="book">Open Book</button>
+          </div>
+          <div id="next-booking-card" class="callout-card">
+            <div class="empty-state">Loading next booking...</div>
+          </div>
         </article>
 
         <article class="card section-card">
@@ -61,6 +85,11 @@
             <h2>Book Tee Time</h2>
             <button class="btn ghost small" id="refresh-tee-btn" type="button">Refresh</button>
           </div>
+          <div class="date-nav">
+            <button class="btn outline small" id="book-prev-day" type="button" data-step-date="-1">Previous</button>
+            <button class="btn ghost small" id="book-today-btn" type="button">Today</button>
+            <button class="btn outline small" id="book-next-day" type="button" data-step-date="1">Next</button>
+          </div>
           <div class="filters-grid">
             <div class="field">
               <label for="book-date">Date</label>
@@ -79,6 +108,14 @@
                 <span class="chip" id="booking-window-chip">-</span>
               </div>
             </div>
+            <div class="field">
+              <label>Show</label>
+              <div class="segment segment-3">
+                <button class="seg-btn tee-filter-btn active" type="button" data-tee-filter="open">Open</button>
+                <button class="seg-btn tee-filter-btn" type="button" data-tee-filter="all">All</button>
+                <button class="seg-btn tee-filter-btn" type="button" data-tee-filter="blocked">Blocked</button>
+              </div>
+            </div>
           </div>
           <p id="book-window-note" class="muted-note"></p>
         </article>
@@ -87,6 +124,20 @@
           <div class="section-head">
             <h3>Available Tee Times</h3>
             <span id="tee-count-label" class="muted"></span>
+          </div>
+          <div class="mini-stats">
+            <div class="mini-stat">
+              <span class="mini-label">Open</span>
+              <span class="mini-value" id="tee-stat-open">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">Full</span>
+              <span class="mini-value" id="tee-stat-full">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">Blocked</span>
+              <span class="mini-value" id="tee-stat-blocked">0</span>
+            </div>
           </div>
           <div id="tee-list" class="tee-list">
             <div class="empty-state">Loading tee times...</div>
@@ -104,6 +155,31 @@
             <span class="chip" id="round-member-chip">Member link: -</span>
             <span class="chip" id="round-index-chip">HNA/Index: -</span>
           </div>
+          <div class="filters-grid">
+            <div class="field">
+              <label>View</label>
+              <div class="segment segment-4">
+                <button class="seg-btn round-filter-btn active" type="button" data-round-filter="action">Action</button>
+                <button class="seg-btn round-filter-btn" type="button" data-round-filter="open">Open</button>
+                <button class="seg-btn round-filter-btn" type="button" data-round-filter="closed">Closed</button>
+                <button class="seg-btn round-filter-btn" type="button" data-round-filter="all">All</button>
+              </div>
+            </div>
+          </div>
+          <div class="mini-stats">
+            <div class="mini-stat">
+              <span class="mini-label">Needs Action</span>
+              <span class="mini-value" id="rounds-stat-action">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">Open</span>
+              <span class="mini-value" id="rounds-stat-open">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">Closed</span>
+              <span class="mini-value" id="rounds-stat-closed">0</span>
+            </div>
+          </div>
         </article>
 
         <article class="card section-card">
@@ -120,6 +196,16 @@
             <span id="profile-link-status" class="muted"></span>
           </div>
           <p class="muted-note">Keep profile + HNA details current so pricing, booking, and rounds stay accurate.</p>
+        </article>
+
+        <article class="card section-card">
+          <div class="section-head">
+            <h3>HNA & Booking Readiness</h3>
+            <span id="profile-readiness" class="muted"></span>
+          </div>
+          <div id="profile-checklist" class="checklist">
+            <div class="empty-state">Loading profile readiness...</div>
+          </div>
         </article>
 
         <form id="profile-form" class="card section-card">
@@ -210,9 +296,11 @@
         <button class="icon-btn" type="button" data-close-sheet="booking" aria-label="Close booking sheet">&times;</button>
       </div>
       <p id="sheet-tee-summary" class="muted-note"></p>
+      <p id="booking-capacity-note" class="muted-note"></p>
       <div id="booking-rows" class="booking-rows"></div>
       <div class="sheet-actions">
         <button class="btn ghost" type="button" id="add-guest-btn">Add Guest</button>
+        <button class="btn outline" type="button" data-close-sheet="booking">Cancel</button>
         <button class="btn primary" type="button" id="submit-booking-btn">Confirm Booking</button>
       </div>
     </div>
@@ -238,6 +326,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/frontend/player.js?v=2026-02-24-21" defer></script>
+  <script src="/frontend/player.js?v=2026-02-25-24" defer></script>
 </body>
 </html>
