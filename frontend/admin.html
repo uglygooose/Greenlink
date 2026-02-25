@@ -748,6 +748,7 @@
                                     <button type="button" class="manage-item" data-action="import-bookings">Import Mirror Bookings CSV...</button>
                                     <button type="button" class="manage-item" data-action="import-members">Import Members CSV...</button>
                                     <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
+                                    <button type="button" class="manage-item" data-action="tee-profile">Tee Schedule...</button>
                                 </div>
                             </div>
                         </div>
@@ -956,6 +957,10 @@
 	                                        <div class="acct-field">
 	                                            <label for="acct-debit-online-gl">Debit GL (ONLINE)</label>
 	                                            <input type="text" id="acct-debit-online-gl" placeholder="e.g. 8410/000" />
+	                                        </div>
+	                                        <div class="acct-field">
+	                                            <label for="acct-debit-account-gl">Debit GL (ACCOUNT)</label>
+	                                            <input type="text" id="acct-debit-account-gl" placeholder="e.g. 1100/000" />
 	                                        </div>
 	                                        <div class="acct-field">
 	                                            <label for="acct-pastel-amount-sign">Pastel amount sign (optional)</label>
@@ -1192,10 +1197,78 @@
 
                 <label for="booking-window-nonaff">Visitors (No HNA) (days)</label>
                 <input type="number" id="booking-window-nonaff" min="0" max="365" />
+
+                <label for="booking-window-group-cancel">Group / Golf Day cancel notice (days)</label>
+                <input type="number" id="booking-window-group-cancel" min="0" max="365" />
             </div>
             <div class="booking-window-actions">
                 <button class="btn-primary" type="button" onclick="saveBookingWindowSettings()">Save Booking Window</button>
                 <span class="booking-window-status" id="booking-window-status"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for tee schedule profile -->
+    <div id="tee-profile-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Tee Schedule Profile</h2>
+            <p class="muted-text">Set seasonal windows and interval. This drives auto-generation for daily tee sheets.</p>
+            <div class="booking-window-grid">
+                <label for="tee-profile-interval">Interval (minutes)</label>
+                <input type="number" id="tee-profile-interval" min="1" max="30" value="8" />
+
+                <label for="tee-profile-summer-two-start-1">Summer two-tee window 1 start</label>
+                <input type="time" id="tee-profile-summer-two-start-1" step="60" />
+
+                <label for="tee-profile-summer-two-end-1">Summer two-tee window 1 end</label>
+                <input type="time" id="tee-profile-summer-two-end-1" step="60" />
+
+                <label for="tee-profile-summer-two-start-2">Summer two-tee window 2 start</label>
+                <input type="time" id="tee-profile-summer-two-start-2" step="60" />
+
+                <label for="tee-profile-summer-two-end-2">Summer two-tee window 2 end</label>
+                <input type="time" id="tee-profile-summer-two-end-2" step="60" />
+
+                <label for="tee-profile-summer-one-start">Summer one-tee start</label>
+                <input type="time" id="tee-profile-summer-one-start" step="60" />
+
+                <label for="tee-profile-summer-one-end">Summer one-tee end</label>
+                <input type="time" id="tee-profile-summer-one-end" step="60" />
+
+                <label for="tee-profile-summer-nine-start">Summer 9-hole start</label>
+                <input type="time" id="tee-profile-summer-nine-start" step="60" />
+
+                <label for="tee-profile-summer-nine-end">Summer 9-hole end</label>
+                <input type="time" id="tee-profile-summer-nine-end" step="60" />
+
+                <label for="tee-profile-winter-two-start-1">Winter two-tee window 1 start</label>
+                <input type="time" id="tee-profile-winter-two-start-1" step="60" />
+
+                <label for="tee-profile-winter-two-end-1">Winter two-tee window 1 end</label>
+                <input type="time" id="tee-profile-winter-two-end-1" step="60" />
+
+                <label for="tee-profile-winter-two-start-2">Winter two-tee window 2 start</label>
+                <input type="time" id="tee-profile-winter-two-start-2" step="60" />
+
+                <label for="tee-profile-winter-two-end-2">Winter two-tee window 2 end</label>
+                <input type="time" id="tee-profile-winter-two-end-2" step="60" />
+
+                <label for="tee-profile-winter-one-start">Winter one-tee start</label>
+                <input type="time" id="tee-profile-winter-one-start" step="60" />
+
+                <label for="tee-profile-winter-one-end">Winter one-tee end</label>
+                <input type="time" id="tee-profile-winter-one-end" step="60" />
+
+                <label for="tee-profile-winter-nine-start">Winter 9-hole start</label>
+                <input type="time" id="tee-profile-winter-nine-start" step="60" />
+
+                <label for="tee-profile-winter-nine-end">Winter 9-hole end</label>
+                <input type="time" id="tee-profile-winter-nine-end" step="60" />
+            </div>
+            <div class="booking-window-actions">
+                <button class="btn-primary" type="button" onclick="saveTeeProfileSettings()">Save Tee Schedule</button>
+                <span class="booking-window-status" id="tee-profile-status"></span>
             </div>
         </div>
     </div>
@@ -1221,6 +1294,14 @@
                     <option value="10">Tee 10</option>
                 </select>
 
+                <label for="bulk-book-event-type">Event type</label>
+                <select id="bulk-book-event-type">
+                    <option value="group">Group</option>
+                    <option value="golf_day">Golf Day</option>
+                    <option value="pmg">PMG</option>
+                    <option value="event">Other Event</option>
+                </select>
+
                 <label for="bulk-book-holes">Holes</label>
                 <select id="bulk-book-holes">
                     <option value="18">18 holes</option>
@@ -1238,6 +1319,9 @@
 
                 <label for="bulk-book-price">Price Per Player (Optional)</label>
                 <input type="number" id="bulk-book-price" min="0" step="0.01" value="0" />
+
+                <label for="bulk-book-account-code">Debtor account code (optional)</label>
+                <input type="text" id="bulk-book-account-code" placeholder="e.g. 1100/015" />
             </div>
 
             <div class="bulk-book-actions">
@@ -1321,6 +1405,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-02-24-09"></script>
+	    <script src="admin.js?v=2026-02-25-umhlali-01"></script>
 	</body>
 	</html>

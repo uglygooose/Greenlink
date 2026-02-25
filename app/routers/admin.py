@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import String, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 from app import crud
 from app.models import (
     User,
@@ -38,6 +38,7 @@ from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db, get_password_hash
 from calendar import isleap
 from app.club_config import club_config_response
+from app.tee_profile import load_tee_sheet_profile, save_tee_sheet_profile, tee_sheet_plan_for_date
 from app.tenancy import get_active_club_id
 
 router = APIRouter(
@@ -266,6 +267,7 @@ class BookingWindowSettings(BaseModel):
     member_days: int
     affiliated_days: int
     non_affiliated_days: int
+    group_cancel_days: int = 10
 
 
 @router.get("/booking-window", response_model=BookingWindowSettings)
@@ -275,9 +277,10 @@ def get_booking_window_settings(
     club_id: int = Depends(get_active_club_id),
 ):
     return BookingWindowSettings(
-        member_days=_int_setting(db, "booking_window_member_days", 14),
-        affiliated_days=_int_setting(db, "booking_window_affiliated_days", 7),
-        non_affiliated_days=_int_setting(db, "booking_window_non_affiliated_days", 5),
+        member_days=_int_setting(db, "booking_window_member_days", 28),
+        affiliated_days=_int_setting(db, "booking_window_affiliated_days", 28),
+        non_affiliated_days=_int_setting(db, "booking_window_non_affiliated_days", 28),
+        group_cancel_days=_int_setting(db, "booking_window_group_cancel_days", 10),
     )
 
 
@@ -292,17 +295,53 @@ def update_booking_window_settings(
     member_days = max(0, min(365, int(payload.member_days)))
     affiliated_days = max(0, min(365, int(payload.affiliated_days)))
     non_affiliated_days = max(0, min(365, int(payload.non_affiliated_days)))
+    group_cancel_days = max(0, min(365, int(getattr(payload, "group_cancel_days", 10))))
 
     _upsert_setting(db, "booking_window_member_days", member_days)
     _upsert_setting(db, "booking_window_affiliated_days", affiliated_days)
     _upsert_setting(db, "booking_window_non_affiliated_days", non_affiliated_days)
+    _upsert_setting(db, "booking_window_group_cancel_days", group_cancel_days)
     db.commit()
 
     return BookingWindowSettings(
         member_days=member_days,
         affiliated_days=affiliated_days,
         non_affiliated_days=non_affiliated_days,
+        group_cancel_days=group_cancel_days,
     )
+
+
+class TeeSheetProfilePayload(BaseModel):
+    profile: dict[str, Any]
+
+
+@router.get("/tee-sheet-profile")
+def get_tee_sheet_profile(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    profile = load_tee_sheet_profile(db, club_id=club_id)
+    today = date.today()
+    return {
+        "profile": profile,
+        "today_plan_18": tee_sheet_plan_for_date(today, profile, holes=18),
+        "today_plan_9": tee_sheet_plan_for_date(today, profile, holes=9),
+    }
+
+
+@router.put("/tee-sheet-profile")
+def update_tee_sheet_profile(
+    payload: TeeSheetProfilePayload,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    if not isinstance(payload.profile, dict):
+        raise HTTPException(status_code=400, detail="profile must be an object")
+    normalized = save_tee_sheet_profile(db, club_id=club_id, profile=payload.profile)
+    db.commit()
+    return {"status": "success", "profile": normalized}
 
 
 class ClubProfileSettings(BaseModel):
@@ -391,7 +430,58 @@ class BulkTeeBookingRequest(BaseModel):
     holes: int = 18
     slots_per_time: int = 4
     group_name: str
+    event_type: str = "group"
+    account_code: str | None = None
     price: float = 0.0
+
+
+def _bulk_event_type_value(raw: str | None, default: str = "group") -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"group", "golf_day", "pmg", "event"}:
+        return value
+    return default
+
+
+def _bulk_booking_event_type(booking: Booking) -> str:
+    from_group_id = _bulk_event_type_value(getattr(booking, "external_group_id", None), default="")
+    if from_group_id in {"group", "golf_day", "pmg"}:
+        return from_group_id
+
+    provider = str(getattr(booking, "external_provider", "") or "").strip().lower()
+    if provider == "bulk_pmg":
+        return "pmg"
+    if provider == "bulk_golf_day":
+        return "golf_day"
+
+    marker = f"{getattr(booking, 'player_name', '')} {getattr(booking, 'notes', '')}".lower()
+    if "pmg" in marker:
+        return "pmg"
+    if "golf day" in marker:
+        return "golf_day"
+    return "group" if provider == "bulk" else "event"
+
+
+def _enforce_group_cancel_window(db: Session, booking: Booking, actor: User) -> None:
+    if str(getattr(booking, "external_provider", "") or "").strip().lower() != "bulk":
+        return
+    if getattr(actor, "role", None) == UserRole.super_admin:
+        return
+
+    event_type = _bulk_booking_event_type(booking)
+    if event_type not in {"group", "golf_day"}:
+        return
+
+    tee_dt = getattr(getattr(booking, "tee_time", None), "tee_time", None)
+    if tee_dt is None:
+        return
+    min_days = max(0, _int_setting(db, "booking_window_group_cancel_days", 10))
+    days_out = (tee_dt.date() - date.today()).days
+    if days_out < min_days:
+        label = "Golf day" if event_type == "golf_day" else "Group"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{label} cancellations require at least {min_days} days notice.",
+        )
 
 
 @router.post("/tee-sheet/bulk-book")
@@ -432,6 +522,8 @@ def bulk_book_tee_sheet(
         raise HTTPException(status_code=400, detail="price must be >= 0")
 
     group_id = uuid.uuid4().hex[:12]
+    event_type = _bulk_event_type_value(req.event_type, default="group")
+    account_code = str(req.account_code or "").strip() or None
 
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     if club_id <= 0:
@@ -488,6 +580,7 @@ def bulk_book_tee_sheet(
                     # Keep the tee sheet clean: show only the event/group name in the slot.
                     # Group/undo metadata lives on external_provider/external_booking_id.
                     player_name=group_name,
+                    club_card=account_code,
                     party_size=1,
                     price=price,
                     status=BookingStatus.booked,
@@ -495,7 +588,8 @@ def bulk_book_tee_sheet(
                     prepaid=False,
                     external_provider="bulk",
                     external_booking_id=group_id,
-                    notes=f"Bulk booking: {group_name} (group {group_id})",
+                    external_group_id=event_type,
+                    notes=f"Bulk booking ({event_type}): {group_name} (group {group_id})",
                 )
             )
 
@@ -512,6 +606,8 @@ def bulk_book_tee_sheet(
         "start_time": req.start_time,
         "end_time": req.end_time,
         "tees": tees,
+        "event_type": event_type,
+        "account_code": account_code,
     }
 
 
@@ -533,6 +629,9 @@ def undo_bulk_book_tee_sheet(
     )
     if not bookings:
         raise HTTPException(status_code=404, detail="Bulk booking group not found")
+
+    first_booking = bookings[0]
+    _enforce_group_cancel_window(db, first_booking, staff)
 
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
     if any(b.status in paid_statuses for b in bookings):
@@ -1738,6 +1837,10 @@ class BookingPaymentMethodUpdate(BaseModel):
     payment_method: str
 
 
+class BookingAccountCodeUpdate(BaseModel):
+    account_code: Optional[str] = None
+
+
 @router.put("/bookings/{booking_id}/status")
 async def update_booking_status(
     booking_id: int,
@@ -1757,6 +1860,9 @@ async def update_booking_status(
     allowed = {s.value for s in BookingStatus}
     if payload.status not in allowed:
         raise HTTPException(status_code=400, detail=f"Invalid status: {payload.status}")
+
+    if payload.status == BookingStatus.cancelled.value:
+        _enforce_group_cancel_window(db, booking, staff)
 
     booking.status = BookingStatus(payload.status)
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
@@ -1791,6 +1897,8 @@ async def delete_booking(
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    _enforce_group_cancel_window(db, booking, admin)
 
     if booking.tee_time:
         assert_day_open(db, booking.tee_time.tee_time.date())
@@ -1829,8 +1937,8 @@ async def update_booking_payment_method(
         raise HTTPException(status_code=400, detail="Booking has no payment record yet")
 
     method = (payload.payment_method or "").strip().upper()
-    if method not in {"CARD", "CASH", "EFT", "ONLINE"}:
-        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE")
+    if method not in {"CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"}:
+        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE/ACCOUNT")
 
     meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
     if meta:
@@ -1841,6 +1949,26 @@ async def update_booking_payment_method(
 
     db.commit()
     return {"status": "success", "booking_id": booking_id, "ledger_entry_id": ledger_entry.id, "payment_method": method}
+
+
+@router.put("/bookings/{booking_id}/account-code")
+async def update_booking_account_code(
+    booking_id: int,
+    payload: BookingAccountCodeUpdate,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.tee_time:
+        assert_day_open(db, booking.tee_time.tee_time.date())
+
+    code = str(payload.account_code or "").strip()
+    booking.club_card = code or None
+    db.commit()
+    return {"status": "success", "booking_id": booking_id, "account_code": booking.club_card}
 
 
 @router.get("/players")

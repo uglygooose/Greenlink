@@ -442,7 +442,7 @@ async def upload_pastel_layout(
 
 class PastelJournalMappingsPayload(BaseModel):
     vat_output_gl: Optional[str] = None
-    debit_gl: Optional[dict] = None  # e.g. {"CARD":"8400/000","CASH":"8100/000","EFT":"8410/000","ONLINE":"9450/000"}
+    debit_gl: Optional[dict] = None  # e.g. {"CARD":"8400/000","CASH":"8100/000","EFT":"8410/000","ONLINE":"9450/000","ACCOUNT":"1100/000"}
     tax_type: Optional[str] = None   # Optional (depends on Pastel import layout)
     amount_sign: Optional[str] = None  # "debit_positive" (default) | "debit_negative"
 
@@ -992,7 +992,7 @@ def export_daily_payments_csv(
             status_code=400,
             detail=(
                 f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
-                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE) "
+                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE/ACCOUNT) "
                 "or backfill test data locally."
             )
         )
@@ -1002,6 +1002,8 @@ def export_daily_payments_csv(
 
     # Aggregate gross totals.
     gross_by_method: dict[str, Decimal] = {}
+    gross_by_account_code: dict[str, Decimal] = {}
+    unassigned_account_booking_ids: list[int] = []
     gross_by_fee_type: dict[str, Decimal] = {}
     ledger_entry_ids: list[int] = []
     booking_ids: list[int] = []
@@ -1016,6 +1018,14 @@ def export_daily_payments_csv(
         fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
 
         gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
+        if method == "ACCOUNT":
+            account_code = str(getattr(b, "club_card", "") or "").strip()
+            if account_code:
+                gross_by_account_code[account_code] = _q2(gross_by_account_code.get(account_code, Decimal("0")) + amount)
+            else:
+                bid = int(getattr(b, "id", 0) or 0)
+                if bid:
+                    unassigned_account_booking_ids.append(bid)
         gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
 
         if getattr(le, "id", None):
@@ -1028,7 +1038,10 @@ def export_daily_payments_csv(
 
     # Validate debit GL mappings for used methods.
     used_methods = sorted(gross_by_method.keys())
-    missing_debits = [m for m in used_methods if not str(debit_gl.get(m, "") or "").strip()]
+    missing_debits = [m for m in used_methods if m != "ACCOUNT" and not str(debit_gl.get(m, "") or "").strip()]
+    account_fallback_gl = str(debit_gl.get("ACCOUNT", "") or "").strip()
+    if "ACCOUNT" in used_methods and not account_fallback_gl and unassigned_account_booking_ids:
+        missing_debits.append("ACCOUNT")
     if missing_debits:
         raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
 
@@ -1071,9 +1084,11 @@ def export_daily_payments_csv(
 
     # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
     lines: list[dict] = []
-    method_order = ["CASH", "CARD", "EFT", "ONLINE"]
+    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
     ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
     for method in ordered_methods:
+        if method == "ACCOUNT":
+            continue
         account = str(debit_gl.get(method) or "").strip()
         lines.append({
             "account": account,
@@ -1082,6 +1097,42 @@ def export_daily_payments_csv(
             "ref": _clean_text(method, max_len=20),
             "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
         })
+
+    if "ACCOUNT" in gross_by_method:
+        allocated = Decimal("0.00")
+        for account_code in sorted(gross_by_account_code.keys()):
+            amt = _q2(gross_by_account_code.get(account_code, Decimal("0.00")))
+            if amt == 0:
+                continue
+            allocated = _q2(allocated + amt)
+            lines.append({
+                "account": account_code,
+                "debit": amt,
+                "credit": Decimal("0.00"),
+                "ref": _clean_text(f"ACC {account_code}", max_len=20),
+                "desc": _clean_text(f"{batch_desc} ACCOUNT {account_code}", max_len=60),
+            })
+
+        remainder = _q2(gross_by_method.get("ACCOUNT", Decimal("0.00")) - allocated)
+        if remainder != 0:
+            fallback_account = account_fallback_gl
+            if not fallback_account:
+                sample = ", ".join(str(x) for x in unassigned_account_booking_ids[:20])
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "ACCOUNT payments require either booking account codes (Booking -> Debtor account) "
+                        "or an ACCOUNT debit GL mapping. "
+                        f"Bookings missing account code: {sample}"
+                    ),
+                )
+            lines.append({
+                "account": fallback_account,
+                "debit": remainder,
+                "credit": Decimal("0.00"),
+                "ref": "ACCOUNT",
+                "desc": _clean_text(f"{batch_desc} ACCOUNT", max_len=60),
+            })
 
     # Revenue credits
     revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
@@ -1437,7 +1488,7 @@ def export_daily_payments_preview(
             status_code=400,
             detail=(
                 f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
-                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE) "
+                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE/ACCOUNT) "
                 "or backfill test data locally."
             ),
         )
@@ -1447,6 +1498,8 @@ def export_daily_payments_preview(
 
     # Aggregate gross totals.
     gross_by_method: dict[str, Decimal] = {}
+    gross_by_account_code: dict[str, Decimal] = {}
+    unassigned_account_booking_ids: list[int] = []
     gross_by_fee_type: dict[str, Decimal] = {}
 
     for le, b, fee_cat, meta in rows:
@@ -1459,6 +1512,14 @@ def export_daily_payments_preview(
         fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
 
         gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
+        if method == "ACCOUNT":
+            account_code = str(getattr(b, "club_card", "") or "").strip()
+            if account_code:
+                gross_by_account_code[account_code] = _q2(gross_by_account_code.get(account_code, Decimal("0")) + amount)
+            else:
+                bid = int(getattr(b, "id", 0) or 0)
+                if bid:
+                    unassigned_account_booking_ids.append(bid)
         gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
 
     if not gross_by_method:
@@ -1466,7 +1527,10 @@ def export_daily_payments_preview(
 
     # Validate debit GL mappings for used methods.
     used_methods = sorted(gross_by_method.keys())
-    missing_debits = [m for m in used_methods if not str(debit_gl.get(m, "") or "").strip()]
+    missing_debits = [m for m in used_methods if m != "ACCOUNT" and not str(debit_gl.get(m, "") or "").strip()]
+    account_fallback_gl = str(debit_gl.get("ACCOUNT", "") or "").strip()
+    if "ACCOUNT" in used_methods and not account_fallback_gl and unassigned_account_booking_ids:
+        missing_debits.append("ACCOUNT")
     if missing_debits:
         raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
 
@@ -1507,9 +1571,11 @@ def export_daily_payments_preview(
 
     # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
     lines: list[dict] = []
-    method_order = ["CASH", "CARD", "EFT", "ONLINE"]
+    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
     ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
     for method in ordered_methods:
+        if method == "ACCOUNT":
+            continue
         account = str(debit_gl.get(method) or "").strip()
         lines.append({
             "account": account,
@@ -1518,6 +1584,42 @@ def export_daily_payments_preview(
             "ref": _clean_text(method, max_len=20),
             "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
         })
+
+    if "ACCOUNT" in gross_by_method:
+        allocated = Decimal("0.00")
+        for account_code in sorted(gross_by_account_code.keys()):
+            amt = _q2(gross_by_account_code.get(account_code, Decimal("0.00")))
+            if amt == 0:
+                continue
+            allocated = _q2(allocated + amt)
+            lines.append({
+                "account": account_code,
+                "debit": amt,
+                "credit": Decimal("0.00"),
+                "ref": _clean_text(f"ACC {account_code}", max_len=20),
+                "desc": _clean_text(f"{batch_desc} ACCOUNT {account_code}", max_len=60),
+            })
+
+        remainder = _q2(gross_by_method.get("ACCOUNT", Decimal("0.00")) - allocated)
+        if remainder != 0:
+            fallback_account = account_fallback_gl
+            if not fallback_account:
+                sample = ", ".join(str(x) for x in unassigned_account_booking_ids[:20])
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "ACCOUNT payments require either booking account codes (Booking -> Debtor account) "
+                        "or an ACCOUNT debit GL mapping. "
+                        f"Bookings missing account code: {sample}"
+                    ),
+                )
+            lines.append({
+                "account": fallback_account,
+                "debit": remainder,
+                "credit": Decimal("0.00"),
+                "ref": "ACCOUNT",
+                "desc": _clean_text(f"{batch_desc} ACCOUNT", max_len=60),
+            })
 
     revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
     revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}

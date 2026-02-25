@@ -105,7 +105,7 @@ class TeeSheetGenerateRequest(BaseModel):
     tees: List[str] = ["1", "10"]
     start_time: str = "06:30"
     end_time: str = "16:30"
-    interval_min: int = 10
+    interval_min: int = 8
     capacity: int = 4
     status: str = "open"
 
@@ -214,7 +214,7 @@ def generate_tee_sheet(
         if start_dt > end_dt:
             raise HTTPException(status_code=400, detail="start_time must be <= end_time")
 
-        interval = int(req.interval_min or 10)
+        interval = int(req.interval_min or 8)
         if interval < 1 or interval > 60:
             raise HTTPException(status_code=400, detail="interval_min must be between 1 and 60")
 

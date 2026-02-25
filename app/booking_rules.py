@@ -10,9 +10,9 @@ from app.club_config import get_club_config
 
 
 DEFAULT_BOOKING_WINDOW_DAYS: Dict[str, int] = {
-    "member": 14,
-    "visitor": 7,
-    "non_affiliated": 5,
+    "member": 28,
+    "visitor": 28,
+    "non_affiliated": 28,
 }
 
 SETTING_KEYS = {

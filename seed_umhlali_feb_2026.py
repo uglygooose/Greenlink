@@ -363,6 +363,7 @@ def _upsert_club_setting(db, *, club_id: int, key: str, value: str) -> None:
 
 def _seed_core_settings(db, *, club_id: int) -> None:
     from app.models import AccountingSetting, KpiTarget
+    from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
 
     _upsert_club_setting(db, club_id=club_id, key="club_name", value="Umhlali Country Club")
     _upsert_club_setting(db, club_id=club_id, key="club_slug", value="umhlali")
@@ -371,6 +372,16 @@ def _seed_core_settings(db, *, club_id: int) -> None:
     _upsert_club_setting(db, club_id=club_id, key="club_non_affiliated_label", value="Non-affiliated")
     _upsert_club_setting(db, club_id=club_id, key="target_member_round_share", value="0.55")
     _upsert_club_setting(db, club_id=club_id, key="target_member_revenue_share", value="0.35")
+    _upsert_club_setting(db, club_id=club_id, key="booking_window_member_days", value="28")
+    _upsert_club_setting(db, club_id=club_id, key="booking_window_affiliated_days", value="28")
+    _upsert_club_setting(db, club_id=club_id, key="booking_window_non_affiliated_days", value="28")
+    _upsert_club_setting(db, club_id=club_id, key="booking_window_group_cancel_days", value="10")
+    _upsert_club_setting(
+        db,
+        club_id=club_id,
+        key="tee_sheet_profile",
+        value=json.dumps(normalize_tee_sheet_profile(DEFAULT_TEE_SHEET_PROFILE)),
+    )
 
     settings = db.query(AccountingSetting).filter(AccountingSetting.club_id == int(club_id)).first()
     if not settings:

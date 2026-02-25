@@ -39,6 +39,7 @@ let dashboardPeriodView = "day";
 let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
+let teeSheetProfile = null;
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -155,6 +156,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeManageMenu();
     setupTeeBookingModal();
     setupPeopleFilters();
+    await loadTeeProfileSettings({ silent: true });
 
     if (role === "admin" || role === "super_admin") {
         setupLedgerFilters();
@@ -1621,7 +1623,7 @@ async function viewBookingDetail(bookingId) {
         const exportBatch = exportedEntry?.pastel_transaction_id || "";
         const existingPaymentMethod = String(ledgerEntries[0]?.payment_method || "").trim().toUpperCase();
         const paymentMethod = existingPaymentMethod || String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase() || "CARD";
-        const paymentMethodOptions = ["CARD", "CASH", "EFT", "ONLINE"]
+        const paymentMethodOptions = ["CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"]
             .map(m => `<option value="${m}" ${paymentMethod === m ? "selected" : ""}>${m}</option>`)
             .join("");
 
@@ -1786,6 +1788,13 @@ async function viewBookingDetail(bookingId) {
                                 ${paymentMethodOptions}
                             </select>
                             ${ledgerEntries.length ? `<button class="btn-secondary btn-small" type="button" onclick="saveBookingPaymentMethod(${bookingId})">Save</button>` : ""}
+                        </span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Debtor account</span>
+                        <span class="detail-value">
+                            <input id="booking-account-code" type="text" value="${escapeHtml(String(booking.club_card || ""))}" placeholder="e.g. 1100/015" style="min-width: 120px;" />
+                            <button class="btn-secondary btn-small" type="button" onclick="saveBookingAccountCode(${bookingId})">Save</button>
                         </span>
                     </div>
                     ${ledgerEntries.length ? `
@@ -3282,13 +3291,181 @@ async function initProShopPage() {
 }
 
 // Tee Sheet
-const TEE_DEFAULT_START = "06:30";
-const TEE_DEFAULT_END = "16:30";
-const TEE_DEFAULT_INTERVAL_MIN = 10;
-const TEE_NINE_HOLE_START = "15:00"; // 9-hole view starts later than 18-hole view
+let TEE_DEFAULT_START = "06:30";
+let TEE_DEFAULT_END = "16:30";
+let TEE_DEFAULT_INTERVAL_MIN = 8;
+let TEE_NINE_HOLE_START = "15:40";
+let TEE_NINE_HOLE_END = "17:30";
 let lastNineAutoGenKey = null;
 let lastFullAutoGenKey = null;
 let lastBulkBookGroupId = null;
+
+function defaultTeeProfile() {
+    return {
+        version: 1,
+        interval_min: 8,
+        winter_months: [5, 6, 7, 8],
+        two_tee_days: [1, 2, 3, 5],
+        two_tee_tees: ["1", "10"],
+        one_tee_tees: ["1"],
+        summer: {
+            two_tee_windows: [{ start: "06:30", end: "08:30" }, { start: "11:30", end: "13:30" }],
+            one_tee_windows: [{ start: "06:30", end: "13:30" }],
+            nine_hole_start: "15:40",
+            nine_hole_end: "17:30",
+        },
+        winter: {
+            two_tee_windows: [{ start: "06:45", end: "08:00" }, { start: "11:00", end: "13:00" }],
+            one_tee_windows: [{ start: "06:45", end: "13:00" }],
+            nine_hole_start: "15:15",
+            nine_hole_end: "16:45",
+        }
+    };
+}
+
+function normalizeClockValue(value, fallback) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hh = Number(match[1]);
+    const mm = Number(match[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        return fallback;
+    }
+    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function addMinutesClock(value, minutes, fallback) {
+    const base = normalizeClockValue(value, "");
+    if (!base) return fallback;
+    const [hh, mm] = base.split(":").map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return fallback;
+    const total = Math.min((23 * 60) + 59, Math.max(0, (hh * 60) + mm + Number(minutes || 0)));
+    const outH = Math.floor(total / 60);
+    const outM = total % 60;
+    return `${String(outH).padStart(2, "0")}:${String(outM).padStart(2, "0")}`;
+}
+
+function normalizeWindowList(value, fallback) {
+    const rows = Array.isArray(value) ? value : [];
+    const out = rows
+        .map((row) => {
+            const start = normalizeClockValue(row?.start, "");
+            const end = normalizeClockValue(row?.end, "");
+            if (!start || !end || start > end) return null;
+            return { start, end };
+        })
+        .filter(Boolean);
+    return out.length ? out : fallback.map((w) => ({ start: w.start, end: w.end }));
+}
+
+function normalizeTeeProfile(rawProfile) {
+    const fallback = defaultTeeProfile();
+    const raw = (rawProfile && typeof rawProfile === "object") ? rawProfile : {};
+
+    const intervalRaw = parseInt(String(raw.interval_min ?? fallback.interval_min), 10);
+    const interval = Number.isFinite(intervalRaw) ? Math.min(30, Math.max(1, intervalRaw)) : fallback.interval_min;
+
+    const normalizeNums = (rows, min, max, fallbackValues) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const uniq = [];
+        for (const item of list) {
+            const n = parseInt(String(item), 10);
+            if (!Number.isFinite(n) || n < min || n > max) continue;
+            if (!uniq.includes(n)) uniq.push(n);
+        }
+        return uniq.length ? uniq : [...fallbackValues];
+    };
+
+    const normalizeTees = (rows, fallbackValues) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const uniq = [];
+        for (const item of list) {
+            const tee = String(item || "").trim();
+            if (!tee) continue;
+            if (!uniq.includes(tee)) uniq.push(tee);
+        }
+        return uniq.length ? uniq : [...fallbackValues];
+    };
+
+    const normalizeSeason = (seasonRaw, seasonFallback) => {
+        const season = (seasonRaw && typeof seasonRaw === "object") ? seasonRaw : {};
+        return {
+            two_tee_windows: normalizeWindowList(season.two_tee_windows, seasonFallback.two_tee_windows),
+            one_tee_windows: normalizeWindowList(season.one_tee_windows, seasonFallback.one_tee_windows),
+            nine_hole_start: normalizeClockValue(season.nine_hole_start, seasonFallback.nine_hole_start),
+            nine_hole_end: normalizeClockValue(season.nine_hole_end, seasonFallback.nine_hole_end),
+        };
+    };
+
+    return {
+        version: 1,
+        interval_min: interval,
+        winter_months: normalizeNums(raw.winter_months, 1, 12, fallback.winter_months),
+        two_tee_days: normalizeNums(raw.two_tee_days, 0, 6, fallback.two_tee_days),
+        two_tee_tees: normalizeTees(raw.two_tee_tees, fallback.two_tee_tees),
+        one_tee_tees: normalizeTees(raw.one_tee_tees, fallback.one_tee_tees),
+        summer: normalizeSeason(raw.summer, fallback.summer),
+        winter: normalizeSeason(raw.winter, fallback.winter),
+    };
+}
+
+function pyWeekdayFromDateStr(dateStr) {
+    const [year, month, day] = String(dateStr || "").split("-").map(Number);
+    if (!year || !month || !day) {
+        const jsDay = new Date().getDay();
+        return (jsDay + 6) % 7;
+    }
+    const jsDay = new Date(year, month - 1, day).getDay();
+    return (jsDay + 6) % 7;
+}
+
+function monthFromDateStr(dateStr) {
+    const [year, month, day] = String(dateStr || "").split("-").map(Number);
+    if (!year || !month || !day) return (new Date().getMonth() + 1);
+    return month;
+}
+
+function teePlanForDate(dateStr, holes = 18) {
+    const profile = normalizeTeeProfile(teeSheetProfile);
+    const month = monthFromDateStr(dateStr);
+    const seasonKey = profile.winter_months.includes(month) ? "winter" : "summer";
+    const season = profile[seasonKey] || profile.summer;
+    const weekdayPy = pyWeekdayFromDateStr(dateStr);
+    const twoTee = profile.two_tee_days.includes(weekdayPy);
+    const tees = twoTee ? profile.two_tee_tees : profile.one_tee_tees;
+    const oneTeeWindows = normalizeWindowList(season.one_tee_windows, [{ start: "06:30", end: "13:30" }]);
+    const oneTeeLastEnd = oneTeeWindows[oneTeeWindows.length - 1]?.end || "13:30";
+    const nineStart = twoTee
+        ? normalizeClockValue(season.nine_hole_start, "15:30")
+        : addMinutesClock(oneTeeLastEnd, 15, normalizeClockValue(season.nine_hole_start, "13:45"));
+    const nineEnd = normalizeClockValue(season.nine_hole_end, "17:00");
+    const windows = holes === 9
+        ? [{ start: nineStart, end: nineEnd }]
+        : (twoTee ? season.two_tee_windows : season.one_tee_windows);
+
+    const safeWindows = normalizeWindowList(windows, [{ start: "06:30", end: "13:30" }]);
+
+    return {
+        season: seasonKey,
+        mode: twoTee ? "two_tee" : "one_tee",
+        interval_min: profile.interval_min,
+        tees: Array.isArray(tees) && tees.length ? tees : ["1"],
+        windows: safeWindows,
+        nine_hole_start: season.nine_hole_start,
+        nine_hole_end: season.nine_hole_end,
+    };
+}
+
+function applyTeePlanGlobals(dateStr) {
+    const plan18 = teePlanForDate(dateStr, 18);
+    const plan9 = teePlanForDate(dateStr, 9);
+    TEE_DEFAULT_START = plan18.windows[0]?.start || TEE_DEFAULT_START;
+    TEE_DEFAULT_END = plan18.windows[plan18.windows.length - 1]?.end || TEE_DEFAULT_END;
+    TEE_DEFAULT_INTERVAL_MIN = Number(plan18.interval_min || TEE_DEFAULT_INTERVAL_MIN);
+    TEE_NINE_HOLE_START = plan9.windows[0]?.start || TEE_NINE_HOLE_START;
+    TEE_NINE_HOLE_END = plan9.windows[0]?.end || TEE_NINE_HOLE_END;
+}
 
 function floorToInterval(dateObj, intervalMin) {
     const d = new Date(dateObj);
@@ -3430,6 +3607,12 @@ function setupTeeManageMenu() {
             return;
         }
 
+        if (action === "tee-profile") {
+            document.getElementById("tee-profile-modal")?.classList.add("show");
+            loadTeeProfileSettings();
+            return;
+        }
+
         if (action === "bulk-book") {
             openBulkBookModal();
             return;
@@ -3448,7 +3631,7 @@ function setupTeeManageMenu() {
         if (action === "generate") {
             const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
             try {
-                const created = await generateDaySheet(dateStr, new Set(), ["1", "10"]);
+                const created = await generateDaySheet(dateStr, new Set());
                 alert(`Generated ${created} tee times`);
                 loadTeeTimes();
             } catch (err) {
@@ -3476,9 +3659,17 @@ function openBulkBookModal() {
 
     const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
     const holes = String(selectedHolesView) === "9" ? "9" : "18";
+    applyTeePlanGlobals(dateStr);
+    const plan = teePlanForDate(dateStr, holes === "9" ? 9 : 18);
+    const startDefault = plan.windows[0]?.start || (holes === "9" ? TEE_NINE_HOLE_START : TEE_DEFAULT_START);
+    const endDefault = plan.windows[plan.windows.length - 1]?.end || (holes === "9" ? TEE_NINE_HOLE_END : TEE_DEFAULT_END);
+    const teeDefault = plan.mode === "one_tee" ? "1" : "all";
 
     const dateInput = document.getElementById("bulk-book-date");
     const holesSelect = document.getElementById("bulk-book-holes");
+    const eventTypeSelect = document.getElementById("bulk-book-event-type");
+    const teeSelect = document.getElementById("bulk-book-tee");
+    const accountInput = document.getElementById("bulk-book-account-code");
     const startInput = document.getElementById("bulk-book-start");
     const endInput = document.getElementById("bulk-book-end");
     const slotsInput = document.getElementById("bulk-book-slots");
@@ -3488,8 +3679,11 @@ function openBulkBookModal() {
 
     if (dateInput) dateInput.value = dateStr;
     if (holesSelect) holesSelect.value = holes;
-    if (startInput) startInput.value = holes === "9" ? TEE_NINE_HOLE_START : TEE_DEFAULT_START;
-    if (endInput) endInput.value = TEE_DEFAULT_END;
+    if (eventTypeSelect) eventTypeSelect.value = "group";
+    if (teeSelect && teeDefault) teeSelect.value = teeDefault;
+    if (accountInput) accountInput.value = "";
+    if (startInput) startInput.value = startDefault;
+    if (endInput) endInput.value = endDefault;
     if (slotsInput) slotsInput.value = String(Math.min(4, Math.max(1, parseInt(String(slotsInput.value || "4"), 10) || 4)));
     if (priceInput && !priceInput.value) priceInput.value = "0";
 
@@ -3690,6 +3884,8 @@ async function submitBulkBook() {
     const name = document.getElementById("bulk-book-name")?.value?.trim() || "";
     const dateStr = document.getElementById("bulk-book-date")?.value || "";
     const teeVal = document.getElementById("bulk-book-tee")?.value || "all";
+    const eventType = document.getElementById("bulk-book-event-type")?.value || "group";
+    const accountCode = document.getElementById("bulk-book-account-code")?.value?.trim() || "";
     const holes = parseInt(document.getElementById("bulk-book-holes")?.value || "18", 10);
     const startTime = document.getElementById("bulk-book-start")?.value || "";
     const endTime = document.getElementById("bulk-book-end")?.value || "";
@@ -3733,6 +3929,8 @@ async function submitBulkBook() {
                 holes: holes === 9 ? 9 : 18,
                 slots_per_time: Number.isFinite(slotsPerTime) ? slotsPerTime : 4,
                 group_name: name,
+                event_type: String(eventType || "group"),
+                account_code: accountCode || null,
                 price: Number.isFinite(price) ? price : 0
             })
         });
@@ -3833,9 +4031,12 @@ function applyTeeSheetSearchFilter() {
 
 function filterTeeTimesByHoles(dayTeeTimes, dateStr) {
     if (String(selectedHolesView) !== "9") return dayTeeTimes;
-    const [cutoffHour, cutoffMinute] = TEE_NINE_HOLE_START.split(":").map(Number);
+    const plan9 = teePlanForDate(dateStr, 9);
+    const cutoffStart = plan9?.windows?.[0]?.start || TEE_NINE_HOLE_START;
+    const cutoffEnd = plan9?.windows?.[0]?.end || TEE_NINE_HOLE_END;
+    const [cutoffHour, cutoffMinute] = cutoffStart.split(":").map(Number);
     const cutoffTotal = (cutoffHour || 0) * 60 + (cutoffMinute || 0);
-    const [endHour, endMinute] = TEE_DEFAULT_END.split(":").map(Number);
+    const [endHour, endMinute] = cutoffEnd.split(":").map(Number);
     const endTotal = (endHour || 0) * 60 + (endMinute || 0);
 
     const toMinutes = (teeTimeIso) => {
@@ -3902,14 +4103,36 @@ function teeKey(dateStr, tee, dateObj) {
 }
 
 async function generateDaySheet(dateStr, existingKeys, tees = ["1", "10"]) {
-    return generateTeeSheetRange(dateStr, tees, TEE_DEFAULT_START, TEE_DEFAULT_END);
+    return generateTeeSheetFromPlan(dateStr, 18, tees);
 }
 
 async function generateDaySheetWindow(dateStr, existingKeys, tees, startTime, endTime) {
-    return generateTeeSheetRange(dateStr, tees, startTime, endTime);
+    return generateTeeSheetFromPlan(dateStr, 9, tees, startTime, endTime);
 }
 
-async function generateTeeSheetRange(dateStr, tees, startTime, endTime) {
+async function generateTeeSheetFromPlan(dateStr, holesMode = 18, tees = null, overrideStart = null, overrideEnd = null) {
+    const normalizedHoles = Number(holesMode) === 9 ? 9 : 18;
+    const plan = teePlanForDate(dateStr, normalizedHoles);
+    const defaultTees = Array.isArray(plan.tees) && plan.tees.length ? plan.tees : ["1", "10"];
+    const requestedTees = Array.isArray(tees) && tees.length ? tees.map((v) => String(v)) : defaultTees;
+    const allowedRequested = requestedTees.filter((tee) => defaultTees.includes(tee));
+    const targetTees = allowedRequested.length ? allowedRequested : defaultTees;
+    const windows = (overrideStart && overrideEnd)
+        ? [{ start: String(overrideStart), end: String(overrideEnd) }]
+        : (Array.isArray(plan.windows) ? plan.windows : []);
+
+    let createdTotal = 0;
+    for (const window of windows) {
+        const startTime = normalizeClockValue(window?.start, "");
+        const endTime = normalizeClockValue(window?.end, "");
+        if (!startTime || !endTime || startTime > endTime) continue;
+        const created = await generateTeeSheetRange(dateStr, targetTees, startTime, endTime, Number(plan.interval_min || TEE_DEFAULT_INTERVAL_MIN));
+        createdTotal += Number(created || 0);
+    }
+    return createdTotal;
+}
+
+async function generateTeeSheetRange(dateStr, tees, startTime, endTime, intervalMin = TEE_DEFAULT_INTERVAL_MIN) {
     const token = localStorage.getItem("token");
     const response = await fetch("/tsheet/generate", {
         method: "POST",
@@ -3922,7 +4145,7 @@ async function generateTeeSheetRange(dateStr, tees, startTime, endTime) {
             tees: Array.isArray(tees) ? tees : ["1", "10"],
             start_time: startTime,
             end_time: endTime,
-            interval_min: TEE_DEFAULT_INTERVAL_MIN,
+            interval_min: Number(intervalMin || TEE_DEFAULT_INTERVAL_MIN) || 8,
             capacity: 4,
             status: "open"
         })
@@ -4410,6 +4633,9 @@ async function loadTeeTimes(options = {}) {
     if (!dateInput || !tbody) return;
 
     const dateStr = dateInput.value || new Date().toISOString().split("T")[0];
+    applyTeePlanGlobals(dateStr);
+    const dayPlan18 = teePlanForDate(dateStr, 18);
+    const dayPlan9 = teePlanForDate(dateStr, 9);
     const preserveScroll = Boolean(options.preserveScroll);
     const wrap = document.querySelector(".tee-sheet-table-wrap");
     const anchor = preserveScroll ? captureWrapAnchor(wrap) : null;
@@ -4457,7 +4683,8 @@ async function loadTeeTimes(options = {}) {
             existingKeys.add(teeKey(dateStr, tee, new Date(tt.tee_time)));
         });
 
-        const teeListForView = String(selectedTee) === "all" ? ["1", "10"] : [String(selectedTee || "1")];
+        const scheduleTees = (Array.isArray(dayPlan18?.tees) && dayPlan18.tees.length) ? dayPlan18.tees.map(String) : ["1", "10"];
+        const teeListForView = String(selectedTee) === "all" ? scheduleTees : [String(selectedTee || "1")];
         const dayTeeRaw = dayAll.filter(tt => teeListForView.includes(String(tt.hole || "1")));
 
         // Group duplicates by tee_time (minute precision) + tee
@@ -4489,24 +4716,23 @@ async function loadTeeTimes(options = {}) {
         const filteredTeeTimes = filterTeeTimesByHoles(dayTeeTimes, dateStr);
         const isNineView = String(selectedHolesView) === "9";
 
-        // If the day has only a partial tee sheet (e.g., the 9-hole window was generated first),
-        // top it up to a full day when in 18-hole view.
         if (!isNineView) {
-            const hasStart = dayAll.some(tt => {
-                const t = String(tt.tee_time || "");
-                const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
-                return hhmm === TEE_DEFAULT_START && (String(tt.hole || "1") === "1" || String(tt.hole || "1") === "10");
-            });
-            const hasEnd = dayAll.some(tt => {
-                const t = String(tt.tee_time || "");
-                const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
-                return hhmm === TEE_DEFAULT_END && (String(tt.hole || "1") === "1" || String(tt.hole || "1") === "10");
-            });
+            const hasEdgeSlot = (timeValue, teeValue) =>
+                dayAll.some(tt => {
+                    const t = String(tt.tee_time || "");
+                    const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
+                    return hhmm === timeValue && String(tt.hole || "1") === String(teeValue);
+                });
+            const missingEdge = (dayPlan18.windows || []).some((window) =>
+                (dayPlan18.tees || []).some((tee) =>
+                    !hasEdgeSlot(window.start, tee) || !hasEdgeSlot(window.end, tee)
+                )
+            );
 
             const fullKey = `${dateStr}|full`;
-            if ((!hasStart || !hasEnd) && lastFullAutoGenKey !== fullKey) {
+            if (missingEdge && lastFullAutoGenKey !== fullKey) {
                 lastFullAutoGenKey = fullKey;
-                const created = await generateTeeSheetRange(dateStr, ["1", "10"], TEE_DEFAULT_START, TEE_DEFAULT_END);
+                const created = await generateDaySheet(dateStr, existingKeys, dayPlan18.tees || ["1", "10"]);
                 if (created && created > 0) {
                     return loadTeeTimes(options);
                 }
@@ -4515,49 +4741,58 @@ async function loadTeeTimes(options = {}) {
 
         if (dayAll.length === 0) {
             if (isNineView) {
-                const created = await generateDaySheetWindow(dateStr, existingKeys, ["1", "10"], TEE_NINE_HOLE_START, TEE_DEFAULT_END);
+                const created = await generateDaySheetWindow(dateStr, existingKeys, dayPlan9.tees || teeListForView);
                 if (created && created > 0) {
                     lastNineAutoGenKey = `${dateStr}|all|9`;
                     return loadTeeTimes(options);
                 }
-                renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
+                renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
                 return;
             }
-            await generateDaySheet(dateStr, existingKeys, ["1", "10"]);
-            return loadTeeTimes(options);
+            const created = await generateDaySheet(dateStr, existingKeys, dayPlan18.tees || ["1", "10"]);
+            if (created && created > 0) {
+                return loadTeeTimes(options);
+            }
+            renderTeeSheetRows([], dateStr, "No tee times scheduled for this date.");
+            return;
         }
 
         if (dayTeeTimes.length === 0) {
             if (isNineView) {
                 const nineKey = `${dateStr}|${String(selectedTee)}|9`;
                 if (lastNineAutoGenKey !== nineKey) {
-                    const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
+                    const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView);
                     if (created && created > 0) {
                         lastNineAutoGenKey = nineKey;
                         return loadTeeTimes(options);
                     }
                 }
-                renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
+                renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
                 return;
             }
-            await generateDaySheet(dateStr, existingKeys, teeListForView);
-            return loadTeeTimes(options);
+            const created = await generateDaySheet(dateStr, existingKeys, teeListForView);
+            if (created && created > 0) {
+                return loadTeeTimes(options);
+            }
+            renderTeeSheetRows([], dateStr, "No tee times for this tee on the selected date.");
+            applyTeeSheetSearchFilter();
+            return;
         }
 
         if (filteredTeeTimes.length === 0 && isNineView) {
             const nineKey = `${dateStr}|${String(selectedTee)}|9`;
             if (lastNineAutoGenKey !== nineKey) {
-                const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView, TEE_NINE_HOLE_START, TEE_DEFAULT_END);
+                const created = await generateDaySheetWindow(dateStr, existingKeys, teeListForView);
                 if (created && created > 0) {
                     lastNineAutoGenKey = nineKey;
                     return loadTeeTimes(options);
                 }
             }
-            renderTeeSheetRows([], dateStr, "No 9-hole tee times scheduled (3:00-4:30 PM).");
+            renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
         } else {
             renderTeeSheetRows(filteredTeeTimes, dateStr);
         }
@@ -4591,9 +4826,11 @@ function openBookingDetails(teeTimeId, bookingId) {
 
 function getSelectedPaymentMethod() {
     const el = document.getElementById("booking-payment-method");
+    const allowed = new Set(["CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"]);
     const raw = String(el?.value || "").trim().toUpperCase();
-    if (raw) return raw;
-    return String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase() || "CARD";
+    if (allowed.has(raw)) return raw;
+    const saved = String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase();
+    return allowed.has(saved) ? saved : "CARD";
 }
 
 async function adminCheckIn(bookingId) {
@@ -4675,6 +4912,30 @@ async function saveBookingPaymentMethod(bookingId) {
         viewBookingDetail(bookingId);
     } catch (e) {
         alert("Failed to save payment method");
+    }
+}
+
+async function saveBookingAccountCode(bookingId) {
+    const token = localStorage.getItem("token");
+    const accountCode = String(document.getElementById("booking-account-code")?.value || "").trim();
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}/account-code`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ account_code: accountCode || null })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            alert(err?.detail || "Failed to save account code");
+            return;
+        }
+        toastSuccess("Debtor account saved");
+        viewBookingDetail(bookingId);
+    } catch (e) {
+        alert("Failed to save account code");
     }
 }
 
@@ -6111,6 +6372,7 @@ function initAccountingSetupListeners() {
         "acct-debit-cash-gl",
         "acct-debit-eft-gl",
         "acct-debit-online-gl",
+        "acct-debit-account-gl",
         "acct-pastel-tax-type",
         "acct-pastel-amount-sign"
     ]);
@@ -6135,7 +6397,7 @@ function updateAccountingSetupStatus() {
 
     const layoutOk = !!(cachedPastelLayout && cachedPastelLayout.configured && cachedPastelLayout.layout);
     const vatOutput = (document.getElementById("acct-vat-output-gl")?.value || "").trim();
-    const debitAny = ["acct-debit-card-gl", "acct-debit-cash-gl", "acct-debit-eft-gl", "acct-debit-online-gl"]
+    const debitAny = ["acct-debit-card-gl", "acct-debit-cash-gl", "acct-debit-eft-gl", "acct-debit-online-gl", "acct-debit-account-gl"]
         .some((id) => (document.getElementById(id)?.value || "").trim());
     const mappingsOk = !!vatOutput && debitAny;
     const readyOk = layoutOk && !!vatOutput;
@@ -6227,7 +6489,7 @@ function applyPastelMappingSuggestionsFromLayout(layout) {
     let suggestedVat = "";
     const suggestedDebit = {};
 
-    const wantMethods = ["CARD", "CASH", "EFT", "ONLINE"];
+    const wantMethods = ["CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"];
 
     for (const row of sampleRows) {
         if (!Array.isArray(row)) continue;
@@ -6249,8 +6511,8 @@ function applyPastelMappingSuggestionsFromLayout(layout) {
             }
         }
 
-        if (suggestedVat && wantMethods.every((m) => !!suggestedDebit[m] || m === "ONLINE")) {
-            // Stop early once we have the key suggestions; ONLINE may not exist in the template.
+        if (suggestedVat && wantMethods.every((m) => !!suggestedDebit[m] || m === "ONLINE" || m === "ACCOUNT")) {
+            // Stop early once we have the key suggestions; ONLINE/ACCOUNT may not exist in the template.
             break;
         }
     }
@@ -6260,6 +6522,7 @@ function applyPastelMappingSuggestionsFromLayout(layout) {
     const cashEl = document.getElementById("acct-debit-cash-gl");
     const eftEl = document.getElementById("acct-debit-eft-gl");
     const onlineEl = document.getElementById("acct-debit-online-gl");
+    const accountEl = document.getElementById("acct-debit-account-gl");
 
     let filledAny = false;
 
@@ -6281,6 +6544,10 @@ function applyPastelMappingSuggestionsFromLayout(layout) {
     }
     if (onlineEl && !onlineEl.value.trim() && suggestedDebit.ONLINE) {
         onlineEl.value = suggestedDebit.ONLINE;
+        filledAny = true;
+    }
+    if (accountEl && !accountEl.value.trim() && suggestedDebit.ACCOUNT) {
+        accountEl.value = suggestedDebit.ACCOUNT;
         filledAny = true;
     }
 
@@ -6718,6 +6985,7 @@ async function loadPastelMappings() {
         const cash = document.getElementById("acct-debit-cash-gl");
         const eft = document.getElementById("acct-debit-eft-gl");
         const online = document.getElementById("acct-debit-online-gl");
+        const account = document.getElementById("acct-debit-account-gl");
         const taxType = document.getElementById("acct-pastel-tax-type");
         const amountSign = document.getElementById("acct-pastel-amount-sign");
 
@@ -6731,6 +6999,7 @@ async function loadPastelMappings() {
         if (cash) cash.value = debit.CASH || "";
         if (eft) eft.value = debit.EFT || "";
         if (online) online.value = debit.ONLINE || "";
+        if (account) account.value = debit.ACCOUNT || "";
         updateAccountingSetupStatus();
     } catch (e) {
         console.error("Failed to load Pastel mappings:", e);
@@ -6746,6 +7015,7 @@ async function savePastelMappings() {
     const cash = document.getElementById("acct-debit-cash-gl")?.value || "";
     const eft = document.getElementById("acct-debit-eft-gl")?.value || "";
     const online = document.getElementById("acct-debit-online-gl")?.value || "";
+    const account = document.getElementById("acct-debit-account-gl")?.value || "";
     const taxType = document.getElementById("acct-pastel-tax-type")?.value || "";
     const amountSign = document.getElementById("acct-pastel-amount-sign")?.value || "";
 
@@ -6760,7 +7030,8 @@ async function savePastelMappings() {
         CARD: card,
         CASH: cash,
         EFT: eft,
-        ONLINE: online
+        ONLINE: online,
+        ACCOUNT: account
     };
 
     if (statusEl) statusEl.textContent = "Saving...";
@@ -6849,9 +7120,11 @@ async function loadBookingWindowSettings() {
         const memberInput = document.getElementById("booking-window-member");
         const affInput = document.getElementById("booking-window-affiliated");
         const nonAffInput = document.getElementById("booking-window-nonaff");
-        if (memberInput) memberInput.value = data.member_days ?? 14;
-        if (affInput) affInput.value = data.affiliated_days ?? 7;
-        if (nonAffInput) nonAffInput.value = data.non_affiliated_days ?? 5;
+        const groupCancelInput = document.getElementById("booking-window-group-cancel");
+        if (memberInput) memberInput.value = data.member_days ?? 28;
+        if (affInput) affInput.value = data.affiliated_days ?? 28;
+        if (nonAffInput) nonAffInput.value = data.non_affiliated_days ?? 28;
+        if (groupCancelInput) groupCancelInput.value = data.group_cancel_days ?? 10;
     } catch (error) {
         console.error("Failed to load booking window settings:", error);
     }
@@ -6859,9 +7132,10 @@ async function loadBookingWindowSettings() {
 
 async function saveBookingWindowSettings() {
     const token = localStorage.getItem("token");
-    const memberDays = parseInt(document.getElementById("booking-window-member")?.value || "14", 10);
-    const affiliatedDays = parseInt(document.getElementById("booking-window-affiliated")?.value || "7", 10);
-    const nonAffDays = parseInt(document.getElementById("booking-window-nonaff")?.value || "5", 10);
+    const memberDays = parseInt(document.getElementById("booking-window-member")?.value || "28", 10);
+    const affiliatedDays = parseInt(document.getElementById("booking-window-affiliated")?.value || "28", 10);
+    const nonAffDays = parseInt(document.getElementById("booking-window-nonaff")?.value || "28", 10);
+    const groupCancelDays = parseInt(document.getElementById("booking-window-group-cancel")?.value || "10", 10);
     const statusEl = document.getElementById("booking-window-status");
 
     try {
@@ -6872,9 +7146,10 @@ async function saveBookingWindowSettings() {
                 Authorization: `Bearer ${token}`
             },
             body: JSON.stringify({
-                member_days: Number.isFinite(memberDays) ? memberDays : 14,
-                affiliated_days: Number.isFinite(affiliatedDays) ? affiliatedDays : 7,
-                non_affiliated_days: Number.isFinite(nonAffDays) ? nonAffDays : 5
+                member_days: Number.isFinite(memberDays) ? memberDays : 28,
+                affiliated_days: Number.isFinite(affiliatedDays) ? affiliatedDays : 28,
+                non_affiliated_days: Number.isFinite(nonAffDays) ? nonAffDays : 28,
+                group_cancel_days: Number.isFinite(groupCancelDays) ? groupCancelDays : 10
             })
         });
 
@@ -6890,6 +7165,157 @@ async function saveBookingWindowSettings() {
         }
     } catch (error) {
         console.error("Failed to save booking window settings:", error);
+        if (statusEl) statusEl.textContent = "Save failed";
+    }
+}
+
+function writeTeeProfileToForm(profile) {
+    const p = normalizeTeeProfile(profile);
+    teeSheetProfile = p;
+
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value || "";
+    };
+
+    setValue("tee-profile-interval", String(p.interval_min || 8));
+
+    setValue("tee-profile-summer-two-start-1", p.summer?.two_tee_windows?.[0]?.start || "06:30");
+    setValue("tee-profile-summer-two-end-1", p.summer?.two_tee_windows?.[0]?.end || "08:30");
+    setValue("tee-profile-summer-two-start-2", p.summer?.two_tee_windows?.[1]?.start || "11:30");
+    setValue("tee-profile-summer-two-end-2", p.summer?.two_tee_windows?.[1]?.end || "13:30");
+    setValue("tee-profile-summer-one-start", p.summer?.one_tee_windows?.[0]?.start || "06:30");
+    setValue("tee-profile-summer-one-end", p.summer?.one_tee_windows?.[0]?.end || "13:30");
+    setValue("tee-profile-summer-nine-start", p.summer?.nine_hole_start || "15:40");
+    setValue("tee-profile-summer-nine-end", p.summer?.nine_hole_end || "17:30");
+
+    setValue("tee-profile-winter-two-start-1", p.winter?.two_tee_windows?.[0]?.start || "06:45");
+    setValue("tee-profile-winter-two-end-1", p.winter?.two_tee_windows?.[0]?.end || "08:00");
+    setValue("tee-profile-winter-two-start-2", p.winter?.two_tee_windows?.[1]?.start || "11:00");
+    setValue("tee-profile-winter-two-end-2", p.winter?.two_tee_windows?.[1]?.end || "13:00");
+    setValue("tee-profile-winter-one-start", p.winter?.one_tee_windows?.[0]?.start || "06:45");
+    setValue("tee-profile-winter-one-end", p.winter?.one_tee_windows?.[0]?.end || "13:00");
+    setValue("tee-profile-winter-nine-start", p.winter?.nine_hole_start || "15:15");
+    setValue("tee-profile-winter-nine-end", p.winter?.nine_hole_end || "16:45");
+}
+
+function readTeeProfileFromForm() {
+    const readTime = (id, fallback) => normalizeClockValue(document.getElementById(id)?.value, fallback);
+    const readNum = (id, fallback) => {
+        const n = parseInt(String(document.getElementById(id)?.value || fallback), 10);
+        return Number.isFinite(n) ? n : fallback;
+    };
+
+    const draft = {
+        interval_min: readNum("tee-profile-interval", 8),
+        winter_months: [5, 6, 7, 8],
+        two_tee_days: [1, 2, 3, 5],
+        two_tee_tees: ["1", "10"],
+        one_tee_tees: ["1"],
+        summer: {
+            two_tee_windows: [
+                {
+                    start: readTime("tee-profile-summer-two-start-1", "06:30"),
+                    end: readTime("tee-profile-summer-two-end-1", "08:30"),
+                },
+                {
+                    start: readTime("tee-profile-summer-two-start-2", "11:30"),
+                    end: readTime("tee-profile-summer-two-end-2", "13:30"),
+                },
+            ],
+            one_tee_windows: [
+                {
+                    start: readTime("tee-profile-summer-one-start", "06:30"),
+                    end: readTime("tee-profile-summer-one-end", "13:30"),
+                }
+            ],
+            nine_hole_start: readTime("tee-profile-summer-nine-start", "15:40"),
+            nine_hole_end: readTime("tee-profile-summer-nine-end", "17:30"),
+        },
+        winter: {
+            two_tee_windows: [
+                {
+                    start: readTime("tee-profile-winter-two-start-1", "06:45"),
+                    end: readTime("tee-profile-winter-two-end-1", "08:00"),
+                },
+                {
+                    start: readTime("tee-profile-winter-two-start-2", "11:00"),
+                    end: readTime("tee-profile-winter-two-end-2", "13:00"),
+                },
+            ],
+            one_tee_windows: [
+                {
+                    start: readTime("tee-profile-winter-one-start", "06:45"),
+                    end: readTime("tee-profile-winter-one-end", "13:00"),
+                }
+            ],
+            nine_hole_start: readTime("tee-profile-winter-nine-start", "15:15"),
+            nine_hole_end: readTime("tee-profile-winter-nine-end", "16:45"),
+        }
+    };
+    return normalizeTeeProfile(draft);
+}
+
+async function loadTeeProfileSettings(options = {}) {
+    const silent = Boolean(options?.silent);
+    const token = localStorage.getItem("token");
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/tee-sheet-profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) {
+            teeSheetProfile = normalizeTeeProfile(defaultTeeProfile());
+            applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+            if (!silent) {
+                const statusEl = document.getElementById("tee-profile-status");
+                if (statusEl) statusEl.textContent = "Using default profile";
+            }
+            return;
+        }
+        const data = await res.json();
+        writeTeeProfileToForm(data?.profile || defaultTeeProfile());
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+    } catch (error) {
+        teeSheetProfile = normalizeTeeProfile(defaultTeeProfile());
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+        if (!silent) {
+            console.error("Failed to load tee profile settings:", error);
+            const statusEl = document.getElementById("tee-profile-status");
+            if (statusEl) statusEl.textContent = "Load failed, using defaults";
+        }
+    }
+}
+
+async function saveTeeProfileSettings() {
+    const token = localStorage.getItem("token");
+    const statusEl = document.getElementById("tee-profile-status");
+    const profile = readTeeProfileFromForm();
+
+    try {
+        if (statusEl) statusEl.textContent = "Saving...";
+        const res = await fetch(`${API_BASE}/api/admin/tee-sheet-profile`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ profile })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            if (statusEl) statusEl.textContent = err?.detail || "Save failed";
+            return;
+        }
+        const data = await res.json();
+        writeTeeProfileToForm(data?.profile || profile);
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+        if (statusEl) {
+            statusEl.textContent = "Saved";
+            setTimeout(() => { statusEl.textContent = ""; }, 2000);
+        }
+        toastSuccess("Tee schedule updated");
+    } catch (error) {
+        console.error("Failed to save tee profile settings:", error);
         if (statusEl) statusEl.textContent = "Save failed";
     }
 }

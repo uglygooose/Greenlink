@@ -53,6 +53,15 @@ def populate_fees():
         {"code": 24, "description": "WINTER SPECIAL SUNDAY PM (MAY-AUG)", "price": 600, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekend", "weekday": 6, "priority": 40},
         {"code": 26, "description": "PMG - GREEN FEES", "price": 270, "fee_type": FeeType.GOLF},
         {"code": 35, "description": "VISITING PROFESSIONALS (18 HOLES)", "price": 341, "fee_type": FeeType.GOLF, "holes": 18},
+        {"code": 42, "description": "GROUPS / CHARITIES MON-THU (20-60)", "price": 390, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekday"},
+        {"code": 43, "description": "GROUPS / CHARITIES MON-THU (61-120)", "price": 365, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekday"},
+        {"code": 40, "description": "GROUPS / CHARITIES FRI-SUN (20-60)", "price": 420, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekend"},
+        {"code": 41, "description": "GROUPS / CHARITIES FRI-SUN (61-120)", "price": 405, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekend"},
+        {"code": 45, "description": "GROUPS MON/FRI (20-60)", "price": 535, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekday"},
+        {"code": 48, "description": "GROUPS MON/FRI (61-120)", "price": 470, "fee_type": FeeType.GOLF, "audience": "visitor", "day_kind": "weekday"},
+        {"code": 49, "description": "GROUPS SAT AM (20-60)", "price": 645, "fee_type": FeeType.GOLF, "audience": "visitor", "weekday": 5},
+        {"code": 46, "description": "GROUPS SAT AM (61-120)", "price": 610, "fee_type": FeeType.GOLF, "audience": "visitor", "weekday": 5},
+        {"code": 47, "description": "GROUPS SUN (61-120)", "price": 525, "fee_type": FeeType.GOLF, "audience": "visitor", "weekday": 6},
         
         # NON-AFFILIATED VISITORS
         {"code": 2018, "description": "NON-AFFILIATED VISITOR - WEEKDAYS", "price": 700, "fee_type": FeeType.GOLF, "audience": "non_affiliated", "day_kind": "weekday", "priority": 1},
@@ -70,6 +79,10 @@ def populate_fees():
         {"code": 53, "description": "CART HIRE 9 HOLES", "price": 325, "fee_type": FeeType.CART, "audience": "visitor", "holes": 9},
         {"code": 2029, "description": "WEDNESDAY 9 HOLE CART", "price": 125, "fee_type": FeeType.CART, "day_kind": "weekday", "weekday": 2, "holes": 9, "priority": 50},
         {"code": 71, "description": "PMG - CARTS", "price": 295, "fee_type": FeeType.CART},
+        {"code": 58, "description": "TRAIL FEE MEMBER 18 HOLES", "price": 77, "fee_type": FeeType.CART, "audience": "member", "holes": 18},
+        {"code": 57, "description": "TRAIL FEE MEMBER 9 HOLES", "price": 53, "fee_type": FeeType.CART, "audience": "member", "holes": 9},
+        {"code": 56, "description": "TRAIL FEE VISITOR", "price": 126, "fee_type": FeeType.CART, "audience": "visitor"},
+        {"code": 99, "description": "ANNUAL TRAIL FEE", "price": 1048, "fee_type": FeeType.CART},
         
         # COMPETITION FEES
         {"code": 88, "description": "COMPETITION WEEKDAYS", "price": 85, "fee_type": FeeType.COMPETITION, "day_kind": "weekday"},
@@ -92,6 +105,12 @@ def populate_fees():
         {"code": 97, "description": "COMP FEES/MEALS CASH CARD", "price": 0, "fee_type": FeeType.OTHER},
         {"code": 201, "description": "FLOOK 2 X BALL", "price": 140, "fee_type": FeeType.OTHER},
         {"code": 202, "description": "FLOOK 4 X BALL", "price": 280, "fee_type": FeeType.OTHER},
+        {"code": 2005, "description": "BOWLS MEMBER", "price": 58, "fee_type": FeeType.OTHER},
+        {"code": 2006, "description": "BOWLS VISITOR", "price": 74, "fee_type": FeeType.OTHER},
+        {"code": 2007, "description": "SPECIAL BOWLS", "price": 12, "fee_type": FeeType.OTHER},
+        {"code": 2008, "description": "TWILIGHT BOWLS", "price": 18, "fee_type": FeeType.OTHER},
+        {"code": 2009, "description": "BOWLS TWILIGHT VISITOR", "price": 36, "fee_type": FeeType.OTHER},
+        {"code": 2013, "description": "BOWLS SCHOLAR MEMBER", "price": 21, "fee_type": FeeType.OTHER},
     ]
     
     print("Populating fee categories...")

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/checkin", tags=["checkin"])
 @router.post("/{booking_id}")
 def checkin(
     booking_id: int,
-    payment_method: Optional[str] = Query(None, description="Optional: CARD/CASH/EFT/ONLINE"),
+    payment_method: Optional[str] = Query(None, description="Optional: CARD/CASH/EFT/ONLINE/ACCOUNT"),
     db=Depends(get_db),
     _=Depends(require_staff_like),
     __=Depends(get_active_club_id),
