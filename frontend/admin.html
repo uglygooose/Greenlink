@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
-    <link rel="stylesheet" href="admin-style.css?v=2026-03-05-weather-02" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-03-05-weather-04" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -927,6 +927,7 @@
                             <div class="summary-stat"><span>Next Tee</span><strong id="tee-summary-next">-</strong></div>
                         </div>
                     </div>
+                     <div id="tee-sheet-weather-status" class="search-status tee-weather-status" aria-live="polite"></div>
                      <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
                      <div class="tee-sheet-table-wrap">
                         <div class="tee-sheet-head">
@@ -1535,7 +1536,7 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2>Weather Reconfirm</h2>
-            <p class="muted-text">Check adverse-weather risk for booked players and send in-app reconfirm prompts to players with GreenLink login.</p>
+            <p class="muted-text">Rain-risk flags refresh automatically for the selected date. Send in-app reconfirm prompts only when needed.</p>
 
             <div class="bulk-book-grid">
                 <label for="weather-reconfirm-date">Date</label>
@@ -1549,7 +1550,6 @@
             </div>
 
             <div class="bulk-book-actions">
-                <button class="btn-secondary" type="button" id="weather-reconfirm-preview-btn">Preview Risk</button>
                 <button class="btn-primary" type="button" id="weather-reconfirm-send-btn">Send In-App Prompts</button>
                 <span class="bulk-book-status" id="weather-reconfirm-status"></span>
             </div>
@@ -1567,7 +1567,7 @@
                         </tr>
                     </thead>
                     <tbody id="weather-reconfirm-body">
-                        <tr><td colspan="6">Run preview to load weather risk.</td></tr>
+                        <tr><td colspan="6">Rain risk loads automatically.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1706,6 +1706,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-03-05-weather-02"></script>
+	    <script src="admin.js?v=2026-03-05-weather-04"></script>
 	</body>
 	</html>

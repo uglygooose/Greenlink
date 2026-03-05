@@ -738,6 +738,62 @@ def _attach_weather_notification_state(
     return items
 
 
+def _create_weather_notifications(
+    db: Session,
+    club_id: int,
+    target_date: date,
+    staff: User,
+    items: list[dict[str, Any]],
+) -> dict[str, int]:
+    created = 0
+    skipped_existing = 0
+    skipped_unlinked = 0
+    now = datetime.utcnow()
+
+    for item in items:
+        if not bool(item.get("can_message")):
+            skipped_unlinked += 1
+            continue
+
+        if bool(item.get("notification_sent")):
+            skipped_existing += 1
+            continue
+
+        booking_id = int(item.get("booking_id") or 0)
+        tee_time_id = int(item.get("tee_time_id") or 0)
+        player_user_id = int(item.get("player_user_id") or 0)
+        topic_key = _weather_topic_key(target_date, booking_id) if booking_id > 0 else None
+        if player_user_id <= 0 or booking_id <= 0:
+            skipped_unlinked += 1
+            continue
+
+        title, body, payload_json = build_weather_prompt_payload(item, sender_name=getattr(staff, "name", None))
+
+        row = PlayerNotification(
+            club_id=int(club_id),
+            user_id=player_user_id,
+            booking_id=booking_id,
+            tee_time_id=tee_time_id if tee_time_id > 0 else None,
+            kind="weather_reconfirm",
+            topic_key=topic_key,
+            title=title,
+            body=body,
+            payload_json=json.dumps(payload_json, separators=(",", ":")),
+            status="unread",
+            requires_action=True,
+            created_by_user_id=getattr(staff, "id", None),
+            created_at=now,
+        )
+        db.add(row)
+        created += 1
+
+    return {
+        "created": created,
+        "skipped_existing": skipped_existing,
+        "skipped_unlinked": skipped_unlinked,
+    }
+
+
 @router.get("/tee-sheet/weather/preview")
 def preview_tee_sheet_weather(
     date_value: date = Query(..., alias="date"),
@@ -772,6 +828,75 @@ def preview_tee_sheet_weather(
         raise HTTPException(status_code=500, detail="Failed to build weather preview.")
 
 
+@router.get("/tee-sheet/weather/auto-flags")
+def auto_flag_tee_sheet_weather(
+    date_value: date = Query(..., alias="date"),
+    min_precip_probability: int = Query(60, ge=0, le=100),
+    min_precip_mm: float = Query(1.0, ge=0.0, le=100.0),
+    auto_send: int = Query(0, ge=0, le=1),
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    try:
+        payload = build_weather_booking_candidates(
+            db=db,
+            club_id=int(club_id),
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+        )
+        items = payload.get("items") if isinstance(payload, dict) else []
+        if not isinstance(items, list):
+            items = []
+
+        items = _attach_weather_notification_state(db, int(club_id), date_value, items)
+        auto_counts = {"created": 0, "skipped_existing": 0, "skipped_unlinked": 0}
+        auto_prompt_error = None
+        if int(auto_send or 0) == 1 and items:
+            try:
+                auto_counts = _create_weather_notifications(
+                    db=db,
+                    club_id=int(club_id),
+                    target_date=date_value,
+                    staff=staff,
+                    items=items,
+                )
+                if int(auto_counts.get("created") or 0) > 0:
+                    db.commit()
+                    items = _attach_weather_notification_state(db, int(club_id), date_value, items)
+                else:
+                    db.rollback()
+            except Exception as e:
+                db.rollback()
+                message = str(e).lower()
+                if "player_notifications" in message and ("does not exist" in message or "no such table" in message):
+                    auto_prompt_error = "Notification storage not initialized. Redeploy with AUTO_MIGRATE=1."
+                else:
+                    raise
+
+        payload["items"] = items
+        payload["auto_prompts"] = auto_counts
+        payload["auto_prompt_error"] = auto_prompt_error
+        return payload
+    except RuntimeError as e:
+        _safe_rollback(db)
+        raise HTTPException(status_code=422, detail=str(e))
+    except requests.RequestException:
+        _safe_rollback(db)
+        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+    except HTTPException:
+        _safe_rollback(db)
+        raise
+    except Exception as e:
+        _safe_rollback(db)
+        message = str(e).lower()
+        if "player_notifications" in message and ("does not exist" in message or "no such table" in message):
+            raise HTTPException(status_code=503, detail="Notification storage not initialized. Redeploy with AUTO_MIGRATE=1.")
+        print(f"[WEATHER_AUTO] {type(e).__name__}: {str(e)[:220]}")
+        raise HTTPException(status_code=500, detail="Failed to auto-flag weather risk.")
+
+
 @router.post("/tee-sheet/weather/reconfirm")
 def send_tee_sheet_weather_reconfirm(
     req: WeatherReconfirmRequest,
@@ -792,54 +917,22 @@ def send_tee_sheet_weather_reconfirm(
             items = []
 
         items = _attach_weather_notification_state(db, int(club_id), req.date, items)
-        created = 0
-        skipped_existing = 0
-        skipped_unlinked = 0
-        now = datetime.utcnow()
-
-        for item in items:
-            if not bool(item.get("can_message")):
-                skipped_unlinked += 1
-                continue
-
-            if bool(item.get("notification_sent")):
-                skipped_existing += 1
-                continue
-
-            booking_id = int(item.get("booking_id") or 0)
-            tee_time_id = int(item.get("tee_time_id") or 0)
-            player_user_id = int(item.get("player_user_id") or 0)
-            topic_key = _weather_topic_key(req.date, booking_id) if booking_id > 0 else None
-            if player_user_id <= 0 or booking_id <= 0:
-                skipped_unlinked += 1
-                continue
-
-            title, body, payload_json = build_weather_prompt_payload(item, sender_name=getattr(staff, "name", None))
-
-            row = PlayerNotification(
-                club_id=int(club_id),
-                user_id=player_user_id,
-                booking_id=booking_id,
-                tee_time_id=tee_time_id if tee_time_id > 0 else None,
-                kind="weather_reconfirm",
-                topic_key=topic_key,
-                title=title,
-                body=body,
-                payload_json=json.dumps(payload_json, separators=(",", ":")),
-                status="unread",
-                requires_action=True,
-                created_by_user_id=getattr(staff, "id", None),
-                created_at=now,
-            )
-            db.add(row)
-            created += 1
-
-        db.commit()
+        counts = _create_weather_notifications(
+            db=db,
+            club_id=int(club_id),
+            target_date=req.date,
+            staff=staff,
+            items=items,
+        )
+        if int(counts.get("created") or 0) > 0:
+            db.commit()
+        else:
+            db.rollback()
         return {
             "target_date": req.date.isoformat(),
-            "created": created,
-            "skipped_existing": skipped_existing,
-            "skipped_unlinked": skipped_unlinked,
+            "created": int(counts.get("created") or 0),
+            "skipped_existing": int(counts.get("skipped_existing") or 0),
+            "skipped_unlinked": int(counts.get("skipped_unlinked") or 0),
             "at_risk": int(((payload.get("counts") or {}).get("at_risk") or 0)),
             "messageable": int(((payload.get("counts") or {}).get("messageable") or 0)),
         }

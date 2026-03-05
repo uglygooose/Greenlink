@@ -1613,6 +1613,16 @@ canvas {
     border-color: rgba(109, 40, 217, 0.26);
 }
 
+.slot-card.weather-risk-high {
+    box-shadow: 0 0 0 2px rgba(190, 24, 93, 0.18), 0 4px 14px rgba(190, 24, 93, 0.14);
+    border-color: rgba(190, 24, 93, 0.42);
+}
+
+.slot-card.weather-risk-medium {
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.16), 0 3px 12px rgba(217, 119, 6, 0.12);
+    border-color: rgba(217, 119, 6, 0.34);
+}
+
 .slot-card.closed {
     --slot-accent: #94a3b8;
     --status-fg: #64748b;
@@ -1641,6 +1651,21 @@ canvas {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.slot-weather-note {
+    font-size: 10.5px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-top: -2px;
+}
+
+.slot-weather-note.high {
+    color: #be123c;
+}
+
+.slot-weather-note.medium {
+    color: #b45309;
 }
 
 .slot-action {
@@ -2064,6 +2089,11 @@ body.drag-active .slot-card.open {
     font-size: 12px;
     font-weight: 800;
     color: #7f8c8d;
+}
+
+.tee-weather-status {
+    color: #51626a;
+    margin-bottom: 4px;
 }
 
 .slot-top {

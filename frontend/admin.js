@@ -69,6 +69,9 @@ let teeSlotManageState = {
     bookings: [],
 };
 let weatherReconfirmRows = [];
+let teeWeatherRiskMap = new Map();
+let teeWeatherRequestSeq = 0;
+let weatherPreviewDebounceTimer = null;
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -4700,9 +4703,12 @@ async function loadWeatherReconfirmPreview(options = {}) {
             min_precip_probability: String(req.min_precip_probability),
             min_precip_mm: String(req.min_precip_mm),
         });
-        const payload = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/preview?${qs.toString()}`);
+        qs.set("auto_send", "0");
+        const payload = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/auto-flags?${qs.toString()}`);
         weatherReconfirmRows = Array.isArray(payload?.items) ? payload.items : [];
         renderWeatherReconfirmRows(weatherReconfirmRows);
+        teeWeatherRiskMap = buildWeatherRiskMap(weatherReconfirmRows);
+        applyTeeWeatherFlagsToDom();
 
         const counts = payload?.counts || {};
         const atRisk = Number(counts?.at_risk || weatherReconfirmRows.length || 0);
@@ -4712,17 +4718,37 @@ async function loadWeatherReconfirmPreview(options = {}) {
         const locationLabel = String(payload?.course_location?.label || "").trim();
         const providerUnavailable = Boolean(payload?.provider_unavailable);
         const providerNote = String(payload?.provider_note || "").trim();
+        const autoPromptError = String(payload?.auto_prompt_error || "").trim();
 
+        const base = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
         if (statusEl) {
-            const base = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
             statusEl.textContent = providerUnavailable && providerNote ? `${base} · ${providerNote}` : base;
         }
+        let teeStatus = `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(messageable)} linked`;
+        if (providerUnavailable && providerNote) teeStatus += ` · ${providerNote}`;
+        if (autoPromptError) teeStatus += ` · ${autoPromptError}`;
+        setTeeWeatherStatus(teeStatus);
     } catch (err) {
         weatherReconfirmRows = [];
         renderWeatherReconfirmRows([]);
+        teeWeatherRiskMap = new Map();
+        clearTeeWeatherFlagsInDom();
+        setTeeWeatherStatus(`Rain risk auto-flag unavailable: ${err?.message || "check failed"}`);
         if (statusEl) statusEl.textContent = err?.message || "Weather preview failed.";
-        toastError(err?.message || "Weather preview failed.");
+        if (!options.silent) toastError(err?.message || "Weather preview failed.");
     }
+}
+
+function queueWeatherReconfirmPreview(delayMs = 260) {
+    const delay = Math.max(0, Number(delayMs) || 0);
+    if (weatherPreviewDebounceTimer) {
+        clearTimeout(weatherPreviewDebounceTimer);
+        weatherPreviewDebounceTimer = null;
+    }
+    weatherPreviewDebounceTimer = setTimeout(() => {
+        weatherPreviewDebounceTimer = null;
+        loadWeatherReconfirmPreview({ silent: true });
+    }, delay);
 }
 
 async function sendWeatherReconfirmPrompts() {
@@ -4779,14 +4805,132 @@ function openWeatherReconfirmModal() {
 }
 
 function setupWeatherReconfirmModal() {
-    const previewBtn = document.getElementById("weather-reconfirm-preview-btn");
     const sendBtn = document.getElementById("weather-reconfirm-send-btn");
     const dateInput = document.getElementById("weather-reconfirm-date");
+    const rainInput = document.getElementById("weather-reconfirm-rain");
+    const mmInput = document.getElementById("weather-reconfirm-mm");
     if (dateInput instanceof HTMLInputElement && !dateInput.value) {
         dateInput.value = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
     }
-    previewBtn?.addEventListener("click", () => loadWeatherReconfirmPreview());
+    [dateInput, rainInput, mmInput].forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        input.addEventListener("change", () => queueWeatherReconfirmPreview(40));
+        input.addEventListener("input", () => queueWeatherReconfirmPreview(260));
+    });
     sendBtn?.addEventListener("click", () => sendWeatherReconfirmPrompts());
+}
+
+function setTeeWeatherStatus(message = "") {
+    const statusEl = document.getElementById("tee-sheet-weather-status");
+    if (!statusEl) return;
+    statusEl.textContent = String(message || "");
+}
+
+function clearTeeWeatherFlagsInDom() {
+    const cards = document.querySelectorAll("#admin-tee-sheet-body .slot-card[data-booking-id]");
+    cards.forEach((card) => {
+        card.classList.remove("weather-risk-high", "weather-risk-medium");
+        const note = card.querySelector(".slot-weather-note");
+        if (note) note.remove();
+    });
+}
+
+function normalizeWeatherRiskLevel(level) {
+    const raw = String(level || "").trim().toLowerCase();
+    if (raw === "high") return "high";
+    if (raw === "medium") return "medium";
+    return "";
+}
+
+function buildWeatherRiskMap(items = []) {
+    const next = new Map();
+    const rows = Array.isArray(items) ? items : [];
+    rows.forEach((row) => {
+        const bookingId = Number.parseInt(String(row?.booking_id || ""), 10);
+        if (!Number.isFinite(bookingId) || bookingId <= 0) return;
+        const key = String(bookingId);
+        const incomingScore = Number(row?.risk_score || 0);
+        const existing = next.get(key);
+        if (!existing || incomingScore > Number(existing?.risk_score || 0)) {
+            next.set(key, row);
+        }
+    });
+    return next;
+}
+
+function applyTeeWeatherFlagsToDom() {
+    clearTeeWeatherFlagsInDom();
+    const cards = document.querySelectorAll("#admin-tee-sheet-body .slot-card[data-booking-id]");
+    cards.forEach((card) => {
+        const bookingId = Number.parseInt(String(card.getAttribute("data-booking-id") || ""), 10);
+        if (!Number.isFinite(bookingId) || bookingId <= 0) return;
+        const row = teeWeatherRiskMap.get(String(bookingId));
+        if (!row) return;
+
+        const level = normalizeWeatherRiskLevel(row?.risk_level);
+        if (!level) return;
+        card.classList.add(level === "high" ? "weather-risk-high" : "weather-risk-medium");
+
+        const reason = Array.isArray(row?.risk_reasons) && row.risk_reasons.length
+            ? String(row.risk_reasons[0] || "").trim()
+            : "";
+        const note = document.createElement("div");
+        note.className = `slot-weather-note ${level}`;
+        note.textContent = reason
+            ? `Rain risk • ${reason}`
+            : (level === "high" ? "Rain risk • High" : "Rain risk");
+        card.appendChild(note);
+    });
+}
+
+async function autoFlagTeeSheetWeather(dateStr, options = {}) {
+    const seq = ++teeWeatherRequestSeq;
+    const silent = Boolean(options.silent);
+    const req = weatherRequestFromInputs();
+    const dateValue = String(dateStr || req.date || "").trim();
+    if (!dateValue) {
+        teeWeatherRiskMap = new Map();
+        clearTeeWeatherFlagsInDom();
+        setTeeWeatherStatus("");
+        return;
+    }
+
+    if (!silent) setTeeWeatherStatus("Rain risk check: loading...");
+
+    try {
+        const qs = new URLSearchParams({
+            date: dateValue,
+            min_precip_probability: String(req.min_precip_probability),
+            min_precip_mm: String(req.min_precip_mm),
+            auto_send: "0",
+        });
+        const payload = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/auto-flags?${qs.toString()}`);
+        if (seq !== teeWeatherRequestSeq) return;
+
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        teeWeatherRiskMap = buildWeatherRiskMap(items);
+        applyTeeWeatherFlagsToDom();
+
+        const counts = payload?.counts || {};
+        const autoPrompts = payload?.auto_prompts || {};
+        const atRisk = Number(counts?.at_risk || teeWeatherRiskMap.size || 0);
+        const linked = Number(counts?.messageable || 0);
+        const queued = Number(autoPrompts?.created || 0);
+        const autoPromptError = String(payload?.auto_prompt_error || "").trim();
+        const providerUnavailable = Boolean(payload?.provider_unavailable);
+        const providerNote = String(payload?.provider_note || "").trim();
+
+        let statusText = `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(linked)} linked`;
+        if (queued > 0) statusText += ` · ${formatInteger(queued)} prompt${queued === 1 ? "" : "s"} queued`;
+        if (providerUnavailable && providerNote) statusText += ` · ${providerNote}`;
+        if (autoPromptError) statusText += ` · ${autoPromptError}`;
+        setTeeWeatherStatus(statusText);
+    } catch (err) {
+        if (seq !== teeWeatherRequestSeq) return;
+        teeWeatherRiskMap = new Map();
+        clearTeeWeatherFlagsInDom();
+        setTeeWeatherStatus(`Rain risk auto-flag unavailable: ${err?.message || "check failed"}`);
+    }
 }
 
 function teeSlotStatusNeedsPayment(status) {
@@ -6173,6 +6317,8 @@ async function loadTeeTimes(options = {}) {
     const preserveScroll = Boolean(options.preserveScroll);
     const wrap = document.querySelector(".tee-sheet-table-wrap");
     const anchor = preserveScroll ? captureWrapAnchor(wrap) : null;
+    teeWeatherRiskMap = new Map();
+    setTeeWeatherStatus("Rain risk check: loading...");
 
     tbody.innerHTML = `
         <tr class="empty-row">
@@ -6284,6 +6430,7 @@ async function loadTeeTimes(options = {}) {
                 updateTeeSheetSummary([], dateStr);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
+                autoFlagTeeSheetWeather(dateStr, { silent: true });
                 return;
             }
             const created = await generateDaySheet(dateStr, existingKeys, dayPlan18.tees || ["1", "10"]);
@@ -6292,6 +6439,7 @@ async function loadTeeTimes(options = {}) {
             }
             renderTeeSheetRows([], dateStr, "No tee times scheduled for this date.");
             updateTeeSheetSummary([], dateStr);
+            autoFlagTeeSheetWeather(dateStr, { silent: true });
             return;
         }
 
@@ -6309,6 +6457,7 @@ async function loadTeeTimes(options = {}) {
                 updateTeeSheetSummary([], dateStr);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
+                autoFlagTeeSheetWeather(dateStr, { silent: true });
                 return;
             }
             const created = await generateDaySheet(dateStr, existingKeys, teeListForView);
@@ -6318,6 +6467,7 @@ async function loadTeeTimes(options = {}) {
             renderTeeSheetRows([], dateStr, "No tee times for this tee on the selected date.");
             updateTeeSheetSummary([], dateStr);
             applyTeeSheetSearchFilter();
+            autoFlagTeeSheetWeather(dateStr, { silent: true });
             return;
         }
 
@@ -6344,6 +6494,7 @@ async function loadTeeTimes(options = {}) {
             restoreWrapAnchor(wrap, anchor);
         }
         applyTeeSheetSearchFilter();
+        autoFlagTeeSheetWeather(dateStr, { silent: true });
     } catch (error) {
         console.error("Failed to load tee sheet:", error);
         tbody.innerHTML = `
@@ -6354,6 +6505,7 @@ async function loadTeeTimes(options = {}) {
             </tr>
         `;
         updateTeeSheetSummary([], dateStr);
+        setTeeWeatherStatus("");
     }
 }
 
