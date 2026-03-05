@@ -910,16 +910,16 @@
                     <div class="tee-sheet-actions" id="tee-sheet-actions" data-tee-action-root aria-label="Manage Tee Sheet">
                         <div class="tee-action-primary">
                             <button type="button" class="btn-secondary tee-action-btn" data-action="generate">
-                                <span class="title">Generate Tee Times</span>
-                                <span class="hint">Create missing tee slots for the selected date.</span>
+                                <span class="title">Generate / Refresh Slots</span>
+                                <span class="hint">Create any missing tee slots for this date.</span>
                             </button>
                             <button type="button" class="btn-secondary tee-action-btn" data-action="bulk-book">
-                                <span class="title">Bulk Book / Golf Day</span>
-                                <span class="hint">Block tee ranges for groups, golf days, and PMG events.</span>
+                                <span class="title">Block Event / Golf Day</span>
+                                <span class="hint">Reserve tee ranges for groups, golf days, and PMG.</span>
                             </button>
                             <button type="button" class="btn-secondary tee-action-btn" data-action="booking-window">
-                                <span class="title">Booking Window</span>
-                                <span class="hint">Set advance booking and cancellation/no-show rules.</span>
+                                <span class="title">Booking Rules</span>
+                                <span class="hint">Set advance booking and cancellation notice rules.</span>
                             </button>
                         </div>
                         <details class="tee-action-advanced">
@@ -948,6 +948,14 @@
                         <span class="legend-item"><span class="legend-dot no-show"></span>No-show</span>
                         <span class="legend-item"><span class="legend-dot cancelled"></span>Cancelled</span>
                     </div>
+                    <div class="tee-sheet-summary" id="tee-sheet-summary">
+                        <div class="summary-stat"><span>Total Slots</span><strong id="tee-summary-slots">0</strong></div>
+                        <div class="summary-stat"><span>Open Seats</span><strong id="tee-summary-open-seats">0</strong></div>
+                        <div class="summary-stat"><span>Booked Players</span><strong id="tee-summary-booked">0</strong></div>
+                        <div class="summary-stat"><span>Checked-in</span><strong id="tee-summary-checked-in">0</strong></div>
+                        <div class="summary-stat"><span>No-show</span><strong id="tee-summary-no-show">0</strong></div>
+                        <div class="summary-stat"><span>Next Tee</span><strong id="tee-summary-next">-</strong></div>
+                    </div>
                      <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
                      <div class="tee-sheet-table-wrap">
                         <div class="tee-sheet-head">
@@ -959,6 +967,8 @@
                                 <label for="tee-sheet-date">Date</label>
                                 <input type="date" id="tee-sheet-date" />
                                 <input type="text" id="tee-sheet-search" placeholder="Search player / email..." />
+                                <button type="button" class="btn-secondary btn-small" id="tee-sheet-today-btn">Today</button>
+                                <button type="button" class="btn-secondary btn-small" id="tee-sheet-clear-search-btn">Clear</button>
                             </div>
                             <table class="tee-sheet-table tee-sheet-table-head" aria-hidden="true">
                                 <thead>
@@ -1337,6 +1347,7 @@
         <div class="modal-content tee-booking-content">
             <span class="close" onclick="closeTeeBookingModal()">&times;</span>
             <h2>Add Players</h2>
+            <p class="muted-text tee-booking-intro">Quick add: fill only player name, then save. Expand optional fields only when needed.</p>
             <div class="tee-booking-meta">
                 <div>
                     <span class="modal-label">Tee Time</span>
@@ -1366,11 +1377,93 @@
                     </label>
                 </div>
             </div>
+            <div class="tee-booking-quickcount" id="tee-booking-quickcount" role="group" aria-label="How many players to add">
+                <button type="button" class="btn-secondary btn-small tee-booking-count-btn" data-count="1">1 Player</button>
+                <button type="button" class="btn-secondary btn-small tee-booking-count-btn" data-count="2">2 Players</button>
+                <button type="button" class="btn-secondary btn-small tee-booking-count-btn" data-count="3">3 Players</button>
+                <button type="button" class="btn-secondary btn-small tee-booking-count-btn" data-count="4">4 Players</button>
+            </div>
             <div id="tee-booking-rows"></div>
             <div class="tee-booking-actions">
                 <button class="btn-secondary" type="button" onclick="addBookingRow()">Add another player</button>
                 <div class="tee-booking-total">Total: R<span id="tee-booking-total">0</span></div>
                 <button class="btn-primary" id="tee-booking-save" type="button" onclick="submitTeeBooking()">Save Booking</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for managing a full tee slot (4-ball) -->
+    <div id="tee-slot-modal" class="modal">
+        <div class="modal-content tee-slot-content">
+            <span class="close" onclick="closeTeeSlotManageModal()">&times;</span>
+            <h2>Manage Tee Slot</h2>
+            <p class="muted-text tee-booking-intro">Process multiple players in one step (status, payment method, and debtor account).</p>
+            <div class="tee-slot-meta">
+                <div>
+                    <span class="modal-label">Tee Time</span>
+                    <div class="modal-value" id="tee-slot-time">-</div>
+                </div>
+                <div>
+                    <span class="modal-label">Tee</span>
+                    <div class="modal-value" id="tee-slot-tee">-</div>
+                </div>
+                <div>
+                    <span class="modal-label">Booked Players</span>
+                    <div class="modal-value" id="tee-slot-booked-count">0</div>
+                </div>
+                <div>
+                    <span class="modal-label">Selected</span>
+                    <div class="modal-value" id="tee-slot-selected-count">0</div>
+                </div>
+                <div>
+                    <span class="modal-label">Selected Total</span>
+                    <div class="modal-value" id="tee-slot-selected-total">R0.00</div>
+                </div>
+            </div>
+
+            <div class="tee-slot-controls">
+                <div>
+                    <label for="tee-slot-action-status">Status action</label>
+                    <select id="tee-slot-action-status">
+                        <option value="checked_in" selected>Check In (Paid)</option>
+                        <option value="completed">Mark Completed</option>
+                        <option value="booked">Set to Booked</option>
+                        <option value="no_show">Mark No-show</option>
+                        <option value="cancelled">Cancel</option>
+                        <option value="">No status change</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="tee-slot-payment-method">Payment method</label>
+                    <select id="tee-slot-payment-method">
+                        <option value="CARD">CARD</option>
+                        <option value="CASH">CASH</option>
+                        <option value="EFT">EFT</option>
+                        <option value="ONLINE">ONLINE</option>
+                        <option value="ACCOUNT">ACCOUNT</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="tee-slot-account-code">Debtor account (optional)</label>
+                    <input type="text" id="tee-slot-account-code" placeholder="e.g. 1100/015" />
+                </div>
+            </div>
+
+            <div class="tee-slot-help" id="tee-slot-action-help"></div>
+
+            <div class="tee-slot-toolbar">
+                <div class="tee-slot-selection-actions">
+                    <button class="btn-secondary btn-small" type="button" id="tee-slot-select-all">Select all</button>
+                    <button class="btn-secondary btn-small" type="button" id="tee-slot-select-none">Clear</button>
+                </div>
+                <button class="btn-secondary btn-small" type="button" id="tee-slot-refresh-detail">Refresh Slot</button>
+            </div>
+
+            <div class="tee-slot-player-list" id="tee-slot-player-list"></div>
+
+            <div class="tee-slot-actions">
+                <span class="booking-window-status" id="tee-slot-status-text"></span>
+                <button class="btn-primary" id="tee-slot-apply" type="button">Apply to Selected</button>
             </div>
         </div>
     </div>

@@ -2447,6 +2447,13 @@ class BookingAccountCodeUpdate(BaseModel):
     account_code: Optional[str] = None
 
 
+class BookingBatchUpdate(BaseModel):
+    booking_ids: list[int]
+    status: Optional[str] = None
+    payment_method: Optional[str] = None
+    account_code: Optional[str] = None
+
+
 @router.put("/bookings/{booking_id}/status")
 async def update_booking_status(
     booking_id: int,
@@ -2575,6 +2582,117 @@ async def update_booking_account_code(
     booking.club_card = code or None
     db.commit()
     return {"status": "success", "booking_id": booking_id, "account_code": booking.club_card}
+
+
+@router.put("/bookings/batch-update")
+async def batch_update_bookings(
+    payload: BookingBatchUpdate,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    raw_ids = payload.booking_ids if isinstance(payload.booking_ids, list) else []
+    booking_ids: list[int] = []
+    seen: set[int] = set()
+    for raw in raw_ids:
+        try:
+            bid = int(raw)
+        except Exception:
+            continue
+        if bid <= 0 or bid in seen:
+            continue
+        seen.add(bid)
+        booking_ids.append(bid)
+
+    if not booking_ids:
+        raise HTTPException(status_code=400, detail="At least one valid booking_id is required")
+
+    requested_status_raw = str(payload.status or "").strip().lower()
+    requested_status: Optional[BookingStatus] = None
+    if requested_status_raw:
+        allowed = {s.value for s in BookingStatus}
+        if requested_status_raw not in allowed:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {requested_status_raw}")
+        requested_status = BookingStatus(requested_status_raw)
+
+    payment_method = str(payload.payment_method or "").strip().upper()
+    if payment_method and payment_method not in {"CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"}:
+        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE/ACCOUNT")
+
+    account_code = str(payload.account_code or "").strip()
+    apply_account_code = bool(account_code)
+
+    bookings = (
+        db.query(Booking)
+        .options(selectinload(Booking.tee_time))
+        .filter(Booking.id.in_(booking_ids))
+        .all()
+    )
+    by_id = {int(b.id): b for b in bookings if b and b.id is not None}
+    missing = [bid for bid in booking_ids if bid not in by_id]
+    if missing:
+        missing_label = ", ".join(str(v) for v in missing[:5])
+        if len(missing) > 5:
+            missing_label = f"{missing_label}, ..."
+        raise HTTPException(status_code=404, detail=f"Booking(s) not found: {missing_label}")
+
+    ordered_bookings = [by_id[bid] for bid in booking_ids]
+    paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
+
+    for booking in ordered_bookings:
+        if booking.tee_time and booking.tee_time.tee_time:
+            assert_day_open(db, booking.tee_time.tee_time.date())
+        if requested_status == BookingStatus.cancelled:
+            _enforce_group_cancel_window(db, booking, staff)
+
+    updated_ids: list[int] = []
+    ledger_updated = 0
+    account_updated = 0
+
+    for booking in ordered_bookings:
+        if requested_status is not None:
+            booking.status = requested_status
+            if booking.status in paid_statuses:
+                crud.ensure_paid_ledger_entry(db, booking, payment_method=payment_method or None)
+                ledger_updated += 1
+            else:
+                ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking.id).all()]
+                if ids:
+                    db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
+                db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete(synchronize_session=False)
+        elif payment_method:
+            ledger_entry = (
+                db.query(LedgerEntry)
+                .filter(LedgerEntry.booking_id == booking.id)
+                .order_by(desc(LedgerEntry.id))
+                .first()
+            )
+            if ledger_entry:
+                meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
+                if meta:
+                    meta.payment_method = payment_method
+                    meta.updated_at = datetime.utcnow()
+                else:
+                    db.add(LedgerEntryMeta(ledger_entry_id=ledger_entry.id, payment_method=payment_method))
+                ledger_updated += 1
+
+        if apply_account_code:
+            booking.club_card = account_code
+            account_updated += 1
+
+        updated_ids.append(int(booking.id))
+
+    if not requested_status and not payment_method and not apply_account_code:
+        raise HTTPException(status_code=400, detail="No updates requested. Set status, payment_method, or account_code.")
+
+    db.commit()
+    return {
+        "status": "success",
+        "updated": len(updated_ids),
+        "booking_ids": updated_ids,
+        "new_status": requested_status.value if requested_status else None,
+        "ledger_updates": int(ledger_updated),
+        "account_updates": int(account_updated),
+    }
 
 
 @router.get("/players")

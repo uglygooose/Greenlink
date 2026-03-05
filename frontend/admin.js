@@ -61,6 +61,13 @@ const DASHBOARD_STREAM_KEYS = Object.freeze(["all", ...PRIMARY_OPERATION_KEYS]);
 const REVENUE_FOCUS_KEYS = Object.freeze(["all", "golf_paid", "other_imported", "pro_shop"]);
 const DEFAULT_IMPORT_STREAM = "golf";
 let teeSheetProfile = null;
+let teeSheetTeeTimeMap = new Map();
+let teeSlotManageState = {
+    teeTimeId: null,
+    teeTimeIso: null,
+    teeLabel: "1",
+    bookings: [],
+};
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -178,6 +185,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeSheetFilters();
     setupTeeManageMenu();
     setupTeeBookingModal();
+    setupTeeSlotManageModal();
     setupPeopleFilters();
     setupOperationWorkbenchControls();
     await loadTeeProfileSettings({ silent: true });
@@ -2390,45 +2398,48 @@ async function viewBookingDetail(bookingId) {
                         <span class="detail-value">${displayValue(booking.handicap_number, "N/A")}</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Club card</span>
-                        <span class="detail-value">${displayValue(booking.club_card, "N/A")}</span>
-                    </div>
-                    <div class="detail-row">
                         <span class="detail-label">Member ID</span>
                         <span class="detail-value">${booking.member_id ? escapeHtml(String(booking.member_id)) : "—"}</span>
                     </div>
                     <div class="detail-row">
-                    <span class="detail-label">HNA SA ID</span>
-                    <span class="detail-value">${displayValue(booking.handicap_sa_id, "Unregistered")}</span>
+                        <span class="detail-label">Holes</span>
+                        <span class="detail-value">${booking.holes ? escapeHtml(String(booking.holes)) : "—"}</span>
                     </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">Home Club</span>
-	                    <span class="detail-value">${displayValue(booking.home_club, "—")}</span>
-	                    </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">HI (Booking)</span>
-	                    <span class="detail-value">${booking.handicap_index_at_booking == null ? "—" : escapeHtml(Number(booking.handicap_index_at_booking).toFixed(1))}</span>
-	                    </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">Category</span>
-	                    <span class="detail-value">${displayValue(booking.player_category, "—")}</span>
-	                    </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">Gender</span>
-	                    <span class="detail-value">${displayValue(booking.gender, "—")}</span>
-	                    </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">Holes</span>
-	                    <span class="detail-value">${booking.holes ? escapeHtml(String(booking.holes)) : "—"}</span>
-	                    </div>
-	                    <div class="detail-row">
-	                    <span class="detail-label">Prepaid</span>
-	                    <span class="detail-value">${booking.prepaid === true ? "Yes" : (booking.prepaid === false ? "No" : "—")}</span>
-	                    </div>
                     <div class="detail-row">
-                    <span class="detail-label">Requirements</span>
-                    <span class="detail-value">${renderReqPills({ cart: booking?.requirements?.cart, push_cart: booking?.requirements?.push_cart, caddy: booking?.requirements?.caddy })}</span>
+                        <span class="detail-label">Requirements</span>
+                        <span class="detail-value">${renderReqPills({ cart: booking?.requirements?.cart, push_cart: booking?.requirements?.push_cart, caddy: booking?.requirements?.caddy })}</span>
                     </div>
+                    <details class="booking-detail-advanced">
+                        <summary>More player details</summary>
+                        <div class="detail-row">
+                            <span class="detail-label">Club card</span>
+                            <span class="detail-value">${displayValue(booking.club_card, "N/A")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">HNA SA ID</span>
+                            <span class="detail-value">${displayValue(booking.handicap_sa_id, "Unregistered")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Home Club</span>
+                            <span class="detail-value">${displayValue(booking.home_club, "—")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">HI (Booking)</span>
+                            <span class="detail-value">${booking.handicap_index_at_booking == null ? "—" : escapeHtml(Number(booking.handicap_index_at_booking).toFixed(1))}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Category</span>
+                            <span class="detail-value">${displayValue(booking.player_category, "—")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Gender</span>
+                            <span class="detail-value">${displayValue(booking.gender, "—")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Prepaid</span>
+                            <span class="detail-value">${booking.prepaid === true ? "Yes" : (booking.prepaid === false ? "No" : "—")}</span>
+                        </div>
+                    </details>
                 </div>
 
                 <div class="booking-detail-card">
@@ -2457,44 +2468,7 @@ async function viewBookingDetail(bookingId) {
                 </div>
 
                 <div class="booking-detail-card">
-                    <h3>Round</h3>
-                    ${booking.round ? `
-                        <div class="detail-row">
-                            <span class="detail-label">Status</span>
-                            <span class="detail-value">${booking.round.closed ? "Closed ✓" : "Open"}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Hcp SA ID</span>
-                            <span class="detail-value">${displayValue(booking.round.handicap_sa_round_id, "—")}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Synced</span>
-                            <span class="detail-value">${booking.round.handicap_synced ? "✓" : "—"}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Scores</span>
-                            <span class="detail-value">${booking.round.scores ? "✓" : "—"}</span>
-                        </div>
-                        ${booking.round.scores ? `
-                            <details style="margin-top: 10px;">
-                                <summary style="cursor:pointer; font-weight:700; color:#0a6b47;">View scores</summary>
-                                <pre style="white-space:pre-wrap; margin-top:10px;">${escapeHtml(String(booking.round.scores))}</pre>
-                            </details>
-                        ` : ""}
-                    ` : `
-                        <div class="detail-row">
-                            <span class="detail-label">Status</span>
-                            <span class="detail-value">Not started</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Tip</span>
-                            <span class="detail-value">Use "${checkinLabel}"</span>
-                        </div>
-                    `}
-                </div>
-
-                <div class="booking-detail-card">
-                    <h3>Ledger</h3>
+                    <h3>Payment & Ledger</h3>
                     <div class="detail-row">
                         <span class="detail-label">Entries</span>
                         <span class="detail-value">${ledgerEntries.length ? String(ledgerEntries.length) : "0"}</span>
@@ -2531,15 +2505,53 @@ async function viewBookingDetail(bookingId) {
                         </div>
                     `}
                 </div>
+
+                <div class="booking-detail-card">
+                    <h3>Round Sync</h3>
+                    ${booking.round ? `
+                        <div class="detail-row">
+                            <span class="detail-label">Status</span>
+                            <span class="detail-value">${booking.round.closed ? "Closed ✓" : "Open"}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Hcp SA Round ID</span>
+                            <span class="detail-value">${displayValue(booking.round.handicap_sa_round_id, "—")}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Synced</span>
+                            <span class="detail-value">${booking.round.handicap_synced ? "✓" : "—"}</span>
+                        </div>
+                        <details class="booking-detail-advanced">
+                            <summary>Round scores</summary>
+                            <pre style="white-space:pre-wrap; margin-top:10px;">${booking.round.scores ? escapeHtml(String(booking.round.scores)) : "No score payload yet."}</pre>
+                        </details>
+                    ` : `
+                        <div class="detail-row">
+                            <span class="detail-label">Status</span>
+                            <span class="detail-value">Not started</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Tip</span>
+                            <span class="detail-value">Use "${checkinLabel}"</span>
+                        </div>
+                    `}
+                </div>
             </div>
 
             <div class="booking-detail-actions">
                 <button class="btn-success" onclick="adminCheckIn(${bookingId})" ${disableCheckin ? "disabled" : ""}>${checkinLabel}</button>
                 <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'completed')" ${disableComplete ? "disabled" : ""}>Mark Completed</button>
-                ${allowAdminOnly ? `<button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'booked')" ${disableReopen ? "disabled" : ""}>Reopen</button>` : ""}
                 <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'no_show')" ${disableNoShow ? "disabled" : ""}>No-show</button>
                 <button class="btn-cancel" onclick="adminSetStatus(${bookingId}, 'cancelled')" ${disableCancel ? "disabled" : ""}>Cancel</button>
-                ${allowAdminOnly ? `<button class="btn-cancel" onclick="adminDeleteBooking(${bookingId})">Remove</button>` : ""}
+                ${allowAdminOnly ? `
+                    <details class="booking-detail-advanced booking-detail-advanced-inline">
+                        <summary>More actions</summary>
+                        <div class="action-row">
+                            <button class="btn-secondary" onclick="adminSetStatus(${bookingId}, 'booked')" ${disableReopen ? "disabled" : ""}>Reopen</button>
+                            <button class="btn-cancel" onclick="adminDeleteBooking(${bookingId})">Remove</button>
+                        </div>
+                    </details>
+                ` : ""}
             </div>
         `;
 
@@ -4448,6 +4460,8 @@ function setupTeeSheetFilters() {
     const dateInput = document.getElementById("tee-sheet-date");
     const holesButtons = document.querySelectorAll("#tee-times .holes-btn");
     const searchInput = document.getElementById("tee-sheet-search");
+    const todayBtn = document.getElementById("tee-sheet-today-btn");
+    const clearBtn = document.getElementById("tee-sheet-clear-search-btn");
     if (!dateInput) return;
 
     if (!dateInput.value) {
@@ -4479,6 +4493,17 @@ function setupTeeSheetFilters() {
             searchInput.value = "";
             applyTeeSheetSearchFilter();
         }
+    });
+
+    todayBtn?.addEventListener("click", () => {
+        const today = new Date().toISOString().split("T")[0];
+        dateInput.value = today;
+        loadTeeTimes();
+    });
+
+    clearBtn?.addEventListener("click", () => {
+        if (searchInput) searchInput.value = "";
+        applyTeeSheetSearchFilter();
     });
 
     setupTeeSheetDragDrop();
@@ -4537,6 +4562,288 @@ function setupTeeManageMenu() {
                 item.disabled = false;
             }
         }
+    });
+}
+
+function teeSlotStatusNeedsPayment(status) {
+    const value = String(status || "").trim().toLowerCase();
+    return value === "checked_in" || value === "completed";
+}
+
+function closeTeeSlotManageModal() {
+    document.getElementById("tee-slot-modal")?.classList.remove("show");
+}
+
+function getSelectedTeeSlotBookingIds() {
+    return Array.from(document.querySelectorAll("#tee-slot-player-list input[data-booking-id]:checked"))
+        .map((input) => Number.parseInt(String(input.getAttribute("data-booking-id") || ""), 10))
+        .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+function updateTeeSlotSelectionSummary() {
+    const selectedIds = new Set(getSelectedTeeSlotBookingIds().map((id) => String(id)));
+    const selectedCountEl = document.getElementById("tee-slot-selected-count");
+    const selectedTotalEl = document.getElementById("tee-slot-selected-total");
+
+    const selectedBookings = (teeSlotManageState.bookings || []).filter((booking) => selectedIds.has(String(booking?.id || "")));
+    const selectedCount = selectedBookings.length;
+    const selectedTotal = selectedBookings.reduce((sum, booking) => sum + safeNumber(booking?.price), 0);
+
+    if (selectedCountEl) selectedCountEl.textContent = formatInteger(selectedCount);
+    if (selectedTotalEl) selectedTotalEl.textContent = formatCurrencyZAR(selectedTotal);
+}
+
+function updateTeeSlotActionHelp() {
+    const status = String(document.getElementById("tee-slot-action-status")?.value || "").trim().toLowerCase();
+    const helpEl = document.getElementById("tee-slot-action-help");
+    const paymentSelect = document.getElementById("tee-slot-payment-method");
+    const paymentEnabled = !status || teeSlotStatusNeedsPayment(status);
+    if (paymentSelect instanceof HTMLSelectElement) {
+        paymentSelect.disabled = !paymentEnabled;
+    }
+    if (!helpEl) return;
+
+    if (!status) {
+        helpEl.textContent = "No status change: use this to update payment method and/or debtor account for selected players.";
+        return;
+    }
+    if (teeSlotStatusNeedsPayment(status)) {
+        helpEl.textContent = "Selected players will be marked paid. Green fee ledger entries will be created or updated.";
+        return;
+    }
+    helpEl.textContent = "Selected players will move to this status. Existing payment entries for those bookings will be removed.";
+}
+
+function renderTeeSlotPlayerList(bookings = []) {
+    const root = document.getElementById("tee-slot-player-list");
+    if (!(root instanceof HTMLElement)) return;
+    const rows = Array.isArray(bookings) ? bookings : [];
+
+    if (!rows.length) {
+        root.innerHTML = `<div class="empty-state" style="padding:16px;">No bookings found in this slot.</div>`;
+        updateTeeSlotSelectionSummary();
+        return;
+    }
+
+    root.innerHTML = rows.map((booking) => {
+        const bookingId = Number.parseInt(String(booking?.id || ""), 10);
+        const safeBookingId = Number.isFinite(bookingId) ? bookingId : 0;
+        const name = escapeHtml(String(booking?.player_name || "Player"));
+        const email = booking?.player_email ? escapeHtml(String(booking.player_email)) : "No email";
+        const status = String(booking?.status || "booked");
+        const statusClass = statusToClass(status);
+        const statusLabel = statusToLabel(status);
+        const price = formatCurrencyZAR(booking?.price || 0);
+
+        return `
+            <div class="tee-slot-player-row">
+                <label class="tee-slot-player-main">
+                    <input type="checkbox" data-booking-id="${safeBookingId}" checked>
+                    <span>
+                        <span class="tee-slot-player-name">${name}</span>
+                        <span class="tee-slot-player-meta">${email} • ${price}</span>
+                    </span>
+                </label>
+                <span class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+                <button type="button" class="btn-secondary btn-small tee-slot-player-open" data-open-booking-id="${safeBookingId}">Open</button>
+            </div>
+        `;
+    }).join("");
+
+    updateTeeSlotSelectionSummary();
+}
+
+function openTeeSlotManageModal(teeTimeId) {
+    const modal = document.getElementById("tee-slot-modal");
+    if (!(modal instanceof HTMLElement)) return;
+
+    const slot = teeSheetTeeTimeMap.get(String(teeTimeId));
+    if (!slot) {
+        toastError("Slot data is stale. Refresh the tee sheet and try again.");
+        return;
+    }
+
+    const bookings = Array.isArray(slot.bookings) ? slot.bookings.filter(Boolean) : [];
+    if (!bookings.length) {
+        toastInfo("No players booked in this slot yet.");
+        return;
+    }
+
+    teeSlotManageState = {
+        teeTimeId: Number.parseInt(String(slot.id || teeTimeId || ""), 10) || null,
+        teeTimeIso: String(slot.tee_time || ""),
+        teeLabel: String(slot.hole || "1"),
+        bookings: bookings.map((booking) => ({ ...booking })),
+    };
+
+    const timeEl = document.getElementById("tee-slot-time");
+    const teeEl = document.getElementById("tee-slot-tee");
+    const bookedEl = document.getElementById("tee-slot-booked-count");
+    const statusEl = document.getElementById("tee-slot-action-status");
+    const paymentEl = document.getElementById("tee-slot-payment-method");
+    const accountEl = document.getElementById("tee-slot-account-code");
+    const textEl = document.getElementById("tee-slot-status-text");
+
+    if (timeEl) timeEl.textContent = teeSlotManageState.teeTimeIso ? formatDateTimeDMY(teeSlotManageState.teeTimeIso) : "-";
+    if (teeEl) teeEl.textContent = teeSlotManageState.teeLabel || "1";
+    if (bookedEl) bookedEl.textContent = formatInteger(bookings.length);
+    if (textEl) textEl.textContent = "";
+
+    const allAlreadyChecked = bookings.every((booking) => {
+        const status = String(booking?.status || "").toLowerCase();
+        return status === "checked_in" || status === "completed";
+    });
+    if (statusEl instanceof HTMLSelectElement) {
+        statusEl.value = allAlreadyChecked ? "completed" : "checked_in";
+    }
+
+    const rememberedMethod = String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase();
+    if (paymentEl instanceof HTMLSelectElement) {
+        paymentEl.value = rememberedMethod && Array.from(paymentEl.options).some((opt) => opt.value === rememberedMethod)
+            ? rememberedMethod
+            : "CARD";
+    }
+
+    if (accountEl instanceof HTMLInputElement) {
+        const firstAccount = bookings
+            .map((booking) => String(booking?.club_card || "").trim())
+            .find((value) => Boolean(value));
+        accountEl.value = firstAccount || "";
+    }
+
+    renderTeeSlotPlayerList(teeSlotManageState.bookings);
+    updateTeeSlotActionHelp();
+    modal.classList.add("show");
+}
+
+async function applyTeeSlotBatchUpdate() {
+    const applyBtn = document.getElementById("tee-slot-apply");
+    const statusText = document.getElementById("tee-slot-status-text");
+    const selectedIds = getSelectedTeeSlotBookingIds();
+    if (!selectedIds.length) {
+        toastInfo("Select at least one player in this slot.");
+        return;
+    }
+
+    const status = String(document.getElementById("tee-slot-action-status")?.value || "").trim().toLowerCase();
+    const paymentMethod = String(document.getElementById("tee-slot-payment-method")?.value || "").trim().toUpperCase();
+    const accountCode = String(document.getElementById("tee-slot-account-code")?.value || "").trim();
+
+    const payload = { booking_ids: selectedIds };
+    if (status) payload.status = status;
+    if (paymentMethod && (!status || teeSlotStatusNeedsPayment(status))) payload.payment_method = paymentMethod;
+    if (accountCode) payload.account_code = accountCode;
+
+    if (!payload.status && !payload.payment_method && !payload.account_code) {
+        toastInfo("Pick a status action, payment method, or debtor account before applying.");
+        return;
+    }
+
+    if (paymentMethod) {
+        localStorage.setItem("last_payment_method", paymentMethod);
+    }
+
+    if (applyBtn instanceof HTMLButtonElement) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = "Applying...";
+    }
+    if (statusText) statusText.textContent = "Updating bookings...";
+
+    try {
+        const token = localStorage.getItem("token");
+        const result = await fetchJson(`${API_BASE}/api/admin/bookings/batch-update`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        closeTeeSlotManageModal();
+        await loadTeeTimes({ preserveScroll: true });
+        loadBookings();
+        loadDashboard();
+
+        const updated = Number(result?.updated || selectedIds.length);
+        const actionLabel = payload.status ? ` (${statusToLabel(String(payload.status))})` : "";
+        toastSuccess(`Updated ${formatInteger(updated)} booking${updated === 1 ? "" : "s"}${actionLabel}.`);
+    } catch (error) {
+        const message = String(error?.message || "Unable to update selected bookings.");
+        if (statusText) statusText.textContent = message;
+        toastError(message);
+    } finally {
+        if (applyBtn instanceof HTMLButtonElement) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = "Apply to Selected";
+        }
+    }
+}
+
+function setupTeeSlotManageModal() {
+    const modal = document.getElementById("tee-slot-modal");
+    if (!(modal instanceof HTMLElement)) return;
+
+    const selectAllBtn = document.getElementById("tee-slot-select-all");
+    const selectNoneBtn = document.getElementById("tee-slot-select-none");
+    const refreshBtn = document.getElementById("tee-slot-refresh-detail");
+    const applyBtn = document.getElementById("tee-slot-apply");
+    const statusSelect = document.getElementById("tee-slot-action-status");
+    const paymentSelect = document.getElementById("tee-slot-payment-method");
+
+    selectAllBtn?.addEventListener("click", () => {
+        document.querySelectorAll("#tee-slot-player-list input[data-booking-id]").forEach((input) => {
+            input.checked = true;
+        });
+        updateTeeSlotSelectionSummary();
+    });
+
+    selectNoneBtn?.addEventListener("click", () => {
+        document.querySelectorAll("#tee-slot-player-list input[data-booking-id]").forEach((input) => {
+            input.checked = false;
+        });
+        updateTeeSlotSelectionSummary();
+    });
+
+    refreshBtn?.addEventListener("click", async () => {
+        if (refreshBtn instanceof HTMLButtonElement) refreshBtn.disabled = true;
+        try {
+            await loadTeeTimes({ preserveScroll: true });
+            if (teeSlotManageState.teeTimeId) openTeeSlotManageModal(teeSlotManageState.teeTimeId);
+        } finally {
+            if (refreshBtn instanceof HTMLButtonElement) refreshBtn.disabled = false;
+        }
+    });
+
+    applyBtn?.addEventListener("click", () => {
+        applyTeeSlotBatchUpdate();
+    });
+
+    statusSelect?.addEventListener("change", () => {
+        updateTeeSlotActionHelp();
+    });
+
+    paymentSelect?.addEventListener("change", () => {
+        const method = String(paymentSelect.value || "").trim().toUpperCase();
+        if (method) localStorage.setItem("last_payment_method", method);
+    });
+
+    modal.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (!target.matches("#tee-slot-player-list input[data-booking-id]")) return;
+        updateTeeSlotSelectionSummary();
+    });
+
+    modal.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const openBtn = target.closest("[data-open-booking-id]");
+        if (!(openBtn instanceof HTMLElement)) return;
+        const bookingId = Number.parseInt(String(openBtn.getAttribute("data-open-booking-id") || ""), 10);
+        if (!Number.isFinite(bookingId) || bookingId <= 0) return;
+        closeTeeSlotManageModal();
+        viewBookingDetail(bookingId);
     });
 }
 
@@ -5054,6 +5361,7 @@ async function generateTeeSheetRange(dateStr, tees, startTime, endTime, interval
 function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
     const tbody = document.getElementById("admin-tee-sheet-body");
     if (!tbody) return;
+    teeSheetTeeTimeMap = new Map();
 
     if (dayTeeTimes.length === 0) {
         const message = emptyMessage || "No tee times available for this day.";
@@ -5078,14 +5386,36 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         const timeLabel = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
         const teeLabel = tt.hole || "1";
-        const bookings = (tt.bookings || []).slice(0, 4);
+        const allBookings = Array.isArray(tt.bookings) ? [...tt.bookings] : [];
+        const bookings = allBookings.slice(0, 4);
         const capacity = tt.capacity || 4;
+        const bookedCount = Math.min(allBookings.length, capacity);
         const closed = isTeeTimeClosed(dateStr, tt.tee_time);
+        teeSheetTeeTimeMap.set(String(tt.id), {
+            ...tt,
+            hole: teeLabel,
+            capacity,
+            bookings: allBookings,
+        });
 
         const repeatedTime = groupByTime && prevTimeKey === timeKey;
         const timeCell = repeatedTime ? "" : escapeHtml(timeLabel);
         const rowClass = repeatedTime ? "tee-row-sub" : "";
         prevTimeKey = timeKey;
+
+        const manageSlotHtml = `
+            <button
+                type="button"
+                class="tee-row-manage-btn"
+                onclick="openTeeSlotManageModal(${Number(tt.id)})"
+                title="Manage this booking slot"
+                ${bookedCount > 0 ? "" : "style=\"display:none;\""}
+            >
+                Manage Slot
+                <span>${formatInteger(bookedCount)} player${bookedCount === 1 ? "" : "s"}</span>
+            </button>
+            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>Open</span>
+        `;
 
         const cells = [];
         for (let i = 0; i < 4; i++) {
@@ -5131,7 +5461,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 `);
             } else {
                 const slotNumber = i + 1;
-                const toAdd = Math.max(1, slotNumber - bookings.length);
+                const toAdd = Math.max(1, slotNumber - bookedCount);
                 if (closed) {
                     cells.push(`
                         <td>
@@ -5147,8 +5477,8 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                             <div class="slot-card open"
                                  data-tee-time-id="${escapeHtml(String(tt.id))}"
                                  onclick="openBookingFormAdmin(${tt.id}, '${tt.tee_time}', '${teeLabel}', ${capacity}, ${bookings.length}, ${slotNumber})">
-                                <div class="slot-name">Available</div>
-                                <div class="slot-action">Add ${toAdd} player${toAdd === 1 ? "" : "s"}</div>
+                                <div class="slot-name">Open Slot</div>
+                                <div class="slot-action">Book ${toAdd} player${toAdd === 1 ? "" : "s"}</div>
                             </div>
                         </td>
                     `);
@@ -5159,7 +5489,12 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         html.push(`
             <tr class="${rowClass}" data-tee-time-iso="${tt.tee_time}">
                 <td class="time-col">${timeCell}</td>
-                <td class="tee-col">${escapeHtml(teeLabel)}</td>
+                <td class="tee-col">
+                    <div class="tee-cell-stack">
+                        <span class="tee-cell-tee">${escapeHtml(teeLabel)}</span>
+                        ${manageSlotHtml}
+                    </div>
+                </td>
                 ${cells.join("")}
             </tr>
         `);
@@ -5209,6 +5544,18 @@ function _updateOpenSlotsForRow(row) {
 
     const bookedCount = row.querySelectorAll('.slot-card[data-booking-id]').length;
     const isClosed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso) : false;
+    const manageBtn = row.querySelector(".tee-row-manage-btn");
+    const manageMeta = manageBtn?.querySelector("span");
+    const manageMuted = row.querySelector(".tee-row-manage-muted");
+    if (manageBtn instanceof HTMLElement) {
+        manageBtn.style.display = bookedCount > 0 ? "" : "none";
+        if (manageMeta instanceof HTMLElement) {
+            manageMeta.textContent = `${formatInteger(bookedCount)} player${bookedCount === 1 ? "" : "s"}`;
+        }
+    }
+    if (manageMuted instanceof HTMLElement) {
+        manageMuted.style.display = bookedCount > 0 ? "none" : "";
+    }
 
     const cells = Array.from(row.cells).slice(2, 6);
     for (let i = 0; i < cells.length; i++) {
@@ -5222,7 +5569,7 @@ function _updateOpenSlotsForRow(row) {
 
         const toAdd = Math.max(1, slotNumber - bookedCount);
         const action = open.querySelector(".slot-action");
-        if (action) action.textContent = `Add ${toAdd} player${toAdd === 1 ? "" : "s"}`;
+        if (action) action.textContent = `Book ${toAdd} player${toAdd === 1 ? "" : "s"}`;
 
         const teeTimeId = open.getAttribute("data-tee-time-id");
         if (!teeTimeId) continue;
@@ -5255,10 +5602,37 @@ function _buildSlotPlaceholderForRow(row, teeTimeId, slotNumber) {
     el.className = "slot-card open";
     el.setAttribute("data-tee-time-id", String(teeTimeId));
     el.innerHTML = `
-        <div class="slot-name">Available</div>
-        <div class="slot-action">Add player</div>
+        <div class="slot-name">Open Slot</div>
+        <div class="slot-action">Book player</div>
     `;
     return el;
+}
+
+function syncTeeSheetMapAfterMove(bookingId, fromTeeTimeId, toTeeTimeId) {
+    const fromKey = String(fromTeeTimeId || "");
+    const toKey = String(toTeeTimeId || "");
+    if (!fromKey || !toKey || fromKey === toKey) return;
+
+    const fromSlot = teeSheetTeeTimeMap.get(fromKey);
+    const toSlot = teeSheetTeeTimeMap.get(toKey);
+    if (!fromSlot || !toSlot) return;
+
+    const fromBookings = Array.isArray(fromSlot.bookings) ? [...fromSlot.bookings] : [];
+    const moveId = Number.parseInt(String(bookingId || ""), 10);
+    if (!Number.isFinite(moveId) || moveId <= 0) return;
+
+    const index = fromBookings.findIndex((booking) => Number.parseInt(String(booking?.id || ""), 10) === moveId);
+    if (index < 0) return;
+
+    const [movedBooking] = fromBookings.splice(index, 1);
+    const toBookings = Array.isArray(toSlot.bookings) ? [...toSlot.bookings] : [];
+    if (movedBooking) {
+        movedBooking.tee_time_id = Number.parseInt(toKey, 10) || movedBooking.tee_time_id;
+        toBookings.push(movedBooking);
+    }
+
+    teeSheetTeeTimeMap.set(fromKey, { ...fromSlot, bookings: fromBookings });
+    teeSheetTeeTimeMap.set(toKey, { ...toSlot, bookings: toBookings });
 }
 
 function setupTeeSheetDragDrop() {
@@ -5421,6 +5795,7 @@ function setupTeeSheetDragDrop() {
             }
 
             await moveBookingToTeeTime(bookingId, toTeeTimeId);
+            syncTeeSheetMapAfterMove(bookingId, teeDragFromTeeTimeId, toTeeTimeId);
             toastSuccess("Booking moved");
             if (currentActivePage === "bookings") loadBookings();
             if (currentActivePage === "dashboard") loadDashboard();
@@ -5511,6 +5886,54 @@ function restoreWrapAnchor(wrap, anchor) {
     if (Number.isFinite(anchor.scrollTop)) {
         wrap.scrollTop = anchor.scrollTop;
     }
+}
+
+function updateTeeSheetSummary(teeTimes = [], dateStr = "") {
+    const slotsEl = document.getElementById("tee-summary-slots");
+    const openSeatsEl = document.getElementById("tee-summary-open-seats");
+    const bookedEl = document.getElementById("tee-summary-booked");
+    const checkedInEl = document.getElementById("tee-summary-checked-in");
+    const noShowEl = document.getElementById("tee-summary-no-show");
+    const nextEl = document.getElementById("tee-summary-next");
+
+    const rows = Array.isArray(teeTimes) ? teeTimes : [];
+    let totalSlots = 0;
+    let bookedPlayers = 0;
+    let checkedIn = 0;
+    let noShow = 0;
+    let nextTee = null;
+    const now = new Date();
+
+    rows.forEach(tt => {
+        const capacity = Math.max(0, Number(tt?.capacity || 4));
+        const bookings = Array.isArray(tt?.bookings) ? tt.bookings : [];
+        totalSlots += capacity;
+        bookedPlayers += bookings.length;
+
+        bookings.forEach(booking => {
+            const status = String(booking?.status || "").toLowerCase();
+            if (status === "checked_in") checkedIn += 1;
+            if (status === "no_show") noShow += 1;
+        });
+
+        const teeDate = new Date(tt?.tee_time);
+        if (!Number.isNaN(teeDate.getTime()) && teeDate >= now) {
+            if (!nextTee || teeDate < nextTee) nextTee = teeDate;
+        }
+    });
+
+    const openSeats = Math.max(0, totalSlots - bookedPlayers);
+    const todayStr = new Date().toISOString().split("T")[0];
+    const nextLabel = nextTee
+        ? nextTee.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : (dateStr && dateStr < todayStr ? "Past day" : "No upcoming");
+
+    if (slotsEl) slotsEl.textContent = formatInteger(totalSlots);
+    if (openSeatsEl) openSeatsEl.textContent = formatInteger(openSeats);
+    if (bookedEl) bookedEl.textContent = formatInteger(bookedPlayers);
+    if (checkedInEl) checkedInEl.textContent = formatInteger(checkedIn);
+    if (noShowEl) noShowEl.textContent = formatInteger(noShow);
+    if (nextEl) nextEl.textContent = nextLabel;
 }
 
 async function loadTeeTimes(options = {}) {
@@ -5634,6 +6057,7 @@ async function loadTeeTimes(options = {}) {
                     return loadTeeTimes(options);
                 }
                 renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
+                updateTeeSheetSummary([], dateStr);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
                 return;
@@ -5643,6 +6067,7 @@ async function loadTeeTimes(options = {}) {
                 return loadTeeTimes(options);
             }
             renderTeeSheetRows([], dateStr, "No tee times scheduled for this date.");
+            updateTeeSheetSummary([], dateStr);
             return;
         }
 
@@ -5657,6 +6082,7 @@ async function loadTeeTimes(options = {}) {
                     }
                 }
                 renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
+                updateTeeSheetSummary([], dateStr);
                 scrollTeeSheetToNow(dateStr);
                 applyTeeSheetSearchFilter();
                 return;
@@ -5666,6 +6092,7 @@ async function loadTeeTimes(options = {}) {
                 return loadTeeTimes(options);
             }
             renderTeeSheetRows([], dateStr, "No tee times for this tee on the selected date.");
+            updateTeeSheetSummary([], dateStr);
             applyTeeSheetSearchFilter();
             return;
         }
@@ -5680,8 +6107,10 @@ async function loadTeeTimes(options = {}) {
                 }
             }
             renderTeeSheetRows([], dateStr, `No 9-hole tee times scheduled (${TEE_NINE_HOLE_START}-${TEE_NINE_HOLE_END}).`);
+            updateTeeSheetSummary([], dateStr);
         } else {
             renderTeeSheetRows(filteredTeeTimes, dateStr);
+            updateTeeSheetSummary(filteredTeeTimes, dateStr);
         }
         const todayStr = new Date().toISOString().split("T")[0];
         const shouldAutoScrollNow = !preserveScroll && dateStr === todayStr;
@@ -5700,6 +6129,7 @@ async function loadTeeTimes(options = {}) {
                 </td>
             </tr>
         `;
+        updateTeeSheetSummary([], dateStr);
     }
 }
 
@@ -6461,6 +6891,7 @@ async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, ex
     if (available <= 0) {
         rowsContainer.innerHTML = `<div class="empty-state">No available slots for this tee time.</div>`;
     } else {
+        renderTeeBookingQuickCountButtons();
         let desired = parseInt(String(desiredTotal ?? ""), 10);
         if (!Number.isFinite(desired) || desired <= 0) desired = Math.min(teeBookingState.capacity, (teeBookingState.existing || 0) + 1);
         desired = Math.max(1, Math.min(teeBookingState.capacity, desired));
@@ -6469,9 +6900,9 @@ async function openTeeBookingModal(teeTimeId, teeTimeIso, teeLabel, capacity, ex
         let toAdd = Math.max(1, desired - (teeBookingState.existing || 0));
         toAdd = Math.min(available, toAdd);
 
-        for (let i = 0; i < toAdd; i++) addBookingRow();
+        setTeeBookingRowCount(toAdd);
     }
-
+    if (available <= 0) renderTeeBookingQuickCountButtons();
     updateTeeBookingAddingCount();
 
     document.getElementById("tee-booking-total").textContent = "0";
@@ -6489,6 +6920,56 @@ function setupTeeBookingModal() {
             teeBookingState.prepaid = Boolean(paidToggle.checked);
         });
     }
+
+    const countRoot = document.getElementById("tee-booking-quickcount");
+    if (countRoot instanceof HTMLElement) {
+        countRoot.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const button = target.closest(".tee-booking-count-btn");
+            if (!(button instanceof HTMLButtonElement)) return;
+            const requested = Number.parseInt(String(button.dataset.count || ""), 10);
+            if (!Number.isFinite(requested) || requested < 1) return;
+            setTeeBookingRowCount(requested);
+        });
+    }
+}
+
+function renderTeeBookingQuickCountButtons() {
+    const quickRoot = document.getElementById("tee-booking-quickcount");
+    if (!(quickRoot instanceof HTMLElement)) return;
+
+    const available = Math.max(0, teeBookingState.capacity - teeBookingState.existing);
+    quickRoot.querySelectorAll(".tee-booking-count-btn").forEach(btn => {
+        const requested = Number.parseInt(String(btn.dataset.count || ""), 10);
+        const enabled = Number.isFinite(requested) && requested >= 1 && requested <= available;
+        btn.disabled = !enabled;
+        btn.classList.toggle("active", false);
+    });
+}
+
+function setTeeBookingRowCount(requestedCount) {
+    const rowsContainer = document.getElementById("tee-booking-rows");
+    if (!(rowsContainer instanceof HTMLElement)) return;
+    const available = Math.max(0, teeBookingState.capacity - teeBookingState.existing);
+    const targetCount = Math.max(1, Math.min(available, Number.parseInt(String(requestedCount || "1"), 10) || 1));
+
+    while (rowsContainer.querySelectorAll(".tee-booking-row").length > targetCount) {
+        const last = rowsContainer.querySelector(".tee-booking-row:last-child");
+        if (!(last instanceof HTMLElement)) break;
+        last.remove();
+    }
+    while (rowsContainer.querySelectorAll(".tee-booking-row").length < targetCount) {
+        addBookingRow();
+    }
+
+    const quickRoot = document.getElementById("tee-booking-quickcount");
+    quickRoot?.querySelectorAll(".tee-booking-count-btn").forEach(btn => {
+        const count = Number.parseInt(String(btn.dataset.count || ""), 10);
+        btn.classList.toggle("active", count === targetCount);
+    });
+    updateTeeBookingAddingCount();
+    updateBookingTotals();
 }
 
 function updateTeeBookingAddingCount() {
@@ -6523,13 +7004,6 @@ function addBookingRow() {
                     <option value="member">Member</option>
                 </select>
             </div>
-            <div>
-                <label>Senior</label>
-                <label style="display:flex; align-items:center; gap:8px; font-weight:600; color:#2c3e50;">
-                    <input type="checkbox" data-field="senior">
-                    60+
-                </label>
-            </div>
             <div class="typeahead">
                 <label>Player Name *</label>
                 <input type="text" data-field="name" placeholder="Search member or type name" autocomplete="off">
@@ -6541,28 +7015,40 @@ function addBookingRow() {
                 <input type="email" data-field="email" placeholder="Email">
             </div>
             <div>
-                <label>Handicap</label>
-                <input type="text" data-field="handicap" placeholder="Handicap">
-            </div>
-            <div>
                 <label>Fee</label>
                 <select data-field="fee">
                     <option value="">Auto (Recommended)</option>
                     ${feeOptionsHtml()}
                 </select>
             </div>
-            <div class="requirements">
-                <label>Requirements</label>
-                <div class="req-toggles">
-                    <label class="req-toggle"><input type="checkbox" data-field="cart">Cart</label>
-                    <label class="req-toggle"><input type="checkbox" data-field="push_cart">Push Cart</label>
-                    <label class="req-toggle"><input type="checkbox" data-field="caddy">Caddy</label>
-                </div>
-                <div class="cart-fee-label" data-row-cart-label>—</div>
-                <div class="cart-fee-label" data-row-push-cart-label>—</div>
-                <div class="cart-fee-label" data-row-caddy-label>—</div>
-            </div>
         </div>
+        <details class="booking-row-optional">
+            <summary>More options</summary>
+            <div class="booking-grid booking-grid-optional">
+                <div>
+                    <label>Senior</label>
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; color:#2c3e50;">
+                        <input type="checkbox" data-field="senior">
+                        60+
+                    </label>
+                </div>
+                <div>
+                    <label>Handicap</label>
+                    <input type="text" data-field="handicap" placeholder="Handicap">
+                </div>
+                <div class="requirements">
+                    <label>Requirements</label>
+                    <div class="req-toggles">
+                        <label class="req-toggle"><input type="checkbox" data-field="cart">Cart</label>
+                        <label class="req-toggle"><input type="checkbox" data-field="push_cart">Push Cart</label>
+                        <label class="req-toggle"><input type="checkbox" data-field="caddy">Caddy</label>
+                    </div>
+                    <div class="cart-fee-label" data-row-cart-label>—</div>
+                    <div class="cart-fee-label" data-row-push-cart-label>—</div>
+                    <div class="cart-fee-label" data-row-caddy-label>—</div>
+                </div>
+            </div>
+        </details>
     `;
     rowsContainer.appendChild(row);
     updateTeeBookingAddingCount();
@@ -6574,6 +7060,17 @@ function addBookingRow() {
     row.dataset.caddyLabel = "Caddy";
     suggestFeeForRow(row);
     updateBookingTotals();
+
+    const currentCount = rowsContainer.querySelectorAll(".tee-booking-row").length;
+    const quickRoot = document.getElementById("tee-booking-quickcount");
+    quickRoot?.querySelectorAll(".tee-booking-count-btn").forEach(btn => {
+        const count = Number.parseInt(String(btn.dataset.count || ""), 10);
+        btn.classList.toggle("active", count === currentCount);
+    });
+
+    if (rowIndex === 1) {
+        row.querySelector("input[data-field='name']")?.focus();
+    }
 }
 
 function removeBookingRow(index) {
@@ -6583,6 +7080,12 @@ function removeBookingRow(index) {
         row.remove();
         updateTeeBookingAddingCount();
         updateBookingTotals();
+        const rows = rowsContainer.querySelectorAll(".tee-booking-row").length;
+        const quickRoot = document.getElementById("tee-booking-quickcount");
+        quickRoot?.querySelectorAll(".tee-booking-count-btn").forEach(btn => {
+            const count = Number.parseInt(String(btn.dataset.count || ""), 10);
+            btn.classList.toggle("active", count === rows);
+        });
     }
 }
 
