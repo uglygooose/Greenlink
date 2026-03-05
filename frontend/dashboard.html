@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2">
   <link rel="shortcut icon" href="assets/favicon.png?v=2">
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2">
-  <link rel="stylesheet" href="/frontend/player.css?v=2026-02-25-24">
+  <link rel="stylesheet" href="/frontend/player.css?v=2026-03-05-weather-01">
   <script src="club-config.js"></script>
 </head>
 <body>
@@ -65,6 +65,16 @@
           </div>
           <div id="next-booking-card" class="callout-card">
             <div class="empty-state">Loading next booking...</div>
+          </div>
+        </article>
+
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Weather Check</h2>
+            <button class="btn ghost small" id="refresh-weather-btn" type="button">Refresh</button>
+          </div>
+          <div id="weather-alert-list" class="stack-list">
+            <div class="empty-state">No weather prompts right now.</div>
           </div>
         </article>
 
@@ -326,6 +336,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/frontend/player.js?v=2026-02-25-24" defer></script>
+  <script src="/frontend/player.js?v=2026-03-05-weather-01" defer></script>
 </body>
 </html>

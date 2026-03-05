@@ -21,6 +21,7 @@ const state = {
   teeFilter: "open",
   roundsFilter: "action",
   teeTimes: [],
+  notifications: [],
   selectedTeeTime: null,
   bookingDraft: [],
   bookingContextByRoundId: {},
@@ -121,6 +122,21 @@ function roundStateLabel(item) {
   if (round.no_return) return "No Return";
   if (round.closed) return "Closed";
   return "Open";
+}
+
+function weatherResponseLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "confirm_playing") return "Confirmed";
+  if (key === "request_cancel") return "Cancel Req";
+  if (key === "request_callback") return "Call Back";
+  return "Pending";
+}
+
+function weatherResponsePillClass(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "confirm_playing") return "ok";
+  if (key === "request_cancel" || key === "request_callback") return "warn";
+  return "";
 }
 
 function inferPlayerType(profile) {
@@ -375,7 +391,8 @@ function renderHome() {
 
   const upcoming = upcomingBookings(6);
   const next = upcoming[0] || null;
-  const actionCount = (state.bookings || []).filter(bookingNeedsRoundAction).length;
+  const weatherActionCount = (state.notifications || []).filter(item => !String(item?.response || "").trim()).length;
+  const actionCount = (state.bookings || []).filter(bookingNeedsRoundAction).length + weatherActionCount;
   const checklist = profileReadinessItems(profile);
   const ready = checklist.filter(item => item.ok).length;
   const readinessPct = checklist.length ? Math.round((ready / checklist.length) * 100) : 0;
@@ -416,6 +433,57 @@ function renderHome() {
           <span class="pill ${roundClass}">${escapeHtml(roundLabel)}</span>
         </div>
         <div class="row-meta">${escapeHtml(status)} · ${escapeHtml(item?.player_name || profile?.name || "Booking")}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderWeatherAlerts() {
+  const listEl = document.getElementById("weather-alert-list");
+  if (!listEl) return;
+
+  const rows = (Array.isArray(state.notifications) ? state.notifications : [])
+    .filter(item => String(item?.kind || "").trim().toLowerCase() === "weather_reconfirm")
+    .sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0));
+
+  if (!rows.length) {
+    listEl.innerHTML = `<div class="empty-state">No weather prompts right now.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = rows.map(item => {
+    const payload = (item?.payload && typeof item.payload === "object") ? item.payload : {};
+    const teeTime = payload?.tee_time || null;
+    const teeLabel = String(payload?.tee_label || "1");
+    const riskLevel = String(payload?.risk_level || "medium").toLowerCase();
+    const riskClass = riskLevel === "high" ? "bad" : riskLevel === "medium" ? "warn" : "";
+    const riskLabel = riskLevel === "high" ? "High Risk" : riskLevel === "medium" ? "Weather Risk" : "Review";
+    const response = String(item?.response || "").trim().toLowerCase();
+    const responseClass = weatherResponsePillClass(response);
+    const responseLabel = weatherResponseLabel(response);
+    const reasons = Array.isArray(payload?.risk_reasons) ? payload.risk_reasons : [];
+    const reasonText = reasons.length ? reasons.join(", ") : "Weather advisory.";
+    const notificationId = Number(item?.id || 0);
+    const canRespond = !response && notificationId > 0;
+
+    return `
+      <div class="list-row">
+        <div class="list-row-header">
+          <div class="list-row-title">${escapeHtml(teeTime ? formatDateTime(teeTime) : "Upcoming booking")}</div>
+          <span class="pill ${riskClass}">${escapeHtml(riskLabel)}</span>
+        </div>
+        <div class="row-meta">Tee ${escapeHtml(teeLabel)} · ${escapeHtml(reasonText)}</div>
+        <div class="row-meta">${escapeHtml(item?.body || "")}</div>
+        <div class="list-row-header">
+          <span class="pill ${responseClass}">${escapeHtml(responseLabel)}</span>
+          ${canRespond ? `
+            <div class="round-actions">
+              <button class="btn primary small" type="button" data-action="weather-response" data-notification-id="${notificationId}" data-weather-response="confirm_playing">Still Playing</button>
+              <button class="btn outline small" type="button" data-action="weather-response" data-notification-id="${notificationId}" data-weather-response="request_cancel">Need to Cancel</button>
+              <button class="btn ghost small" type="button" data-action="weather-response" data-notification-id="${notificationId}" data-weather-response="request_callback">Call Me</button>
+            </div>
+          ` : ``}
+        </div>
       </div>
     `;
   }).join("");
@@ -609,13 +677,17 @@ function renderProfileChecklist() {
 function renderAll() {
   renderSummaryChips();
   renderHome();
+  renderWeatherAlerts();
   renderTeeTimes();
   renderRounds();
   renderProfileChecklist();
   populateProfileForm();
 
   const missing = profileCompleteness(state.profile || {});
-  if (missing.length) {
+  const pendingWeather = (state.notifications || []).filter(item => !String(item?.response || "").trim()).length;
+  if (pendingWeather > 0) {
+    setStatusBanner(`You have ${formatInteger(pendingWeather)} weather prompt${pendingWeather === 1 ? "" : "s"} requiring response.`, true);
+  } else if (missing.length) {
     setStatusBanner(`Complete ${missing.join(", ")} to avoid booking and scoring issues.`, true);
   } else {
     setStatusBanner("", false);
@@ -644,6 +716,34 @@ async function loadMyBookings() {
   } catch (err) {
     state.bookings = [];
     showToast(err?.message || "Failed to load bookings", "error");
+  }
+}
+
+async function loadNotifications() {
+  try {
+    const response = await api("/profile/notifications?state=all&kind=weather_reconfirm&limit=30");
+    state.notifications = Array.isArray(response?.items) ? response.items : [];
+  } catch (err) {
+    state.notifications = [];
+    showToast(err?.message || "Failed to load weather prompts", "error");
+  }
+}
+
+async function respondToWeatherNotification(notificationId, action) {
+  const id = Number(notificationId || 0);
+  const actionValue = String(action || "").trim().toLowerCase();
+  if (!(id > 0) || !["confirm_playing", "request_cancel", "request_callback"].includes(actionValue)) return;
+
+  try {
+    await api(`/profile/notifications/${id}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action: actionValue })
+    });
+    showToast("Response saved.", "ok");
+    await Promise.all([loadNotifications(), loadMyBookings()]);
+    renderAll();
+  } catch (err) {
+    showToast(err?.message || "Failed to save response.", "error");
   }
 }
 
@@ -1018,11 +1118,15 @@ function bindEvents() {
   });
 
   document.getElementById("refresh-home-btn")?.addEventListener("click", async () => {
-    await loadMyBookings();
+    await Promise.all([loadMyBookings(), loadNotifications()]);
     renderAll();
   });
   document.getElementById("refresh-rounds-btn")?.addEventListener("click", async () => {
     await loadMyBookings();
+    renderAll();
+  });
+  document.getElementById("refresh-weather-btn")?.addEventListener("click", async () => {
+    await loadNotifications();
     renderAll();
   });
   document.getElementById("refresh-profile-btn")?.addEventListener("click", async () => {
@@ -1151,6 +1255,16 @@ function bindEvents() {
     }
   });
 
+  document.getElementById("weather-alert-list")?.addEventListener("click", event => {
+    const target = event.target instanceof HTMLElement ? event.target.closest("[data-action='weather-response']") : null;
+    if (!target) return;
+    const notificationId = Number(target.getAttribute("data-notification-id") || 0);
+    const response = String(target.getAttribute("data-weather-response") || "").trim();
+    if (notificationId > 0 && response) {
+      respondToWeatherNotification(notificationId, response);
+    }
+  });
+
   document.getElementById("profile-form")?.addEventListener("submit", saveProfile);
 }
 
@@ -1172,7 +1286,7 @@ async function initialize() {
   await loadClubConfig();
   setActiveView(state.pendingRouteTab, { syncUrl: false });
 
-  await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings()]);
+  await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings(), loadNotifications()]);
   syncBookDateConstraints();
   await loadTeeTimes();
   renderAll();

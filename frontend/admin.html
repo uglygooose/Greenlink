@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
-    <link rel="stylesheet" href="admin-style.css?v=2026-02-25-ux-01" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-03-05-weather-01" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -902,6 +902,7 @@
                                     <button type="button" class="manage-item" data-action="import-bookings">Import Mirror Bookings CSV...</button>
                                     <button type="button" class="manage-item" data-action="import-members">Import Members CSV...</button>
                                     <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
+                                    <button type="button" class="manage-item" data-action="weather-reconfirm">Weather Reconfirm...</button>
                                     <button type="button" class="manage-item" data-action="tee-profile">Tee Schedule...</button>
                                 </div>
                             </div>
@@ -1529,6 +1530,53 @@
         </div>
     </div>
 
+    <!-- Modal for weather reconfirm prompts -->
+    <div id="weather-reconfirm-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Weather Reconfirm</h2>
+            <p class="muted-text">Check adverse-weather risk for booked players and send in-app reconfirm prompts to players with GreenLink login.</p>
+
+            <div class="bulk-book-grid">
+                <label for="weather-reconfirm-date">Date</label>
+                <input type="date" id="weather-reconfirm-date" />
+
+                <label for="weather-reconfirm-rain">Rain probability trigger (%)</label>
+                <input type="number" id="weather-reconfirm-rain" min="0" max="100" value="60" />
+
+                <label for="weather-reconfirm-mm">Rain volume trigger (mm)</label>
+                <input type="number" id="weather-reconfirm-mm" min="0" max="100" step="0.1" value="1.0" />
+
+                <label for="weather-reconfirm-wind">Wind trigger (km/h)</label>
+                <input type="number" id="weather-reconfirm-wind" min="0" max="200" step="1" value="40" />
+            </div>
+
+            <div class="bulk-book-actions">
+                <button class="btn-secondary" type="button" id="weather-reconfirm-preview-btn">Preview Risk</button>
+                <button class="btn-primary" type="button" id="weather-reconfirm-send-btn">Send In-App Prompts</button>
+                <span class="bulk-book-status" id="weather-reconfirm-status"></span>
+            </div>
+
+            <div class="table-container weather-reconfirm-table-wrap">
+                <table class="data-table weather-reconfirm-table">
+                    <thead>
+                        <tr>
+                            <th>Tee Time</th>
+                            <th>Player</th>
+                            <th>Risk</th>
+                            <th>Forecast</th>
+                            <th>In-App</th>
+                            <th>Response</th>
+                        </tr>
+                    </thead>
+                    <tbody id="weather-reconfirm-body">
+                        <tr><td colspan="6">Run preview to load weather risk.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal for bulk booking -->
     <div id="bulk-book-modal" class="modal">
         <div class="modal-content">
@@ -1661,6 +1709,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-02-25-ux-01"></script>
+	    <script src="admin.js?v=2026-03-05-weather-01"></script>
 	</body>
 	</html>

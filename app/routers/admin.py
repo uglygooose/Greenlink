@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import uuid
 import json
+import requests
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import String, asc, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
@@ -33,6 +34,7 @@ from app.models import (
     ProShopProduct,
     ProShopSale,
     ProShopSaleItem,
+    PlayerNotification,
 )
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db, get_password_hash
@@ -40,6 +42,11 @@ from calendar import isleap
 from app.club_config import club_config_response
 from app.tee_profile import load_tee_sheet_profile, save_tee_sheet_profile, tee_sheet_plan_for_date
 from app.tenancy import get_active_club_id
+from app.weather_alerts import (
+    build_weather_booking_candidates,
+    build_weather_prompt_payload,
+    serialize_notification_payload,
+)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -654,6 +661,244 @@ def undo_bulk_book_tee_sheet(
     db.commit()
 
     return {"status": "success", "group_id": gid, "deleted": len(ids)}
+
+
+class WeatherReconfirmRequest(BaseModel):
+    date: date
+    min_precip_probability: int = 60
+    min_precip_mm: float = 1.0
+    min_wind_kmh: float = 40.0
+
+
+def _weather_topic_key(target_date: date, booking_id: int) -> str:
+    return f"weather:{target_date.isoformat()}:{int(booking_id)}"
+
+
+def _attach_weather_notification_state(
+    db: Session,
+    club_id: int,
+    target_date: date,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not items:
+        return items
+
+    topic_keys = [
+        _weather_topic_key(target_date, int(item.get("booking_id") or 0))
+        for item in items
+        if int(item.get("booking_id") or 0) > 0
+    ]
+    if not topic_keys:
+        return items
+
+    existing_rows = (
+        db.query(PlayerNotification)
+        .filter(
+            PlayerNotification.club_id == int(club_id),
+            PlayerNotification.kind == "weather_reconfirm",
+            PlayerNotification.topic_key.in_(topic_keys),
+        )
+        .order_by(desc(PlayerNotification.created_at))
+        .all()
+    )
+    latest_by_topic: dict[str, PlayerNotification] = {}
+    for row in existing_rows:
+        topic = str(getattr(row, "topic_key", "") or "").strip()
+        if not topic or topic in latest_by_topic:
+            continue
+        latest_by_topic[topic] = row
+
+    for item in items:
+        booking_id = int(item.get("booking_id") or 0)
+        topic = _weather_topic_key(target_date, booking_id) if booking_id > 0 else None
+        row = latest_by_topic.get(topic or "")
+        item["topic_key"] = topic
+        if not row:
+            item["notification_id"] = None
+            item["notification_status"] = None
+            item["notification_response"] = None
+            item["notification_sent"] = False
+            continue
+        item["notification_id"] = int(getattr(row, "id", 0) or 0)
+        item["notification_status"] = str(getattr(row, "status", "") or "")
+        item["notification_response"] = str(getattr(row, "response", "") or "")
+        item["notification_sent"] = True
+
+    return items
+
+
+@router.get("/tee-sheet/weather/preview")
+def preview_tee_sheet_weather(
+    date_value: date = Query(..., alias="date"),
+    min_precip_probability: int = Query(60, ge=0, le=100),
+    min_precip_mm: float = Query(1.0, ge=0.0, le=100.0),
+    min_wind_kmh: float = Query(40.0, ge=0.0, le=200.0),
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    try:
+        payload = build_weather_booking_candidates(
+            db=db,
+            club_id=int(club_id),
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            min_wind_kmh=float(min_wind_kmh),
+        )
+        items = payload.get("items") if isinstance(payload, dict) else []
+        if isinstance(items, list):
+            payload["items"] = _attach_weather_notification_state(db, int(club_id), date_value, items)
+        return payload
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        _safe_rollback(db)
+        print(f"[WEATHER_PREVIEW] {type(e).__name__}: {str(e)[:220]}")
+        raise HTTPException(status_code=500, detail="Failed to build weather preview.")
+
+
+@router.post("/tee-sheet/weather/reconfirm")
+def send_tee_sheet_weather_reconfirm(
+    req: WeatherReconfirmRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    try:
+        payload = build_weather_booking_candidates(
+            db=db,
+            club_id=int(club_id),
+            target_date=req.date,
+            min_precip_probability=int(req.min_precip_probability),
+            min_precip_mm=float(req.min_precip_mm),
+            min_wind_kmh=float(req.min_wind_kmh),
+        )
+        items = payload.get("items") if isinstance(payload, dict) else []
+        if not isinstance(items, list):
+            items = []
+
+        items = _attach_weather_notification_state(db, int(club_id), req.date, items)
+        created = 0
+        skipped_existing = 0
+        skipped_unlinked = 0
+        now = datetime.utcnow()
+
+        for item in items:
+            if not bool(item.get("can_message")):
+                skipped_unlinked += 1
+                continue
+
+            if bool(item.get("notification_sent")):
+                skipped_existing += 1
+                continue
+
+            booking_id = int(item.get("booking_id") or 0)
+            tee_time_id = int(item.get("tee_time_id") or 0)
+            player_user_id = int(item.get("player_user_id") or 0)
+            topic_key = _weather_topic_key(req.date, booking_id) if booking_id > 0 else None
+            if player_user_id <= 0 or booking_id <= 0:
+                skipped_unlinked += 1
+                continue
+
+            title, body, payload_json = build_weather_prompt_payload(item, sender_name=getattr(staff, "name", None))
+
+            row = PlayerNotification(
+                club_id=int(club_id),
+                user_id=player_user_id,
+                booking_id=booking_id,
+                tee_time_id=tee_time_id if tee_time_id > 0 else None,
+                kind="weather_reconfirm",
+                topic_key=topic_key,
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload_json, separators=(",", ":")),
+                status="unread",
+                requires_action=True,
+                created_by_user_id=getattr(staff, "id", None),
+                created_at=now,
+            )
+            db.add(row)
+            created += 1
+
+        db.commit()
+        return {
+            "target_date": req.date.isoformat(),
+            "created": created,
+            "skipped_existing": skipped_existing,
+            "skipped_unlinked": skipped_unlinked,
+            "at_risk": int(((payload.get("counts") or {}).get("at_risk") or 0)),
+            "messageable": int(((payload.get("counts") or {}).get("messageable") or 0)),
+        }
+    except requests.RequestException:
+        _safe_rollback(db)
+        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+    except HTTPException:
+        _safe_rollback(db)
+        raise
+    except Exception as e:
+        _safe_rollback(db)
+        print(f"[WEATHER_SEND] {type(e).__name__}: {str(e)[:220]}")
+        raise HTTPException(status_code=500, detail="Failed to send weather reconfirm prompts.")
+
+
+@router.get("/tee-sheet/weather/responses")
+def list_tee_sheet_weather_responses(
+    date_value: date = Query(..., alias="date"),
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    prefix = f"weather:{date_value.isoformat()}:"
+    rows = (
+        db.query(PlayerNotification)
+        .filter(
+            PlayerNotification.club_id == int(club_id),
+            PlayerNotification.kind == "weather_reconfirm",
+            PlayerNotification.topic_key.like(f"{prefix}%"),
+        )
+        .order_by(desc(PlayerNotification.created_at))
+        .limit(300)
+        .all()
+    )
+
+    user_ids = {int(getattr(row, "user_id", 0) or 0) for row in rows if getattr(row, "user_id", None)}
+    user_name_by_id: dict[int, str] = {}
+    if user_ids:
+        for user in db.query(User).filter(User.id.in_(list(user_ids))).all():
+            user_name_by_id[int(user.id)] = str(getattr(user, "name", "") or "").strip() or str(getattr(user, "email", "") or "")
+
+    response_counts: dict[str, int] = {}
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        response_key = str(getattr(row, "response", "") or "").strip().lower() or "pending"
+        response_counts[response_key] = int(response_counts.get(response_key, 0) or 0) + 1
+        payload = serialize_notification_payload(getattr(row, "payload_json", None))
+        items.append(
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "user_id": int(getattr(row, "user_id", 0) or 0),
+                "player_name": user_name_by_id.get(int(getattr(row, "user_id", 0) or 0), "Player"),
+                "booking_id": int(getattr(row, "booking_id", 0) or 0) if getattr(row, "booking_id", None) else None,
+                "tee_time_id": int(getattr(row, "tee_time_id", 0) or 0) if getattr(row, "tee_time_id", None) else None,
+                "status": str(getattr(row, "status", "") or ""),
+                "response": str(getattr(row, "response", "") or ""),
+                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+                "responded_at": getattr(row, "responded_at", None).isoformat() if getattr(row, "responded_at", None) else None,
+                "risk_level": payload.get("risk_level"),
+                "risk_reasons": payload.get("risk_reasons"),
+                "tee_time": payload.get("tee_time"),
+            }
+        )
+
+    return {
+        "target_date": date_value.isoformat(),
+        "count": len(items),
+        "responses": response_counts,
+        "items": items,
+    }
 
 
 @router.get("/dashboard")

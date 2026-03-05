@@ -68,6 +68,7 @@ let teeSlotManageState = {
     teeLabel: "1",
     bookings: [],
 };
+let weatherReconfirmRows = [];
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -184,6 +185,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupBookingFilters();
     setupTeeSheetFilters();
     setupTeeManageMenu();
+    setupWeatherReconfirmModal();
     setupTeeBookingModal();
     setupTeeSlotManageModal();
     setupPeopleFilters();
@@ -4523,6 +4525,11 @@ async function runTeeManageAction(action, triggerButton = null) {
         return;
     }
 
+    if (action === "weather-reconfirm") {
+        openWeatherReconfirmModal();
+        return;
+    }
+
     if (action === "bulk-book") {
         openBulkBookModal();
         return;
@@ -4599,6 +4606,183 @@ function setupTeeManageMenu() {
             await runTeeManageAction(action, item);
         });
     });
+}
+
+function weatherRequestFromInputs() {
+    const dateInput = document.getElementById("weather-reconfirm-date");
+    const rainInput = document.getElementById("weather-reconfirm-rain");
+    const mmInput = document.getElementById("weather-reconfirm-mm");
+    const windInput = document.getElementById("weather-reconfirm-wind");
+    const fallbackDate = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+
+    const rain = Number.parseInt(String(rainInput?.value || "60"), 10);
+    const mm = Number.parseFloat(String(mmInput?.value || "1.0"));
+    const wind = Number.parseFloat(String(windInput?.value || "40"));
+
+    return {
+        date: (dateInput?.value || fallbackDate || new Date().toISOString().split("T")[0]),
+        min_precip_probability: Math.max(0, Math.min(100, Number.isFinite(rain) ? rain : 60)),
+        min_precip_mm: Math.max(0, Number.isFinite(mm) ? mm : 1.0),
+        min_wind_kmh: Math.max(0, Number.isFinite(wind) ? wind : 40.0),
+    };
+}
+
+function weatherResponseMeta(row) {
+    const response = String(row?.notification_response || "").trim().toLowerCase();
+    if (response === "confirm_playing") return { label: "Confirmed", css: "confirm_playing" };
+    if (response === "request_cancel") return { label: "Cancel Req", css: "request_cancel" };
+    if (response === "request_callback") return { label: "Call Back", css: "request_callback" };
+    if (row?.notification_sent) return { label: "Pending", css: "pending" };
+    return { label: "—", css: "pending" };
+}
+
+function renderWeatherReconfirmRows(rows = []) {
+    const body = document.getElementById("weather-reconfirm-body");
+    if (!(body instanceof HTMLElement)) return;
+
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!safeRows.length) {
+        body.innerHTML = `<tr><td colspan="6">No at-risk bookings for these weather thresholds.</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = safeRows.map((row) => {
+        const riskLevel = String(row?.risk_level || "medium").toLowerCase();
+        const riskLabel = riskLevel === "high" ? "High" : riskLevel === "medium" ? "Medium" : "Low";
+        const responseMeta = weatherResponseMeta(row);
+        const reasons = Array.isArray(row?.risk_reasons) ? row.risk_reasons : [];
+        const reasonText = reasons.length ? reasons.join(", ") : "Weather trigger met";
+        const inAppText = row?.can_message
+            ? (row?.notification_sent ? "Sent" : "Ready")
+            : "No player login";
+
+        const precipProbability = Number(row?.precip_probability || 0);
+        const precipMm = Number(row?.precipitation_mm || 0);
+        const windKmh = Number(row?.wind_kmh || 0);
+        const teeLabel = String(row?.tee_label || "1");
+
+        return `
+            <tr>
+                <td>
+                    ${escapeHtml(formatDateTimeDMY(row?.tee_time))}
+                    <small>Tee ${escapeHtml(teeLabel)}</small>
+                </td>
+                <td>
+                    ${escapeHtml(row?.player_name || "Player")}
+                    <small>${escapeHtml(row?.player_email || "No email on booking")}</small>
+                </td>
+                <td>
+                    <span class="weather-risk-pill ${escapeHtml(riskLevel)}">${escapeHtml(riskLabel)}</span>
+                    <small>${escapeHtml(reasonText)}</small>
+                </td>
+                <td>${Math.round(precipProbability)}% · ${precipMm.toFixed(1)}mm · ${Math.round(windKmh)} km/h</td>
+                <td>${escapeHtml(inAppText)}</td>
+                <td><span class="weather-response-pill ${escapeHtml(responseMeta.css)}">${escapeHtml(responseMeta.label)}</span></td>
+            </tr>
+        `;
+    }).join("");
+}
+
+async function loadWeatherReconfirmPreview(options = {}) {
+    const statusEl = document.getElementById("weather-reconfirm-status");
+    const req = weatherRequestFromInputs();
+    if (!req.date) {
+        if (statusEl) statusEl.textContent = "Select a date first.";
+        return;
+    }
+
+    if (!options.silent && statusEl) statusEl.textContent = "Loading weather preview...";
+    try {
+        const qs = new URLSearchParams({
+            date: req.date,
+            min_precip_probability: String(req.min_precip_probability),
+            min_precip_mm: String(req.min_precip_mm),
+            min_wind_kmh: String(req.min_wind_kmh),
+        });
+        const payload = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/preview?${qs.toString()}`);
+        weatherReconfirmRows = Array.isArray(payload?.items) ? payload.items : [];
+        renderWeatherReconfirmRows(weatherReconfirmRows);
+
+        const counts = payload?.counts || {};
+        const atRisk = Number(counts?.at_risk || weatherReconfirmRows.length || 0);
+        const messageable = Number(counts?.messageable || 0);
+        const sent = weatherReconfirmRows.filter(row => Boolean(row?.notification_sent)).length;
+        const replied = weatherReconfirmRows.filter(row => String(row?.notification_response || "").trim()).length;
+        const locationLabel = String(payload?.course_location?.label || "").trim();
+
+        if (statusEl) {
+            statusEl.textContent = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
+        }
+    } catch (err) {
+        weatherReconfirmRows = [];
+        renderWeatherReconfirmRows([]);
+        if (statusEl) statusEl.textContent = err?.message || "Weather preview failed.";
+        toastError(err?.message || "Weather preview failed.");
+    }
+}
+
+async function sendWeatherReconfirmPrompts() {
+    const sendBtn = document.getElementById("weather-reconfirm-send-btn");
+    const statusEl = document.getElementById("weather-reconfirm-status");
+    const req = weatherRequestFromInputs();
+    if (!req.date) {
+        if (statusEl) statusEl.textContent = "Select a date first.";
+        return;
+    }
+
+    try {
+        if (sendBtn instanceof HTMLButtonElement) sendBtn.disabled = true;
+        if (statusEl) statusEl.textContent = "Sending in-app prompts...";
+
+        const result = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/reconfirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(req),
+        });
+
+        const created = Number(result?.created || 0);
+        const skippedExisting = Number(result?.skipped_existing || 0);
+        const skippedUnlinked = Number(result?.skipped_unlinked || 0);
+        if (statusEl) {
+            statusEl.textContent = `Sent ${formatInteger(created)} · Existing ${formatInteger(skippedExisting)} · No login ${formatInteger(skippedUnlinked)}`;
+        }
+        toastSuccess(`Weather prompts sent: ${formatInteger(created)}`);
+        await loadWeatherReconfirmPreview({ silent: true });
+    } catch (err) {
+        if (statusEl) statusEl.textContent = err?.message || "Failed to send prompts.";
+        toastError(err?.message || "Failed to send prompts.");
+    } finally {
+        if (sendBtn instanceof HTMLButtonElement) sendBtn.disabled = false;
+    }
+}
+
+function openWeatherReconfirmModal() {
+    const modal = document.getElementById("weather-reconfirm-modal");
+    if (!(modal instanceof HTMLElement)) return;
+
+    const dateInput = document.getElementById("weather-reconfirm-date");
+    const teeDate = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+    if (dateInput instanceof HTMLInputElement) {
+        dateInput.value = teeDate;
+    }
+
+    weatherReconfirmRows = [];
+    renderWeatherReconfirmRows([]);
+    const statusEl = document.getElementById("weather-reconfirm-status");
+    if (statusEl) statusEl.textContent = "";
+    modal.classList.add("show");
+    loadWeatherReconfirmPreview();
+}
+
+function setupWeatherReconfirmModal() {
+    const previewBtn = document.getElementById("weather-reconfirm-preview-btn");
+    const sendBtn = document.getElementById("weather-reconfirm-send-btn");
+    const dateInput = document.getElementById("weather-reconfirm-date");
+    if (dateInput instanceof HTMLInputElement && !dateInput.value) {
+        dateInput.value = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+    }
+    previewBtn?.addEventListener("click", () => loadWeatherReconfirmPreview());
+    sendBtn?.addEventListener("click", () => sendWeatherReconfirmPrompts());
 }
 
 function teeSlotStatusNeedsPayment(status) {

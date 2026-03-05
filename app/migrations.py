@@ -235,6 +235,42 @@ def run_auto_migrations(engine) -> None:
           ON pro_shop_sale_items (club_id);
         """,
         # ----------------------------
+        # Player notifications (in-app messaging)
+        # ----------------------------
+        """
+        CREATE TABLE IF NOT EXISTS player_notifications (
+          id bigserial PRIMARY KEY,
+          club_id integer NULL,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          booking_id integer NULL REFERENCES bookings(id) ON DELETE SET NULL,
+          tee_time_id integer NULL REFERENCES tee_times(id) ON DELETE SET NULL,
+          kind text NOT NULL,
+          topic_key text NULL,
+          title text NOT NULL,
+          body text NOT NULL,
+          payload_json text NULL,
+          status text NOT NULL DEFAULT 'unread',
+          response text NULL,
+          requires_action boolean NOT NULL DEFAULT false,
+          created_by_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          read_at timestamptz NULL,
+          responded_at timestamptz NULL
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS player_notifications_club_user_idx
+          ON player_notifications (club_id, user_id, created_at DESC);
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS player_notifications_topic_idx
+          ON player_notifications (club_id, kind, topic_key);
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS player_notifications_status_idx
+          ON player_notifications (club_id, status, requires_action, created_at DESC);
+        """,
+        # ----------------------------
         # Multi-tenant scoping (club_id)
         # ----------------------------
         # Older/demo DBs predate club scoping and may be missing `club_id` on core tables.
@@ -254,6 +290,7 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE pro_shop_products ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE pro_shop_sales ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE pro_shop_sale_items ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE player_notifications ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
         "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
         "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
@@ -269,6 +306,7 @@ def run_auto_migrations(engine) -> None:
         "CREATE INDEX IF NOT EXISTS pro_shop_products_club_id_idx ON pro_shop_products (club_id);",
         "CREATE INDEX IF NOT EXISTS pro_shop_sales_club_id_idx ON pro_shop_sales (club_id);",
         "CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx ON pro_shop_sale_items (club_id);",
+        "CREATE INDEX IF NOT EXISTS player_notifications_club_id_idx ON player_notifications (club_id);",
         # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
         """
         DO $$
@@ -291,6 +329,7 @@ def run_auto_migrations(engine) -> None:
             UPDATE pro_shop_products SET club_id = cid WHERE club_id IS NULL;
             UPDATE pro_shop_sales SET club_id = cid WHERE club_id IS NULL;
             UPDATE pro_shop_sale_items SET club_id = cid WHERE club_id IS NULL;
+            UPDATE player_notifications SET club_id = cid WHERE club_id IS NULL;
           END IF;
         END $$;
         """,
@@ -375,6 +414,7 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE IF EXISTS public.pro_shop_products ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.pro_shop_sales ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.pro_shop_sale_items ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.player_notifications ENABLE ROW LEVEL SECURITY;",
     ]
 
     with engine.begin() as conn:

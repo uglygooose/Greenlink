@@ -1,5 +1,5 @@
 # app/routers/profile.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
@@ -7,6 +7,8 @@ from typing import Optional
 from sqlalchemy import func, or_
 from app.auth import get_db, get_current_user
 from app import models
+from app.tenancy import get_active_club_id
+from app.weather_alerts import append_booking_note, serialize_notification_payload
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -43,6 +45,10 @@ class PlayerProfileResponse(BaseModel):
     greenlink_id: Optional[str] = None
     
     model_config = {"from_attributes": True}
+
+
+class PlayerNotificationAction(BaseModel):
+    action: str
 
 def _name_parts(full_name: str | None) -> tuple[str, str]:
     raw = str(full_name or "").strip()
@@ -204,6 +210,12 @@ def _build_profile_response(user: models.User, member: models.Member | None) -> 
     )
 
 
+def _require_player_user(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if getattr(current_user, "role", None) != models.UserRole.player:
+        raise HTTPException(status_code=403, detail="Player access required")
+    return current_user
+
+
 @router.get("/me", response_model=PlayerProfileResponse)
 def get_my_profile(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     """Get current player's profile"""
@@ -259,6 +271,144 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
     else:
         member = _resolve_linked_member(db, user, member_number_hint=(profile_update.member_number or None))
     return _build_profile_response(user, member)
+
+
+@router.get("/notifications")
+def list_my_notifications(
+    limit: int = Query(30, ge=1, le=100),
+    state: str = Query("open", description="open|unread|responded|all"),
+    kind: str = Query("weather_reconfirm"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(_require_player_user),
+    club_id: int = Depends(get_active_club_id),
+):
+    state_norm = str(state or "open").strip().lower()
+    kind_norm = str(kind or "").strip().lower()
+
+    q = db.query(models.PlayerNotification).filter(
+        models.PlayerNotification.club_id == int(club_id),
+        models.PlayerNotification.user_id == int(current_user.id),
+    )
+    if kind_norm and kind_norm != "all":
+        q = q.filter(models.PlayerNotification.kind == kind_norm)
+
+    if state_norm == "unread":
+        q = q.filter(models.PlayerNotification.status == "unread")
+    elif state_norm == "responded":
+        q = q.filter(models.PlayerNotification.status == "responded")
+    elif state_norm == "open":
+        q = q.filter(
+            or_(
+                models.PlayerNotification.status.in_(["unread", "read"]),
+                models.PlayerNotification.status.is_(None),
+            ),
+            models.PlayerNotification.response.is_(None),
+        )
+
+    rows = q.order_by(models.PlayerNotification.created_at.desc()).limit(int(limit)).all()
+
+    unread_q = db.query(func.count(models.PlayerNotification.id)).filter(
+        models.PlayerNotification.club_id == int(club_id),
+        models.PlayerNotification.user_id == int(current_user.id),
+        models.PlayerNotification.status == "unread",
+    )
+    if kind_norm and kind_norm != "all":
+        unread_q = unread_q.filter(models.PlayerNotification.kind == kind_norm)
+    unread_count = unread_q.scalar() or 0
+
+    items = []
+    for row in rows:
+        payload = serialize_notification_payload(getattr(row, "payload_json", None))
+        items.append(
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "kind": str(getattr(row, "kind", "") or ""),
+                "title": str(getattr(row, "title", "") or ""),
+                "body": str(getattr(row, "body", "") or ""),
+                "status": str(getattr(row, "status", "") or ""),
+                "response": str(getattr(row, "response", "") or ""),
+                "requires_action": bool(getattr(row, "requires_action", False)),
+                "booking_id": int(getattr(row, "booking_id", 0) or 0) if getattr(row, "booking_id", None) else None,
+                "tee_time_id": int(getattr(row, "tee_time_id", 0) or 0) if getattr(row, "tee_time_id", None) else None,
+                "topic_key": str(getattr(row, "topic_key", "") or ""),
+                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+                "read_at": getattr(row, "read_at", None).isoformat() if getattr(row, "read_at", None) else None,
+                "responded_at": getattr(row, "responded_at", None).isoformat() if getattr(row, "responded_at", None) else None,
+                "payload": payload,
+            }
+        )
+
+    return {
+        "count": len(items),
+        "unread": int(unread_count),
+        "items": items,
+    }
+
+
+@router.post("/notifications/{notification_id}/action")
+def respond_to_notification(
+    notification_id: int,
+    req: PlayerNotificationAction,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(_require_player_user),
+    club_id: int = Depends(get_active_club_id),
+):
+    action_raw = str(getattr(req, "action", "") or "").strip().lower()
+    action_labels = {
+        "confirm_playing": "confirmed playing",
+        "request_cancel": "requested cancellation",
+        "request_callback": "requested a callback",
+    }
+    if action_raw not in action_labels:
+        raise HTTPException(status_code=400, detail="Unsupported action")
+
+    row = (
+        db.query(models.PlayerNotification)
+        .filter(
+            models.PlayerNotification.id == int(notification_id),
+            models.PlayerNotification.club_id == int(club_id),
+            models.PlayerNotification.user_id == int(current_user.id),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    now = datetime.utcnow()
+    if str(getattr(row, "response", "") or "").strip().lower() != action_raw:
+        row.response = action_raw
+    row.status = "responded"
+    row.responded_at = now
+    row.read_at = now
+
+    booking_id = int(getattr(row, "booking_id", 0) or 0)
+    if booking_id > 0:
+        booking = (
+            db.query(models.Booking)
+            .filter(models.Booking.id == booking_id, models.Booking.club_id == int(club_id))
+            .first()
+        )
+        if booking:
+            stamp = now.strftime("%d/%m/%y %H:%M")
+            detail = action_labels[action_raw]
+            booking.notes = append_booking_note(
+                booking.notes,
+                f"[Weather reconfirm {stamp}] Player {detail} via app.",
+            )
+            if action_raw == "request_cancel":
+                booking.notes = append_booking_note(
+                    booking.notes,
+                    "Action required: review weather cancellation request with player.",
+                )
+
+    db.commit()
+    return {
+        "ok": True,
+        "notification_id": int(getattr(row, "id", 0) or 0),
+        "status": str(getattr(row, "status", "") or ""),
+        "response": str(getattr(row, "response", "") or ""),
+        "booking_id": booking_id if booking_id > 0 else None,
+    }
 
 @router.get("/fees-available")
 def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get_current_user)):

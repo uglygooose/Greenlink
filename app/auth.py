@@ -97,6 +97,7 @@ _TENANT_SCOPED_MODELS = (
     models.ProShopProduct,
     models.ProShopSale,
     models.ProShopSaleItem,
+    models.PlayerNotification,
 )
 
 

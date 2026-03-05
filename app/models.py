@@ -341,3 +341,25 @@ class ProShopSaleItem(Base):
 
     sale = relationship("ProShopSale", back_populates="items")
     product = relationship("ProShopProduct")
+
+
+class PlayerNotification(Base):
+    __tablename__ = "player_notifications"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True, index=True)
+    tee_time_id = Column(Integer, ForeignKey("tee_times.id"), nullable=True, index=True)
+    kind = Column(String(60), nullable=False, index=True)  # weather_reconfirm | ops_notice | etc
+    topic_key = Column(String(120), nullable=True, index=True)  # de-dupe key per campaign/day
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False)
+    payload_json = Column(Text, nullable=True)
+    status = Column(String(20), default="unread", index=True)  # unread | read | responded | archived
+    response = Column(String(40), nullable=True)  # confirm_playing | request_cancel | request_callback
+    requires_action = Column(Boolean, default=0)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)
+    responded_at = Column(DateTime, nullable=True)
