@@ -413,8 +413,8 @@ body {
 .tee-sheet-header {
     position: static;
     background: transparent;
-    padding: 12px 0;
-    margin-bottom: 10px;
+    padding: 6px 0;
+    margin-bottom: 6px;
 }
 
 .tee-sheet-header::after {
@@ -1377,7 +1377,7 @@ canvas {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: #f3f7ea;
     border-bottom: 1px solid #e0e6ed;
     flex-wrap: wrap;
@@ -1712,7 +1712,7 @@ body.drag-active .slot-card.open {
     align-items: center;
     font-size: 11px;
     color: #7f8c8d;
-    margin: 6px 0 12px;
+    margin: 8px 0 2px;
 }
 
 .tee-sheet-legend .legend-item {
@@ -1736,23 +1736,65 @@ body.drag-active .slot-card.open {
 .tee-sheet-legend .legend-dot.no-show { background: #fff1f2; border-color: #be123c; }
 .tee-sheet-legend .legend-dot.cancelled { background: #f1f5f9; border-color: #475569; }
 
+.tee-sheet-top-controls {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 2px 0 8px;
+}
+
+.tee-status-details {
+    min-width: 180px;
+    border: 1px solid #d9e0d5;
+    border-radius: 10px;
+    background: #fff;
+    padding: 6px 10px;
+}
+
+.tee-status-details > summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #556068;
+}
+
+.tee-status-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.tee-status-details > summary::after {
+    content: "▾";
+    float: right;
+    color: #64748b;
+}
+
+.tee-status-details:not([open]) > summary::after {
+    content: "▸";
+}
+
 .tee-sheet-summary {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
     gap: 8px;
-    margin: 0 0 10px;
+    margin: 0;
+    flex: 1;
 }
 
 .tee-sheet-summary .summary-stat {
     margin: 0;
-    padding: 10px 12px;
-    background: #f8faf7;
+    padding: 8px 10px;
+    background: #fff;
     border: 1px solid #dfe8dc;
-    border-radius: 10px;
+    border-radius: 8px;
+    min-height: auto;
 }
 
 .tee-sheet-summary .summary-stat span {
-    font-size: 11px;
+    font-size: 10px;
     color: #6b7280;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1760,13 +1802,15 @@ body.drag-active .slot-card.open {
 }
 
 .tee-sheet-summary .summary-stat strong {
-    margin-top: 4px;
-    font-size: 16px;
+    margin-top: 3px;
+    font-size: 14px;
     color: #1f2a1b;
 }
 
 .tee-sheet-filters {
-    display: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .tee-toggle {
@@ -1792,17 +1836,57 @@ body.drag-active .slot-card.open {
     color: #fff;
 }
 
-.manage-dropdown,
-.manage-btn,
-.manage-menu,
+.manage-dropdown {
+    position: relative;
+}
+
+.manage-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-weight: 800;
+}
+
+.manage-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 280px;
+    z-index: 80;
+    padding: 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+}
+
+.manage-menu.open {
+    display: block;
+}
+
 .manage-item {
-    display: none !important;
+    width: 100%;
+    border: 1px solid transparent;
+    background: #fff;
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.manage-item:hover {
+    background: #f4f8f5;
+    border-color: #d6e2d7;
 }
 
 .tee-sheet-actions {
-    display: grid;
-    gap: 10px;
-    margin: 0 0 12px;
+    display: none !important;
 }
 
 .tee-action-primary {
@@ -1921,7 +2005,7 @@ body.drag-active .slot-card.open {
 
 .search-status {
     min-height: 18px;
-    margin: -4px 0 10px;
+    margin: 0 0 8px;
     font-size: 12px;
     font-weight: 800;
     color: #7f8c8d;
@@ -2667,6 +2751,34 @@ body.compact-density .page-header {
 
     .bulk-book-grid {
         grid-template-columns: 1fr;
+    }
+
+    .tee-sheet-top-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .tee-sheet-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tee-sheet-filters {
+        width: 100%;
+    }
+
+    .manage-dropdown {
+        width: 100%;
+    }
+
+    .manage-btn {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .manage-menu {
+        left: 0;
+        right: 0;
+        min-width: 0;
     }
 
     .tee-slot-controls {

@@ -907,54 +907,24 @@
                             </div>
                         </div>
                     </div>
-                    <div class="tee-sheet-actions" id="tee-sheet-actions" data-tee-action-root aria-label="Manage Tee Sheet">
-                        <div class="tee-action-primary">
-                            <button type="button" class="btn-secondary tee-action-btn" data-action="generate">
-                                <span class="title">Generate / Refresh Slots</span>
-                                <span class="hint">Create any missing tee slots for this date.</span>
-                            </button>
-                            <button type="button" class="btn-secondary tee-action-btn" data-action="bulk-book">
-                                <span class="title">Block Event / Golf Day</span>
-                                <span class="hint">Reserve tee ranges for groups, golf days, and PMG.</span>
-                            </button>
-                            <button type="button" class="btn-secondary tee-action-btn" data-action="booking-window">
-                                <span class="title">Booking Rules</span>
-                                <span class="hint">Set advance booking and cancellation notice rules.</span>
-                            </button>
-                        </div>
-                        <details class="tee-action-advanced">
-                            <summary>More Tee Sheet Actions</summary>
-                            <div class="tee-action-row tee-action-advanced-row">
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="tee-profile">
-                                    <span class="title">Tee Schedule</span>
-                                    <span class="hint">Adjust tee mode, intervals, and seasonal windows.</span>
-                                </button>
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="import-bookings">
-                                    <span class="title">Import Mirror Bookings CSV</span>
-                                    <span class="hint">Sync external bookings into the tee sheet.</span>
-                                </button>
-                                <button type="button" class="btn-secondary tee-action-btn" data-action="import-members">
-                                    <span class="title">Import Members CSV</span>
-                                    <span class="hint">Update member directory used by tee booking search.</span>
-                                </button>
+                    <div class="tee-sheet-top-controls">
+                        <details class="tee-status-details">
+                            <summary>Status legend</summary>
+                            <div class="tee-sheet-legend">
+                                <span class="legend-item"><span class="legend-dot open"></span>Open</span>
+                                <span class="legend-item"><span class="legend-dot booked"></span>Booked</span>
+                                <span class="legend-item"><span class="legend-dot checked-in"></span>Checked-in</span>
+                                <span class="legend-item"><span class="legend-dot completed"></span>Completed</span>
+                                <span class="legend-item"><span class="legend-dot no-show"></span>No-show</span>
+                                <span class="legend-item"><span class="legend-dot cancelled"></span>Cancelled</span>
                             </div>
                         </details>
-                    </div>
-                    <div class="tee-sheet-legend">
-                        <span class="legend-item"><span class="legend-dot open"></span>Open</span>
-                        <span class="legend-item"><span class="legend-dot booked"></span>Booked</span>
-                        <span class="legend-item"><span class="legend-dot checked-in"></span>Checked-in</span>
-                        <span class="legend-item"><span class="legend-dot completed"></span>Completed</span>
-                        <span class="legend-item"><span class="legend-dot no-show"></span>No-show</span>
-                        <span class="legend-item"><span class="legend-dot cancelled"></span>Cancelled</span>
-                    </div>
-                    <div class="tee-sheet-summary" id="tee-sheet-summary">
-                        <div class="summary-stat"><span>Total Slots</span><strong id="tee-summary-slots">0</strong></div>
-                        <div class="summary-stat"><span>Open Seats</span><strong id="tee-summary-open-seats">0</strong></div>
-                        <div class="summary-stat"><span>Booked Players</span><strong id="tee-summary-booked">0</strong></div>
-                        <div class="summary-stat"><span>Checked-in</span><strong id="tee-summary-checked-in">0</strong></div>
-                        <div class="summary-stat"><span>No-show</span><strong id="tee-summary-no-show">0</strong></div>
-                        <div class="summary-stat"><span>Next Tee</span><strong id="tee-summary-next">-</strong></div>
+                        <div class="tee-sheet-summary" id="tee-sheet-summary">
+                            <div class="summary-stat"><span>Booked</span><strong id="tee-summary-booked">0</strong></div>
+                            <div class="summary-stat"><span>Checked-in</span><strong id="tee-summary-checked-in">0</strong></div>
+                            <div class="summary-stat"><span>No-show</span><strong id="tee-summary-no-show">0</strong></div>
+                            <div class="summary-stat"><span>Next Tee</span><strong id="tee-summary-next">-</strong></div>
+                        </div>
                     </div>
                      <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
                      <div class="tee-sheet-table-wrap">

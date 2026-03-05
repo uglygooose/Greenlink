@@ -4509,59 +4509,95 @@ function setupTeeSheetFilters() {
     setupTeeSheetDragDrop();
 }
 
+async function runTeeManageAction(action, triggerButton = null) {
+    const item = triggerButton instanceof HTMLButtonElement ? triggerButton : null;
+    if (action === "booking-window") {
+        document.getElementById("booking-window-modal")?.classList.add("show");
+        loadBookingWindowSettings();
+        return;
+    }
+
+    if (action === "tee-profile") {
+        document.getElementById("tee-profile-modal")?.classList.add("show");
+        loadTeeProfileSettings();
+        return;
+    }
+
+    if (action === "bulk-book") {
+        openBulkBookModal();
+        return;
+    }
+
+    if (action === "import-bookings") {
+        openBookingsImportModal();
+        return;
+    }
+
+    if (action === "import-members") {
+        openMembersImportModal();
+        return;
+    }
+
+    if (action === "generate") {
+        if (item?.disabled) return;
+        const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+        try {
+            if (item) item.disabled = true;
+            const created = await generateDaySheet(dateStr, new Set());
+            toastSuccess(`Generated ${created.toLocaleString()} tee times`);
+            loadTeeTimes();
+        } catch (err) {
+            toastError(err?.message || "Failed to generate tee times");
+        } finally {
+            if (item) item.disabled = false;
+        }
+    }
+}
+
 function setupTeeManageMenu() {
     const root = document.querySelector("[data-tee-action-root]");
-    if (!root) return;
+    const legacyMenu = document.getElementById("tee-manage-menu");
+    const legacyBtn = document.getElementById("tee-manage-btn");
+    if (!root && !legacyMenu) return;
 
-    root.addEventListener("click", async (e) => {
-        const target = e.target;
-        if (!(target instanceof HTMLElement)) return;
-        const item = target.closest("button[data-action]");
-        if (!(item instanceof HTMLButtonElement) || !root.contains(item)) return;
+    const closeLegacyMenu = () => {
+        if (!(legacyMenu instanceof HTMLElement)) return;
+        legacyMenu.classList.remove("open");
+        if (legacyBtn instanceof HTMLElement) legacyBtn.setAttribute("aria-expanded", "false");
+    };
 
-        const action = item.getAttribute("data-action") || "";
+    if (legacyBtn instanceof HTMLElement && legacyMenu instanceof HTMLElement) {
+        legacyBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nextOpen = !legacyMenu.classList.contains("open");
+            legacyMenu.classList.toggle("open", nextOpen);
+            legacyBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        });
 
-        if (action === "booking-window") {
-            document.getElementById("booking-window-modal")?.classList.add("show");
-            loadBookingWindowSettings();
-            return;
-        }
+        document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Node)) return;
+            if (legacyBtn.contains(target) || legacyMenu.contains(target)) return;
+            closeLegacyMenu();
+        });
 
-        if (action === "tee-profile") {
-            document.getElementById("tee-profile-modal")?.classList.add("show");
-            loadTeeProfileSettings();
-            return;
-        }
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") closeLegacyMenu();
+        });
+    }
 
-        if (action === "bulk-book") {
-            openBulkBookModal();
-            return;
-        }
-
-        if (action === "import-bookings") {
-            openBookingsImportModal();
-            return;
-        }
-
-        if (action === "import-members") {
-            openMembersImportModal();
-            return;
-        }
-
-        if (action === "generate") {
-            if (item.disabled) return;
-            const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
-            try {
-                item.disabled = true;
-                const created = await generateDaySheet(dateStr, new Set());
-                toastSuccess(`Generated ${created.toLocaleString()} tee times`);
-                loadTeeTimes();
-            } catch (err) {
-                toastError(err?.message || "Failed to generate tee times");
-            } finally {
-                item.disabled = false;
-            }
-        }
+    const clickRoots = [root, legacyMenu].filter((el) => el instanceof HTMLElement);
+    clickRoots.forEach((container) => {
+        container.addEventListener("click", async (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const item = target.closest("button[data-action]");
+            if (!(item instanceof HTMLButtonElement) || !container.contains(item)) return;
+            if (legacyMenu instanceof HTMLElement && legacyMenu.contains(item)) closeLegacyMenu();
+            const action = item.getAttribute("data-action") || "";
+            await runTeeManageAction(action, item);
+        });
     });
 }
 
