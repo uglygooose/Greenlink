@@ -4612,18 +4612,15 @@ function weatherRequestFromInputs() {
     const dateInput = document.getElementById("weather-reconfirm-date");
     const rainInput = document.getElementById("weather-reconfirm-rain");
     const mmInput = document.getElementById("weather-reconfirm-mm");
-    const windInput = document.getElementById("weather-reconfirm-wind");
     const fallbackDate = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
 
     const rain = Number.parseInt(String(rainInput?.value || "60"), 10);
     const mm = Number.parseFloat(String(mmInput?.value || "1.0"));
-    const wind = Number.parseFloat(String(windInput?.value || "40"));
 
     return {
         date: (dateInput?.value || fallbackDate || new Date().toISOString().split("T")[0]),
         min_precip_probability: Math.max(0, Math.min(100, Number.isFinite(rain) ? rain : 60)),
         min_precip_mm: Math.max(0, Number.isFinite(mm) ? mm : 1.0),
-        min_wind_kmh: Math.max(0, Number.isFinite(wind) ? wind : 40.0),
     };
 }
 
@@ -4658,7 +4655,6 @@ function renderWeatherReconfirmRows(rows = []) {
 
         const precipProbability = Number(row?.precip_probability || 0);
         const precipMm = Number(row?.precipitation_mm || 0);
-        const windKmh = Number(row?.wind_kmh || 0);
         const teeLabel = String(row?.tee_label || "1");
 
         return `
@@ -4675,7 +4671,7 @@ function renderWeatherReconfirmRows(rows = []) {
                     <span class="weather-risk-pill ${escapeHtml(riskLevel)}">${escapeHtml(riskLabel)}</span>
                     <small>${escapeHtml(reasonText)}</small>
                 </td>
-                <td>${Math.round(precipProbability)}% · ${precipMm.toFixed(1)}mm · ${Math.round(windKmh)} km/h</td>
+                <td>${Math.round(precipProbability)}% · ${precipMm.toFixed(1)}mm</td>
                 <td>${escapeHtml(inAppText)}</td>
                 <td><span class="weather-response-pill ${escapeHtml(responseMeta.css)}">${escapeHtml(responseMeta.label)}</span></td>
             </tr>
@@ -4697,7 +4693,6 @@ async function loadWeatherReconfirmPreview(options = {}) {
             date: req.date,
             min_precip_probability: String(req.min_precip_probability),
             min_precip_mm: String(req.min_precip_mm),
-            min_wind_kmh: String(req.min_wind_kmh),
         });
         const payload = await fetchJson(`${API_BASE}/api/admin/tee-sheet/weather/preview?${qs.toString()}`);
         weatherReconfirmRows = Array.isArray(payload?.items) ? payload.items : [];

@@ -667,7 +667,6 @@ class WeatherReconfirmRequest(BaseModel):
     date: date
     min_precip_probability: int = 60
     min_precip_mm: float = 1.0
-    min_wind_kmh: float = 40.0
 
 
 def _weather_topic_key(target_date: date, booking_id: int) -> str:
@@ -691,16 +690,28 @@ def _attach_weather_notification_state(
     if not topic_keys:
         return items
 
-    existing_rows = (
-        db.query(PlayerNotification)
-        .filter(
-            PlayerNotification.club_id == int(club_id),
-            PlayerNotification.kind == "weather_reconfirm",
-            PlayerNotification.topic_key.in_(topic_keys),
+    try:
+        existing_rows = (
+            db.query(PlayerNotification)
+            .filter(
+                PlayerNotification.club_id == int(club_id),
+                PlayerNotification.kind == "weather_reconfirm",
+                PlayerNotification.topic_key.in_(topic_keys),
+            )
+            .order_by(desc(PlayerNotification.created_at))
+            .all()
         )
-        .order_by(desc(PlayerNotification.created_at))
-        .all()
-    )
+    except Exception:
+        _safe_rollback(db)
+        for item in items:
+            booking_id = int(item.get("booking_id") or 0)
+            item["topic_key"] = _weather_topic_key(target_date, booking_id) if booking_id > 0 else None
+            item["notification_id"] = None
+            item["notification_status"] = None
+            item["notification_response"] = None
+            item["notification_sent"] = False
+        return items
+
     latest_by_topic: dict[str, PlayerNotification] = {}
     for row in existing_rows:
         topic = str(getattr(row, "topic_key", "") or "").strip()
@@ -732,7 +743,6 @@ def preview_tee_sheet_weather(
     date_value: date = Query(..., alias="date"),
     min_precip_probability: int = Query(60, ge=0, le=100),
     min_precip_mm: float = Query(1.0, ge=0.0, le=100.0),
-    min_wind_kmh: float = Query(40.0, ge=0.0, le=200.0),
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
     club_id: int = Depends(get_active_club_id),
@@ -744,12 +754,14 @@ def preview_tee_sheet_weather(
             target_date=date_value,
             min_precip_probability=int(min_precip_probability),
             min_precip_mm=float(min_precip_mm),
-            min_wind_kmh=float(min_wind_kmh),
         )
         items = payload.get("items") if isinstance(payload, dict) else []
         if isinstance(items, list):
             payload["items"] = _attach_weather_notification_state(db, int(club_id), date_value, items)
         return payload
+    except RuntimeError as e:
+        _safe_rollback(db)
+        raise HTTPException(status_code=422, detail=str(e))
     except requests.RequestException:
         raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
     except HTTPException:
@@ -774,7 +786,6 @@ def send_tee_sheet_weather_reconfirm(
             target_date=req.date,
             min_precip_probability=int(req.min_precip_probability),
             min_precip_mm=float(req.min_precip_mm),
-            min_wind_kmh=float(req.min_wind_kmh),
         )
         items = payload.get("items") if isinstance(payload, dict) else []
         if not isinstance(items, list):
@@ -835,11 +846,17 @@ def send_tee_sheet_weather_reconfirm(
     except requests.RequestException:
         _safe_rollback(db)
         raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+    except RuntimeError as e:
+        _safe_rollback(db)
+        raise HTTPException(status_code=422, detail=str(e))
     except HTTPException:
         _safe_rollback(db)
         raise
     except Exception as e:
         _safe_rollback(db)
+        message = str(e).lower()
+        if "player_notifications" in message and ("does not exist" in message or "no such table" in message):
+            raise HTTPException(status_code=503, detail="Notification storage not initialized. Redeploy with AUTO_MIGRATE=1.")
         print(f"[WEATHER_SEND] {type(e).__name__}: {str(e)[:220]}")
         raise HTTPException(status_code=500, detail="Failed to send weather reconfirm prompts.")
 
@@ -852,17 +869,21 @@ def list_tee_sheet_weather_responses(
     club_id: int = Depends(get_active_club_id),
 ):
     prefix = f"weather:{date_value.isoformat()}:"
-    rows = (
-        db.query(PlayerNotification)
-        .filter(
-            PlayerNotification.club_id == int(club_id),
-            PlayerNotification.kind == "weather_reconfirm",
-            PlayerNotification.topic_key.like(f"{prefix}%"),
+    try:
+        rows = (
+            db.query(PlayerNotification)
+            .filter(
+                PlayerNotification.club_id == int(club_id),
+                PlayerNotification.kind == "weather_reconfirm",
+                PlayerNotification.topic_key.like(f"{prefix}%"),
+            )
+            .order_by(desc(PlayerNotification.created_at))
+            .limit(300)
+            .all()
         )
-        .order_by(desc(PlayerNotification.created_at))
-        .limit(300)
-        .all()
-    )
+    except Exception:
+        _safe_rollback(db)
+        rows = []
 
     user_ids = {int(getattr(row, "user_id", 0) or 0) for row in rows if getattr(row, "user_id", None)}
     user_name_by_id: dict[int, str] = {}

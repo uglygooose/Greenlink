@@ -285,36 +285,44 @@ def list_my_notifications(
     state_norm = str(state or "open").strip().lower()
     kind_norm = str(kind or "").strip().lower()
 
-    q = db.query(models.PlayerNotification).filter(
-        models.PlayerNotification.club_id == int(club_id),
-        models.PlayerNotification.user_id == int(current_user.id),
-    )
-    if kind_norm and kind_norm != "all":
-        q = q.filter(models.PlayerNotification.kind == kind_norm)
-
-    if state_norm == "unread":
-        q = q.filter(models.PlayerNotification.status == "unread")
-    elif state_norm == "responded":
-        q = q.filter(models.PlayerNotification.status == "responded")
-    elif state_norm == "open":
-        q = q.filter(
-            or_(
-                models.PlayerNotification.status.in_(["unread", "read"]),
-                models.PlayerNotification.status.is_(None),
-            ),
-            models.PlayerNotification.response.is_(None),
+    try:
+        q = db.query(models.PlayerNotification).filter(
+            models.PlayerNotification.club_id == int(club_id),
+            models.PlayerNotification.user_id == int(current_user.id),
         )
+        if kind_norm and kind_norm != "all":
+            q = q.filter(models.PlayerNotification.kind == kind_norm)
 
-    rows = q.order_by(models.PlayerNotification.created_at.desc()).limit(int(limit)).all()
+        if state_norm == "unread":
+            q = q.filter(models.PlayerNotification.status == "unread")
+        elif state_norm == "responded":
+            q = q.filter(models.PlayerNotification.status == "responded")
+        elif state_norm == "open":
+            q = q.filter(
+                or_(
+                    models.PlayerNotification.status.in_(["unread", "read"]),
+                    models.PlayerNotification.status.is_(None),
+                ),
+                models.PlayerNotification.response.is_(None),
+            )
 
-    unread_q = db.query(func.count(models.PlayerNotification.id)).filter(
-        models.PlayerNotification.club_id == int(club_id),
-        models.PlayerNotification.user_id == int(current_user.id),
-        models.PlayerNotification.status == "unread",
-    )
-    if kind_norm and kind_norm != "all":
-        unread_q = unread_q.filter(models.PlayerNotification.kind == kind_norm)
-    unread_count = unread_q.scalar() or 0
+        rows = q.order_by(models.PlayerNotification.created_at.desc()).limit(int(limit)).all()
+
+        unread_q = db.query(func.count(models.PlayerNotification.id)).filter(
+            models.PlayerNotification.club_id == int(club_id),
+            models.PlayerNotification.user_id == int(current_user.id),
+            models.PlayerNotification.status == "unread",
+        )
+        if kind_norm and kind_norm != "all":
+            unread_q = unread_q.filter(models.PlayerNotification.kind == kind_norm)
+        unread_count = unread_q.scalar() or 0
+    except Exception:
+        db.rollback()
+        return {
+            "count": 0,
+            "unread": 0,
+            "items": [],
+        }
 
     items = []
     for row in rows:
@@ -362,15 +370,22 @@ def respond_to_notification(
     if action_raw not in action_labels:
         raise HTTPException(status_code=400, detail="Unsupported action")
 
-    row = (
-        db.query(models.PlayerNotification)
-        .filter(
-            models.PlayerNotification.id == int(notification_id),
-            models.PlayerNotification.club_id == int(club_id),
-            models.PlayerNotification.user_id == int(current_user.id),
+    try:
+        row = (
+            db.query(models.PlayerNotification)
+            .filter(
+                models.PlayerNotification.id == int(notification_id),
+                models.PlayerNotification.club_id == int(club_id),
+                models.PlayerNotification.user_id == int(current_user.id),
+            )
+            .first()
         )
-        .first()
-    )
+    except Exception as e:
+        db.rollback()
+        message = str(e).lower()
+        if "player_notifications" in message and ("does not exist" in message or "no such table" in message):
+            raise HTTPException(status_code=503, detail="Notification storage not initialized.")
+        raise HTTPException(status_code=500, detail="Failed to load notification")
     if not row:
         raise HTTPException(status_code=404, detail="Notification not found")
 

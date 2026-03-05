@@ -31,6 +31,14 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _value_at(values: Any, idx: int, default: Any = None) -> Any:
+    if not isinstance(values, list):
+        return default
+    if idx < 0 or idx >= len(values):
+        return default
+    return values[idx]
+
+
 def _status_text(value: Any) -> str:
     try:
         return str(getattr(value, "value", value) or "").strip().lower()
@@ -94,53 +102,66 @@ def get_club_coordinates(db: Session, club_id: int, timeout_s: float = 10.0) -> 
     if not club_name:
         return None
 
-    try:
-        response = requests.get(
-            OPEN_METEO_GEOCODE_URL,
-            params={
-                "name": club_name,
-                "count": 5,
-                "language": "en",
-                "format": "json",
-            },
-            timeout=timeout_s,
-        )
-        response.raise_for_status()
-        payload = response.json() if response.content else {}
-    except Exception:
-        return None
+    search_names = [club_name]
+    lowered = club_name.lower()
+    if "south africa" not in lowered:
+        search_names.append(f"{club_name}, South Africa")
+    if "demo" in lowered:
+        cleaned = " ".join([w for w in club_name.split() if w.lower() not in {"demo", "test"}]).strip()
+        if cleaned and cleaned not in search_names:
+            search_names.append(cleaned)
+        if cleaned and "south africa" not in cleaned.lower():
+            search_names.append(f"{cleaned}, South Africa")
 
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if not isinstance(results, list) or not results:
-        return None
-
-    best = None
-    for row in results:
-        if not isinstance(row, dict):
+    for query_name in search_names:
+        try:
+            response = requests.get(
+                OPEN_METEO_GEOCODE_URL,
+                params={
+                    "name": query_name,
+                    "count": 5,
+                    "language": "en",
+                    "format": "json",
+                },
+                timeout=timeout_s,
+            )
+            response.raise_for_status()
+            payload = response.json() if response.content else {}
+        except Exception:
             continue
-        if str(row.get("country_code") or "").strip().upper() == "ZA":
-            best = row
-            break
-    if best is None:
-        best = results[0] if isinstance(results[0], dict) else None
-    if not isinstance(best, dict):
-        return None
 
-    lat = _safe_float(best.get("latitude"), default=0.0)
-    lon = _safe_float(best.get("longitude"), default=0.0)
-    if abs(lat) < 0.0001 and abs(lon) < 0.0001:
-        return None
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list) or not results:
+            continue
 
-    area = str(best.get("name") or "").strip()
-    country = str(best.get("country") or "").strip()
-    label = f"{area}, {country}".strip(", ")
+        best = None
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("country_code") or "").strip().upper() == "ZA":
+                best = row
+                break
+        if best is None:
+            best = results[0] if isinstance(results[0], dict) else None
+        if not isinstance(best, dict):
+            continue
 
-    return {
-        "latitude": lat,
-        "longitude": lon,
-        "source": "geocoding",
-        "label": label or club_name,
-    }
+        lat = _safe_float(best.get("latitude"), default=0.0)
+        lon = _safe_float(best.get("longitude"), default=0.0)
+        if abs(lat) < 0.0001 and abs(lon) < 0.0001:
+            continue
+
+        area = str(best.get("name") or "").strip()
+        country = str(best.get("country") or "").strip()
+        label = f"{area}, {country}".strip(", ")
+        return {
+            "latitude": lat,
+            "longitude": lon,
+            "source": "geocoding",
+            "label": label or query_name,
+        }
+
+    return None
 
 
 def fetch_hourly_forecast(
@@ -179,10 +200,10 @@ def fetch_hourly_forecast(
         key = _normalize_hour_key(dt)
         by_hour[key] = {
             "time": key,
-            "precipitation_probability": _safe_float((precipitation_probability or [None])[idx], default=0.0),
-            "precipitation": _safe_float((precipitation or [None])[idx], default=0.0),
-            "weather_code": _safe_int((weather_code or [None])[idx], default=0),
-            "wind_speed_10m": _safe_float((wind_speed_10m or [None])[idx], default=0.0),
+            "precipitation_probability": _safe_float(_value_at(precipitation_probability, idx), default=0.0),
+            "precipitation": _safe_float(_value_at(precipitation, idx), default=0.0),
+            "weather_code": _safe_int(_value_at(weather_code, idx), default=0),
+            "wind_speed_10m": _safe_float(_value_at(wind_speed_10m, idx), default=0.0),
         }
 
     return {
@@ -228,7 +249,6 @@ def classify_weather_risk(
     forecast_point: dict[str, Any] | None,
     min_precip_probability: int = 60,
     min_precip_mm: float = 1.0,
-    min_wind_kmh: float = 40.0,
 ) -> dict[str, Any]:
     point = forecast_point or {}
     precip_probability = max(0.0, _safe_float(point.get("precipitation_probability"), default=0.0))
@@ -240,14 +260,12 @@ def classify_weather_risk(
         weather_code in STORM_CODES
         or precip_probability >= 80
         or precipitation >= 4.0
-        or wind_kmh >= 55.0
     )
     at_risk = (
         weather_code in RAIN_CODES
         or weather_code in STORM_CODES
         or precip_probability >= float(min_precip_probability)
         or precipitation >= float(min_precip_mm)
-        or wind_kmh >= float(min_wind_kmh)
     )
 
     reasons: list[str] = []
@@ -255,8 +273,6 @@ def classify_weather_risk(
         reasons.append(f"{round(precip_probability)}% rain probability")
     if precipitation >= float(min_precip_mm):
         reasons.append(f"{precipitation:.1f}mm forecast rain")
-    if wind_kmh >= float(min_wind_kmh):
-        reasons.append(f"{round(wind_kmh)} km/h wind")
     if weather_code in STORM_CODES:
         reasons.append("storm code flagged")
     elif weather_code in RAIN_CODES and not reasons:
@@ -268,7 +284,6 @@ def classify_weather_risk(
             round(
                 (precip_probability * 0.7)
                 + (precipitation * 8.0)
-                + max(0.0, wind_kmh - 20.0) * 1.2
                 + (28.0 if weather_code in STORM_CODES else 10.0 if weather_code in RAIN_CODES else 0.0)
             )
         ),
@@ -378,7 +393,6 @@ def build_weather_booking_candidates(
     target_date: date,
     min_precip_probability: int = 60,
     min_precip_mm: float = 1.0,
-    min_wind_kmh: float = 40.0,
 ) -> dict[str, Any]:
     start_dt = datetime.combine(target_date, datetime.min.time())
     end_dt = start_dt + timedelta(days=1)
@@ -427,7 +441,6 @@ def build_weather_booking_candidates(
             point,
             min_precip_probability=min_precip_probability,
             min_precip_mm=min_precip_mm,
-            min_wind_kmh=min_wind_kmh,
         )
         if not bool(risk.get("at_risk")):
             continue
@@ -480,7 +493,6 @@ def build_weather_booking_candidates(
         "thresholds": {
             "min_precip_probability": int(min_precip_probability),
             "min_precip_mm": float(min_precip_mm),
-            "min_wind_kmh": float(min_wind_kmh),
         },
         "counts": {
             "bookings_considered": len(rows),
@@ -519,7 +531,6 @@ def build_weather_prompt_payload(
         "risk_reasons": reasons,
         "precip_probability": item.get("precip_probability"),
         "precipitation_mm": item.get("precipitation_mm"),
-        "wind_kmh": item.get("wind_kmh"),
         "weather_code": item.get("weather_code"),
         "actions": [
             {"key": "confirm_playing", "label": "Still Playing"},
