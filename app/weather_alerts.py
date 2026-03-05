@@ -13,6 +13,17 @@ from app import models
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
+# Known club fallbacks for demo reliability when geocoding is unavailable.
+# Umhlali Country Club (Ballito, KZN) from OpenStreetMap/Mapcarta reference.
+KNOWN_COURSE_COORDS: list[dict[str, Any]] = [
+    {
+        "keywords": ["umhlali"],
+        "latitude": -29.51403,
+        "longitude": 31.19402,
+        "label": "Umhlali Country Club",
+    }
+]
+
 RAIN_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}
 STORM_CODES = {95, 96, 99}
 
@@ -101,6 +112,20 @@ def get_club_coordinates(db: Session, club_id: int, timeout_s: float = 10.0) -> 
     club_name = _get_club_name(db, club_id)
     if not club_name:
         return None
+
+    club_name_lower = club_name.lower()
+    for item in KNOWN_COURSE_COORDS:
+        keywords = [str(v or "").strip().lower() for v in (item.get("keywords") or []) if str(v or "").strip()]
+        if not keywords:
+            continue
+        if not any(k in club_name_lower for k in keywords):
+            continue
+        return {
+            "latitude": _safe_float(item.get("latitude"), default=0.0),
+            "longitude": _safe_float(item.get("longitude"), default=0.0),
+            "source": "known_course",
+            "label": str(item.get("label") or club_name).strip() or club_name,
+        }
 
     search_names = [club_name]
     lowered = club_name.lower()
