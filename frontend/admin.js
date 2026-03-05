@@ -4653,9 +4653,15 @@ function renderWeatherReconfirmRows(rows = []) {
             ? (row?.notification_sent ? "Sent" : "Ready")
             : "No player login";
 
-        const precipProbability = Number(row?.precip_probability || 0);
-        const precipMm = Number(row?.precipitation_mm || 0);
+        const precipProbabilityRaw = row?.precip_probability;
+        const precipMmRaw = row?.precipitation_mm;
+        const precipProbability = Number(precipProbabilityRaw);
+        const precipMm = Number(precipMmRaw);
+        const forecastMode = String(row?.forecast_mode || "provider").toLowerCase();
         const teeLabel = String(row?.tee_label || "1");
+        const forecastText = forecastMode === "manual_fallback"
+            ? "Manual reconfirm"
+            : `${Number.isFinite(precipProbability) ? Math.round(precipProbability) : 0}% · ${Number.isFinite(precipMm) ? precipMm.toFixed(1) : "0.0"}mm`;
 
         return `
             <tr>
@@ -4671,7 +4677,7 @@ function renderWeatherReconfirmRows(rows = []) {
                     <span class="weather-risk-pill ${escapeHtml(riskLevel)}">${escapeHtml(riskLabel)}</span>
                     <small>${escapeHtml(reasonText)}</small>
                 </td>
-                <td>${Math.round(precipProbability)}% · ${precipMm.toFixed(1)}mm</td>
+                <td>${escapeHtml(forecastText)}</td>
                 <td>${escapeHtml(inAppText)}</td>
                 <td><span class="weather-response-pill ${escapeHtml(responseMeta.css)}">${escapeHtml(responseMeta.label)}</span></td>
             </tr>
@@ -4704,9 +4710,12 @@ async function loadWeatherReconfirmPreview(options = {}) {
         const sent = weatherReconfirmRows.filter(row => Boolean(row?.notification_sent)).length;
         const replied = weatherReconfirmRows.filter(row => String(row?.notification_response || "").trim()).length;
         const locationLabel = String(payload?.course_location?.label || "").trim();
+        const providerUnavailable = Boolean(payload?.provider_unavailable);
+        const providerNote = String(payload?.provider_note || "").trim();
 
         if (statusEl) {
-            statusEl.textContent = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
+            const base = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
+            statusEl.textContent = providerUnavailable && providerNote ? `${base} · ${providerNote}` : base;
         }
     } catch (err) {
         weatherReconfirmRows = [];

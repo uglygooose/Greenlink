@@ -441,14 +441,26 @@ def build_weather_booking_candidates(
     if not coords:
         raise RuntimeError("Course coordinates not configured and geocoding failed.")
 
-    forecast = fetch_hourly_forecast(
-        latitude=_safe_float(coords.get("latitude"), default=0.0),
-        longitude=_safe_float(coords.get("longitude"), default=0.0),
-        target_date=target_date,
-    )
-    hourly = forecast.get("hourly") if isinstance(forecast, dict) else {}
-    if not isinstance(hourly, dict) or not hourly:
-        raise RuntimeError("No weather forecast points returned for the selected date.")
+    forecast: dict[str, Any] = {}
+    hourly: dict[str, dict[str, Any]] = {}
+    provider_unavailable = False
+    provider_note = ""
+    try:
+        forecast = fetch_hourly_forecast(
+            latitude=_safe_float(coords.get("latitude"), default=0.0),
+            longitude=_safe_float(coords.get("longitude"), default=0.0),
+            target_date=target_date,
+        )
+        hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
+        if isinstance(hourly_raw, dict):
+            hourly = hourly_raw
+    except requests.RequestException:
+        provider_unavailable = True
+        provider_note = "Weather provider unavailable. Manual rain reconfirm mode is active."
+
+    if not provider_unavailable and (not isinstance(hourly, dict) or not hourly):
+        provider_unavailable = True
+        provider_note = "No forecast returned for this date. Manual rain reconfirm mode is active."
 
     user_cache: dict[str, models.User | None] = {}
     items: list[dict[str, Any]] = []
@@ -461,14 +473,25 @@ def build_weather_booking_candidates(
         if tee_dt is None:
             continue
 
-        point = forecast_point_for_tee_time(hourly, tee_dt)
-        risk = classify_weather_risk(
-            point,
-            min_precip_probability=min_precip_probability,
-            min_precip_mm=min_precip_mm,
-        )
-        if not bool(risk.get("at_risk")):
-            continue
+        if provider_unavailable:
+            risk = {
+                "level": "medium",
+                "score": 55,
+                "reasons": [provider_note or "Manual rain reconfirm"],
+                "precipitation_probability": None,
+                "precipitation_mm": None,
+                "weather_code": None,
+                "forecast_time": None,
+            }
+        else:
+            point = forecast_point_for_tee_time(hourly, tee_dt)
+            risk = classify_weather_risk(
+                point,
+                min_precip_probability=min_precip_probability,
+                min_precip_mm=min_precip_mm,
+            )
+            if not bool(risk.get("at_risk")):
+                continue
 
         risky_count += 1
         player_user = resolve_player_user_for_booking(db, booking, club_id, cache=user_cache)
@@ -487,11 +510,23 @@ def build_weather_booking_candidates(
                 "risk_level": str(risk.get("level") or "medium"),
                 "risk_score": int(risk.get("score") or 0),
                 "risk_reasons": risk.get("reasons") or [],
-                "precip_probability": float(risk.get("precipitation_probability") or 0.0),
-                "precipitation_mm": float(risk.get("precipitation_mm") or 0.0),
-                "wind_kmh": float(risk.get("wind_kmh") or 0.0),
-                "weather_code": int(risk.get("weather_code") or 0),
+                "precip_probability": (
+                    float(risk.get("precipitation_probability"))
+                    if risk.get("precipitation_probability") is not None
+                    else None
+                ),
+                "precipitation_mm": (
+                    float(risk.get("precipitation_mm"))
+                    if risk.get("precipitation_mm") is not None
+                    else None
+                ),
+                "weather_code": (
+                    int(risk.get("weather_code"))
+                    if risk.get("weather_code") is not None
+                    else None
+                ),
                 "forecast_hour": risk.get("forecast_time"),
+                "forecast_mode": "manual_fallback" if provider_unavailable else "provider",
                 "player_user_id": int(getattr(player_user, "id", 0) or 0) if player_user else None,
                 "can_message": bool(player_user),
             }
@@ -509,6 +544,8 @@ def build_weather_booking_candidates(
     return {
         "target_date": target_date.isoformat(),
         "forecast_timezone": str(forecast.get("timezone") or "").strip(),
+        "provider_unavailable": bool(provider_unavailable),
+        "provider_note": provider_note or None,
         "course_location": {
             "label": str(coords.get("label") or ""),
             "source": str(coords.get("source") or ""),
