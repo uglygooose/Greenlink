@@ -193,6 +193,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeSlotManageModal();
     setupPeopleFilters();
     setupOperationWorkbenchControls();
+    setupPageShortcuts();
     await loadTeeProfileSettings({ silent: true });
 
     if (role === "admin" || role === "super_admin") {
@@ -413,10 +414,7 @@ function applyStaffMode(role) {
     }
 
     // Hide admin-only import actions for staff (admin can still use them).
-    document.querySelectorAll('[data-tee-action-root] [data-action="import-members"], #tee-manage-menu [data-action="import-members"]').forEach(el => {
-        el.style.display = "none";
-    });
-    document.querySelectorAll('button[onclick="openImportLog()"]').forEach(el => {
+    document.querySelectorAll("#people-import-btn, #people-import-log-btn, button[onclick=\"openImportLog()\"]").forEach(el => {
         el.style.display = "none";
     });
 
@@ -692,6 +690,20 @@ function setupGlobalQuickControls() {
         applyQuickNavigationValue(raw);
         quickNavSelect.value = "";
     });
+}
+
+function setupPageShortcuts() {
+    const bookingsOpenTeeSheetBtn = document.getElementById("bookings-open-tee-sheet-btn");
+    bookingsOpenTeeSheetBtn?.addEventListener("click", () => navigateToAdminPage("tee-times"));
+
+    const revenueOpenImportsBtn = document.getElementById("revenue-open-imports-btn");
+    revenueOpenImportsBtn?.addEventListener("click", () => navigateToAdminPage("operations-config"));
+
+    const opsOpenRevenueBtn = document.getElementById("ops-open-revenue-btn");
+    opsOpenRevenueBtn?.addEventListener("click", () => navigateToAdminPage("revenue"));
+
+    const opsOpenPeopleBtn = document.getElementById("ops-open-people-btn");
+    opsOpenPeopleBtn?.addEventListener("click", () => navigateToAdminPage("players"));
 }
 
 function showPage(pageName) {
@@ -2581,6 +2593,8 @@ function setupPeopleFilters() {
     const searchInput = document.getElementById("people-search");
     const guestFilter = document.getElementById("guest-type-filter");
     const sortSelect = document.getElementById("people-sort");
+    const importBtn = document.getElementById("people-import-btn");
+    const importLogBtn = document.getElementById("people-import-log-btn");
     const addBtn = document.getElementById("people-add-btn");
     if (!buttons.length) return;
     if (sortSelect instanceof HTMLSelectElement) {
@@ -2613,11 +2627,17 @@ function setupPeopleFilters() {
     const updateTitle = () => {
         if (!title) return;
         title.textContent = peopleView === "members" ? "Members" : peopleView === "guests" ? "Guests" : "Staff";
+        const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
         if (guestFilter) {
             guestFilter.style.display = peopleView === "guests" ? "" : "none";
         }
+        if (importBtn) {
+            importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
+        }
+        if (importLogBtn) {
+            importLogBtn.style.display = canEdit ? "" : "none";
+        }
         if (addBtn) {
-            const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
             if (!canEdit) {
                 addBtn.style.display = "none";
             } else if (peopleView === "members") {
@@ -2680,6 +2700,11 @@ function setupPeopleFilters() {
             openStaffEditModal(null);
         }
     });
+    importBtn?.addEventListener("click", () => {
+        if (peopleView !== "members") return;
+        openMembersImportModal();
+    });
+    importLogBtn?.addEventListener("click", () => openImportLog());
 
     updateTitle();
 }
@@ -4543,11 +4568,6 @@ async function runTeeManageAction(action, triggerButton = null) {
         return;
     }
 
-    if (action === "import-members") {
-        openMembersImportModal();
-        return;
-    }
-
     if (action === "generate") {
         if (item?.disabled) return;
         const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
@@ -4718,14 +4738,22 @@ async function loadWeatherReconfirmPreview(options = {}) {
         const locationLabel = String(payload?.course_location?.label || "").trim();
         const providerUnavailable = Boolean(payload?.provider_unavailable);
         const providerNote = String(payload?.provider_note || "").trim();
+        const providerName = String(payload?.provider_name || "").trim().toLowerCase();
+        const bookingsConsidered = Number(counts?.bookings_considered || 0);
         const autoPromptError = String(payload?.auto_prompt_error || "").trim();
 
         const base = `${formatInteger(atRisk)} at-risk · ${formatInteger(messageable)} linked · ${formatInteger(sent)} sent · ${formatInteger(replied)} replied${locationLabel ? ` · ${locationLabel}` : ""}`;
         if (statusEl) {
-            statusEl.textContent = providerUnavailable && providerNote ? `${base} · ${providerNote}` : base;
+            const providerSuffix = providerUnavailable
+                ? (bookingsConsidered > 0 && providerNote ? ` · ${providerNote}` : "")
+                : ((providerName === "met_no" || providerName === "cache") && providerNote ? ` · ${providerNote}` : "");
+            statusEl.textContent = `${base}${providerSuffix}`;
         }
-        let teeStatus = `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(messageable)} linked`;
-        if (providerUnavailable && providerNote) teeStatus += ` · ${providerNote}`;
+        let teeStatus = bookingsConsidered > 0
+            ? `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(messageable)} linked`
+            : "Rain risk auto-flag: no booked players on selected date";
+        if (providerUnavailable && providerNote && bookingsConsidered > 0) teeStatus += ` · ${providerNote}`;
+        if ((providerName === "met_no" || providerName === "cache") && providerNote && !providerUnavailable) teeStatus += ` · ${providerNote}`;
         if (autoPromptError) teeStatus += ` · ${autoPromptError}`;
         setTeeWeatherStatus(teeStatus);
     } catch (err) {
@@ -4919,10 +4947,15 @@ async function autoFlagTeeSheetWeather(dateStr, options = {}) {
         const autoPromptError = String(payload?.auto_prompt_error || "").trim();
         const providerUnavailable = Boolean(payload?.provider_unavailable);
         const providerNote = String(payload?.provider_note || "").trim();
+        const providerName = String(payload?.provider_name || "").trim().toLowerCase();
+        const bookingsConsidered = Number(counts?.bookings_considered || 0);
 
-        let statusText = `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(linked)} linked`;
+        let statusText = bookingsConsidered > 0
+            ? `Rain risk auto-flag: ${formatInteger(atRisk)} flagged · ${formatInteger(linked)} linked`
+            : "Rain risk auto-flag: no booked players on selected date";
         if (queued > 0) statusText += ` · ${formatInteger(queued)} prompt${queued === 1 ? "" : "s"} queued`;
-        if (providerUnavailable && providerNote) statusText += ` · ${providerNote}`;
+        if (providerUnavailable && providerNote && bookingsConsidered > 0) statusText += ` · ${providerNote}`;
+        if ((providerName === "met_no" || providerName === "cache") && providerNote && !providerUnavailable) statusText += ` · ${providerNote}`;
         if (autoPromptError) statusText += ` · ${autoPromptError}`;
         setTeeWeatherStatus(statusText);
     } catch (err) {

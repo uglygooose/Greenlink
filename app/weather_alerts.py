@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 from sqlalchemy import func
@@ -12,6 +13,11 @@ from app import models
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
+MET_NO_FORECAST_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+DEFAULT_FORECAST_TIMEZONE = "Africa/Johannesburg"
+MET_NO_USER_AGENT = "GreenLink/1.0 (+https://greenlink.app)"
+FORECAST_CACHE_TTL_MINUTES = 45
+_FORECAST_CACHE: dict[str, dict[str, Any]] = {}
 
 # Known club fallbacks for demo reliability when geocoding is unavailable.
 # Umhlali Country Club (Ballito, KZN) from OpenStreetMap/Mapcarta reference.
@@ -72,6 +78,78 @@ def _parse_iso_dt(raw: str | None) -> datetime | None:
 def _normalize_hour_key(value: datetime) -> str:
     d = value.replace(minute=0, second=0, microsecond=0)
     return d.strftime("%Y-%m-%dT%H:00")
+
+
+def _to_local_naive(value: datetime, timezone_name: str = DEFAULT_FORECAST_TIMEZONE) -> datetime:
+    if value.tzinfo is None:
+        return value
+    try:
+        return value.astimezone(ZoneInfo(timezone_name)).replace(tzinfo=None)
+    except Exception:
+        return value.replace(tzinfo=None)
+
+
+def _met_no_weather_code(symbol_code: str | None) -> int:
+    symbol = str(symbol_code or "").strip().lower()
+    if not symbol:
+        return 0
+    if "thunder" in symbol:
+        return 95
+    if "heavyrain" in symbol or "rainshowers_heavy" in symbol:
+        return 65
+    if "rain" in symbol or "sleet" in symbol or "snow" in symbol:
+        return 61
+    return 0
+
+
+def _met_no_precip_probability(symbol_code: str | None, precipitation_mm: float) -> float:
+    symbol = str(symbol_code or "").strip().lower()
+    mm = max(0.0, float(precipitation_mm or 0.0))
+    if "thunder" in symbol:
+        return 95.0
+    if "heavyrain" in symbol:
+        return 90.0
+    if "rain" in symbol or "sleet" in symbol or "snow" in symbol:
+        return max(70.0, min(90.0, 65.0 + (mm * 12.0)))
+    if mm >= 1.0:
+        return 60.0
+    return 0.0
+
+
+def _forecast_cache_key(latitude: float, longitude: float, target_date: date) -> str:
+    return f"{round(float(latitude), 4)}|{round(float(longitude), 4)}|{target_date.isoformat()}"
+
+
+def _get_cached_forecast(latitude: float, longitude: float, target_date: date) -> tuple[dict[str, Any] | None, str | None]:
+    key = _forecast_cache_key(latitude, longitude, target_date)
+    entry = _FORECAST_CACHE.get(key)
+    if not isinstance(entry, dict):
+        return None, None
+
+    cached_at = entry.get("cached_at")
+    if not isinstance(cached_at, datetime):
+        return None, None
+
+    age_seconds = (datetime.utcnow() - cached_at).total_seconds()
+    if age_seconds > (FORECAST_CACHE_TTL_MINUTES * 60):
+        return None, None
+
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return None, None
+
+    stamp = cached_at.strftime("%H:%M")
+    return payload, f"{stamp} UTC"
+
+
+def _set_cached_forecast(latitude: float, longitude: float, target_date: date, payload: dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        return
+    key = _forecast_cache_key(latitude, longitude, target_date)
+    _FORECAST_CACHE[key] = {
+        "cached_at": datetime.utcnow(),
+        "payload": payload,
+    }
 
 
 def _get_club_name(db: Session, club_id: int) -> str:
@@ -233,6 +311,69 @@ def fetch_hourly_forecast(
 
     return {
         "timezone": str(payload.get("timezone") or "").strip() if isinstance(payload, dict) else "",
+        "hourly": by_hour,
+    }
+
+
+def fetch_hourly_forecast_met_no(
+    latitude: float,
+    longitude: float,
+    target_date: date,
+    timeout_s: float = 12.0,
+) -> dict[str, Any]:
+    response = requests.get(
+        MET_NO_FORECAST_URL,
+        params={
+            "lat": f"{float(latitude):.6f}",
+            "lon": f"{float(longitude):.6f}",
+        },
+        headers={
+            "User-Agent": MET_NO_USER_AGENT,
+            "Accept": "application/json",
+        },
+        timeout=timeout_s,
+    )
+    response.raise_for_status()
+    payload = response.json() if response.content else {}
+
+    properties = payload.get("properties") if isinstance(payload, dict) else {}
+    time_series = properties.get("timeseries") if isinstance(properties, dict) else []
+    by_hour: dict[str, dict[str, Any]] = {}
+    for point in time_series or []:
+        if not isinstance(point, dict):
+            continue
+        point_dt = _parse_iso_dt(str(point.get("time") or ""))
+        if point_dt is None:
+            continue
+        local_dt = _to_local_naive(point_dt, timezone_name=DEFAULT_FORECAST_TIMEZONE)
+        if local_dt.date() != target_date:
+            continue
+
+        data = point.get("data") if isinstance(point.get("data"), dict) else {}
+        next_one = data.get("next_1_hours") if isinstance(data.get("next_1_hours"), dict) else {}
+        next_details = next_one.get("details") if isinstance(next_one.get("details"), dict) else {}
+        next_summary = next_one.get("summary") if isinstance(next_one.get("summary"), dict) else {}
+        instant = data.get("instant") if isinstance(data.get("instant"), dict) else {}
+        instant_details = instant.get("details") if isinstance(instant.get("details"), dict) else {}
+
+        precipitation_mm = _safe_float(next_details.get("precipitation_amount"), default=0.0)
+        symbol_code = str(next_summary.get("symbol_code") or "").strip().lower()
+        weather_code = _met_no_weather_code(symbol_code)
+        precip_probability = _met_no_precip_probability(symbol_code, precipitation_mm)
+        wind_ms = _safe_float(instant_details.get("wind_speed"), default=0.0)
+        wind_kmh = max(0.0, wind_ms * 3.6)
+
+        key = _normalize_hour_key(local_dt)
+        by_hour[key] = {
+            "time": key,
+            "precipitation_probability": precip_probability,
+            "precipitation": precipitation_mm,
+            "weather_code": weather_code,
+            "wind_speed_10m": wind_kmh,
+        }
+
+    return {
+        "timezone": DEFAULT_FORECAST_TIMEZONE,
         "hourly": by_hour,
     }
 
@@ -440,27 +581,64 @@ def build_weather_booking_candidates(
     coords = get_club_coordinates(db, club_id)
     if not coords:
         raise RuntimeError("Course coordinates not configured and geocoding failed.")
+    latitude = _safe_float(coords.get("latitude"), default=0.0)
+    longitude = _safe_float(coords.get("longitude"), default=0.0)
 
     forecast: dict[str, Any] = {}
     hourly: dict[str, dict[str, Any]] = {}
     provider_unavailable = False
     provider_note = ""
+    provider_name = "open_meteo"
     try:
         forecast = fetch_hourly_forecast(
-            latitude=_safe_float(coords.get("latitude"), default=0.0),
-            longitude=_safe_float(coords.get("longitude"), default=0.0),
+            latitude=latitude,
+            longitude=longitude,
             target_date=target_date,
         )
         hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
         if isinstance(hourly_raw, dict):
             hourly = hourly_raw
+        if not isinstance(hourly, dict) or not hourly:
+            forecast = fetch_hourly_forecast_met_no(
+                latitude=latitude,
+                longitude=longitude,
+                target_date=target_date,
+            )
+            provider_name = "met_no"
+            hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
+            hourly = hourly_raw if isinstance(hourly_raw, dict) else {}
     except requests.RequestException:
-        provider_unavailable = True
-        provider_note = "Weather provider unavailable. Manual rain reconfirm mode is active."
+        try:
+            forecast = fetch_hourly_forecast_met_no(
+                latitude=latitude,
+                longitude=longitude,
+                target_date=target_date,
+            )
+            provider_name = "met_no"
+            hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
+            hourly = hourly_raw if isinstance(hourly_raw, dict) else {}
+        except requests.RequestException:
+            provider_unavailable = True
+            provider_note = "Live rain forecast temporarily unavailable."
+
+    if not provider_unavailable and isinstance(hourly, dict) and hourly:
+        _set_cached_forecast(latitude, longitude, target_date, forecast)
 
     if not provider_unavailable and (not isinstance(hourly, dict) or not hourly):
         provider_unavailable = True
-        provider_note = "No forecast returned for this date. Manual rain reconfirm mode is active."
+        provider_note = "Live rain forecast unavailable for this date."
+    elif provider_name == "met_no":
+        provider_note = "Using backup weather feed."
+
+    if provider_unavailable:
+        cached_forecast, cached_stamp = _get_cached_forecast(latitude, longitude, target_date)
+        cached_hourly = (cached_forecast or {}).get("hourly") if isinstance(cached_forecast, dict) else {}
+        if isinstance(cached_hourly, dict) and cached_hourly:
+            provider_unavailable = False
+            provider_name = "cache"
+            forecast = cached_forecast or {}
+            hourly = cached_hourly
+            provider_note = f"Using cached forecast from {cached_stamp}."
 
     user_cache: dict[str, models.User | None] = {}
     items: list[dict[str, Any]] = []
@@ -474,24 +652,15 @@ def build_weather_booking_candidates(
             continue
 
         if provider_unavailable:
-            risk = {
-                "level": "medium",
-                "score": 55,
-                "reasons": [provider_note or "Manual rain reconfirm"],
-                "precipitation_probability": None,
-                "precipitation_mm": None,
-                "weather_code": None,
-                "forecast_time": None,
-            }
-        else:
-            point = forecast_point_for_tee_time(hourly, tee_dt)
-            risk = classify_weather_risk(
-                point,
-                min_precip_probability=min_precip_probability,
-                min_precip_mm=min_precip_mm,
-            )
-            if not bool(risk.get("at_risk")):
-                continue
+            continue
+        point = forecast_point_for_tee_time(hourly, tee_dt)
+        risk = classify_weather_risk(
+            point,
+            min_precip_probability=min_precip_probability,
+            min_precip_mm=min_precip_mm,
+        )
+        if not bool(risk.get("at_risk")):
+            continue
 
         risky_count += 1
         player_user = resolve_player_user_for_booking(db, booking, club_id, cache=user_cache)
@@ -546,6 +715,7 @@ def build_weather_booking_candidates(
         "forecast_timezone": str(forecast.get("timezone") or "").strip(),
         "provider_unavailable": bool(provider_unavailable),
         "provider_note": provider_note or None,
+        "provider_name": provider_name,
         "course_location": {
             "label": str(coords.get("label") or ""),
             "source": str(coords.get("source") or ""),

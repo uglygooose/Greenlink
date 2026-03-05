@@ -819,7 +819,7 @@ def preview_tee_sheet_weather(
         _safe_rollback(db)
         raise HTTPException(status_code=422, detail=str(e))
     except requests.RequestException:
-        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+        raise HTTPException(status_code=502, detail="Live rain forecast temporarily unavailable.")
     except HTTPException:
         raise
     except Exception as e:
@@ -884,7 +884,7 @@ def auto_flag_tee_sheet_weather(
         raise HTTPException(status_code=422, detail=str(e))
     except requests.RequestException:
         _safe_rollback(db)
-        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+        raise HTTPException(status_code=502, detail="Live rain forecast temporarily unavailable.")
     except HTTPException:
         _safe_rollback(db)
         raise
@@ -938,7 +938,7 @@ def send_tee_sheet_weather_reconfirm(
         }
     except requests.RequestException:
         _safe_rollback(db)
-        raise HTTPException(status_code=502, detail="Weather provider unavailable right now.")
+        raise HTTPException(status_code=502, detail="Live rain forecast temporarily unavailable.")
     except RuntimeError as e:
         _safe_rollback(db)
         raise HTTPException(status_code=422, detail=str(e))

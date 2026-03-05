@@ -1,5 +1,10 @@
 # GreenLink Operations Dashboard Standards (2026)
 
+> Updated benchmark and implementation roadmap are in:
+> - `COMPETITOR_BENCHMARK_2026-03-05.md`
+> - `GREENLINK_FULL_AUDIT_2026-03-05.md`
+> - `GREENLINK_UPGRADE_ROADMAP_2026-03-05.md`
+
 This guide maps each GreenLink operation to practical dashboard KPIs and workflow expectations using current industry references.
 
 ## Sources used
@@ -65,7 +70,7 @@ This guide maps each GreenLink operation to practical dashboard KPIs and workflo
    Compute days-of-cover using last 30-day sales velocity and flag SKUs below threshold.
 
 2. **Revenue anomaly alerts (Pub/Bowls/Other)**  
-   Detect daily revenue outliers vs rolling 7-day baseline and show “check import/source” prompts.
+   Detect daily revenue outliers vs rolling 7-day baseline and show "check import/source" prompts.
 
 3. **Smart categorization for imported revenue**  
    Auto-suggest category mapping for uncategorized rows, then learn accepted mappings.

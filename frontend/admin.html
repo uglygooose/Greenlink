@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
-    <link rel="stylesheet" href="admin-style.css?v=2026-03-05-weather-04" />
+    <link rel="stylesheet" href="admin-style.css?v=2026-03-05-ux-06" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -49,7 +49,16 @@
                     </div>
                 </details>
 
-                <a href="#logout" class="nav-item logout" id="logoutBtn">Logout</a>
+                <details class="nav-group">
+                    <summary class="nav-group-toggle">Imported Operations</summary>
+                    <div class="nav-group-items">
+                        <a href="#pub-ops" class="nav-item" data-page="pub-ops">Pub Operations</a>
+                        <a href="#bowls-ops" class="nav-item" data-page="bowls-ops">Bowls Operations</a>
+                        <a href="#other-ops" class="nav-item" data-page="other-ops">Other Operations</a>
+                    </div>
+                </details>
+
+                <a href="#" class="nav-item logout" id="logoutBtn">Logout</a>
             </nav>
         </aside>
 
@@ -74,9 +83,14 @@
                             <option value="ledger">Ledger</option>
                             <option value="cashbook">Cashbook</option>
                         </optgroup>
-                        <optgroup label="Operations">
+                        <optgroup label="Pro Shop">
                             <option value="dashboard|pro_shop">Pro Shop Dashboard</option>
                             <option value="pro-shop">Pro Shop Sales</option>
+                        </optgroup>
+                        <optgroup label="Imported Operations">
+                            <option value="pub-ops">Pub Operations</option>
+                            <option value="bowls-ops">Bowls Operations</option>
+                            <option value="other-ops">Other Operations</option>
                         </optgroup>
                     </select>
                     <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
@@ -308,6 +322,8 @@
                                 <option value="pro_shop">Pro Shop</option>
                             </select>
                             <button class="btn-secondary" id="ops-load-settings-btn" type="button">Reload Settings</button>
+                            <button class="btn-secondary" id="ops-open-revenue-btn" type="button">Open Revenue Analytics</button>
+                            <button class="btn-secondary" id="ops-open-people-btn" type="button">Open People</button>
                         </div>
                     </div>
 
@@ -436,6 +452,7 @@
                                 <option value="no_show">No-show</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
+                            <button class="btn-secondary" id="bookings-open-tee-sheet-btn" type="button">Open Tee Sheet</button>
                         </div>
                     </div>
                     <div class="table-container">
@@ -492,6 +509,8 @@
                                 <option value="name_desc">Name Z-A</option>
                             </select>
                             <input type="text" id="people-search" placeholder="Search name / email..." />
+                            <button class="btn-secondary" id="people-import-btn" type="button" style="display:none">Import Members CSV</button>
+                            <button class="btn-secondary" id="people-import-log-btn" type="button" style="display:none">Import Log</button>
                             <button class="btn-secondary" id="people-add-btn" type="button" style="display:none"></button>
                         </div>
                     </div>
@@ -528,6 +547,7 @@
                                 <option value="other_imported">Imported Non-Booking (All)</option>
                                 <option value="pro_shop">Pro Shop Imported</option>
                             </select>
+                            <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Import Setup</button>
                         </div>
                     </div>
 
@@ -900,7 +920,6 @@
                                     <button type="button" class="manage-item" data-action="generate">Generate Tee Times</button>
                                     <button type="button" class="manage-item" data-action="bulk-book">Bulk Book / Golf Day...</button>
                                     <button type="button" class="manage-item" data-action="import-bookings">Import Mirror Bookings CSV...</button>
-                                    <button type="button" class="manage-item" data-action="import-members">Import Members CSV...</button>
                                     <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
                                     <button type="button" class="manage-item" data-action="weather-reconfirm">Weather Reconfirm...</button>
                                     <button type="button" class="manage-item" data-action="tee-profile">Tee Schedule...</button>
@@ -1706,6 +1725,6 @@
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-	    <script src="admin.js?v=2026-03-05-weather-04"></script>
+	    <script src="admin.js?v=2026-03-05-ux-06"></script>
 	</body>
 	</html>
