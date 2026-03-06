@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 
 from app.auth import get_password_hash
 from app.club_assignments import ensure_user_primary_club, sync_user_club_assignment
@@ -26,7 +27,7 @@ from app.observability import log_event
 from app.people import sync_user_person
 from app.runtime_env import is_local_like, is_production_like
 from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
-from app.umhlali_operational_seed import seed_umhlali_operational_inputs
+from app.umhlali_operational_seed import find_umhlali_setup_files, seed_umhlali_operational_inputs
 from app.weather_alerts import DEFAULT_FORECAST_TIMEZONE, KNOWN_COURSE_COORDS
 
 UMHLALI_CLUB_NAME = "Umhlali Country Club"
@@ -450,6 +451,7 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
     accounting = db.query(AccountingSetting).filter(AccountingSetting.club_id == int(club_id)).first()
     if not accounting:
         db.add(AccountingSetting(club_id=int(club_id)))
+    db.flush()
 
     for metric, annual_target in (("rounds", 36000.0), ("revenue", 14500000.0)):
         row = (
@@ -461,14 +463,24 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
             row.annual_target = float(annual_target)
             row.updated_at = _utcnow()
             continue
-        db.add(
-            KpiTarget(
-                club_id=int(club_id),
-                year=2026,
-                metric=metric,
-                annual_target=float(annual_target),
+        payload = {
+            "club_id": int(club_id),
+            "year": 2026,
+            "metric": metric,
+            "annual_target": float(annual_target),
+        }
+        try:
+            with db.begin_nested():
+                dialect = str(getattr(getattr(getattr(db, "bind", None), "dialect", None), "name", "") or "").lower()
+                if dialect == "sqlite":
+                    next_id = int(db.query(func.coalesce(func.max(KpiTarget.id), 0)).scalar() or 0) + 1
+                    payload["id"] = next_id
+                db.add(KpiTarget(**payload))
+                db.flush()
+        except IntegrityError as exc:
+            diagnostics["warnings"].append(
+                f"Skipped KPI target bootstrap for {metric}: {type(exc).__name__}."
             )
-        )
 
     diagnostics["notes"].append("Ensured Umhlali club defaults, booking rules, and KPI targets.")
 
@@ -482,7 +494,8 @@ def ensure_umhlali_operational_inputs_exist(
     if club_id is None:
         return result
 
-    auto_sync = _env_true("UMHLALI_OPERATIONAL_SYNC") or DB_SOURCE in {"SQLITE", "MYSQL"}
+    setup_files = find_umhlali_setup_files()
+    auto_sync = _env_true("UMHLALI_OPERATIONAL_SYNC") or DB_SOURCE in {"SQLITE", "MYSQL"} or setup_files is not None
     force = _env_true("UMHLALI_OPERATIONAL_SYNC_FORCE")
     if not auto_sync and not force:
         return result

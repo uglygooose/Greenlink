@@ -34,7 +34,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.people import classify_membership_group, normalize_membership_status, parse_membership_date, sync_member_person
+from app.people import classify_membership_group, normalize_membership_status, parse_membership_date
 from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
@@ -777,6 +777,27 @@ async def import_members_csv(
     failed = 0
     total = 0
     notes: list[str] = []
+    existing_rows = db.query(Member).filter(Member.club_id == club_id).all()
+    by_member_number = {
+        str(getattr(row, "member_number", "") or "").strip(): row
+        for row in existing_rows
+        if str(getattr(row, "member_number", "") or "").strip()
+    }
+    by_email = {
+        str(getattr(row, "email", "") or "").strip().lower(): row
+        for row in existing_rows
+        if str(getattr(row, "email", "") or "").strip()
+    }
+    by_name = {}
+    for row in existing_rows:
+        first = str(getattr(row, "first_name", "") or "").strip().lower()
+        last = str(getattr(row, "last_name", "") or "").strip().lower()
+        if first and last:
+            by_name[(first, last)] = row
+    pending_by_member_number = {}
+    pending_by_email = {}
+    pending_by_name = {}
+    insert_payloads = []
 
     try:
         reader = _open_csv_bytes(content)
@@ -803,6 +824,23 @@ async def import_members_csv(
             membership_status = normalize_membership_status(membership_status_raw)
             membership_date = parse_membership_date(row.get("membership_date") or row.get("start_date"))
             membership_expiration = parse_membership_date(row.get("membership_expiration") or row.get("expiry_date"))
+            payload = {
+                "club_id": club_id,
+                "member_number": member_number,
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": email,
+                "phone": phone,
+                "handicap_number": handicap_number,
+                "home_club": home_club,
+                "country_of_residence": country_of_residence,
+                "membership_category": membership_category,
+                "membership_status": membership_status,
+                "membership_date": membership_date,
+                "membership_expiration": membership_expiration,
+                "active": 1 if membership_status == "active" else 0,
+                "player_category": classify_membership_group(membership_category or ""),
+            }
 
             if not first_name or not last_name:
                 failed += 1
@@ -812,56 +850,61 @@ async def import_members_csv(
 
             existing = None
             if member_number:
-                existing = (
-                    db.query(Member)
-                    .filter(Member.club_id == club_id, Member.member_number == member_number)
-                    .first()
-                )
+                existing = by_member_number.get(member_number)
+            if existing is None and member_number:
+                existing = pending_by_member_number.get(member_number)
             if existing is None and email:
-                existing = (
-                    db.query(Member)
-                    .filter(Member.club_id == club_id, func.lower(Member.email) == email)
-                    .first()
-                )
+                existing = by_email.get(email)
+            if existing is None and email:
+                existing = pending_by_email.get(email)
+            if existing is None:
+                existing = by_name.get((first_name.lower(), last_name.lower()))
+            if existing is None:
+                existing = pending_by_name.get((first_name.lower(), last_name.lower()))
 
             if existing:
-                existing.first_name = first_name
-                existing.last_name = last_name
-                existing.email = email
-                existing.phone = phone
-                existing.handicap_number = handicap_number
-                existing.home_club = home_club
-                existing.country_of_residence = country_of_residence
-                existing.membership_category = membership_category or existing.membership_category
-                existing.membership_status = membership_status
-                existing.membership_date = membership_date
-                existing.membership_expiration = membership_expiration
-                existing.player_category = classify_membership_group(existing.membership_category or "")
-                existing.active = 1 if membership_status == "active" else 0
-                sync_member_person(db, existing, source_system="members_csv")
-                updated += 1
+                if isinstance(existing, dict):
+                    existing.update(payload)
+                else:
+                    existing.first_name = first_name
+                    existing.last_name = last_name
+                    existing.email = email
+                    existing.phone = phone
+                    existing.handicap_number = handicap_number
+                    existing.home_club = home_club
+                    existing.country_of_residence = country_of_residence
+                    existing.membership_category = membership_category or existing.membership_category
+                    existing.membership_status = membership_status
+                    existing.membership_date = membership_date
+                    existing.membership_expiration = membership_expiration
+                    existing.player_category = classify_membership_group(existing.membership_category or "")
+                    existing.active = 1 if membership_status == "active" else 0
+                    updated += 1
             else:
-                new_member = Member(
-                    club_id=club_id,
-                    member_number=member_number,
-                    first_name=first_name,
-                    last_name=last_name,
-                    email=email,
-                    phone=phone,
-                    handicap_number=handicap_number,
-                    home_club=home_club,
-                    country_of_residence=country_of_residence,
-                    membership_category=membership_category,
-                    membership_status=membership_status,
-                    membership_date=membership_date,
-                    membership_expiration=membership_expiration,
-                    active=1 if membership_status == "active" else 0,
-                    player_category=classify_membership_group(membership_category or ""),
-                )
-                db.add(new_member)
-                db.flush()
-                sync_member_person(db, new_member, source_system="members_csv")
+                insert_payloads.append(payload)
+                existing = payload
                 inserted += 1
+
+            if member_number:
+                if isinstance(existing, dict):
+                    pending_by_member_number[member_number] = existing
+                else:
+                    by_member_number[member_number] = existing
+            if email:
+                if isinstance(existing, dict):
+                    pending_by_email[email] = existing
+                else:
+                    by_email[email] = existing
+            if isinstance(existing, dict):
+                pending_by_name[(first_name.lower(), last_name.lower())] = existing
+            else:
+                by_name[(first_name.lower(), last_name.lower())] = existing
+
+        if insert_payloads:
+            chunk_size = 100
+            for start in range(0, len(insert_payloads), chunk_size):
+                db.bulk_insert_mappings(Member, insert_payloads[start : start + chunk_size])
+                db.flush()
 
         batch.rows_total = total
         batch.rows_inserted = inserted

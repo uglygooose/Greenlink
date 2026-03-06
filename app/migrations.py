@@ -176,6 +176,47 @@ def _repair_club_settings_primary_key(conn) -> bool:
     return True
 
 
+def _repair_members_unique_indexes(conn) -> list[str]:
+    dialect = str(getattr(conn.dialect, "name", "")).lower()
+    if dialect not in {"postgresql", "postgres"}:
+        return []
+    if "members" not in _table_names(conn):
+        return []
+
+    existing = _index_names(conn, "members")
+    repaired: list[str] = []
+
+    if "members_member_number_key" in existing:
+        _safe_execute(conn, "DROP INDEX IF EXISTS members_member_number_key")
+        repaired.append("members.drop_global_member_number_unique")
+    if "members_email_key" in existing:
+        _safe_execute(conn, "DROP INDEX IF EXISTS members_email_key")
+        repaired.append("members.drop_global_email_unique")
+
+    refreshed = _index_names(conn, "members")
+    if "uq_members_club_member_number" not in refreshed:
+        _safe_execute(
+            conn,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_members_club_member_number
+            ON members (club_id, member_number)
+            WHERE member_number IS NOT NULL
+            """,
+        )
+        repaired.append("members.add_club_member_number_unique")
+    if "uq_members_club_email" not in refreshed:
+        _safe_execute(
+            conn,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_members_club_email
+            ON members (club_id, email)
+            WHERE email IS NOT NULL
+            """,
+        )
+        repaired.append("members.add_club_email_unique")
+    return repaired
+
+
 def _apply_default_value_backfills(conn) -> list[str]:
     table_names = _table_names(conn)
     applied: list[str] = []
@@ -292,6 +333,9 @@ def run_auto_migrations(engine) -> dict[str, object]:
             diagnostics["default_backfills"] = backfills
         if _repair_club_settings_primary_key(conn):
             diagnostics["repairs"].append("club_settings.primary_key")
+        member_index_repairs = _repair_members_unique_indexes(conn)
+        if member_index_repairs:
+            diagnostics["repairs"].extend(member_index_repairs)
 
         diagnostics["ran"] = True
         diagnostics["status"] = "ready"

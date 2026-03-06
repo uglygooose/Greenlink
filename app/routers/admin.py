@@ -321,12 +321,45 @@ def _normalize_revenue_stream(raw: str | None) -> str:
 def _normalize_membership_area(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     if not value or value in {"all", "any"}:
-        return "all"
+        return "golf"
     if value in {"home_owner", "homeowners"}:
         return "homeowners"
     if value in {"non_golf", "non-golf"}:
         return "other"
     return value
+
+
+def _membership_area_clause(area_norm: str):
+    category_col = func.lower(func.coalesce(Member.membership_category, ""))
+    player_col = func.lower(func.coalesce(Member.player_category, ""))
+    explicit_non_golf = or_(
+        category_col.like("%non golf%"),
+        category_col.like("%non-golf%"),
+        category_col.like("%bowls%"),
+        category_col.like("%tennis%"),
+        category_col.like("%squash%"),
+        category_col.like("%home owner%"),
+        category_col.like("%homeowner%"),
+        category_col.like("%house%"),
+        category_col.like("%social%"),
+        category_col.like("%staff%"),
+        player_col.in_(["bowls", "tennis", "squash", "homeowners", "house", "social", "staff", "other"]),
+    )
+    if area_norm == "golf":
+        return or_(player_col == "golf", ~explicit_non_golf)
+    if area_norm == "bowls":
+        return or_(player_col == "bowls", category_col.like("%bowls%"))
+    if area_norm == "tennis":
+        return or_(player_col == "tennis", category_col.like("%tennis%"))
+    if area_norm == "homeowners":
+        return or_(player_col == "homeowners", category_col.like("%home owner%"), category_col.like("%homeowner%"))
+    if area_norm == "house":
+        return or_(player_col == "house", category_col.like("%house%"))
+    if area_norm == "social":
+        return or_(player_col == "social", category_col.like("%social%"))
+    if area_norm == "staff":
+        return or_(player_col == "staff", category_col.like("%staff%"))
+    return explicit_non_golf
 
 
 def _account_customer_from_input(
@@ -4160,45 +4193,8 @@ async def get_members(
 
     base_query = db.query(Member)
     area_norm = _normalize_membership_area(area)
-    if area_norm != "all":
-        area_col = func.lower(func.coalesce(Member.membership_category, ""))
-        if area_norm == "golf":
-            base_query = base_query.filter(
-                or_(
-                    area_col.like("%golf%"),
-                    area_col.like("%academy%"),
-                    area_col.like("%weekday%"),
-                    area_col.like("%junior%"),
-                )
-            )
-        elif area_norm == "bowls":
-            base_query = base_query.filter(area_col.like("%bowls%"))
-        elif area_norm == "tennis":
-            base_query = base_query.filter(area_col.like("%tennis%"))
-        elif area_norm == "homeowners":
-            base_query = base_query.filter(or_(area_col.like("%home owner%"), area_col.like("%homeowner%")))
-        elif area_norm == "house":
-            base_query = base_query.filter(area_col.like("%house%"))
-        elif area_norm == "social":
-            base_query = base_query.filter(area_col.like("%social%"))
-        elif area_norm == "staff":
-            base_query = base_query.filter(area_col.like("%staff%"))
-        else:
-            base_query = base_query.filter(
-                ~or_(
-                    area_col.like("%golf%"),
-                    area_col.like("%academy%"),
-                    area_col.like("%weekday%"),
-                    area_col.like("%junior%"),
-                    area_col.like("%bowls%"),
-                    area_col.like("%tennis%"),
-                    area_col.like("%home owner%"),
-                    area_col.like("%homeowner%"),
-                    area_col.like("%house%"),
-                    area_col.like("%social%"),
-                    area_col.like("%staff%"),
-                )
-            )
+    if area_norm:
+        base_query = base_query.filter(_membership_area_clause(area_norm))
 
     status_norm = str(membership_status or "all").strip().lower()
     if status_norm and status_norm not in {"all", "any"}:
@@ -4262,45 +4258,8 @@ async def get_members(
         )
         .outerjoin(stats, stats.c.member_id == Member.id)
     )
-    if area_norm != "all":
-        area_col = func.lower(func.coalesce(Member.membership_category, ""))
-        if area_norm == "golf":
-            query = query.filter(
-                or_(
-                    area_col.like("%golf%"),
-                    area_col.like("%academy%"),
-                    area_col.like("%weekday%"),
-                    area_col.like("%junior%"),
-                )
-            )
-        elif area_norm == "bowls":
-            query = query.filter(area_col.like("%bowls%"))
-        elif area_norm == "tennis":
-            query = query.filter(area_col.like("%tennis%"))
-        elif area_norm == "homeowners":
-            query = query.filter(or_(area_col.like("%home owner%"), area_col.like("%homeowner%")))
-        elif area_norm == "house":
-            query = query.filter(area_col.like("%house%"))
-        elif area_norm == "social":
-            query = query.filter(area_col.like("%social%"))
-        elif area_norm == "staff":
-            query = query.filter(area_col.like("%staff%"))
-        else:
-            query = query.filter(
-                ~or_(
-                    area_col.like("%golf%"),
-                    area_col.like("%academy%"),
-                    area_col.like("%weekday%"),
-                    area_col.like("%junior%"),
-                    area_col.like("%bowls%"),
-                    area_col.like("%tennis%"),
-                    area_col.like("%home owner%"),
-                    area_col.like("%homeowner%"),
-                    area_col.like("%house%"),
-                    area_col.like("%social%"),
-                    area_col.like("%staff%"),
-                )
-            )
+    if area_norm:
+        query = query.filter(_membership_area_clause(area_norm))
 
     if status_norm and status_norm not in {"all", "any"}:
         normalized = normalize_membership_status(status_norm)

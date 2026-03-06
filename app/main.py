@@ -280,14 +280,21 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # -----------------------------------------
 # Serve Frontend
 # -----------------------------------------
-app.mount("/frontend", FrontendStaticFiles(directory="frontend"), name="frontend")
+_FRONTEND_DIR = "frontend"
+_HAS_FRONTEND = os.path.isdir(_FRONTEND_DIR)
+if _HAS_FRONTEND:
+    app.mount("/frontend", FrontendStaticFiles(directory=_FRONTEND_DIR), name="frontend")
+else:
+    log_event("warning", "frontend.static_missing", directory=_FRONTEND_DIR)
 
 
 @app.get("/")
 def root():
     from fastapi.responses import RedirectResponse
 
-    return RedirectResponse(url="/frontend/index.html")
+    if _HAS_FRONTEND:
+        return RedirectResponse(url="/frontend/index.html")
+    return {"ok": True, "detail": "Frontend assets are not present on this runtime."}
 
 
 @app.get("/favicon.ico")

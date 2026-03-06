@@ -16,7 +16,6 @@ from app.people import (
     normalize_membership_status,
     parse_membership_date,
     parse_terms_days,
-    sync_member_person,
 )
 
 
@@ -123,6 +122,10 @@ def _find_setup_files() -> SetupFiles | None:
         golf_day_bookings=golf_day,
         staff_roles=staff,
     )
+
+
+def find_umhlali_setup_files() -> SetupFiles | None:
+    return _find_setup_files()
 
 
 def _sheet_rows(path: Path) -> list[list[Any]]:
@@ -305,7 +308,27 @@ def _ingest_members(
     header = _header_index_map(rows[0])
     inserted = 0
     updated = 0
-    linked = 0
+    existing_rows = db.query(models.Member).filter(models.Member.club_id == int(club_id)).all()
+    by_member_number = {
+        str(getattr(row, "member_number", "") or "").strip(): row
+        for row in existing_rows
+        if str(getattr(row, "member_number", "") or "").strip()
+    }
+    by_email = {
+        str(getattr(row, "email", "") or "").strip().lower(): row
+        for row in existing_rows
+        if str(getattr(row, "email", "") or "").strip()
+    }
+    by_name = {}
+    for row in existing_rows:
+        first = str(getattr(row, "first_name", "") or "").strip().lower()
+        last = str(getattr(row, "last_name", "") or "").strip().lower()
+        if first and last:
+            by_name[(first, last)] = row
+    pending_by_member_number: dict[str, dict[str, Any]] = {}
+    pending_by_email: dict[str, dict[str, Any]] = {}
+    pending_by_name: dict[tuple[str, str], dict[str, Any]] = {}
+    insert_payloads: list[dict[str, Any]] = []
 
     for row in rows[1:]:
         first = _clean_text(_extract_cells(row, header, "first name"), max_len=120)
@@ -325,54 +348,76 @@ def _ingest_members(
         norm_status = normalize_membership_status(status_raw)
         active_flag = 1 if norm_status == "active" else 0
         gender = _clean_text(_extract_cells(row, header, "gender"), max_len=20)
+        payload = {
+            "club_id": int(club_id),
+            "member_number": member_number,
+            "first_name": first,
+            "last_name": last,
+            "email": email,
+            "country_of_residence": country,
+            "membership_category": membership,
+            "membership_status": norm_status,
+            "membership_date": membership_date,
+            "membership_expiration": membership_exp,
+            "active": active_flag,
+            "gender": gender,
+            "player_category": classify_membership_group(membership),
+        }
 
-        existing = _find_member_row(
-            db,
-            club_id=int(club_id),
-            member_number=member_number,
-            email=email,
-            first_name=first,
-            last_name=last,
-        )
+        existing = None
+        if member_number:
+            existing = by_member_number.get(member_number)
+        if existing is None and member_number:
+            existing = pending_by_member_number.get(member_number)
+        if existing is None and email:
+            existing = by_email.get(email)
+        if existing is None and email:
+            existing = pending_by_email.get(email)
         if existing is None:
-            existing = models.Member(
-                club_id=int(club_id),
-                member_number=member_number,
-                first_name=first,
-                last_name=last,
-                email=email,
-                country_of_residence=country,
-                membership_category=membership,
-                membership_status=norm_status,
-                membership_date=membership_date,
-                membership_expiration=membership_exp,
-                active=active_flag,
-                gender=gender,
-                player_category=classify_membership_group(membership),
-            )
-            db.add(existing)
-            db.flush()
+            existing = by_name.get((first.lower(), last.lower()))
+        if existing is None:
+            existing = pending_by_name.get((first.lower(), last.lower()))
+        if existing is None:
+            insert_payloads.append(payload)
             inserted += 1
         else:
-            existing.member_number = member_number or existing.member_number
-            existing.first_name = first
-            existing.last_name = last
-            existing.email = email or existing.email
-            existing.country_of_residence = country
-            existing.membership_category = membership
-            existing.membership_status = norm_status
-            existing.membership_date = membership_date
-            existing.membership_expiration = membership_exp
-            existing.active = active_flag
-            existing.gender = gender or existing.gender
-            existing.player_category = classify_membership_group(membership)
-            updated += 1
+            if isinstance(existing, dict):
+                existing.update(payload)
+            else:
+                existing.member_number = member_number or existing.member_number
+                existing.first_name = first
+                existing.last_name = last
+                existing.email = email or existing.email
+                existing.country_of_residence = country
+                existing.membership_category = membership
+                existing.membership_status = norm_status
+                existing.membership_date = membership_date
+                existing.membership_expiration = membership_exp
+                existing.active = active_flag
+                existing.gender = gender or existing.gender
+                existing.player_category = classify_membership_group(membership)
+                updated += 1
+        if member_number:
+            if isinstance(existing, dict):
+                pending_by_member_number[member_number] = existing
+            else:
+                by_member_number[member_number] = existing
+        if email:
+            if isinstance(existing, dict):
+                pending_by_email[email] = existing
+            else:
+                by_email[email] = existing
+        if isinstance(existing, dict):
+            pending_by_name[(first.lower(), last.lower())] = existing
+        else:
+            by_name[(first.lower(), last.lower())] = existing
 
-        person = sync_member_person(db, existing, source_system="umhlali_members_xlsx")
-        if person is not None:
-            linked += 1
-
-    return {"rows": max(0, len(rows) - 1), "inserted": inserted, "updated": updated, "people_linked": linked}
+    if insert_payloads:
+        chunk_size = 100
+        for start in range(0, len(insert_payloads), chunk_size):
+            db.bulk_insert_mappings(models.Member, insert_payloads[start : start + chunk_size])
+            db.flush()
+    return {"rows": max(0, len(rows) - 1), "inserted": inserted, "updated": updated, "people_linked": 0}
 
 
 def _upsert_staff_role_profile(
@@ -658,6 +703,7 @@ def seed_umhlali_operational_inputs(
         "status": "skipped",
         "setup_dir": None,
         "missing_files": [],
+        "errors": [],
         "members": {},
         "accounts": {},
         "golf_day": {},
@@ -696,73 +742,65 @@ def seed_umhlali_operational_inputs(
 
     sources_loaded = 0
 
-    if setup.account_customers and setup.account_customers.exists():
-        batch = _upsert_import_batch(
-            db,
-            club_id=int(club_id),
-            source="umhlali_account_customers_xlsx",
-            file_name=setup.account_customers.name,
-        )
-        stats = _ingest_account_customers(db, club_id=int(club_id), path=setup.account_customers)
-        batch.rows_total = int(stats.get("rows", 0))
-        batch.rows_inserted = int(stats.get("inserted", 0))
-        batch.rows_updated = int(stats.get("updated", 0))
-        batch.rows_failed = 0
-        out["accounts"] = stats
-        sources_loaded += 1
-    else:
-        out["missing_files"].append("Account Customers.xlsx")
+    def _load_source(
+        *,
+        output_key: str,
+        source_name: str,
+        missing_label: str,
+        path: Path | None,
+        loader,
+    ) -> None:
+        nonlocal sources_loaded
+        if path is None or not path.exists():
+            out["missing_files"].append(missing_label)
+            return
+        try:
+            with db.begin_nested():
+                batch = _upsert_import_batch(
+                    db,
+                    club_id=int(club_id),
+                    source=source_name,
+                    file_name=path.name,
+                )
+                stats = loader(db, club_id=int(club_id), path=path)
+                batch.rows_total = int(stats.get("rows", 0))
+                batch.rows_inserted = int(stats.get("inserted", 0))
+                batch.rows_updated = int(stats.get("updated", 0))
+                batch.rows_failed = 0
+                out[output_key] = stats
+            sources_loaded += 1
+        except Exception as exc:
+            out["errors"].append(f"{source_name}: {type(exc).__name__}: {str(exc)[:180]}")
+            out[output_key] = {"status": "failed"}
 
-    if setup.member_list and setup.member_list.exists():
-        batch = _upsert_import_batch(
-            db,
-            club_id=int(club_id),
-            source="umhlali_members_xlsx",
-            file_name=setup.member_list.name,
-        )
-        stats = _ingest_members(db, club_id=int(club_id), path=setup.member_list)
-        batch.rows_total = int(stats.get("rows", 0))
-        batch.rows_inserted = int(stats.get("inserted", 0))
-        batch.rows_updated = int(stats.get("updated", 0))
-        batch.rows_failed = 0
-        out["members"] = stats
-        sources_loaded += 1
-    else:
-        out["missing_files"].append("Member List -Golf Scape ...xlsx")
-
-    if setup.staff_roles and setup.staff_roles.exists():
-        batch = _upsert_import_batch(
-            db,
-            club_id=int(club_id),
-            source="umhlali_staff_roles_xlsx",
-            file_name=setup.staff_roles.name,
-        )
-        stats = _ingest_staff_roles(db, club_id=int(club_id), path=setup.staff_roles)
-        batch.rows_total = int(stats.get("rows", 0))
-        batch.rows_inserted = int(stats.get("inserted", 0))
-        batch.rows_updated = int(stats.get("updated", 0))
-        batch.rows_failed = 0
-        out["staff_roles"] = stats
-        sources_loaded += 1
-    else:
-        out["missing_files"].append("Staff User List.xlsx")
-
-    if setup.golf_day_bookings and setup.golf_day_bookings.exists():
-        batch = _upsert_import_batch(
-            db,
-            club_id=int(club_id),
-            source="umhlali_golf_day_bookings_xlsx",
-            file_name=setup.golf_day_bookings.name,
-        )
-        stats = _ingest_golf_day_bookings(db, club_id=int(club_id), path=setup.golf_day_bookings)
-        batch.rows_total = int(stats.get("rows", 0))
-        batch.rows_inserted = int(stats.get("inserted", 0))
-        batch.rows_updated = int(stats.get("updated", 0))
-        batch.rows_failed = 0
-        out["golf_day"] = stats
-        sources_loaded += 1
-    else:
-        out["missing_files"].append("Golf Day Bookings.xlsx")
+    _load_source(
+        output_key="members",
+        source_name="umhlali_members_xlsx",
+        missing_label="Member List -Golf Scape ...xlsx",
+        path=setup.member_list,
+        loader=_ingest_members,
+    )
+    _load_source(
+        output_key="staff_roles",
+        source_name="umhlali_staff_roles_xlsx",
+        missing_label="Staff User List.xlsx",
+        path=setup.staff_roles,
+        loader=_ingest_staff_roles,
+    )
+    _load_source(
+        output_key="golf_day",
+        source_name="umhlali_golf_day_bookings_xlsx",
+        missing_label="Golf Day Bookings.xlsx",
+        path=setup.golf_day_bookings,
+        loader=_ingest_golf_day_bookings,
+    )
+    _load_source(
+        output_key="accounts",
+        source_name="umhlali_account_customers_xlsx",
+        missing_label="Account Customers.xlsx",
+        path=setup.account_customers,
+        loader=_ingest_account_customers,
+    )
 
     out["status"] = "seeded" if sources_loaded > 0 else "missing_inputs"
     return out
