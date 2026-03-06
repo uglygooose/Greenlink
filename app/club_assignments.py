@@ -42,14 +42,14 @@ def sync_user_club_assignment(
             user_id=int(user.id),
             club_id=int(resolved_club_id),
             role=resolved_role or models.UserRole.player.value,
-            is_primary=1 if bool(is_primary) else 0,
+            is_primary=bool(is_primary),
         )
         db.add(assignment)
         db.flush()
     else:
         assignment.role = resolved_role or assignment.role or models.UserRole.player.value
         if is_primary is not None:
-            assignment.is_primary = 1 if bool(is_primary) else 0
+            assignment.is_primary = bool(is_primary)
 
     if is_primary:
         (
@@ -57,11 +57,11 @@ def sync_user_club_assignment(
             .filter(
                 models.UserClubAssignment.user_id == int(user.id),
                 models.UserClubAssignment.club_id != int(resolved_club_id),
-                models.UserClubAssignment.is_primary == 1,
+                models.UserClubAssignment.is_primary.is_(True),
             )
-            .update({models.UserClubAssignment.is_primary: 0}, synchronize_session=False)
+            .update({models.UserClubAssignment.is_primary: False}, synchronize_session=False)
         )
-        assignment.is_primary = 1
+        assignment.is_primary = True
 
     if getattr(user, "club_id", None) != int(resolved_club_id):
         user.club_id = int(resolved_club_id)

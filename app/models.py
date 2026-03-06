@@ -100,7 +100,7 @@ class UserClubAssignment(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
     role = Column(String(30), nullable=False)
-    is_primary = Column(Boolean, nullable=False, default=0)
+    is_primary = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
