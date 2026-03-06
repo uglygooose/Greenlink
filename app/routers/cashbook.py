@@ -15,7 +15,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from app.auth import get_db, get_current_user
 from app.audit import record_audit_event
-from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntryMeta, DayClose, AccountingSetting, User, UserRole, ClubSetting
+from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntryMeta, DayClose, AccountingSetting, User, UserRole, ClubSetting, ProShopSale
 from app.fee_models import FeeCategory
 from app.club_config import invalidate_club_config_cache
 from app.observability import log_event
@@ -25,6 +25,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 router = APIRouter(prefix="/cashbook", tags=["cashbook"], dependencies=[Depends(get_active_club_id)])
+
+_PRO_SHOP_EXPORTS_SETTING_KEY = "cashbook_pro_shop_exports"
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -673,6 +675,228 @@ def _require_pastel_mappings(db: Session) -> dict:
     return mappings
 
 
+def _parse_ymd_date(raw_value: Optional[str], *, field_name: str) -> date:
+    if raw_value:
+        try:
+            return datetime.strptime(raw_value, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid {field_name} format. Use YYYY-MM-DD")
+    return date.today()
+
+
+def _normalize_payment_method_for_journal(raw_value: Optional[str]) -> str:
+    value = str(raw_value or "").strip().lower()
+    if value in {"cash", "card", "eft", "online", "account"}:
+        return value.upper()
+    if value in {"credit_card", "debit_card", "swipe", "tap", "other", "unknown"}:
+        return "CARD"
+    return "CARD"
+
+
+def _pro_shop_tax_split(gross_amount: Decimal, explicit_tax: Decimal, vat_rate: Decimal) -> tuple[Decimal, Decimal]:
+    gross = _q2(gross_amount)
+    tax = _q2(explicit_tax)
+    if tax > 0 and tax <= gross:
+        vat_amount = tax
+    elif vat_rate > 0:
+        vat_amount = _q2(gross * (vat_rate / (Decimal("1") + vat_rate)))
+    else:
+        vat_amount = Decimal("0.00")
+    net_amount = _q2(gross - vat_amount)
+    return net_amount, vat_amount
+
+
+def _get_pro_shop_exports_registry(db: Session) -> dict:
+    raw = _get_club_setting(db, _PRO_SHOP_EXPORTS_SETTING_KEY)
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _set_pro_shop_exports_registry(db: Session, registry: dict) -> None:
+    normalized = registry if isinstance(registry, dict) else {}
+    _upsert_club_setting(db, _PRO_SHOP_EXPORTS_SETTING_KEY, json.dumps(normalized))
+
+
+def _render_pastel_journal_csv(
+    *,
+    layout: dict,
+    mappings: dict,
+    lines: List[dict],
+    target_date: date,
+    batch_ref: str,
+    vat_rate: Decimal,
+) -> str:
+    columns = layout.get("columns") or []
+    column_map = layout.get("column_map") or {}
+    header_to_idx = {str(h): i for i, h in enumerate(columns)}
+
+    has_debit = bool(column_map.get("debit")) and column_map.get("debit") in header_to_idx
+    has_credit = bool(column_map.get("credit")) and column_map.get("credit") in header_to_idx
+    has_amount = bool(column_map.get("amount")) and column_map.get("amount") in header_to_idx
+
+    for key in ["date", "account"]:
+        header = column_map.get(key)
+        if not header or header not in header_to_idx:
+            raise HTTPException(status_code=500, detail=f"Pastel layout missing required column for '{key}'. Re-upload layout CSV.")
+
+    if not ((has_debit and has_credit) or has_amount):
+        raise HTTPException(
+            status_code=500,
+            detail="Pastel layout must include Debit/Credit columns or an Amount column. Re-upload a Batch->Export sample that matches your import layout.",
+        )
+
+    date_format = layout.get("date_format")
+    date_value = _format_date_for_layout(target_date, date_format)
+    delimiter = layout.get("delimiter") or ","
+    has_header = bool(layout.get("has_header", True))
+    template_row = layout.get("template_row")
+    has_template = isinstance(template_row, list) and len(template_row) == len(columns)
+    sample_rows = layout.get("sample_rows") or []
+    has_samples = isinstance(sample_rows, list) and bool(sample_rows)
+
+    constant_template: List[Optional[str]] = [None for _ in columns]
+    if has_template and has_samples:
+        try:
+            rows_for_constants = [r for r in sample_rows if isinstance(r, list) and len(r) == len(columns)]
+            if rows_for_constants:
+                for i in range(len(columns)):
+                    vals = [str(r[i] or "").strip() for r in rows_for_constants]
+                    if not vals:
+                        continue
+                    first = vals[0]
+                    if first and all(v == first for v in vals[1:]):
+                        constant_template[i] = str(template_row[i] or "")
+        except Exception:
+            constant_template = [None for _ in columns]
+
+    def _base_row() -> list:
+        if has_template and any(v is not None for v in constant_template):
+            row = ["" for _ in columns]
+            for i, v in enumerate(constant_template):
+                if v is not None and i < len(row):
+                    row[i] = v
+            return row
+        if has_template:
+            return [str(x or "") for x in list(template_row)]
+        return ["" for _ in columns]
+
+    def _set(row: list, key: str, value: str) -> None:
+        header = column_map.get(key)
+        if not header:
+            return
+        idx = header_to_idx.get(header)
+        if idx is None:
+            return
+        row[idx] = value
+
+    amount_mirror_headers: List[str] = []
+    try:
+        amount_mirror_headers = list(((layout.get("inferred") or {}).get("amount_mirrors") or []))
+    except Exception:
+        amount_mirror_headers = []
+
+    def _set_amount_mirrors(row: list, value: str) -> None:
+        for h in amount_mirror_headers:
+            idx = header_to_idx.get(str(h))
+            if idx is None:
+                continue
+            if idx < len(row):
+                row[idx] = value
+
+    out = StringIO(newline="")
+    writer = csv.writer(out, delimiter=delimiter, lineterminator="\r\n")
+    if has_header:
+        writer.writerow(columns)
+
+    tax_type_sales = str((mappings.get("tax_type") or "")).strip()
+    tax_type_sales_is_numeric = bool(tax_type_sales) and tax_type_sales.isdigit()
+    amount_sign = str((mappings.get("amount_sign") or "")).strip().lower() or "debit_positive"
+    vat_output_gl = str((mappings.get("vat_output_gl") or "")).strip()
+    vat_output_gl_fmt = _format_gl_for_layout(vat_output_gl, layout) if vat_output_gl else ""
+
+    for line in lines:
+        row = _base_row()
+        _set(row, "date", date_value)
+
+        if column_map.get("reference") and column_map.get("reference") in header_to_idx:
+            _set(row, "reference", batch_ref if has_header else str(line.get("ref") or batch_ref))
+        if column_map.get("description") and column_map.get("description") in header_to_idx:
+            if has_template:
+                d_idx = header_to_idx[column_map.get("description")]
+                existing = str(row[d_idx] or "").strip() if d_idx < len(row) else ""
+                if not (existing and len(existing) <= 20):
+                    _set(row, "description", str(line["desc"]))
+            else:
+                _set(row, "description", str(line["desc"]))
+
+        account_value = _format_gl_for_layout(str(line["account"]), layout)
+        _set(row, "account", account_value)
+
+        is_debit_line = bool(line["debit"] and _q2(line["debit"]) != 0)
+        is_credit_line = bool((not is_debit_line) and line["credit"] and _q2(line["credit"]) != 0)
+        is_vat_control_line = bool(vat_output_gl_fmt) and account_value.strip() == vat_output_gl_fmt
+        is_revenue_line = bool(is_credit_line and not is_vat_control_line)
+        apply_sales_tax = bool(is_revenue_line and tax_type_sales)
+
+        amount = None
+        if has_amount:
+            amount = Decimal("0.00")
+            if is_debit_line:
+                amount = _q2(line["debit"])
+                if amount_sign == "debit_negative":
+                    amount = -amount
+            else:
+                amount = _q2(line["credit"])
+                if amount_sign == "debit_positive":
+                    amount = -amount
+                else:
+                    amount = +amount
+            amount_str = _money_str(amount)
+            _set(row, "amount", amount_str)
+            _set_amount_mirrors(row, amount_str)
+            if has_debit:
+                _set(row, "debit", "")
+            if has_credit:
+                _set(row, "credit", "")
+        else:
+            if is_debit_line:
+                _set(row, "debit", _money_str(line["debit"]))
+                _set(row, "credit", "")
+            else:
+                _set(row, "debit", "")
+                _set(row, "credit", _money_str(line["credit"]))
+
+        if column_map.get("tax_type") and column_map.get("tax_type") in header_to_idx:
+            if apply_sales_tax and tax_type_sales:
+                _set(row, "tax_type", tax_type_sales)
+            else:
+                _set(row, "tax_type", "00" if tax_type_sales_is_numeric else "")
+
+        if column_map.get("tax_flag") and column_map.get("tax_flag") in header_to_idx:
+            _set(row, "tax_flag", "1" if apply_sales_tax else "0")
+
+        if column_map.get("tax_amount") and column_map.get("tax_amount") in header_to_idx:
+            if apply_sales_tax:
+                vat_amt = _q2(_to_decimal(line.get("vat", 0) or 0))
+                if vat_amt == 0:
+                    base_net = _q2(line["credit"]) if is_credit_line else _q2(line["debit"])
+                    vat_amt = _q2(base_net * vat_rate) if vat_rate > 0 else Decimal("0.00")
+                if amount is not None and amount < 0:
+                    vat_amt = -vat_amt
+                _set(row, "tax_amount", _money_str_zero(vat_amt))
+            else:
+                _set(row, "tax_amount", "0")
+
+        writer.writerow(row)
+
+    return out.getvalue()
+
+
 def create_payment_record(
     booking: Booking,
     settings: AccountingSetting,
@@ -899,6 +1123,301 @@ def get_daily_summary(
         total_tax=total_tax,
         transaction_count=len(records),
         records=records
+    )
+
+
+@router.get("/pro-shop-summary")
+def get_pro_shop_summary(
+    summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    target_date = _parse_ymd_date(summary_date, field_name="summary_date")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    try:
+        sales = (
+            db.query(ProShopSale)
+            .filter(ProShopSale.club_id == club_id, func.date(ProShopSale.sold_at) == target_date)
+            .order_by(ProShopSale.sold_at.asc(), ProShopSale.id.asc())
+            .all()
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    settings = get_accounting_settings(db)
+    try:
+        vat_rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
+    except Exception:
+        vat_rate = Decimal("0.15")
+    if vat_rate < 0:
+        vat_rate = Decimal("0")
+
+    total_payments = Decimal("0.00")
+    total_tax = Decimal("0.00")
+    method_totals: dict[str, Decimal] = {}
+    method_counts: dict[str, int] = {}
+    records: list[dict] = []
+
+    for sale in sales:
+        gross = _q2(_to_decimal(getattr(sale, "total", 0) or 0))
+        if gross <= 0:
+            continue
+        method = _normalize_payment_method_for_journal(getattr(sale, "payment_method", None))
+        explicit_tax = _q2(_to_decimal(getattr(sale, "tax", 0) or 0))
+        _, vat_amount = _pro_shop_tax_split(gross, explicit_tax, vat_rate)
+
+        method_totals[method] = _q2(method_totals.get(method, Decimal("0.00")) + gross)
+        method_counts[method] = int(method_counts.get(method, 0) or 0) + 1
+        total_payments = _q2(total_payments + gross)
+        total_tax = _q2(total_tax + vat_amount)
+
+        records.append(
+            {
+                "sale_id": int(getattr(sale, "id", 0) or 0),
+                "sold_at": sale.sold_at.isoformat() if getattr(sale, "sold_at", None) else None,
+                "customer_name": str(getattr(sale, "customer_name", "") or "").strip() or None,
+                "payment_method": method,
+                "subtotal": float(getattr(sale, "subtotal", 0) or 0),
+                "discount": float(getattr(sale, "discount", 0) or 0),
+                "tax": float(getattr(sale, "tax", 0) or 0),
+                "total": float(gross),
+            }
+        )
+
+    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
+    ordered_methods = [m for m in method_order if m in method_totals] + [m for m in sorted(method_totals.keys()) if m not in method_order]
+    payment_methods = [
+        {
+            "method": method,
+            "count": int(method_counts.get(method, 0) or 0),
+            "total": float(method_totals.get(method, Decimal("0.00"))),
+        }
+        for method in ordered_methods
+    ]
+
+    registry = _get_pro_shop_exports_registry(db)
+    export_info = registry.get(target_date.isoformat()) if isinstance(registry, dict) else None
+    already_exported = isinstance(export_info, dict)
+
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "total_payments": float(total_payments),
+        "total_tax": float(total_tax),
+        "transaction_count": len(records),
+        "payment_methods": payment_methods,
+        "records": records,
+        "already_exported": bool(already_exported),
+        "export_batch_ref": str(export_info.get("batch_ref") or "").strip() if already_exported else None,
+        "exported_at": str(export_info.get("exported_at") or "").strip() if already_exported else None,
+    }
+
+
+@router.get("/export-csv-pro-shop")
+def export_pro_shop_payments_csv(
+    request: Request,
+    export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    force: int = Query(0, description="1 to allow re-export for the same payment date (not recommended)"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    target_date = _parse_ymd_date(export_date, field_name="export_date")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    settings = get_accounting_settings(db)
+    layout = _require_pastel_layout(db)
+    mappings = _require_pastel_mappings(db)
+
+    date_key = target_date.isoformat()
+    exports_registry = _get_pro_shop_exports_registry(db)
+    previous_export = exports_registry.get(date_key) if isinstance(exports_registry, dict) else None
+    if not force and isinstance(previous_export, dict):
+        prev_batch = str(previous_export.get("batch_ref") or "").strip()
+        detail = "This pro shop payment date already looks exported. Use force=1 to re-export."
+        if prev_batch:
+            detail = f"This pro shop payment date already looks exported ({prev_batch}). Use force=1 to re-export."
+        raise HTTPException(status_code=409, detail=detail)
+
+    try:
+        sales = (
+            db.query(ProShopSale)
+            .filter(ProShopSale.club_id == club_id, func.date(ProShopSale.sold_at) == target_date)
+            .order_by(ProShopSale.sold_at.asc(), ProShopSale.id.asc())
+            .all()
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    if not sales:
+        raise HTTPException(status_code=404, detail=f"No pro shop sales found for {target_date}")
+
+    try:
+        vat_rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
+    except Exception:
+        vat_rate = Decimal("0.15")
+    if vat_rate < 0:
+        vat_rate = Decimal("0")
+
+    gross_by_method: dict[str, Decimal] = {}
+    method_counts: dict[str, int] = {}
+    sale_ids: list[int] = []
+    gross_total = Decimal("0.00")
+    net_total = Decimal("0.00")
+    vat_total = Decimal("0.00")
+
+    for sale in sales:
+        gross = _q2(_to_decimal(getattr(sale, "total", 0) or 0))
+        if gross <= 0:
+            continue
+        method = _normalize_payment_method_for_journal(getattr(sale, "payment_method", None))
+        explicit_tax = _q2(_to_decimal(getattr(sale, "tax", 0) or 0))
+        net_amount, vat_amount = _pro_shop_tax_split(gross, explicit_tax, vat_rate)
+
+        gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0.00")) + gross)
+        method_counts[method] = int(method_counts.get(method, 0) or 0) + 1
+        gross_total = _q2(gross_total + gross)
+        net_total = _q2(net_total + net_amount)
+        vat_total = _q2(vat_total + vat_amount)
+        if getattr(sale, "id", None):
+            sale_ids.append(int(sale.id))
+
+    if not gross_by_method:
+        raise HTTPException(status_code=404, detail=f"No positive-value pro shop payments found for {target_date}")
+
+    if _q2(net_total + vat_total) != gross_total:
+        raise HTTPException(status_code=500, detail="Pro shop VAT split does not balance to gross total after rounding.")
+
+    debit_gl = mappings.get("debit_gl") or {}
+    used_methods = sorted(gross_by_method.keys())
+    missing_debits = [method for method in used_methods if not str(debit_gl.get(method, "") or "").strip()]
+    if missing_debits:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing debit GL mapping for pro shop payment method(s): {', '.join(missing_debits)}",
+        )
+
+    revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}
+    revenue_gl = str(
+        revenue_by_fee_type.get("pro_shop")
+        or revenue_by_fee_type.get("retail")
+        or getattr(settings, "green_fees_gl", None)
+        or ""
+    ).strip()
+    if not revenue_gl:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing revenue GL mapping for pro_shop. Set revenue_gl.pro_shop in Pastel mappings or configure Green fees GL.",
+        )
+
+    vat_output_gl = str((mappings.get("vat_output_gl") or "")).strip()
+    if not vat_output_gl:
+        raise HTTPException(status_code=400, detail="Missing VAT output GL account in Pastel mappings.")
+
+    batch_ref = f"GREENLINK_PROSHOP_{target_date.strftime('%Y%m%d')}"
+    batch_desc = _clean_text(f"Pro shop takings {target_date.strftime('%Y-%m-%d')}", max_len=60)
+
+    lines: list[dict] = []
+    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
+    ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
+    for method in ordered_methods:
+        lines.append(
+            {
+                "account": str(debit_gl.get(method) or "").strip(),
+                "debit": gross_by_method[method],
+                "credit": Decimal("0.00"),
+                "ref": _clean_text(method, max_len=20),
+                "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
+            }
+        )
+
+    lines.append(
+        {
+            "account": revenue_gl,
+            "debit": Decimal("0.00"),
+            "credit": net_total,
+            "ref": "PRO SHOP",
+            "desc": _clean_text(f"{batch_desc} SALES", max_len=60),
+            "vat": vat_total,
+        }
+    )
+
+    if vat_total != 0:
+        lines.append(
+            {
+                "account": vat_output_gl,
+                "debit": Decimal("0.00"),
+                "credit": vat_total,
+                "ref": "VAT CONT",
+                "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
+            }
+        )
+
+    debit_sum = _q2(sum((line["debit"] for line in lines), Decimal("0.00")))
+    credit_sum = _q2(sum((line["credit"] for line in lines), Decimal("0.00")))
+    if debit_sum != credit_sum:
+        raise HTTPException(status_code=500, detail="Pro shop journal is out of balance after rounding.")
+
+    csv_text = _render_pastel_journal_csv(
+        layout=layout,
+        mappings=mappings,
+        lines=lines,
+        target_date=target_date,
+        batch_ref=batch_ref,
+        vat_rate=vat_rate,
+    )
+
+    try:
+        exports_registry[date_key] = {
+            "batch_ref": batch_ref,
+            "exported_at": datetime.utcnow().isoformat(),
+            "sales_count": len(set(sale_ids)),
+            "gross_total": float(gross_total),
+            "net_total": float(net_total),
+            "vat_total": float(vat_total),
+        }
+        _set_pro_shop_exports_registry(db, exports_registry)
+
+        _audit_cashbook_event(
+            db,
+            request,
+            admin,
+            action="cashbook.pro_shop_csv_exported",
+            entity_type="cashbook_export",
+            entity_id=batch_ref,
+            payload={
+                "date": target_date.isoformat(),
+                "batch_ref": batch_ref,
+                "force": int(force or 0),
+                "sales_count": len(set(sale_ids)),
+                "method_counts": {k: int(v) for k, v in method_counts.items()},
+                "gross_total": float(gross_total),
+                "net_total": float(net_total),
+                "vat_total": float(vat_total),
+            },
+        )
+        db.commit()
+    except Exception as e:
+        log_event(
+            "warning",
+            "cashbook.pro_shop_export.mark_failed",
+            request_id=_request_id(request),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+            batch_ref=batch_ref,
+        )
+
+    file_name = f"PASTEL_JOURNAL_PROSHOP_GREENLINK_{target_date.strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([csv_text.encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename={file_name}",
+            "X-GreenLink-BatchRef": batch_ref,
+        },
     )
 
 
@@ -2035,6 +2554,11 @@ def reopen_day(
         for le in ledger_entries:
             le.pastel_synced = 0
             le.pastel_transaction_id = None
+
+    exports_registry = _get_pro_shop_exports_registry(db)
+    if isinstance(exports_registry, dict) and target_date.isoformat() in exports_registry:
+        exports_registry.pop(target_date.isoformat(), None)
+        _set_pro_shop_exports_registry(db, exports_registry)
 
     close.status = "reopened"
     close.reopened_by_user_id = admin.id

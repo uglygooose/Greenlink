@@ -717,6 +717,41 @@ class WeatherReconfirmRequest(BaseModel):
     min_precip_mm: float = 1.0
 
 
+def _weather_fallback_payload(
+    target_date: date,
+    min_precip_probability: int,
+    min_precip_mm: float,
+    *,
+    provider_note: str,
+    auto_prompt_error: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "target_date": target_date.isoformat(),
+        "forecast_timezone": "",
+        "provider_unavailable": True,
+        "provider_note": str(provider_note or "").strip() or "Weather service unavailable.",
+        "provider_name": "fallback",
+        "course_location": {
+            "label": "",
+            "source": "fallback",
+            "latitude": 0.0,
+            "longitude": 0.0,
+        },
+        "thresholds": {
+            "min_precip_probability": int(min_precip_probability),
+            "min_precip_mm": float(min_precip_mm),
+        },
+        "counts": {
+            "bookings_considered": 0,
+            "at_risk": 0,
+            "messageable": 0,
+        },
+        "items": [],
+        "auto_prompts": {"created": 0, "skipped_existing": 0, "skipped_unlinked": 0},
+        "auto_prompt_error": auto_prompt_error,
+    }
+
+
 def _weather_topic_key(target_date: date, booking_id: int) -> str:
     return f"weather:{target_date.isoformat()}:{int(booking_id)}"
 
@@ -865,15 +900,49 @@ def preview_tee_sheet_weather(
         return payload
     except RuntimeError as e:
         _safe_rollback(db)
-        raise HTTPException(status_code=422, detail=str(e))
-    except requests.RequestException:
-        raise HTTPException(status_code=502, detail="Live rain forecast temporarily unavailable.")
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note=str(e),
+            auto_prompt_error=str(e),
+        )
+    except requests.RequestException as e:
+        _safe_rollback(db)
+        log_event(
+            "warning",
+            "weather.preview.request_failed",
+            club_id=int(club_id),
+            target_date=date_value.isoformat(),
+            error_type=type(e).__name__,
+            error=str(e)[:220],
+        )
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note="Live rain forecast temporarily unavailable.",
+            auto_prompt_error="Weather provider request failed. Retry shortly.",
+        )
     except HTTPException:
         raise
     except Exception as e:
         _safe_rollback(db)
-        print(f"[WEATHER_PREVIEW] {type(e).__name__}: {str(e)[:220]}")
-        raise HTTPException(status_code=500, detail="Failed to build weather preview.")
+        log_event(
+            "warning",
+            "weather.preview.failed",
+            club_id=int(club_id),
+            target_date=date_value.isoformat(),
+            error_type=type(e).__name__,
+            error=str(e)[:220],
+        )
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note="Weather preview is temporarily degraded.",
+            auto_prompt_error=f"{type(e).__name__}: {str(e)[:120]}",
+        )
 
 
 @router.get("/tee-sheet/weather/auto-flags")
@@ -929,10 +998,30 @@ def auto_flag_tee_sheet_weather(
         return payload
     except RuntimeError as e:
         _safe_rollback(db)
-        raise HTTPException(status_code=422, detail=str(e))
-    except requests.RequestException:
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note=str(e),
+            auto_prompt_error=str(e),
+        )
+    except requests.RequestException as e:
         _safe_rollback(db)
-        raise HTTPException(status_code=502, detail="Live rain forecast temporarily unavailable.")
+        log_event(
+            "warning",
+            "weather.auto_flags.request_failed",
+            club_id=int(club_id),
+            target_date=date_value.isoformat(),
+            error_type=type(e).__name__,
+            error=str(e)[:220],
+        )
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note="Live rain forecast temporarily unavailable.",
+            auto_prompt_error="Weather provider request failed. Retry shortly.",
+        )
     except HTTPException:
         _safe_rollback(db)
         raise
@@ -941,8 +1030,21 @@ def auto_flag_tee_sheet_weather(
         message = str(e).lower()
         if "player_notifications" in message and ("does not exist" in message or "no such table" in message):
             raise HTTPException(status_code=503, detail="Notification storage not initialized. Redeploy with AUTO_MIGRATE=1.")
-        print(f"[WEATHER_AUTO] {type(e).__name__}: {str(e)[:220]}")
-        raise HTTPException(status_code=500, detail="Failed to auto-flag weather risk.")
+        log_event(
+            "warning",
+            "weather.auto_flags.failed",
+            club_id=int(club_id),
+            target_date=date_value.isoformat(),
+            error_type=type(e).__name__,
+            error=str(e)[:220],
+        )
+        return _weather_fallback_payload(
+            target_date=date_value,
+            min_precip_probability=int(min_precip_probability),
+            min_precip_mm=float(min_precip_mm),
+            provider_note="Weather auto-flag is temporarily degraded.",
+            auto_prompt_error=f"{type(e).__name__}: {str(e)[:120]}",
+        )
 
 
 @router.post("/tee-sheet/weather/reconfirm")

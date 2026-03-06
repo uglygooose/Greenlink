@@ -1070,6 +1070,7 @@
                                 <button class="btn-success" onclick="closeDayCashbook()" id="close-day-btn">Close Day</button>
                                 <button class="btn-secondary" onclick="reopenDayCashbook()" id="reopen-day-btn" disabled>Reopen Day</button>
                                 <button class="btn-primary" onclick="exportCashbookToCSV()" id="export-btn" disabled>Export Journal (CSV)</button>
+                                <button class="btn-primary" onclick="exportProShopCashbookToCSV()" id="export-pro-shop-btn" disabled>Export Pro Shop (CSV)</button>
                             </div>
                         </div>
                         <div class="closeout-note">Closing locks bookings for the day. Reopen to make edits. Export the journal and upload it into Sage manually.</div>
@@ -1211,6 +1212,29 @@
 	                            </div>
 	                        </div>
 	                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Pro Shop Daily Summary</h3>
+                        <div class="cashbook-summary" id="pro-shop-cashbook-summary">
+                            <div class="summary-stat">
+                                <span>Date</span>
+                                <span id="pro-shop-summary-date">-</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Sales</span>
+                                <span id="pro-shop-summary-count">0</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Total Amount</span>
+                                <span id="pro-shop-summary-amount">R0.00</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span>Total Tax (VAT)</span>
+                                <span id="pro-shop-summary-tax">R0.00</span>
+                            </div>
+                        </div>
+                        <div class="accounting-note" id="pro-shop-cashbook-note">Load a date to view pro shop totals and export the POS journal.</div>
+                    </div>
 
 	                    <div class="dashboard-card">
 	                        <h3>Journal Preview (Pastel Import)</h3>

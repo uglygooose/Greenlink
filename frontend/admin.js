@@ -18,6 +18,8 @@ let revenuePeriod = "day"; // day | wtd | mtd | ytd
 let revenueStreamFocus = "all";
 let golfFeesCache = [];
 let cashbookHasRecords = false;
+let proShopCashbookHasRecords = false;
+let proShopCashbookAlreadyExported = false;
 let currentBookingDetail = null;
 let cachedPastelLayout = null;
 let cachedPastelMappings = null;
@@ -8368,6 +8370,18 @@ document.addEventListener("change", (e) => {
 // Cashbook Functions
 // ========================
 
+function updateProShopExportButtonState() {
+    const btn = document.getElementById("export-pro-shop-btn");
+    if (!btn || btn.dataset.loading === "1") return;
+    if (!proShopCashbookHasRecords) {
+        btn.disabled = true;
+        btn.textContent = "Export Pro Shop (CSV)";
+        return;
+    }
+    btn.disabled = false;
+    btn.textContent = proShopCashbookAlreadyExported ? "Re-export Pro Shop (CSV)" : "Export Pro Shop (CSV)";
+}
+
 function setAccountingSettingsCollapsed(collapsed) {
     const body = document.getElementById("accounting-settings-body");
     const btn = document.getElementById("accounting-settings-toggle");
@@ -8396,6 +8410,7 @@ function initCashbook() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById("cashbook-date").value = today;
     loadCashbookSummary();
+    loadProShopCashbookSummary();
     loadCloseStatus();
     loadAccountingSettings();
     loadPastelLayoutDetails();
@@ -8684,6 +8699,7 @@ async function loadCashbookSummary() {
         document.getElementById("summary-tax").textContent = `R${data.total_tax.toFixed(2)}`;
 
         loadCashbookJournalPreview();
+        loadProShopCashbookSummary();
 
         // Populate payment records
         const table = document.getElementById("cashbook-records");
@@ -8780,6 +8796,160 @@ async function exportCashbookToCSV() {
             exportBtn.disabled = false;
             exportBtn.textContent = originalLabel || "Export Journal (CSV)";
         }
+    }
+}
+
+async function loadProShopCashbookSummary() {
+    const token = localStorage.getItem("token");
+    const dateInput = document.getElementById("cashbook-date")?.value;
+    const dateEl = document.getElementById("pro-shop-summary-date");
+    const countEl = document.getElementById("pro-shop-summary-count");
+    const amountEl = document.getElementById("pro-shop-summary-amount");
+    const taxEl = document.getElementById("pro-shop-summary-tax");
+    const noteEl = document.getElementById("pro-shop-cashbook-note");
+
+    if (!dateInput) {
+        if (dateEl) dateEl.textContent = "-";
+        if (countEl) countEl.textContent = "0";
+        if (amountEl) amountEl.textContent = "R0.00";
+        if (taxEl) taxEl.textContent = "R0.00";
+        if (noteEl) noteEl.textContent = "Load a date to view pro shop totals and export the POS journal.";
+        proShopCashbookHasRecords = false;
+        proShopCashbookAlreadyExported = false;
+        updateProShopExportButtonState();
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/cashbook/pro-shop-summary?summary_date=${dateInput}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            if (noteEl) noteEl.textContent = error?.detail || "Failed to load pro shop summary";
+            proShopCashbookHasRecords = false;
+            proShopCashbookAlreadyExported = false;
+            updateProShopExportButtonState();
+            return;
+        }
+
+        const data = await response.json();
+        const txCount = Number(data?.transaction_count || 0);
+        const totalAmount = Number(data?.total_payments || 0);
+        const totalTax = Number(data?.total_tax || 0);
+
+        if (dateEl) dateEl.textContent = data?.date ? formatYMDToDMY(data.date) : "-";
+        if (countEl) countEl.textContent = String(txCount);
+        if (amountEl) amountEl.textContent = `R${totalAmount.toFixed(2)}`;
+        if (taxEl) taxEl.textContent = `R${totalTax.toFixed(2)}`;
+
+        proShopCashbookHasRecords = txCount > 0;
+        proShopCashbookAlreadyExported = Boolean(data?.already_exported);
+        updateProShopExportButtonState();
+
+        const methodRows = Array.isArray(data?.payment_methods) ? data.payment_methods : [];
+        const methodSummary = methodRows
+            .filter((row) => Number(row?.total || 0) > 0)
+            .map((row) => `${String(row?.method || "").toUpperCase()}: R${Number(row?.total || 0).toFixed(2)}`)
+            .slice(0, 3)
+            .join(" | ");
+
+        if (noteEl) {
+            if (!proShopCashbookHasRecords) {
+                noteEl.textContent = "No pro shop sales found for this date.";
+            } else if (proShopCashbookAlreadyExported) {
+                const batchRef = String(data?.export_batch_ref || "").trim();
+                const exportedAt = data?.exported_at ? formatDateTimeDMY(data.exported_at) : "";
+                if (batchRef && exportedAt) {
+                    noteEl.textContent = `Already exported in batch ${batchRef} at ${exportedAt}. Use re-export only if required.`;
+                } else if (batchRef) {
+                    noteEl.textContent = `Already exported in batch ${batchRef}. Use re-export only if required.`;
+                } else {
+                    noteEl.textContent = "Already exported for this date. Use re-export only if required.";
+                }
+            } else if (methodSummary) {
+                noteEl.textContent = `Ready to export ${txCount} sale(s). ${methodSummary}`;
+            } else {
+                noteEl.textContent = `Ready to export ${txCount} pro shop sale(s).`;
+            }
+        }
+    } catch (error) {
+        console.error("Failed to load pro shop cashbook summary:", error);
+        if (noteEl) noteEl.textContent = "Failed to load pro shop summary";
+        proShopCashbookHasRecords = false;
+        proShopCashbookAlreadyExported = false;
+        updateProShopExportButtonState();
+    }
+}
+
+async function exportProShopCashbookToCSV(force = false) {
+    const token = localStorage.getItem("token");
+    const dateInput = document.getElementById("cashbook-date")?.value;
+    const exportBtn = document.getElementById("export-pro-shop-btn");
+    const originalLabel = exportBtn ? exportBtn.textContent : "";
+
+    if (!dateInput) {
+        alert("Please select a date");
+        return;
+    }
+
+    try {
+        if (exportBtn) {
+            exportBtn.dataset.loading = "1";
+            exportBtn.disabled = true;
+            exportBtn.textContent = force ? "Re-exporting..." : "Building journal...";
+        }
+
+        const response = await fetch(
+            `${API_BASE}/cashbook/export-csv-pro-shop?export_date=${dateInput}${force ? "&force=1" : ""}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            const msg = error?.detail || "Failed to export pro shop cashbook";
+            if (response.status === 409 && !force) {
+                const retry = confirm(`${msg}\n\nDo you want to re-export this date?`);
+                if (retry) {
+                    if (exportBtn) exportBtn.dataset.loading = "0";
+                    await exportProShopCashbookToCSV(true);
+                    return;
+                }
+            }
+            alert("Error: " + msg);
+            return;
+        }
+
+        const batchRef = response.headers.get("x-greenlink-batchref") || "";
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+
+        const disposition = response.headers.get("content-disposition");
+        let filename = `ProShop_Payments_${dateInput.replace(/-/g, "")}.csv`;
+        if (disposition && disposition.includes("filename")) {
+            filename = disposition.split("filename=")[1].replace(/"/g, "");
+        }
+
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        alert(`Pro shop journal exported${batchRef ? ` (${batchRef})` : ""}. Upload this CSV into Sage manually.`);
+    } catch (error) {
+        console.error("Failed to export pro shop cashbook:", error);
+        alert("Failed to export pro shop cashbook");
+    } finally {
+        if (exportBtn) {
+            exportBtn.dataset.loading = "0";
+            exportBtn.textContent = originalLabel || "Export Pro Shop (CSV)";
+        }
+        await loadProShopCashbookSummary();
+        updateProShopExportButtonState();
     }
 }
 
@@ -9377,6 +9547,7 @@ function updateCloseoutUI(data) {
     if (exportBtn) {
         exportBtn.disabled = !cashbookHasRecords;
     }
+    updateProShopExportButtonState();
 }
 
 async function closeDayCashbook() {
@@ -9406,9 +9577,16 @@ async function closeDayCashbook() {
         await response.json();
         loadCloseStatus();
 
+        let exportedAny = false;
         if (cashbookHasRecords) {
-            exportCashbookToCSV();
-        } else {
+            exportedAny = true;
+            await exportCashbookToCSV();
+        }
+        if (proShopCashbookHasRecords) {
+            exportedAny = true;
+            await exportProShopCashbookToCSV();
+        }
+        if (!exportedAny) {
             alert("Day closed. No payments to export.");
         }
     } catch (error) {

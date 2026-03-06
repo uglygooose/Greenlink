@@ -150,7 +150,10 @@ def _http_get_json(
     response.raise_for_status()
     if not response.content:
         return {}
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError as e:
+        raise requests.RequestException(f"Invalid JSON response from weather provider: {url}") from e
     return payload if isinstance(payload, dict) else {}
 
 
