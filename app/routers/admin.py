@@ -19,6 +19,7 @@ from typing import Any, Optional
 from app import crud
 from app.audit import record_audit_event
 from app.models import (
+    AccountCustomer,
     User,
     Booking,
     TeeTime,
@@ -36,12 +37,26 @@ from app.models import (
     ProShopSale,
     ProShopSaleItem,
     PlayerNotification,
+    GolfDayBooking,
+    StaffRoleProfile,
     AuditLog,
 )
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db, get_password_hash
+from app.club_assignments import sync_user_club_assignment
 from app.observability import log_event
+from app.people import (
+    classify_membership_group,
+    normalize_membership_status,
+    parse_terms_days,
+    sync_member_person,
+    sync_user_person,
+)
 from app.password_policy import assert_password_policy
+from app.services.payment_methods import (
+    normalize_booking_payment_method,
+    normalize_pro_shop_payment_method,
+)
 from calendar import isleap
 from app.club_config import club_config_response, invalidate_club_config_cache
 from app.tee_profile import load_tee_sheet_profile, save_tee_sheet_profile, tee_sheet_plan_for_date
@@ -290,6 +305,45 @@ def _normalize_revenue_stream(raw: str | None) -> str:
     return source
 
 
+def _normalize_membership_area(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if not value or value in {"all", "any"}:
+        return "all"
+    if value in {"home_owner", "homeowners"}:
+        return "homeowners"
+    if value in {"non_golf", "non-golf"}:
+        return "other"
+    return value
+
+
+def _account_customer_from_input(
+    db: Session,
+    *,
+    club_id: int,
+    account_code: str | None = None,
+    account_customer_id: int | None = None,
+) -> AccountCustomer | None:
+    if account_customer_id is not None and int(account_customer_id) > 0:
+        row = (
+            db.query(AccountCustomer)
+            .filter(AccountCustomer.club_id == int(club_id), AccountCustomer.id == int(account_customer_id))
+            .first()
+        )
+        if row:
+            return row
+    code = str(account_code or "").strip()
+    if not code:
+        return None
+    return (
+        db.query(AccountCustomer)
+        .filter(
+            AccountCustomer.club_id == int(club_id),
+            func.lower(AccountCustomer.account_code) == code.lower(),
+        )
+        .first()
+    )
+
+
 def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds_target: float | None) -> float | None:
     """
     Derive annual revenue target using a member/visitor mix model.
@@ -487,6 +541,7 @@ class BulkTeeBookingRequest(BaseModel):
     group_name: str
     event_type: str = "group"
     account_code: str | None = None
+    account_customer_id: int | None = None
     price: float = 0.0
 
 
@@ -583,6 +638,14 @@ def bulk_book_tee_sheet(
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     if club_id <= 0:
         raise HTTPException(status_code=400, detail="club_id is required")
+    selected_account_customer = _account_customer_from_input(
+        db,
+        club_id=club_id,
+        account_code=account_code,
+        account_customer_id=req.account_customer_id,
+    )
+    if selected_account_customer is not None:
+        account_code = str(getattr(selected_account_customer, "account_code", "") or "").strip() or account_code
 
     tee_times = (
         db.query(TeeTime)
@@ -636,6 +699,7 @@ def bulk_book_tee_sheet(
                     # Group/undo metadata lives on external_provider/external_booking_id.
                     player_name=group_name,
                     club_card=account_code,
+                    account_customer_id=int(selected_account_customer.id) if selected_account_customer is not None else None,
                     party_size=1,
                     price=price,
                     status=BookingStatus.booked,
@@ -663,6 +727,7 @@ def bulk_book_tee_sheet(
         "tees": tees,
         "event_type": event_type,
         "account_code": account_code,
+        "account_customer_id": int(selected_account_customer.id) if selected_account_customer is not None else None,
     }
 
 
@@ -2664,10 +2729,42 @@ async def get_dashboard_stats(
             "rounds_target": _derive_target(annual_rounds_target, year, elapsed_days),
         }
 
+    golf_day_total = (
+        db.query(func.sum(GolfDayBooking.amount))
+        .filter(GolfDayBooking.club_id == club_id)
+        .scalar()
+        or 0.0
+    )
+    golf_day_outstanding = (
+        db.query(func.sum(GolfDayBooking.balance_due))
+        .filter(
+            GolfDayBooking.club_id == club_id,
+            func.coalesce(GolfDayBooking.payment_status, "pending") != "paid",
+        )
+        .scalar()
+        or 0.0
+    )
+    golf_day_open_count = (
+        db.query(func.count(GolfDayBooking.id))
+        .filter(
+            GolfDayBooking.club_id == club_id,
+            func.coalesce(GolfDayBooking.payment_status, "pending").in_(["pending", "partial"]),
+        )
+        .scalar()
+        or 0
+    )
+    account_customer_count = (
+        db.query(func.count(AccountCustomer.id))
+        .filter(AccountCustomer.club_id == club_id, AccountCustomer.active == 1)
+        .scalar()
+        or 0
+    )
+
     payload = {
         "total_bookings": total_bookings,
         "total_players": total_players,
         "total_members": total_members,
+        "account_customers_active": int(account_customer_count),
         "golf_revenue_total": float(golf_total_revenue),
         "golf_revenue_today": float(golf_today_revenue),
         "golf_revenue_week": float(golf_week_revenue),
@@ -2677,6 +2774,9 @@ async def get_dashboard_stats(
         "other_revenue_total": float(other_total_revenue),
         "other_revenue_today": float(today_other_revenue),
         "other_revenue_week": float(week_other_revenue),
+        "golf_day_pipeline_total": float(golf_day_total),
+        "golf_day_outstanding_balance": float(golf_day_outstanding),
+        "golf_day_open_count": int(golf_day_open_count),
         "total_revenue": float(combined_total_revenue),
         "today_revenue": float(combined_today_revenue),
         "week_revenue": float(combined_week_revenue),
@@ -3103,6 +3203,7 @@ async def get_all_bookings(
                 "id": b.id,
                 "player_name": b.player_name,
                 "player_email": b.player_email,
+                "club_card": getattr(b, "club_card", None),
                 "price": float(b.price),
                 "status": b.status,
                 "tee_time": b.tee_time.tee_time.isoformat() if b.tee_time else None,
@@ -3111,6 +3212,7 @@ async def get_all_bookings(
                 "round_completed": b.round.closed if b.round else False,
                 "holes": b.holes,
                 "prepaid": bool(b.prepaid) if b.prepaid is not None else None,
+                "account_customer_id": int(getattr(b, "account_customer_id", 0) or 0) if getattr(b, "account_customer_id", None) else None,
                 "handicap_sa_id": getattr(b, "handicap_sa_id", None),
                 "home_club": getattr(b, "home_club", None),
                 "gender": getattr(b, "gender", None),
@@ -3171,6 +3273,18 @@ async def get_booking_detail(
                 "price": float(fee_cat.price),
                 "fee_type": fee_cat.fee_type,
             }
+
+    account_customer = None
+    if getattr(booking, "account_customer_id", None):
+        acct = db.query(AccountCustomer).filter(AccountCustomer.id == int(booking.account_customer_id)).first()
+        if acct:
+            account_customer = {
+                "id": int(acct.id),
+                "name": str(acct.name or ""),
+                "account_code": str(acct.account_code or "") or None,
+                "billing_contact": str(acct.billing_contact or "") or None,
+                "terms": str(acct.terms_label or "") or None,
+            }
      
     return {
         "id": booking.id,
@@ -3179,6 +3293,8 @@ async def get_booking_detail(
         "player_name": booking.player_name,
         "player_email": booking.player_email,
         "club_card": booking.club_card,
+        "account_customer_id": int(getattr(booking, "account_customer_id", 0) or 0) if getattr(booking, "account_customer_id", None) else None,
+        "account_customer": account_customer,
         "handicap_number": booking.handicap_number,
         "handicap_sa_id": getattr(booking, "handicap_sa_id", None),
         "home_club": getattr(booking, "home_club", None),
@@ -3225,6 +3341,7 @@ class BookingPaymentMethodUpdate(BaseModel):
 
 class BookingAccountCodeUpdate(BaseModel):
     account_code: Optional[str] = None
+    account_customer_id: Optional[int] = None
 
 
 class BookingBatchUpdate(BaseModel):
@@ -3232,6 +3349,7 @@ class BookingBatchUpdate(BaseModel):
     status: Optional[str] = None
     payment_method: Optional[str] = None
     account_code: Optional[str] = None
+    account_customer_id: Optional[int] = None
 
 
 @router.put("/bookings/{booking_id}/status")
@@ -3258,12 +3376,17 @@ async def update_booking_status(
     if payload.status == BookingStatus.cancelled.value:
         _enforce_group_cancel_window(db, booking, staff)
 
+    normalized_payment_method = normalize_booking_payment_method(
+        payload.payment_method,
+        allow_empty=True,
+        field_name="payment method",
+    )
     previous_status = str(getattr(booking.status, "value", booking.status) or "")
     booking.status = BookingStatus(payload.status)
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
 
     if booking.status in paid_statuses:
-        crud.ensure_paid_ledger_entry(db, booking, payment_method=payload.payment_method)
+        crud.ensure_paid_ledger_entry(db, booking, payment_method=normalized_payment_method)
     else:
         # If a booking is moved back to an unpaid state, remove its payment record.
         ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking.id).all()]
@@ -3282,7 +3405,7 @@ async def update_booking_status(
             "booking_id": int(booking.id),
             "from_status": previous_status,
             "to_status": str(payload.status),
-            "payment_method": (payload.payment_method or None),
+            "payment_method": normalized_payment_method,
         },
     )
     db.commit()
@@ -3366,9 +3489,11 @@ async def update_booking_payment_method(
     if not ledger_entry:
         raise HTTPException(status_code=400, detail="Booking has no payment record yet")
 
-    method = (payload.payment_method or "").strip().upper()
-    if method not in {"CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"}:
-        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE/ACCOUNT")
+    method = normalize_booking_payment_method(
+        payload.payment_method,
+        allow_empty=False,
+        field_name="payment method",
+    )
 
     meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
     if meta:
@@ -3406,8 +3531,25 @@ async def update_booking_account_code(
     if booking.tee_time:
         assert_day_open(db, booking.tee_time.tee_time.date())
 
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
     code = str(payload.account_code or "").strip()
-    booking.club_card = code or None
+    matched = _account_customer_from_input(
+        db,
+        club_id=club_id,
+        account_code=code or None,
+        account_customer_id=payload.account_customer_id,
+    )
+    if payload.account_customer_id and matched is None and not code:
+        raise HTTPException(status_code=404, detail="Account customer not found")
+    if matched is not None:
+        booking.account_customer_id = int(matched.id)
+        booking.club_card = str(getattr(matched, "account_code", "") or "").strip() or None
+    else:
+        booking.account_customer_id = None
+        booking.club_card = code or None
     _audit_event(
         db,
         request,
@@ -3415,11 +3557,21 @@ async def update_booking_account_code(
         action="booking.account_code_updated",
         entity_type="booking",
         entity_id=booking_id,
-        payload={"booking_id": int(booking_id), "account_code": booking.club_card},
+        payload={
+            "booking_id": int(booking_id),
+            "account_code": booking.club_card,
+            "account_customer_id": int(getattr(booking, "account_customer_id", 0) or 0) or None,
+        },
     )
     db.commit()
     _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
-    return {"status": "success", "booking_id": booking_id, "account_code": booking.club_card}
+    return {
+        "status": "success",
+        "booking_id": booking_id,
+        "account_code": booking.club_card,
+        "account_customer_id": int(getattr(booking, "account_customer_id", 0) or 0) or None,
+        "account_customer_name": str(getattr(matched, "name", "") or "") or None,
+    }
 
 
 @router.put("/bookings/batch-update")
@@ -3453,12 +3605,24 @@ async def batch_update_bookings(
             raise HTTPException(status_code=400, detail=f"Invalid status: {requested_status_raw}")
         requested_status = BookingStatus(requested_status_raw)
 
-    payment_method = str(payload.payment_method or "").strip().upper()
-    if payment_method and payment_method not in {"CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"}:
-        raise HTTPException(status_code=400, detail="Invalid payment method. Use CARD/CASH/EFT/ONLINE/ACCOUNT")
+    payment_method = normalize_booking_payment_method(
+        payload.payment_method,
+        allow_empty=True,
+        field_name="payment method",
+    )
 
     account_code = str(payload.account_code or "").strip()
-    apply_account_code = bool(account_code)
+    selected_account_customer = _account_customer_from_input(
+        db,
+        club_id=int(getattr(db, "info", {}).get("club_id") or 0),
+        account_code=account_code or None,
+        account_customer_id=payload.account_customer_id,
+    )
+    if payload.account_customer_id and selected_account_customer is None and not account_code:
+        raise HTTPException(status_code=404, detail="Account customer not found")
+    if selected_account_customer is not None:
+        account_code = str(getattr(selected_account_customer, "account_code", "") or "").strip() or account_code
+    apply_account_code = bool(account_code) or selected_account_customer is not None
 
     bookings = (
         db.query(Booking)
@@ -3516,6 +3680,7 @@ async def batch_update_bookings(
 
         if apply_account_code:
             booking.club_card = account_code
+            booking.account_customer_id = int(selected_account_customer.id) if selected_account_customer is not None else None
             account_updated += 1
 
         updated_ids.append(int(booking.id))
@@ -3535,6 +3700,7 @@ async def batch_update_bookings(
             "status": requested_status.value if requested_status else None,
             "payment_method": payment_method or None,
             "account_code": account_code or None,
+            "account_customer_id": int(selected_account_customer.id) if selected_account_customer is not None else None,
             "ledger_updates": int(ledger_updated),
             "account_updates": int(account_updated),
         },
@@ -3548,6 +3714,433 @@ async def batch_update_bookings(
         "new_status": requested_status.value if requested_status else None,
         "ledger_updates": int(ledger_updated),
         "account_updates": int(account_updated),
+        "account_customer_id": int(selected_account_customer.id) if selected_account_customer is not None else None,
+    }
+
+
+class AccountCustomerUpsertPayload(BaseModel):
+    name: str
+    account_code: str | None = None
+    billing_contact: str | None = None
+    terms: str | None = None
+    active: bool = True
+    notes: str | None = None
+
+
+@router.get("/account-customers")
+async def get_account_customers(
+    q: Optional[str] = None,
+    active_only: bool = False,
+    sort: Optional[str] = "name_asc",
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    query = db.query(AccountCustomer)
+    if active_only:
+        query = query.filter(AccountCustomer.active == 1)
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(AccountCustomer.name).like(like),
+                func.lower(func.coalesce(AccountCustomer.account_code, "")).like(like),
+                func.lower(func.coalesce(AccountCustomer.billing_contact, "")).like(like),
+            )
+        )
+
+    sort_key = str(sort or "name_asc").strip().lower()
+    if sort_key == "name_desc":
+        query = query.order_by(func.lower(AccountCustomer.name).desc(), AccountCustomer.id.desc())
+    elif sort_key == "code_asc":
+        query = query.order_by(func.lower(func.coalesce(AccountCustomer.account_code, "zzz")).asc(), AccountCustomer.name.asc())
+    else:
+        query = query.order_by(AccountCustomer.active.desc(), func.lower(AccountCustomer.name).asc(), AccountCustomer.id.asc())
+
+    rows = query.all()
+    return {
+        "total": len(rows),
+        "account_customers": [
+            {
+                "id": int(row.id),
+                "name": str(row.name or ""),
+                "account_code": str(row.account_code or "") or None,
+                "billing_contact": str(row.billing_contact or "") or None,
+                "terms": str(row.terms_label or "") or None,
+                "terms_days": int(row.terms_days) if row.terms_days is not None else None,
+                "active": bool(int(row.active or 0) == 1),
+                "notes": str(row.notes or "") or None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/account-customers")
+async def create_account_customer(
+    payload: AccountCustomerUpsertPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    name = str(payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    account_code = str(payload.account_code or "").strip() or None
+    if account_code:
+        dup = (
+            db.query(AccountCustomer.id)
+            .filter(
+                AccountCustomer.club_id == int(getattr(db, "info", {}).get("club_id") or 0),
+                func.lower(AccountCustomer.account_code) == account_code.lower(),
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(status_code=409, detail="account_code already exists for this club")
+
+    row = AccountCustomer(
+        club_id=int(getattr(db, "info", {}).get("club_id") or 0),
+        name=name,
+        account_code=account_code,
+        billing_contact=str(payload.billing_contact or "").strip() or None,
+        terms_label=str(payload.terms or "").strip() or None,
+        terms_days=parse_terms_days(payload.terms),
+        active=1 if payload.active else 0,
+        notes=str(payload.notes or "").strip() or None,
+    )
+    db.add(row)
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="account_customer.created",
+        entity_type="account_customer",
+        entity_id=str(account_code or name),
+        payload={"name": name, "account_code": account_code},
+    )
+    db.commit()
+    db.refresh(row)
+    return {
+        "status": "success",
+        "account_customer": {
+            "id": int(row.id),
+            "name": row.name,
+            "account_code": row.account_code,
+            "billing_contact": row.billing_contact,
+            "terms": row.terms_label,
+            "terms_days": row.terms_days,
+            "active": bool(int(row.active or 0) == 1),
+            "notes": row.notes,
+        },
+    }
+
+
+@router.put("/account-customers/{account_customer_id}")
+async def update_account_customer(
+    account_customer_id: int,
+    payload: AccountCustomerUpsertPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    row = db.query(AccountCustomer).filter(AccountCustomer.id == int(account_customer_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account customer not found")
+
+    name = str(payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    account_code = str(payload.account_code or "").strip() or None
+    if account_code:
+        dup = (
+            db.query(AccountCustomer.id)
+            .filter(
+                AccountCustomer.club_id == row.club_id,
+                func.lower(AccountCustomer.account_code) == account_code.lower(),
+                AccountCustomer.id != row.id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(status_code=409, detail="account_code already exists for this club")
+
+    row.name = name
+    row.account_code = account_code
+    row.billing_contact = str(payload.billing_contact or "").strip() or None
+    row.terms_label = str(payload.terms or "").strip() or None
+    row.terms_days = parse_terms_days(payload.terms)
+    row.active = 1 if payload.active else 0
+    row.notes = str(payload.notes or "").strip() or None
+    row.updated_at = datetime.utcnow()
+
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="account_customer.updated",
+        entity_type="account_customer",
+        entity_id=int(row.id),
+        payload={"name": row.name, "account_code": row.account_code},
+    )
+    db.commit()
+    return {"status": "success"}
+
+
+class GolfDayBookingUpsertPayload(BaseModel):
+    event_name: str
+    event_date: date | None = None
+    event_date_raw: str | None = None
+    amount: float = 0.0
+    invoice_reference: str | None = None
+    account_customer_id: int | None = None
+    account_code: str | None = None
+    contact_name: str | None = None
+    deposit_amount: float | None = None
+    deposit_received_date: date | None = None
+    deposit_received_note: str | None = None
+    balance_due: float | None = None
+    full_payment_amount: float | None = None
+    full_payment_date: date | None = None
+    full_payment_note: str | None = None
+    payment_status: str | None = None
+    notes: str | None = None
+
+
+def _golf_day_payment_status(payload: GolfDayBookingUpsertPayload) -> str:
+    status_raw = str(payload.payment_status or "").strip().lower()
+    if status_raw in {"pending", "partial", "paid", "cancelled"}:
+        return status_raw
+    amount = float(payload.amount or 0.0)
+    balance = float(payload.balance_due or 0.0)
+    deposit = float(payload.deposit_amount or 0.0)
+    full_payment = float(payload.full_payment_amount or 0.0)
+    if full_payment > 0 or (amount > 0 and balance <= 0):
+        return "paid"
+    if deposit > 0 or (amount > 0 and 0 < balance < amount):
+        return "partial"
+    return "pending"
+
+
+@router.get("/golf-day-bookings")
+async def get_golf_day_bookings(
+    q: Optional[str] = None,
+    status: Optional[str] = "all",
+    sort: Optional[str] = "date_asc",
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    query = db.query(GolfDayBooking).outerjoin(AccountCustomer, GolfDayBooking.account_customer_id == AccountCustomer.id)
+    if q:
+        needle = q.strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(GolfDayBooking.event_name).like(like),
+                func.lower(func.coalesce(GolfDayBooking.invoice_reference, "")).like(like),
+                func.lower(func.coalesce(AccountCustomer.name, "")).like(like),
+                func.lower(func.coalesce(GolfDayBooking.account_code_snapshot, "")).like(like),
+            )
+        )
+    status_norm = str(status or "all").strip().lower()
+    if status_norm not in {"all", "any", ""}:
+        query = query.filter(func.lower(func.coalesce(GolfDayBooking.payment_status, "")) == status_norm)
+
+    sort_key = str(sort or "date_asc").strip().lower()
+    if sort_key == "date_desc":
+        query = query.order_by(desc(GolfDayBooking.event_date), desc(GolfDayBooking.id))
+    elif sort_key == "amount_desc":
+        query = query.order_by(desc(GolfDayBooking.amount), desc(GolfDayBooking.event_date))
+    elif sort_key == "balance_desc":
+        query = query.order_by(desc(func.coalesce(GolfDayBooking.balance_due, 0.0)), desc(GolfDayBooking.event_date))
+    else:
+        query = query.order_by(asc(GolfDayBooking.event_date), asc(GolfDayBooking.id))
+
+    rows = query.all()
+    total_amount = sum(float(getattr(row, "amount", 0.0) or 0.0) for row in rows)
+    outstanding = sum(float(getattr(row, "balance_due", 0.0) or 0.0) for row in rows)
+    return {
+        "total": len(rows),
+        "total_amount": float(total_amount),
+        "outstanding_balance": float(outstanding),
+        "bookings": [
+            {
+                "id": int(row.id),
+                "event_name": row.event_name,
+                "event_date": row.event_date.isoformat() if row.event_date else None,
+                "event_date_raw": row.event_date_raw,
+                "amount": float(row.amount or 0.0),
+                "invoice_reference": row.invoice_reference,
+                "account_customer_id": row.account_customer_id,
+                "account_code": row.account_code_snapshot,
+                "contact_name": row.contact_name,
+                "deposit_amount": float(row.deposit_amount or 0.0) if row.deposit_amount is not None else None,
+                "deposit_received_date": row.deposit_received_date.isoformat() if row.deposit_received_date else None,
+                "deposit_received_note": row.deposit_received_note,
+                "balance_due": float(row.balance_due or 0.0) if row.balance_due is not None else None,
+                "full_payment_amount": float(row.full_payment_amount or 0.0) if row.full_payment_amount is not None else None,
+                "full_payment_date": row.full_payment_date.isoformat() if row.full_payment_date else None,
+                "full_payment_note": row.full_payment_note,
+                "payment_status": row.payment_status,
+                "notes": row.notes,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/golf-day-bookings")
+async def create_golf_day_booking(
+    payload: GolfDayBookingUpsertPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    name = str(payload.event_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="event_name is required")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    customer = _account_customer_from_input(
+        db,
+        club_id=club_id,
+        account_code=payload.account_code,
+        account_customer_id=payload.account_customer_id,
+    )
+    if payload.account_customer_id and customer is None and not payload.account_code:
+        raise HTTPException(status_code=404, detail="Account customer not found")
+    row = GolfDayBooking(
+        club_id=club_id,
+        account_customer_id=int(customer.id) if customer else None,
+        event_name=name,
+        event_date=payload.event_date,
+        event_date_raw=str(payload.event_date_raw or "").strip() or None,
+        amount=float(payload.amount or 0.0),
+        invoice_reference=str(payload.invoice_reference or "").strip() or None,
+        deposit_amount=(float(payload.deposit_amount) if payload.deposit_amount is not None else None),
+        deposit_received_date=payload.deposit_received_date,
+        deposit_received_note=str(payload.deposit_received_note or "").strip() or None,
+        balance_due=(float(payload.balance_due) if payload.balance_due is not None else None),
+        full_payment_amount=(float(payload.full_payment_amount) if payload.full_payment_amount is not None else None),
+        full_payment_date=payload.full_payment_date,
+        full_payment_note=str(payload.full_payment_note or "").strip() or None,
+        payment_status=_golf_day_payment_status(payload),
+        contact_name=str(payload.contact_name or "").strip() or (str(customer.billing_contact) if customer and customer.billing_contact else None),
+        account_code_snapshot=str(payload.account_code or "").strip() or (str(customer.account_code) if customer and customer.account_code else None),
+        notes=str(payload.notes or "").strip() or None,
+    )
+    db.add(row)
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="golf_day_booking.created",
+        entity_type="golf_day_booking",
+        entity_id=name,
+        payload={"invoice_reference": row.invoice_reference, "amount": float(row.amount or 0.0)},
+    )
+    db.commit()
+    db.refresh(row)
+    return {"status": "success", "id": int(row.id)}
+
+
+@router.put("/golf-day-bookings/{golf_day_booking_id}")
+async def update_golf_day_booking(
+    golf_day_booking_id: int,
+    payload: GolfDayBookingUpsertPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    row = db.query(GolfDayBooking).filter(GolfDayBooking.id == int(golf_day_booking_id)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Golf day booking not found")
+
+    customer = _account_customer_from_input(
+        db,
+        club_id=int(getattr(row, "club_id", 0) or 0),
+        account_code=payload.account_code,
+        account_customer_id=payload.account_customer_id,
+    )
+    if payload.account_customer_id and customer is None and not payload.account_code:
+        raise HTTPException(status_code=404, detail="Account customer not found")
+    row.event_name = str(payload.event_name or row.event_name or "").strip() or row.event_name
+    row.event_date = payload.event_date
+    row.event_date_raw = str(payload.event_date_raw or "").strip() or None
+    row.amount = float(payload.amount or 0.0)
+    row.invoice_reference = str(payload.invoice_reference or "").strip() or None
+    row.account_customer_id = int(customer.id) if customer else None
+    row.account_code_snapshot = str(payload.account_code or "").strip() or (str(customer.account_code) if customer and customer.account_code else None)
+    row.contact_name = str(payload.contact_name or "").strip() or (str(customer.billing_contact) if customer and customer.billing_contact else None)
+    row.deposit_amount = float(payload.deposit_amount) if payload.deposit_amount is not None else None
+    row.deposit_received_date = payload.deposit_received_date
+    row.deposit_received_note = str(payload.deposit_received_note or "").strip() or None
+    row.balance_due = float(payload.balance_due) if payload.balance_due is not None else None
+    row.full_payment_amount = float(payload.full_payment_amount) if payload.full_payment_amount is not None else None
+    row.full_payment_date = payload.full_payment_date
+    row.full_payment_note = str(payload.full_payment_note or "").strip() or None
+    row.payment_status = _golf_day_payment_status(payload)
+    row.notes = str(payload.notes or "").strip() or None
+    row.updated_at = datetime.utcnow()
+
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="golf_day_booking.updated",
+        entity_type="golf_day_booking",
+        entity_id=int(row.id),
+        payload={"invoice_reference": row.invoice_reference, "payment_status": row.payment_status},
+    )
+    db.commit()
+    return {"status": "success"}
+
+
+@router.get("/staff-role-context")
+async def get_staff_role_context(
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+):
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        return {"role_label": None, "default_page": "tee-times"}
+
+    name = str(getattr(staff, "name", "") or "").strip().lower()
+    profile = (
+        db.query(StaffRoleProfile)
+        .filter(
+            StaffRoleProfile.club_id == club_id,
+            or_(
+                StaffRoleProfile.linked_user_id == int(getattr(staff, "id", 0) or 0),
+                func.lower(StaffRoleProfile.staff_name) == name,
+            ),
+        )
+        .order_by(StaffRoleProfile.linked_user_id.desc(), StaffRoleProfile.id.asc())
+        .first()
+    )
+    role_label = str(getattr(profile, "role_label", "") or "").strip() if profile else ""
+    role_key = role_label.lower()
+    default_page = "tee-times"
+    if "account" in role_key or "bookkeeper" in role_key:
+        default_page = "cashbook"
+    elif "sports manager" in role_key:
+        default_page = "bookings"
+    elif "retail" in role_key:
+        default_page = "pro-shop"
+    elif "green fees" in role_key:
+        default_page = "tee-times"
+    elif "pro shop manager" in role_key:
+        default_page = "pro-shop"
+
+    return {
+        "role_label": role_label or None,
+        "default_page": default_page,
+        "matched_profile_id": int(profile.id) if profile else None,
     }
 
 
@@ -3660,12 +4253,75 @@ async def get_members(
     limit: int = 50,
     q: Optional[str] = None,
     sort: Optional[str] = "recent_activity",
+    area: Optional[str] = "all",  # all | golf | bowls | tennis | homeowners | house | social | other | staff
+    membership_status: Optional[str] = "all",  # all | active | suspended | inactive
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
     """List member profiles (with basic booking stats)."""
 
     base_query = db.query(Member)
+    area_norm = _normalize_membership_area(area)
+    if area_norm != "all":
+        area_col = func.lower(func.coalesce(Member.membership_category, ""))
+        if area_norm == "golf":
+            base_query = base_query.filter(
+                or_(
+                    area_col.like("%golf%"),
+                    area_col.like("%academy%"),
+                    area_col.like("%weekday%"),
+                    area_col.like("%junior%"),
+                )
+            )
+        elif area_norm == "bowls":
+            base_query = base_query.filter(area_col.like("%bowls%"))
+        elif area_norm == "tennis":
+            base_query = base_query.filter(area_col.like("%tennis%"))
+        elif area_norm == "homeowners":
+            base_query = base_query.filter(or_(area_col.like("%home owner%"), area_col.like("%homeowner%")))
+        elif area_norm == "house":
+            base_query = base_query.filter(area_col.like("%house%"))
+        elif area_norm == "social":
+            base_query = base_query.filter(area_col.like("%social%"))
+        elif area_norm == "staff":
+            base_query = base_query.filter(area_col.like("%staff%"))
+        else:
+            base_query = base_query.filter(
+                ~or_(
+                    area_col.like("%golf%"),
+                    area_col.like("%academy%"),
+                    area_col.like("%weekday%"),
+                    area_col.like("%junior%"),
+                    area_col.like("%bowls%"),
+                    area_col.like("%tennis%"),
+                    area_col.like("%home owner%"),
+                    area_col.like("%homeowner%"),
+                    area_col.like("%house%"),
+                    area_col.like("%social%"),
+                    area_col.like("%staff%"),
+                )
+            )
+
+    status_norm = str(membership_status or "all").strip().lower()
+    if status_norm and status_norm not in {"all", "any"}:
+        normalized = normalize_membership_status(status_norm)
+        if normalized == "active":
+            base_query = base_query.filter(
+                or_(
+                    func.lower(func.coalesce(Member.membership_status, "")) == "active",
+                    Member.active == 1,
+                )
+            )
+        elif normalized == "suspended":
+            base_query = base_query.filter(func.lower(func.coalesce(Member.membership_status, "")) == "suspended")
+        else:
+            base_query = base_query.filter(
+                or_(
+                    func.lower(func.coalesce(Member.membership_status, "")) == "inactive",
+                    Member.active == 0,
+                )
+            )
+
     if q:
         needle = q.strip().lower()
         like = f"%{needle}%"
@@ -3708,6 +4364,65 @@ async def get_members(
         )
         .outerjoin(stats, stats.c.member_id == Member.id)
     )
+    if area_norm != "all":
+        area_col = func.lower(func.coalesce(Member.membership_category, ""))
+        if area_norm == "golf":
+            query = query.filter(
+                or_(
+                    area_col.like("%golf%"),
+                    area_col.like("%academy%"),
+                    area_col.like("%weekday%"),
+                    area_col.like("%junior%"),
+                )
+            )
+        elif area_norm == "bowls":
+            query = query.filter(area_col.like("%bowls%"))
+        elif area_norm == "tennis":
+            query = query.filter(area_col.like("%tennis%"))
+        elif area_norm == "homeowners":
+            query = query.filter(or_(area_col.like("%home owner%"), area_col.like("%homeowner%")))
+        elif area_norm == "house":
+            query = query.filter(area_col.like("%house%"))
+        elif area_norm == "social":
+            query = query.filter(area_col.like("%social%"))
+        elif area_norm == "staff":
+            query = query.filter(area_col.like("%staff%"))
+        else:
+            query = query.filter(
+                ~or_(
+                    area_col.like("%golf%"),
+                    area_col.like("%academy%"),
+                    area_col.like("%weekday%"),
+                    area_col.like("%junior%"),
+                    area_col.like("%bowls%"),
+                    area_col.like("%tennis%"),
+                    area_col.like("%home owner%"),
+                    area_col.like("%homeowner%"),
+                    area_col.like("%house%"),
+                    area_col.like("%social%"),
+                    area_col.like("%staff%"),
+                )
+            )
+
+    if status_norm and status_norm not in {"all", "any"}:
+        normalized = normalize_membership_status(status_norm)
+        if normalized == "active":
+            query = query.filter(
+                or_(
+                    func.lower(func.coalesce(Member.membership_status, "")) == "active",
+                    Member.active == 1,
+                )
+            )
+        elif normalized == "suspended":
+            query = query.filter(func.lower(func.coalesce(Member.membership_status, "")) == "suspended")
+        else:
+            query = query.filter(
+                or_(
+                    func.lower(func.coalesce(Member.membership_status, "")) == "inactive",
+                    Member.active == 0,
+                )
+            )
+
     if q:
         needle = q.strip().lower()
         like = f"%{needle}%"
@@ -3756,6 +4471,12 @@ async def get_members(
                 "phone": m.phone,
                 "handicap_number": m.handicap_number,
                 "home_club": m.home_club,
+                "country_of_residence": getattr(m, "country_of_residence", None),
+                "membership_category": getattr(m, "membership_category", None),
+                "membership_group": classify_membership_group(getattr(m, "membership_category", None)),
+                "membership_status": getattr(m, "membership_status", None),
+                "membership_date": getattr(m, "membership_date", None).isoformat() if getattr(m, "membership_date", None) else None,
+                "membership_expiration": getattr(m, "membership_expiration", None).isoformat() if getattr(m, "membership_expiration", None) else None,
                 "active": bool(m.active),
                 "bookings_count": int(bookings_count or 0),
                 "total_spent": float(total_spent or 0.0),
@@ -3779,6 +4500,11 @@ class MemberUpsertPayload(BaseModel):
     student: bool | None = None
     handicap_index: float | None = None
     handicap_sa_id: str | None = None
+    country_of_residence: str | None = None
+    membership_category: str | None = None
+    membership_status: str | None = None
+    membership_date: date | None = None
+    membership_expiration: date | None = None
     active: bool | None = True
 
 
@@ -3805,6 +4531,9 @@ async def create_member(
     gender = (payload.gender or "").strip() or None
     player_category = (payload.player_category or "").strip() or None
     handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
+    country_of_residence = (payload.country_of_residence or "").strip() or None
+    membership_category = (payload.membership_category or "").strip() or None
+    membership_status = normalize_membership_status(payload.membership_status or ("active" if bool(payload.active) else "inactive"))
 
     row = Member(
         club_id=club_id,
@@ -3815,14 +4544,21 @@ async def create_member(
         phone=phone,
         handicap_number=handicap_number,
         home_club=home_club,
+        country_of_residence=country_of_residence,
+        membership_category=membership_category,
+        membership_status=membership_status,
+        membership_date=payload.membership_date,
+        membership_expiration=payload.membership_expiration,
         active=1 if bool(payload.active) else 0,
         gender=gender,
-        player_category=player_category,
+        player_category=player_category or classify_membership_group(membership_category),
         student=payload.student,
         handicap_index=float(payload.handicap_index) if payload.handicap_index is not None else None,
         handicap_sa_id=handicap_sa_id,
     )
     db.add(row)
+    db.flush()
+    sync_member_person(db, row, source_system="admin_member_upsert")
     try:
         db.commit()
     except Exception as e:
@@ -3857,13 +4593,19 @@ async def update_member(
     row.phone = (payload.phone or "").strip() or None
     row.handicap_number = (payload.handicap_number or "").strip() or None
     row.home_club = (payload.home_club or "").strip() or None
+    row.country_of_residence = (payload.country_of_residence or "").strip() or None
+    row.membership_category = (payload.membership_category or "").strip() or row.membership_category
+    row.membership_status = normalize_membership_status(payload.membership_status or row.membership_status)
+    row.membership_date = payload.membership_date
+    row.membership_expiration = payload.membership_expiration
     row.gender = (payload.gender or "").strip() or None
-    row.player_category = (payload.player_category or "").strip() or None
+    row.player_category = (payload.player_category or "").strip() or classify_membership_group(row.membership_category)
     row.student = payload.student
     row.handicap_index = float(payload.handicap_index) if payload.handicap_index is not None else None
     row.handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
     if payload.active is not None:
         row.active = 1 if bool(payload.active) else 0
+    sync_member_person(db, row, source_system="admin_member_upsert")
 
     try:
         db.commit()
@@ -3945,6 +4687,12 @@ async def get_member_detail(
             "handicap_sa_id": getattr(member, "handicap_sa_id", None),
             "handicap_index": float(getattr(member, "handicap_index", None)) if getattr(member, "handicap_index", None) is not None else None,
             "home_club": member.home_club,
+            "country_of_residence": getattr(member, "country_of_residence", None),
+            "membership_category": getattr(member, "membership_category", None),
+            "membership_group": classify_membership_group(getattr(member, "membership_category", None)),
+            "membership_status": getattr(member, "membership_status", None),
+            "membership_date": getattr(member, "membership_date", None).isoformat() if getattr(member, "membership_date", None) else None,
+            "membership_expiration": getattr(member, "membership_expiration", None).isoformat() if getattr(member, "membership_expiration", None) else None,
             "gender": getattr(member, "gender", None),
             "player_category": getattr(member, "player_category", None),
             "student": bool(getattr(member, "student", False)) if getattr(member, "student", None) is not None else None,
@@ -4155,6 +4903,8 @@ async def search_members(
                 "phone": m.phone,
                 "handicap_number": m.handicap_number,
                 "home_club": m.home_club,
+                "membership_category": getattr(m, "membership_category", None),
+                "membership_status": getattr(m, "membership_status", None),
                 "active": bool(m.active),
             }
             for m in members
@@ -4198,6 +4948,19 @@ async def get_staff_users(
         order = [func.lower(cast(User.role, String)).asc(), func.lower(User.name).asc(), User.id.asc()]
 
     rows = query.order_by(*order).offset(skip).limit(limit).all()
+    user_ids = [int(u.id) for u in rows if getattr(u, "id", None) is not None]
+    profiles = []
+    if user_ids:
+        profiles = (
+            db.query(StaffRoleProfile)
+            .filter(
+                StaffRoleProfile.club_id == club_id,
+                StaffRoleProfile.linked_user_id.in_(user_ids),
+            )
+            .order_by(StaffRoleProfile.id.asc())
+            .all()
+        )
+    profile_map = {int(p.linked_user_id): str(getattr(p, "role_label", "") or "").strip() for p in profiles if getattr(p, "linked_user_id", None)}
 
     return {
         "total": total,
@@ -4207,6 +4970,7 @@ async def get_staff_users(
                 "name": u.name,
                 "email": u.email,
                 "role": getattr(u.role, "value", u.role),
+                "operational_role": profile_map.get(int(u.id)),
             }
             for u in rows
         ],
@@ -4294,9 +5058,18 @@ async def create_staff_user_for_club(
 
         existing.name = name
         existing.role = role
+        existing.club_id = int(club_id)
         if payload.password:
             assert_password_policy(payload.password, field_name="password")
             existing.password = get_password_hash(payload.password)
+        sync_user_club_assignment(
+            db,
+            existing,
+            club_id=int(club_id),
+            role=role,
+            is_primary=True,
+        )
+        sync_user_person(db, existing, source_system="staff_upsert")
         db.commit()
         db.refresh(existing)
         return {"status": "success", "user_id": existing.id}
@@ -4313,6 +5086,15 @@ async def create_staff_user_for_club(
         club_id=club_id,
     )
     db.add(u)
+    db.flush()
+    sync_user_club_assignment(
+        db,
+        u,
+        club_id=int(club_id),
+        role=role,
+        is_primary=True,
+    )
+    sync_user_person(db, u, source_system="staff_upsert")
     db.commit()
     db.refresh(u)
     return {"status": "success", "user_id": u.id}
@@ -4352,6 +5134,14 @@ async def update_staff_user_for_club(
     if (payload.email or "").strip() and (payload.email or "").strip().lower() != str(user.email or "").lower():
         raise HTTPException(status_code=400, detail="email cannot be changed; create a new staff user instead")
 
+    sync_user_club_assignment(
+        db,
+        user,
+        club_id=int(club_id),
+        role=getattr(user, "role", None),
+        is_primary=True,
+    )
+    sync_user_person(db, user, source_system="staff_upsert")
     db.commit()
     return {"status": "success"}
 
@@ -4440,10 +5230,7 @@ def _serialize_pro_shop_sale(sale: ProShopSale) -> dict:
 
 
 def _normalize_payment_method(raw: str | None) -> str:
-    value = (raw or "").strip().lower()
-    if value in {"cash", "card", "account", "eft"}:
-        return value
-    return "other"
+    return normalize_pro_shop_payment_method(raw)
 
 
 @router.get("/pro-shop/products")

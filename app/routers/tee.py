@@ -43,6 +43,7 @@ def _booking_payload(b: models.Booking) -> dict:
         "player_name": getattr(b, "player_name", "") or "",
         "player_email": getattr(b, "player_email", None),
         "club_card": getattr(b, "club_card", None),
+        "account_customer_id": getattr(b, "account_customer_id", None),
         "handicap_number": getattr(b, "handicap_number", None),
         "greenlink_id": getattr(b, "greenlink_id", None),
         "handicap_sa_id": getattr(b, "handicap_sa_id", None),

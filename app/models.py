@@ -75,6 +75,7 @@ class User(Base):
     password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.player)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id"), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     account_type = Column(String(20), nullable=True)  # member | visitor (used for pricing defaults)
     handicap_number = Column(String(50), nullable=True)
@@ -104,6 +105,118 @@ class UserClubAssignment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+
+class Person(Base):
+    __tablename__ = "people"
+    __table_args__ = (
+        UniqueConstraint("club_id", "email", name="uq_people_club_email"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    first_name = Column(String(120), nullable=False)
+    last_name = Column(String(120), nullable=False)
+    email = Column(String(200), nullable=True, index=True)
+    phone = Column(String(50), nullable=True)
+    country_of_residence = Column(String(120), nullable=True)
+    gender = Column(String(20), nullable=True)
+    status = Column(String(30), nullable=True, index=True)  # active | suspended | inactive | expired | etc
+    source_system = Column(String(50), nullable=True, index=True)  # golfscape | manual | user_signup | etc
+    source_ref = Column(String(120), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PersonMembership(Base):
+    __tablename__ = "person_memberships"
+    __table_args__ = (
+        UniqueConstraint("club_id", "person_id", "membership_name", name="uq_person_memberships_person_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id"), nullable=False, index=True)
+    membership_name = Column(String(160), nullable=False, index=True)
+    membership_group = Column(String(50), nullable=True, index=True)  # golf | bowls | tennis | homeowners | etc
+    status = Column(String(30), nullable=True, index=True)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AccountCustomer(Base):
+    __tablename__ = "account_customers"
+    __table_args__ = (
+        UniqueConstraint("club_id", "account_code", name="uq_account_customers_club_code"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    account_code = Column(String(40), nullable=True, index=True)
+    billing_contact = Column(String(160), nullable=True)
+    terms_label = Column(String(80), nullable=True)
+    terms_days = Column(Integer, nullable=True)
+    active = Column(Integer, default=1)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GolfDayBooking(Base):
+    __tablename__ = "golf_day_bookings"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "event_name",
+            "event_date_raw",
+            "invoice_reference",
+            name="uq_golf_day_bookings_identity",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    account_customer_id = Column(Integer, ForeignKey("account_customers.id"), nullable=True, index=True)
+    event_name = Column(String(220), nullable=False, index=True)
+    event_date = Column(Date, nullable=True, index=True)
+    event_date_raw = Column(String(120), nullable=True)
+    amount = Column(Float, default=0.0)
+    invoice_reference = Column(String(80), nullable=True, index=True)
+    deposit_amount = Column(Float, nullable=True)
+    deposit_received_date = Column(Date, nullable=True, index=True)
+    deposit_received_note = Column(String(200), nullable=True)
+    balance_due = Column(Float, nullable=True)
+    full_payment_amount = Column(Float, nullable=True)
+    full_payment_date = Column(Date, nullable=True, index=True)
+    full_payment_note = Column(String(200), nullable=True)
+    payment_status = Column(String(30), nullable=True, index=True)  # pending | partial | paid | cancelled
+    contact_name = Column(String(160), nullable=True)
+    account_code_snapshot = Column(String(40), nullable=True)
+    notes = Column(Text, nullable=True)
+    source_import_batch_id = Column(BigInteger, ForeignKey("import_batches.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StaffRoleProfile(Base):
+    __tablename__ = "staff_role_profiles"
+    __table_args__ = (
+        UniqueConstraint("club_id", "staff_name", "role_label", name="uq_staff_role_profiles_name_role"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    staff_name = Column(String(160), nullable=False, index=True)
+    role_label = Column(String(120), nullable=False, index=True)
+    linked_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Member(Base):
     __tablename__ = "members"
     __table_args__ = (
@@ -113,6 +226,7 @@ class Member(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    person_id = Column(Integer, ForeignKey("people.id"), nullable=True, index=True)
     member_number = Column(String(50), nullable=True)
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)
@@ -120,6 +234,11 @@ class Member(Base):
     phone = Column(String(50), nullable=True)
     handicap_number = Column(String(50), nullable=True)
     home_club = Column(String(120), nullable=True)
+    country_of_residence = Column(String(120), nullable=True)
+    membership_category = Column(String(160), nullable=True, index=True)
+    membership_status = Column(String(40), nullable=True, index=True)
+    membership_date = Column(Date, nullable=True)
+    membership_expiration = Column(Date, nullable=True)
     active = Column(Integer, default=1)
     gender = Column(String(20), nullable=True)
     player_category = Column(String(20), nullable=True)
@@ -177,6 +296,7 @@ class Booking(Base):
     external_group_id = Column(String(100), nullable=True)
     external_row_id = Column(String(140), nullable=True)
     party_size = Column(Integer, default=1)
+    account_customer_id = Column(Integer, ForeignKey("account_customers.id"), nullable=True, index=True)
     fee_category_id = Column(Integer, ForeignKey("fee_categories.id"), nullable=True)
     price = Column(Float, default=350.0)  # Default green fee
     status = Column(Enum(BookingStatus), default=BookingStatus.booked, index=True)

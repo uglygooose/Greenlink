@@ -23,7 +23,9 @@ from app.models import (
     UserRole,
 )
 from app.observability import log_event
+from app.people import sync_user_person
 from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
+from app.umhlali_operational_seed import seed_umhlali_operational_inputs
 from app.weather_alerts import DEFAULT_FORECAST_TIMEZONE, KNOWN_COURSE_COORDS
 
 UMHLALI_CLUB_NAME = "Umhlali Country Club"
@@ -37,7 +39,12 @@ UMHLALI_SUGGESTED_HOME_CLUBS = [
 ]
 TENANT_BACKFILL_TABLES = (
     "users",
+    "people",
+    "person_memberships",
     "members",
+    "account_customers",
+    "golf_day_bookings",
+    "staff_role_profiles",
     "tee_times",
     "bookings",
     "ledger_entries",
@@ -259,6 +266,7 @@ def ensure_platform_roles_exist(db, diagnostics: dict[str, Any]) -> dict[str, in
                 stats["assignment_upserts"] += 1
             if before_club_id != resolved_club_id:
                 stats["normalized_users"] += 1
+            sync_user_person(db, user, source_system="platform_bootstrap")
             continue
 
         stats["unassigned_users"] += 1
@@ -405,6 +413,41 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
     diagnostics["notes"].append("Ensured Umhlali club defaults, booking rules, and KPI targets.")
 
 
+def ensure_umhlali_operational_inputs_exist(
+    db,
+    diagnostics: dict[str, Any],
+    club_id: int | None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"status": "skipped"}
+    if club_id is None:
+        return result
+
+    auto_sync = _env_true("UMHLALI_OPERATIONAL_SYNC") or DB_SOURCE in {"SQLITE", "MYSQL"}
+    force = _env_true("UMHLALI_OPERATIONAL_SYNC_FORCE")
+    if not auto_sync and not force:
+        return result
+
+    try:
+        result = seed_umhlali_operational_inputs(db, club_id=int(club_id), force=bool(force))
+    except Exception as exc:
+        diagnostics["warnings"].append(
+            f"Umhlali operational seed failed: {type(exc).__name__}: {str(exc)[:180]}"
+        )
+        return {"status": "failed"}
+
+    status = str(result.get("status") or "unknown")
+    if status == "seeded":
+        diagnostics["notes"].append("Loaded Umhlali members, account customers, golf-day bookings, and staff role profiles.")
+    elif status == "already_seeded":
+        diagnostics["notes"].append("Umhlali operational seed already present; no re-import required.")
+    elif status == "missing_inputs":
+        missing = ", ".join(str(v) for v in (result.get("missing_files") or [])[:4])
+        diagnostics["warnings"].append(
+            f"Umhlali operational source files not found ({missing or 'files missing'})."
+        )
+    return result
+
+
 def _null_club_id_count(conn, table_name: str) -> int:
     return int(conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE club_id IS NULL")).scalar() or 0)
 
@@ -517,8 +560,10 @@ def ensure_platform_ready() -> dict[str, Any]:
         "notes": [],
         "role_stats": {},
         "backfill": {},
+        "operational_seed": {},
         "bootstrap_users": {},
         "active_clubs": [],
+        "bootstrap_sequence": [],
         "timestamp": _utcnow().isoformat(),
     }
 
@@ -527,14 +572,19 @@ def ensure_platform_ready() -> dict[str, Any]:
 
     with SessionLocal() as db:
         try:
+            diagnostics["bootstrap_sequence"].append("tenant_bootstrap_start")
             umhlali = _ensure_umhlali_club_exists(db, diagnostics)
+            diagnostics["bootstrap_sequence"].append("launch_club_resolved")
             umhlali_club_id = int(umhlali.id) if umhlali is not None and _club_matches_umhlali(umhlali) else None
 
             if umhlali_club_id is not None:
                 ensure_umhlali_defaults_exist(db, diagnostics, umhlali_club_id)
+                diagnostics["bootstrap_sequence"].append("umhlali_defaults_ready")
 
             diagnostics["backfill"] = backfill_missing_club_scope(db, diagnostics, umhlali_club_id)
+            diagnostics["bootstrap_sequence"].append("club_scope_backfill")
             diagnostics["role_stats"] = ensure_platform_roles_exist(db, diagnostics)
+            diagnostics["bootstrap_sequence"].append("roles_normalized")
             diagnostics["bootstrap_users"] = ensure_super_admin_capabilities_exist(
                 db,
                 diagnostics,
@@ -542,12 +592,21 @@ def ensure_platform_ready() -> dict[str, Any]:
                 force_reset=force_reset,
                 umhlali_club_id=umhlali_club_id,
             )
+            diagnostics["bootstrap_sequence"].append("bootstrap_users_normalized")
             diagnostics["role_stats"] = ensure_platform_roles_exist(db, diagnostics)
+            diagnostics["bootstrap_sequence"].append("roles_revalidated")
+            diagnostics["operational_seed"] = ensure_umhlali_operational_inputs_exist(
+                db,
+                diagnostics,
+                umhlali_club_id,
+            )
+            diagnostics["bootstrap_sequence"].append("umhlali_operational_seed")
 
             active_clubs = _active_club_rows(db)
             diagnostics["active_clubs"] = active_clubs
             if not active_clubs:
                 diagnostics["errors"].append("No active clubs are available after bootstrap.")
+            diagnostics["bootstrap_sequence"].append("active_clubs_verified")
 
             diagnostics["status"] = _status_from_diagnostics(diagnostics["errors"], diagnostics["warnings"])
             diagnostics["timestamp"] = _utcnow().isoformat()

@@ -111,6 +111,17 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+_STARTUP_GUARD_ALLOW_PATHS = {
+    "/health",
+    "/metrics",
+    "/api/public/platform-state",
+    "/favicon.ico",
+}
+_STARTUP_GUARD_ALLOW_PREFIXES = (
+    "/frontend",
+    "/api/public/club",
+)
+
 
 @app.middleware("http")
 async def request_context_and_security_headers(request: Request, call_next):
@@ -162,6 +173,26 @@ async def request_context_and_security_headers(request: Request, call_next):
             response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
             if request.url.scheme == "https":
                 response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+
+@app.middleware("http")
+async def startup_guard(request: Request, call_next):
+    diagnostics = getattr(request.app.state, "startup_diagnostics", {}) or {}
+    status = str(diagnostics.get("status") or "").strip().lower()
+    if status != "failed":
+        return await call_next(request)
+
+    path = str(getattr(request.url, "path", "") or "")
+    if path in _STARTUP_GUARD_ALLOW_PATHS or any(path.startswith(prefix) for prefix in _STARTUP_GUARD_ALLOW_PREFIXES):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=503,
+        content=_error_payload(
+            "Platform startup failed. Check /health startup diagnostics before retrying.",
+            request,
+        ),
+    )
 
 
 # -----------------------------------------

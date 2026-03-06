@@ -184,6 +184,8 @@ def _apply_default_value_backfills(conn) -> list[str]:
         ("accounting_settings", "green_fees_gl", "'1000-000'"),
         ("accounting_settings", "cashbook_name", "'Main Bank'"),
         ("fee_categories", "active", "1"),
+        ("account_customers", "active", "1"),
+        ("golf_day_bookings", "payment_status", "'pending'"),
         ("pro_shop_products", "active", "1"),
         ("pro_shop_products", "stock_qty", "0"),
         ("pro_shop_products", "reorder_level", "0"),

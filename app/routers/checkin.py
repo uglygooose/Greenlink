@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from app.auth import get_db
 from app import crud, schemas
+from app.services.payment_methods import normalize_booking_payment_method
 from app.tenancy import get_active_club_id, require_staff_like
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
@@ -15,7 +16,8 @@ def checkin(
     _=Depends(require_staff_like),
     __=Depends(get_active_club_id),
 ):
-    result = crud.checkin_booking(db, booking_id, payment_method=payment_method)
+    normalized_payment_method = normalize_booking_payment_method(payment_method, allow_empty=True)
+    result = crud.checkin_booking(db, booking_id, payment_method=normalized_payment_method)
     booking = result.get("booking")
     round_row = result.get("round")
     return {

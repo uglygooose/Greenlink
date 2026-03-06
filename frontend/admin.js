@@ -48,9 +48,12 @@ let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
 let peopleSort = "recent_activity";
+let peopleAreaFilter = "all";
+let peopleStatusFilter = "all";
 let proShopStockFilter = "all";
 let proShopCategoryFilter = "all";
 let proShopSalesWindowDays = 30;
+let accountCustomersCache = [];
 const operationPageState = {
     pub: "week",
     bowls: "week",
@@ -289,7 +292,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupPeopleFilters();
     setupOperationWorkbenchControls();
     setupPageShortcuts();
+    setupUmhlaliOperationalSync();
     await loadTeeProfileSettings({ silent: true });
+    await loadAccountCustomersCache({ silent: true });
 
     if (role === "admin" || role === "super_admin") {
         setupLedgerFilters();
@@ -546,14 +551,19 @@ function applyStaffMode(role) {
         el.style.display = "none";
     });
 
-    // Default to the tee sheet for staff.
-    const teeNav = document.querySelector('.nav-item[data-page="tee-times"]');
-    if (teeNav) {
-        document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
-        teeNav.classList.add("active");
-        showPage("tee-times");
-        loadTeeTimes();
-    }
+    const goToDefaultPage = (pageName) => {
+        const fallback = allowed.has(pageName) ? pageName : "tee-times";
+        const nav = document.querySelector(`.nav-item[data-page="${fallback}"]`);
+        if (nav) {
+            document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+            nav.classList.add("active");
+        }
+        showPage(fallback);
+        if (fallback === "bookings") loadBookings();
+        else if (fallback === "players") loadPlayers();
+        else if (fallback === "pro-shop") initProShopPage();
+        else loadTeeTimes();
+    };
 
     // Hide admin-only import actions for staff (admin can still use them).
     document.querySelectorAll("#people-import-btn, #people-import-log-btn, button[onclick=\"openImportLog()\"]").forEach(el => {
@@ -571,6 +581,21 @@ function applyStaffMode(role) {
             }
         });
     }
+
+    const token = localStorage.getItem("token");
+    fetchJson(`${API_BASE}/api/admin/staff-role-context`, {
+        headers: { Authorization: `Bearer ${token}` },
+    })
+        .then((ctx) => {
+            const roleLabel = String(ctx?.role_label || "").trim();
+            if (roleLabel) {
+                setClubContextChip(`${roleLabel} workflow`);
+            }
+            goToDefaultPage(String(ctx?.default_page || "tee-times"));
+        })
+        .catch(() => {
+            goToDefaultPage("tee-times");
+        });
 
     refreshNavGroupVisibility();
 }
@@ -933,6 +958,91 @@ function setupGlobalQuickControls() {
         if (!raw) return;
         applyQuickNavigationValue(raw);
         quickNavSelect.value = "";
+    });
+}
+
+async function loadAccountCustomersCache({ silent = false } = {}) {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) return [];
+        const data = await fetchJson(`${API_BASE}/api/admin/account-customers?active_only=true`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const rows = Array.isArray(data?.account_customers) ? data.account_customers : [];
+        accountCustomersCache = rows;
+        const datalist = document.getElementById("account-customer-codes");
+        if (datalist) {
+            datalist.innerHTML = rows
+                .map(row => {
+                    const code = String(row?.account_code || "").trim();
+                    if (!code) return "";
+                    const label = String(row?.name || "").trim();
+                    const value = label ? `${code} - ${label}` : code;
+                    return `<option value="${escapeHtml(code)}">${escapeHtml(value)}</option>`;
+                })
+                .join("");
+        }
+        return rows;
+    } catch (error) {
+        if (!silent) {
+            console.error("Failed to load account customers:", error);
+            toastError(`Failed to load account customers: ${error.message || error}`);
+        }
+        accountCustomersCache = [];
+        return [];
+    }
+}
+
+function normalizeAccountCodeInput(raw) {
+    const value = String(raw || "").trim();
+    if (!value) return "";
+    if (value.includes(" - ")) {
+        return value.split(" - ")[0].trim();
+    }
+    return value;
+}
+
+function findAccountCustomerByCode(accountCode) {
+    const code = normalizeAccountCodeInput(accountCode).toLowerCase();
+    if (!code) return null;
+    return accountCustomersCache.find((row) => String(row?.account_code || "").trim().toLowerCase() === code) || null;
+}
+
+function setupUmhlaliOperationalSync() {
+    const runBtn = document.getElementById("ops-umhlali-sync-btn");
+    const forceEl = document.getElementById("ops-umhlali-sync-force");
+    const statusEl = document.getElementById("ops-umhlali-sync-status");
+    if (!(runBtn instanceof HTMLButtonElement)) return;
+    runBtn.addEventListener("click", async () => {
+        const force = Boolean(forceEl?.checked);
+        runBtn.disabled = true;
+        if (statusEl) statusEl.textContent = "Running Umhlali sync...";
+        try {
+            const token = localStorage.getItem("token");
+            const data = await fetchJson(
+                `${API_BASE}/api/admin/imports/umhlali-operational-sync?force=${force ? "true" : "false"}`,
+                {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            const status = String(data?.status || "ok");
+            const members = Number(data?.members?.inserted || 0) + Number(data?.members?.updated || 0);
+            const accounts = Number(data?.accounts?.inserted || 0) + Number(data?.accounts?.updated || 0);
+            const golfDay = Number(data?.golf_day?.inserted || 0) + Number(data?.golf_day?.updated || 0);
+            if (statusEl) {
+                statusEl.textContent = `Sync status: ${status}. Members ${members}, Accounts ${accounts}, Golf Days ${golfDay}.`;
+            }
+            toastSuccess("Umhlali operational sync completed.");
+            await loadAccountCustomersCache({ silent: true });
+            if (currentActivePage === "players") loadPlayers();
+        } catch (error) {
+            console.error("Umhlali sync failed:", error);
+            if (statusEl) statusEl.textContent = `Sync failed: ${error.message || error}`;
+            toastError(`Umhlali sync failed: ${error.message || error}`);
+        } finally {
+            runBtn.disabled = false;
+        }
     });
 }
 
@@ -2689,6 +2799,9 @@ async function viewBookingDetail(bookingId) {
     const token = localStorage.getItem("token");
 
     try {
+        if (!accountCustomersCache.length) {
+            await loadAccountCustomersCache({ silent: true });
+        }
         const booking = await fetchJson(`${API_BASE}/api/admin/bookings/${bookingId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
@@ -2840,9 +2953,13 @@ async function viewBookingDetail(bookingId) {
                     <div class="detail-row">
                         <span class="detail-label">Debtor account</span>
                         <span class="detail-value">
-                            <input id="booking-account-code" type="text" value="${escapeHtml(String(booking.club_card || ""))}" placeholder="e.g. 1100/015" style="min-width: 120px;" />
+                            <input id="booking-account-code" type="text" list="account-customer-codes" value="${escapeHtml(String(booking.club_card || ""))}" placeholder="e.g. 1100/015" style="min-width: 120px;" />
                             <button class="btn-secondary btn-small" type="button" onclick="saveBookingAccountCode(${bookingId})">Save</button>
                         </span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Account customer</span>
+                        <span class="detail-value">${escapeHtml(String(booking?.account_customer?.name || "—"))}</span>
                     </div>
                     ${ledgerEntries.length ? `
                         <div class="detail-row">
@@ -2930,6 +3047,8 @@ function setupPeopleFilters() {
     const title = document.getElementById("people-title");
     const searchInput = document.getElementById("people-search");
     const guestFilter = document.getElementById("guest-type-filter");
+    const areaFilter = document.getElementById("people-area-filter");
+    const statusFilter = document.getElementById("people-status-filter");
     const sortSelect = document.getElementById("people-sort");
     const importBtn = document.getElementById("people-import-btn");
     const importLogBtn = document.getElementById("people-import-log-btn");
@@ -2937,6 +3056,12 @@ function setupPeopleFilters() {
     if (!buttons.length) return;
     if (sortSelect instanceof HTMLSelectElement) {
         peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
+    }
+    if (areaFilter instanceof HTMLSelectElement) {
+        peopleAreaFilter = String(areaFilter.value || "all").toLowerCase();
+    }
+    if (statusFilter instanceof HTMLSelectElement) {
+        peopleStatusFilter = String(statusFilter.value || "all").toLowerCase();
     }
 
     const applyPeopleSortOptions = () => {
@@ -2968,6 +3093,12 @@ function setupPeopleFilters() {
         const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
         if (guestFilter) {
             guestFilter.style.display = peopleView === "guests" ? "" : "none";
+        }
+        if (areaFilter) {
+            areaFilter.style.display = peopleView === "members" ? "" : "none";
+        }
+        if (statusFilter) {
+            statusFilter.style.display = peopleView === "members" ? "" : "none";
         }
         if (importBtn) {
             importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
@@ -3024,6 +3155,16 @@ function setupPeopleFilters() {
         currentPlayersPage = 1;
         loadPlayers();
     });
+    areaFilter?.addEventListener("change", () => {
+        peopleAreaFilter = String(areaFilter.value || "all").toLowerCase();
+        currentPlayersPage = 1;
+        loadPlayers();
+    });
+    statusFilter?.addEventListener("change", () => {
+        peopleStatusFilter = String(statusFilter.value || "all").toLowerCase();
+        currentPlayersPage = 1;
+        loadPlayers();
+    });
 
     sortSelect?.addEventListener("change", () => {
         peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
@@ -3058,6 +3199,12 @@ async function loadPlayers() {
         let url = `${API_BASE}/api/admin/members?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         if (peopleView === "members") {
             url = `${API_BASE}/api/admin/members?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
+            if (peopleAreaFilter && peopleAreaFilter !== "all") {
+                url += `&area=${encodeURIComponent(peopleAreaFilter)}`;
+            }
+            if (peopleStatusFilter && peopleStatusFilter !== "all") {
+                url += `&membership_status=${encodeURIComponent(peopleStatusFilter)}`;
+            }
         } else if (peopleView === "guests") {
             url = `${API_BASE}/api/admin/guests?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
             if (guestTypeFilter && guestTypeFilter !== "all") {
@@ -3077,10 +3224,11 @@ async function loadPlayers() {
                 <th>Member #</th>
                 <th>Email</th>
                 <th>Phone</th>
+                <th>Category</th>
+                <th>Status</th>
                 <th>Handicap</th>
                 <th>Bookings</th>
                 <th>Total Spent</th>
-                <th>Active</th>
                 <th>Last Seen</th>
                 <th>Action</th>
             `;
@@ -3092,10 +3240,11 @@ async function loadPlayers() {
                     <td>${m.member_number ? escapeHtml(m.member_number) : "-"}</td>
                     <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</td>
                     <td>${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</td>
+                    <td>${escapeHtml(String(m.membership_category || m.membership_group || "-"))}</td>
+                    <td>${escapeHtml(String(m.membership_status || (m.active ? "active" : "inactive")))}</td>
                     <td>${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</td>
                     <td>${formatInteger(m.bookings_count || 0)}</td>
                     <td>${formatCurrencyZAR(m.total_spent || 0)}</td>
-                    <td>${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</td>
                     <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "-"}</td>
                     <td><button class="btn-view" onclick="viewMemberDetail(${m.id})">View</button></td>
                 </tr>
@@ -3104,7 +3253,7 @@ async function loadPlayers() {
             if (!members.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
+                        <td colspan="11" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
                     </tr>
                 `;
             }
@@ -3142,6 +3291,7 @@ async function loadPlayers() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>Operational Role</th>
                 <th>Action</th>
             `;
 
@@ -3151,6 +3301,7 @@ async function loadPlayers() {
                     <td>${escapeHtml(s.name || "-")}</td>
                     <td>${s.email ? `<a href="mailto:${encodeURIComponent(String(s.email))}">${escapeHtml(s.email)}</a>` : "-"}</td>
                     <td>${escapeHtml(String(s.role || "-"))}</td>
+                    <td>${escapeHtml(String(s.operational_role || "-"))}</td>
                     <td>${
                         (currentUserRole === "admin" || currentUserRole === "super_admin")
                             ? (String(s.role || "").toLowerCase() === "club_staff"
@@ -3164,7 +3315,7 @@ async function loadPlayers() {
             if (!staff.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
+                        <td colspan="5" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
                     </tr>
                 `;
             }
@@ -5459,10 +5610,14 @@ function openTeeSlotManageModal(teeTimeId) {
             .map((booking) => String(booking?.club_card || "").trim())
             .find((value) => Boolean(value));
         accountEl.value = firstAccount || "";
+        accountEl.setAttribute("list", "account-customer-codes");
     }
 
     renderTeeSlotPlayerList(teeSlotManageState.bookings);
     updateTeeSlotActionHelp();
+    if (!accountCustomersCache.length) {
+        loadAccountCustomersCache({ silent: true });
+    }
     modal.classList.add("show");
 }
 
@@ -5477,14 +5632,17 @@ async function applyTeeSlotBatchUpdate() {
 
     const status = String(document.getElementById("tee-slot-action-status")?.value || "").trim().toLowerCase();
     const paymentMethod = String(document.getElementById("tee-slot-payment-method")?.value || "").trim().toUpperCase();
-    const accountCode = String(document.getElementById("tee-slot-account-code")?.value || "").trim();
+    const accountCodeRaw = String(document.getElementById("tee-slot-account-code")?.value || "").trim();
+    const accountCode = normalizeAccountCodeInput(accountCodeRaw);
+    const matchedAccount = findAccountCustomerByCode(accountCode);
 
     const payload = { booking_ids: selectedIds };
     if (status) payload.status = status;
     if (paymentMethod && (!status || teeSlotStatusNeedsPayment(status))) payload.payment_method = paymentMethod;
     if (accountCode) payload.account_code = accountCode;
+    if (matchedAccount?.id) payload.account_customer_id = Number(matchedAccount.id);
 
-    if (!payload.status && !payload.payment_method && !payload.account_code) {
+    if (!payload.status && !payload.payment_method && !payload.account_code && !payload.account_customer_id) {
         toastInfo("Pick a status action, payment method, or debtor account before applying.");
         return;
     }
@@ -5625,7 +5783,10 @@ function openBulkBookModal() {
     if (holesSelect) holesSelect.value = holes;
     if (eventTypeSelect) eventTypeSelect.value = "group";
     if (teeSelect && teeDefault) teeSelect.value = teeDefault;
-    if (accountInput) accountInput.value = "";
+    if (accountInput) {
+        accountInput.value = "";
+        accountInput.setAttribute("list", "account-customer-codes");
+    }
     if (startInput) startInput.value = startDefault;
     if (endInput) endInput.value = endDefault;
     if (slotsInput) slotsInput.value = String(Math.min(4, Math.max(1, parseInt(String(slotsInput.value || "4"), 10) || 4)));
@@ -5634,6 +5795,9 @@ function openBulkBookModal() {
     if (statusEl) statusEl.textContent = "";
     lastBulkBookGroupId = null;
     if (undoBtn) undoBtn.disabled = true;
+    if (!accountCustomersCache.length) {
+        loadAccountCustomersCache({ silent: true });
+    }
 
     modal.classList.add("show");
 }
@@ -5829,7 +5993,8 @@ async function submitBulkBook() {
     const dateStr = document.getElementById("bulk-book-date")?.value || "";
     const teeVal = document.getElementById("bulk-book-tee")?.value || "all";
     const eventType = document.getElementById("bulk-book-event-type")?.value || "group";
-    const accountCode = document.getElementById("bulk-book-account-code")?.value?.trim() || "";
+    const accountCode = normalizeAccountCodeInput(document.getElementById("bulk-book-account-code")?.value || "");
+    const matchedAccount = findAccountCustomerByCode(accountCode);
     const holes = parseInt(document.getElementById("bulk-book-holes")?.value || "18", 10);
     const startTime = document.getElementById("bulk-book-start")?.value || "";
     const endTime = document.getElementById("bulk-book-end")?.value || "";
@@ -5875,6 +6040,7 @@ async function submitBulkBook() {
                 group_name: name,
                 event_type: String(eventType || "group"),
                 account_code: accountCode || null,
+                account_customer_id: matchedAccount?.id ? Number(matchedAccount.id) : null,
                 price: Number.isFinite(price) ? price : 0
             })
         });
@@ -6992,7 +7158,8 @@ async function saveBookingPaymentMethod(bookingId) {
 
 async function saveBookingAccountCode(bookingId) {
     const token = localStorage.getItem("token");
-    const accountCode = String(document.getElementById("booking-account-code")?.value || "").trim();
+    const accountCode = normalizeAccountCodeInput(document.getElementById("booking-account-code")?.value || "");
+    const matched = findAccountCustomerByCode(accountCode);
     try {
         const res = await fetch(`${API_BASE}/api/admin/bookings/${bookingId}/account-code`, {
             method: "PUT",
@@ -7000,7 +7167,10 @@ async function saveBookingAccountCode(bookingId) {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`
             },
-            body: JSON.stringify({ account_code: accountCode || null })
+            body: JSON.stringify({
+                account_code: accountCode || null,
+                account_customer_id: matched?.id ? Number(matched.id) : null,
+            })
         });
         if (!res.ok) {
             const err = await res.json().catch(() => null);
@@ -7109,6 +7279,14 @@ async function viewMemberDetail(memberId) {
                 <div class="modal-value">${m.home_club ? escapeHtml(m.home_club) : "-"}</div>
             </div>
             <div class="modal-section">
+                <div class="modal-label">Membership Category</div>
+                <div class="modal-value">${escapeHtml(String(m.membership_category || "-"))}</div>
+            </div>
+            <div class="modal-section">
+                <div class="modal-label">Membership Status</div>
+                <div class="modal-value">${escapeHtml(String(m.membership_status || (m.active ? "active" : "inactive")))}</div>
+            </div>
+            <div class="modal-section">
                 <div class="modal-label">Active</div>
                 <div class="modal-value">${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</div>
             </div>
@@ -7169,6 +7347,9 @@ async function openMemberEditModal(memberId) {
         phone: "",
         handicap_number: "",
         home_club: "",
+        country_of_residence: "",
+        membership_category: "",
+        membership_status: "active",
         active: true
     };
 
@@ -7219,6 +7400,22 @@ async function openMemberEditModal(memberId) {
             <input type="text" id="member-home-club" value="${escapeHtml(m.home_club || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
         </div>
         <div class="modal-section">
+            <label>Country of residence</label>
+            <input type="text" id="member-country" value="${escapeHtml(m.country_of_residence || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Membership category</label>
+            <input type="text" id="member-membership-category" value="${escapeHtml(m.membership_category || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+        </div>
+        <div class="modal-section">
+            <label>Membership status</label>
+            <select id="member-membership-status" style="width: 100%; padding: 8px; margin-top: 8px;">
+                <option value="active" ${String(m.membership_status || "").toLowerCase() === "active" ? "selected" : ""}>Active</option>
+                <option value="suspended" ${String(m.membership_status || "").toLowerCase() === "suspended" ? "selected" : ""}>Suspended</option>
+                <option value="inactive" ${String(m.membership_status || "").toLowerCase() === "inactive" ? "selected" : ""}>Inactive</option>
+            </select>
+        </div>
+        <div class="modal-section">
             <label style="display:flex; gap:10px; align-items:center;">
                 <input type="checkbox" id="member-active" ${m.active ? "checked" : ""}>
                 Active
@@ -7244,6 +7441,9 @@ async function saveMember(memberId) {
     const phone = (document.getElementById("member-phone")?.value || "").trim();
     const handicap = (document.getElementById("member-handicap")?.value || "").trim();
     const homeClub = (document.getElementById("member-home-club")?.value || "").trim();
+    const country = (document.getElementById("member-country")?.value || "").trim();
+    const membershipCategory = (document.getElementById("member-membership-category")?.value || "").trim();
+    const membershipStatus = (document.getElementById("member-membership-status")?.value || "active").trim();
     const active = Boolean(document.getElementById("member-active")?.checked);
 
     if (!firstName || !lastName) {
@@ -7259,6 +7459,9 @@ async function saveMember(memberId) {
         phone: phone || null,
         handicap_number: handicap || null,
         home_club: homeClub || null,
+        country_of_residence: country || null,
+        membership_category: membershipCategory || null,
+        membership_status: membershipStatus || null,
         active
     };
 

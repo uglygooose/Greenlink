@@ -19,7 +19,9 @@ from app.auth import get_current_user, get_db
 from app.observability import log_event
 from app.rate_limit import IMPORT_RATE_LIMITER, client_ip_from_request, normalize_identity
 from app.tenancy import get_active_club_id
+from app.umhlali_operational_seed import seed_umhlali_operational_inputs
 from app.models import (
+    AccountCustomer,
     Booking,
     BookingSource,
     BookingStatus,
@@ -31,6 +33,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.people import classify_membership_group, normalize_membership_status, parse_membership_date, sync_member_person
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
 
@@ -466,6 +469,50 @@ def list_import_batches(
         raise HTTPException(status_code=503, detail="Database connection unavailable")
 
 
+@router.post("/umhlali-operational-sync")
+async def sync_umhlali_operational_inputs(
+    request: Request,
+    force: bool = Query(False, description="Force re-import even when operational data already exists."),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    _enforce_import_rate_limit(request, int(club_id), admin)
+    try:
+        result = seed_umhlali_operational_inputs(db, club_id=int(club_id), force=bool(force))
+        _audit_import_event(
+            db,
+            request,
+            admin,
+            action="imports.umhlali_operational_sync",
+            entity_type="import_batch",
+            club_id=int(club_id),
+            payload={"force": bool(force), "result": result},
+        )
+        db.commit()
+        return result
+    except SQLAlchemyError as e:
+        db.rollback()
+        log_event(
+            "error",
+            "imports.umhlali_operational_sync.db_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    except Exception as e:
+        db.rollback()
+        log_event(
+            "error",
+            "imports.umhlali_operational_sync.unexpected_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
+        raise HTTPException(status_code=500, detail="Umhlali operational sync failed")
+
+
 @router.post("/revenue-csv")
 async def import_revenue_csv(
     request: Request,
@@ -801,6 +848,12 @@ async def import_members_csv(
             phone = str(row.get("phone") or row.get("mobile") or "").strip() or None
             handicap_number = str(row.get("handicap_number") or row.get("hcp") or "").strip() or None
             home_club = str(row.get("home_club") or row.get("club") or "").strip() or None
+            country_of_residence = str(row.get("country_of_residence") or row.get("country") or "").strip() or None
+            membership_category = str(row.get("membership") or row.get("membership_category") or "").strip() or None
+            membership_status_raw = str(row.get("status") or row.get("membership_status") or "active").strip()
+            membership_status = normalize_membership_status(membership_status_raw)
+            membership_date = parse_membership_date(row.get("membership_date") or row.get("start_date"))
+            membership_expiration = parse_membership_date(row.get("membership_expiration") or row.get("expiry_date"))
 
             if not first_name or not last_name:
                 failed += 1
@@ -829,21 +882,36 @@ async def import_members_csv(
                 existing.phone = phone
                 existing.handicap_number = handicap_number
                 existing.home_club = home_club
+                existing.country_of_residence = country_of_residence
+                existing.membership_category = membership_category or existing.membership_category
+                existing.membership_status = membership_status
+                existing.membership_date = membership_date
+                existing.membership_expiration = membership_expiration
+                existing.player_category = classify_membership_group(existing.membership_category or "")
+                existing.active = 1 if membership_status == "active" else 0
+                sync_member_person(db, existing, source_system="members_csv")
                 updated += 1
             else:
-                db.add(
-                    Member(
-                        club_id=club_id,
-                        member_number=member_number,
-                        first_name=first_name,
-                        last_name=last_name,
-                        email=email,
-                        phone=phone,
-                        handicap_number=handicap_number,
-                        home_club=home_club,
-                        active=1,
-                    )
+                new_member = Member(
+                    club_id=club_id,
+                    member_number=member_number,
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    phone=phone,
+                    handicap_number=handicap_number,
+                    home_club=home_club,
+                    country_of_residence=country_of_residence,
+                    membership_category=membership_category,
+                    membership_status=membership_status,
+                    membership_date=membership_date,
+                    membership_expiration=membership_expiration,
+                    active=1 if membership_status == "active" else 0,
+                    player_category=classify_membership_group(membership_category or ""),
                 )
+                db.add(new_member)
+                db.flush()
+                sync_member_person(db, new_member, source_system="members_csv")
                 inserted += 1
 
         batch.rows_total = total
@@ -1051,6 +1119,26 @@ async def import_bookings_csv(
                 if m:
                     member_id = m.id
 
+            account_code = str(
+                row.get("account_code")
+                or row.get("debtor_account")
+                or row.get("account")
+                or row.get("customer_code")
+                or ""
+            ).strip() or None
+            account_customer_id = None
+            if account_code:
+                acct = (
+                    db.query(AccountCustomer)
+                    .filter(
+                        AccountCustomer.club_id == club_id,
+                        func.lower(AccountCustomer.account_code) == account_code.lower(),
+                    )
+                    .first()
+                )
+                if acct:
+                    account_customer_id = int(acct.id)
+
             existing = (
                 db.query(Booking)
                 .filter(
@@ -1070,6 +1158,8 @@ async def import_bookings_csv(
                 existing.external_booking_id = booking_id
                 existing.external_group_id = booking_id
                 existing.external_row_id = external_row_id
+                existing.club_card = account_code
+                existing.account_customer_id = account_customer_id
                 existing.price = float(price)
                 existing.status = status
                 existing.holes = holes
@@ -1090,6 +1180,8 @@ async def import_bookings_csv(
                         external_booking_id=booking_id,
                         external_group_id=booking_id,
                         external_row_id=external_row_id,
+                        club_card=account_code,
+                        account_customer_id=account_customer_id,
                         party_size=1,
                         price=float(price),
                         status=status,

@@ -9,6 +9,7 @@ from sqlalchemy import func, or_
 from app.auth import get_db, get_current_user
 from app import models
 from app.fee_models import FeeCategory, FeeType
+from app.people import sync_member_person, sync_user_person
 from app.tenancy import get_active_club_id
 from app.weather_alerts import append_booking_note, serialize_notification_payload
 
@@ -222,6 +223,11 @@ def _upsert_linked_member(
     member.player_category = (getattr(user, "player_category", None) or member.player_category or "").strip() or None
     member.student = bool(getattr(user, "player_category", None) == "student") if getattr(user, "player_category", None) else member.student
     member.active = 1
+    if getattr(member, "membership_status", None) in (None, ""):
+        member.membership_status = "active"
+    if getattr(member, "membership_category", None) in (None, ""):
+        member.membership_category = "User Account"
+    sync_member_person(db, member, source_system="player_profile")
     return member
 
 
@@ -315,6 +321,7 @@ def update_my_profile(
     if profile_update.handicap_index is not None:
         user.handicap_index = _normalize_handicap_index(profile_update.handicap_index)
 
+    sync_user_person(db, user, source_system="player_profile")
     member = _upsert_linked_member(db, user, profile_update)
     db.commit()
     db.refresh(user)

@@ -116,6 +116,7 @@ class BookingCreate(BaseModel):
     source: Optional[str] = "proshop"
     external_provider: Optional[str] = None
     external_booking_id: Optional[str] = None
+    account_customer_id: Optional[int] = None
     fee_category_id: Optional[int] = None
     price: Optional[float] = None
     prepaid: Optional[bool] = False
@@ -151,6 +152,7 @@ class BookingOut(BaseModel):
     source: Optional[str] = None
     external_provider: Optional[str] = None
     external_booking_id: Optional[str] = None
+    account_customer_id: Optional[int] = None
     fee_category_id: Optional[int]
     price: float
     status: str

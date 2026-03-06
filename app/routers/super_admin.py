@@ -15,6 +15,7 @@ from app.auth import get_db
 from app.auth import get_password_hash
 from app.club_assignments import sync_user_club_assignment
 from app.models import Club, User, UserRole
+from app.people import sync_user_person
 from app.password_policy import assert_password_policy
 from app.tenancy import require_super_admin
 
@@ -255,6 +256,7 @@ def create_staff_user(
             role=role,
             is_primary=True,
         )
+        sync_user_person(db, existing, source_system="super_admin")
         _audit_super_event(
             db,
             request,
@@ -285,6 +287,7 @@ def create_staff_user(
         role=role,
         is_primary=True,
     )
+    sync_user_person(db, user, source_system="super_admin")
     _audit_super_event(
         db,
         request,
@@ -336,6 +339,7 @@ def update_staff_user(
         role=getattr(user, "role", None),
         is_primary=True,
     )
+    sync_user_person(db, user, source_system="super_admin")
 
     _audit_super_event(
         db,

@@ -91,7 +91,12 @@ def create_access_token(
 
 _TENANT_SCOPED_MODELS = (
     models.User,
+    models.Person,
+    models.PersonMembership,
     models.Member,
+    models.AccountCustomer,
+    models.GolfDayBooking,
+    models.StaffRoleProfile,
     models.TeeTime,
     models.Booking,
     models.LedgerEntry,

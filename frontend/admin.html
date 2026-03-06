@@ -439,6 +439,19 @@
                             <li>Review inserted/updated counts and validate totals in <code>Revenue Analytics</code>.</li>
                         </ol>
                     </div>
+
+                    <div class="dashboard-card" style="margin-top: 16px;">
+                        <h3>Umhlali Launch Data Sync</h3>
+                        <div class="acct-subtitle">Loads members, account customers, golf-day bookings, and staff role context from the Umhlali operating spreadsheets.</div>
+                        <div class="filters" style="flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                            <button class="btn-primary" id="ops-umhlali-sync-btn" type="button">Run Umhlali Sync</button>
+                            <label style="display:flex; align-items:center; gap:8px; font-size:13px;">
+                                <input type="checkbox" id="ops-umhlali-sync-force" />
+                                Force full re-import
+                            </label>
+                            <span class="action-note" id="ops-umhlali-sync-status"></span>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Bookings Page -->
@@ -529,6 +542,25 @@
                                 <option value="spend_desc">Highest Spend</option>
                                 <option value="name_asc">Name A-Z</option>
                                 <option value="name_desc">Name Z-A</option>
+                            </select>
+                            <label for="people-area-filter">Area</label>
+                            <select id="people-area-filter">
+                                <option value="all" selected>All Areas</option>
+                                <option value="golf">Golf</option>
+                                <option value="bowls">Bowls</option>
+                                <option value="tennis">Tennis</option>
+                                <option value="homeowners">Homeowners</option>
+                                <option value="house">House</option>
+                                <option value="social">Social</option>
+                                <option value="staff">Staff</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <label for="people-status-filter">Membership Status</label>
+                            <select id="people-status-filter">
+                                <option value="all" selected>All Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="suspended">Suspended</option>
+                                <option value="inactive">Inactive</option>
                             </select>
                             <input type="text" id="people-search" placeholder="Search name / email..." />
                             <button class="btn-secondary" id="people-import-btn" type="button" style="display:none">Import Members CSV</button>
@@ -1770,7 +1802,8 @@
 	    </div>
 
 	    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+        <datalist id="account-customer-codes"></datalist>
 
-	    <script src="admin.js?v=2026-03-05-ux-06"></script>
+	    <script src="admin.js?v=2026-03-06-ops-umhlali"></script>
 	</body>
 	</html>

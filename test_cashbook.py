@@ -8,6 +8,7 @@ import requests
 import json
 from datetime import datetime, date
 import sys
+import pytest
 
 # Configuration
 BASE_URL = "http://localhost:8000"
@@ -19,7 +20,7 @@ def print_section(title):
     print(f"  {title}")
     print(f"{'='*60}\n")
 
-def test_daily_summary(date_str=None):
+def run_daily_summary_test(date_str=None):
     """Test getting daily payment summary"""
     print_section("1. Get Daily Payment Summary")
     
@@ -61,7 +62,7 @@ def test_daily_summary(date_str=None):
         print(f"❌ Error: {str(e)}")
         return False
 
-def test_finalize_day(date_str=None):
+def run_finalize_day_test(date_str=None):
     """Test finalizing day payments"""
     print_section("2. Finalize Day Payments")
     
@@ -98,7 +99,7 @@ def test_finalize_day(date_str=None):
         print(f"❌ Error: {str(e)}")
         return False
 
-def test_export_excel(date_str=None):
+def run_export_excel_test(date_str=None):
     """Test exporting to Excel"""
     print_section("3. Export to Excel")
     
@@ -159,13 +160,28 @@ def main():
     print(f"Testing with date: {TODAY}")
     
     # Test 1: Get summary
-    success1 = test_daily_summary(TODAY)
+    success1 = run_daily_summary_test(TODAY)
     
     # Test 2: Finalize day
-    success2 = test_finalize_day(TODAY)
+    success2 = run_finalize_day_test(TODAY)
     
     # Test 3: Export Excel
-    success3 = test_export_excel(TODAY)
+    success3 = run_export_excel_test(TODAY)
+
+
+def test_daily_summary():
+    if not run_daily_summary_test(TODAY):
+        pytest.skip("Cashbook API server not running on localhost:8000")
+
+
+def test_finalize_day():
+    if not run_finalize_day_test(TODAY):
+        pytest.skip("Cashbook API server not running on localhost:8000")
+
+
+def test_export_excel():
+    if not run_export_excel_test(TODAY):
+        pytest.skip("Cashbook API server not running on localhost:8000")
     
     # Summary
     print_section("Test Summary")

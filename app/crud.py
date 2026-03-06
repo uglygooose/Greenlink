@@ -7,7 +7,9 @@ from app import models, schemas
 from app.auth import get_password_hash, verify_password, create_access_token
 from app.club_assignments import ensure_user_primary_club, sync_user_club_assignment
 from app.integrations import handicap_sa
+from app.people import sync_member_person, sync_user_person
 from app.password_policy import assert_password_policy
+from app.services.payment_methods import normalize_booking_payment_method
 from fastapi import HTTPException
 
 def _require_club_id(db: Session) -> int:
@@ -112,11 +114,10 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
     if bool(getattr(booking, "caddy", False)):
         description = f"{description} + Caddy"
     amount = float(getattr(booking, "price", None) or 0.0)
+    normalized_payment_method = normalize_booking_payment_method(payment_method, allow_empty=True)
 
     def _upsert_meta(ledger_entry_id: int, method: str) -> None:
-        raw = (method or "").strip().upper()
-        if not raw:
-            return
+        raw = normalize_booking_payment_method(method, allow_empty=False)
         meta = db.query(models.LedgerEntryMeta).filter(models.LedgerEntryMeta.ledger_entry_id == ledger_entry_id).first()
         if meta:
             meta.payment_method = raw
@@ -128,8 +129,8 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
     if existing:
         existing.description = description
         existing.amount = amount
-        if payment_method:
-            _upsert_meta(existing.id, payment_method)
+        if normalized_payment_method:
+            _upsert_meta(existing.id, normalized_payment_method)
         return existing
 
     le = models.LedgerEntry(
@@ -140,8 +141,8 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
     )
     db.add(le)
     db.flush()
-    if payment_method:
-        _upsert_meta(le.id, payment_method)
+    if normalized_payment_method:
+        _upsert_meta(le.id, normalized_payment_method)
     return le
 
 def is_day_closed(db: Session, target_date):
@@ -230,6 +231,7 @@ def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = Non
             role=getattr(db_user, "role", None),
             is_primary=True,
         )
+        sync_user_person(db, db_user, source_system="user_signup")
     db.commit()
     db.refresh(db_user)
 
@@ -258,6 +260,11 @@ def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = Non
             member.gender = gender or member.gender
             member.player_category = player_category or member.player_category
             member.student = student_flag if student_flag is not None else member.student
+            if getattr(member, "membership_status", None) in (None, ""):
+                member.membership_status = "active"
+            if getattr(member, "membership_category", None) in (None, ""):
+                member.membership_category = "User Account"
+            sync_member_person(db, member, source_system="user_signup")
 
             db.commit()
 
@@ -416,6 +423,33 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             raise HTTPException(status_code=404, detail="Member not found")
     else:
         member = None
+
+    resolved_account_customer_id = getattr(booking_in, "account_customer_id", None)
+    resolved_account_customer = None
+    if resolved_account_customer_id:
+        resolved_account_customer = (
+            db.query(models.AccountCustomer)
+            .filter(
+                models.AccountCustomer.club_id == club_id,
+                models.AccountCustomer.id == int(resolved_account_customer_id),
+            )
+            .first()
+        )
+        if not resolved_account_customer:
+            raise HTTPException(status_code=404, detail="Account customer not found")
+    if resolved_account_customer is None and getattr(booking_in, "club_card", None):
+        code = str(getattr(booking_in, "club_card", None) or "").strip()
+        if code:
+            resolved_account_customer = (
+                db.query(models.AccountCustomer)
+                .filter(
+                    models.AccountCustomer.club_id == club_id,
+                    func.lower(models.AccountCustomer.account_code) == code.lower(),
+                )
+                .first()
+            )
+    if resolved_account_customer is not None:
+        resolved_account_customer_id = int(getattr(resolved_account_customer, "id", 0) or 0) or None
 
     # Resolve registered user (player profile) by email when available.
     if resolved_user is None and player_email:
@@ -707,7 +741,12 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         created_by_user_id=getattr(current_user, "id", None) if current_user is not None else None,
         player_name=player_name,
         player_email=player_email,
-        club_card=booking_in.club_card,
+        club_card=(
+            str(getattr(booking_in, "club_card", None) or "").strip()
+            or str(getattr(resolved_account_customer, "account_code", "") or "").strip()
+            or None
+        ),
+        account_customer_id=resolved_account_customer_id,
         handicap_number=getattr(booking_in, "handicap_number", None),
         greenlink_id=getattr(booking_in, "greenlink_id", None),
         handicap_sa_id=handicap_sa_id,
