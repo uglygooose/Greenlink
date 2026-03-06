@@ -2,6 +2,7 @@
 
 const API_BASE = window.location.origin;
 let currentUserRole = null;
+let currentUserProfile = null;
 let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
@@ -35,6 +36,7 @@ let teeBookingState = {
 let teeBookingSubmitting = false;
 let currentActivePage = "dashboard";
 let superAdminClubsCache = [];
+let platformStateCache = null;
 let authFetchInstalled = false;
 let currentMemberDetail = null;
 let dashboardStreamView = "all";
@@ -494,6 +496,7 @@ async function checkAuth() {
 
         const user = await response.json();
         console.log("User:", user);
+        currentUserProfile = user;
         currentUserRole = user.role || null;
         
         // Check if admin, super admin, or pro shop staff
@@ -509,6 +512,7 @@ async function checkAuth() {
         if (user.role === "super_admin") {
             await initSuperAdminContext();
         }
+        await loadPlatformStatus();
         console.log("Admin/staff access granted");
         return user.role;
     } catch (error) {
@@ -569,6 +573,108 @@ function applyStaffMode(role) {
     }
 
     refreshNavGroupVisibility();
+}
+
+function setClubContextChip(text) {
+    const chip = document.getElementById("club-context-chip");
+    if (!chip) return;
+    const label = String(text || "").trim();
+    if (!label) {
+        chip.style.display = "none";
+        chip.textContent = "";
+        return;
+    }
+    chip.textContent = label;
+    chip.style.display = "inline-flex";
+}
+
+function setPlatformBanner(status, title, message) {
+    const banner = document.getElementById("platform-status-banner");
+    const titleEl = document.getElementById("platform-status-title");
+    const textEl = document.getElementById("platform-status-text");
+    if (!banner || !titleEl || !textEl) return;
+
+    const safeStatus = ["ready", "needs_attention", "failed"].includes(String(status || ""))
+        ? String(status)
+        : "ready";
+    const safeMessage = String(message || "").trim();
+
+    if (!safeMessage) {
+        banner.style.display = "none";
+        banner.removeAttribute("data-status");
+        titleEl.textContent = "Platform status";
+        textEl.textContent = "";
+        return;
+    }
+
+    banner.dataset.status = safeStatus;
+    banner.style.display = "flex";
+    titleEl.textContent = String(title || "Platform status");
+    textEl.textContent = safeMessage;
+}
+
+function resolveActiveClubFromPlatform(platform) {
+    const clubs = Array.isArray(platform?.active_clubs) ? platform.active_clubs : [];
+    if (!clubs.length) return null;
+    const activeClubId = localStorage.getItem("active_club_id");
+    return clubs.find(club => String(club?.id) === String(activeClubId || "")) || clubs[0] || null;
+}
+
+async function loadPlatformStatus() {
+    try {
+        platformStateCache = await fetchJson(`${API_BASE}/api/public/platform-state`);
+    } catch (error) {
+        console.error("Failed to load platform status:", error);
+        setClubContextChip("");
+        setPlatformBanner("failed", "Platform status unavailable", "GreenLink could not confirm tenancy bootstrap state.");
+        return;
+    }
+
+    const warnings = Array.isArray(platformStateCache?.warnings) ? platformStateCache.warnings : [];
+    const errors = Array.isArray(platformStateCache?.errors) ? platformStateCache.errors : [];
+    const status = String(platformStateCache?.status || "ready");
+    const activeCount = Number(platformStateCache?.active_club_count || 0);
+
+    let clubName = "";
+    if (currentUserRole === "super_admin") {
+        const activeClub = resolveActiveClubFromPlatform(platformStateCache);
+        clubName = String(activeClub?.name || "").trim();
+        setClubContextChip(clubName ? `Platform: ${clubName}` : "Platform");
+    } else {
+        try {
+            const clubCfg = await fetchJson(`${API_BASE}/api/public/club/me`);
+            clubName = String(clubCfg?.club_name || "").trim();
+        } catch (error) {
+            console.error("Failed to load club context:", error);
+        }
+        setClubContextChip(clubName || "Club scope");
+    }
+
+    let title = "Club context confirmed";
+    let message = "";
+    if (currentUserRole === "super_admin") {
+        message = clubName
+            ? `Active club context: ${clubName}. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`
+            : `Super admin access is active. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`;
+        if (activeCount > 1) {
+            message += " Use the club selector to switch dashboards and operational scope.";
+        }
+    } else if (clubName) {
+        message = `Operating inside ${clubName}. Bookings, tee sheet, people, and finance stay scoped to this club.`;
+    } else {
+        message = "Club scope could not be confirmed for this session.";
+    }
+
+    if (status === "needs_attention" && warnings.length) {
+        title = "Tenancy needs review";
+        message += ` ${warnings[0]}`;
+    }
+    if (status === "failed") {
+        title = "Bootstrap failed";
+        message = errors[0] || warnings[0] || "GreenLink could not finish tenancy bootstrap.";
+    }
+
+    setPlatformBanner(status, title, message);
 }
 
 async function initSuperAdminContext() {

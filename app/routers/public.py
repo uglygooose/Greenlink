@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, get_db
 from app.club_config import club_config_response
 from app.models import Club, User
+from app.platform_bootstrap import get_platform_state_payload
 from app.tenancy import get_active_club_id
 
 router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@router.get("/platform-state")
+def get_platform_state(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    runtime = getattr(request.app.state, "startup_diagnostics", {}) or {}
+    return get_platform_state_payload(db, runtime=runtime)
 
 
 @router.get("/club")

@@ -239,6 +239,58 @@ body {
     color: #7f8c8d;
 }
 
+.top-context-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #dbe5df;
+    background: #f4faf6;
+    color: #0a6b47;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.platform-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 40px;
+    border-bottom: 1px solid #e0e6ed;
+    background: #f6faf7;
+}
+
+.platform-banner[data-status="needs_attention"] {
+    background: #fff8ea;
+    border-bottom-color: #efd8ac;
+}
+
+.platform-banner[data-status="failed"] {
+    background: #fff1f2;
+    border-bottom-color: #f3c4cb;
+}
+
+.platform-banner-copy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: baseline;
+}
+
+.platform-banner-copy strong {
+    color: #1f2a1b;
+    font-size: 13px;
+}
+
+.platform-banner-copy span {
+    color: #556068;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 .content {
     flex: 1;
     overflow-y: auto;
@@ -2789,6 +2841,10 @@ body.compact-density .page-header {
 }
 
 @media (max-width: 768px) {
+    .platform-banner {
+        padding: 10px 18px;
+    }
+
     .stats-grid {
         grid-template-columns: 1fr;
     }

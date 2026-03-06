@@ -48,6 +48,25 @@ class Club(Base):
 
     users = relationship("User", back_populates="club")
 
+
+class SchemaVersion(Base):
+    __tablename__ = "schema_versions"
+
+    component = Column(String(80), primary_key=True)
+    version = Column(Integer, nullable=False, default=1)
+    status = Column(String(30), nullable=False, default="ready")
+    details_json = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PlatformState(Base):
+    __tablename__ = "platform_states"
+
+    key = Column(String(120), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -69,6 +88,21 @@ class User(Base):
     handicap_index = Column(Float, nullable=True)
 
     club = relationship("Club", back_populates="users")
+
+
+class UserClubAssignment(Base):
+    __tablename__ = "user_club_assignments"
+    __table_args__ = (
+        UniqueConstraint("user_id", "club_id", name="uq_user_club_assignments_user_club"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    role = Column(String(30), nullable=False)
+    is_primary = Column(Boolean, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 class Member(Base):
     __tablename__ = "members"

@@ -184,6 +184,28 @@ body {
   line-height: 1.45;
 }
 
+.platform-banner {
+  display: none;
+  margin: 2px 0 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(246, 241, 229, 0.18);
+  background: rgba(246, 241, 229, 0.1);
+  color: rgba(246, 241, 229, 0.92);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.platform-banner[data-status="needs_attention"] {
+  background: rgba(212, 175, 55, 0.12);
+  border-color: rgba(212, 175, 55, 0.34);
+}
+
+.platform-banner[data-status="failed"] {
+  background: rgba(255, 77, 77, 0.14);
+  border-color: rgba(255, 77, 77, 0.34);
+}
+
 .auth-form {
   display: flex;
   flex-direction: column;

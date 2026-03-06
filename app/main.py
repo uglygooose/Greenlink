@@ -19,11 +19,11 @@ from starlette.requests import Request
 
 from app import crud, models, schemas
 from app.auth import get_db
-from app.bootstrap_seed import bootstrap_seed_if_enabled
 from app.database import DB_INFO, DB_SOURCE, Base, engine
 from app.demo_seed import seed_demo_if_enabled
 from app.migrations import run_auto_migrations
 from app.observability import ROUTE_METRICS, log_event
+from app.platform_bootstrap import ensure_platform_ready
 from app.rate_limit import (
     IMPORT_RATE_LIMITER,
     LOGIN_RATE_LIMITER,
@@ -90,6 +90,12 @@ def _request_route_label(request: Request) -> str:
 # Create app instance
 # -----------------------------------------
 app = FastAPI(title="GreenLink MVP")
+app.state.startup_diagnostics = {
+    "status": "booting",
+    "schema": {},
+    "platform": {},
+    "errors": [],
+}
 
 trusted_hosts = _parse_csv_env("TRUSTED_HOSTS", ["*"])
 if trusted_hosts and trusted_hosts != ["*"]:
@@ -218,7 +224,7 @@ def favicon():
 
 
 @app.get("/health")
-def health(db: Session = Depends(get_db)):
+def health(request: Request, db: Session = Depends(get_db)):
     auto_migrate = str(os.getenv("AUTO_MIGRATE", "")).strip()
     demo_seed_admin = str(os.getenv("DEMO_SEED_ADMIN", "")).strip().lower() in {"1", "true", "yes"}
     demo_admin_present = None
@@ -227,7 +233,7 @@ def health(db: Session = Depends(get_db)):
         try:
             from sqlalchemy import func
 
-            demo_email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@greenlink.com").strip().lower()
+            demo_email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
             demo_admin_present = bool(
                 db.query(models.User.id).filter(func.lower(models.User.email) == demo_email).first()
             )
@@ -247,6 +253,7 @@ def health(db: Session = Depends(get_db)):
         "render_git_commit": (os.getenv("RENDER_GIT_COMMIT") or "")[:12] or None,
         "uptime_s": int(max(0, time.monotonic() - APP_STARTED_MONOTONIC)),
         "route_metrics_routes": int(ROUTE_METRICS.snapshot(limit=1).get("route_count", 0)),
+        "startup": getattr(request.app.state, "startup_diagnostics", {}) or {},
     }
 
     try:
@@ -281,7 +288,7 @@ def _seed_demo_admin_if_enabled() -> None:
     if not enabled:
         return
 
-    email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@greenlink.com").strip().lower()
+    email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
     password = os.getenv("DEMO_ADMIN_PASSWORD") or "123"
     name = (os.getenv("DEMO_ADMIN_NAME") or "Admin").strip() or "Admin"
     force_reset = (
@@ -296,10 +303,21 @@ def _seed_demo_admin_if_enabled() -> None:
     from sqlalchemy import func
 
     from app.auth import get_password_hash
+    from app.club_assignments import sync_user_club_assignment
     from app.database import SessionLocal
 
     db = SessionLocal()
     try:
+        preferred_club = (
+            db.query(models.Club)
+            .filter(func.lower(models.Club.slug) == "umhlali", models.Club.active == 1)
+            .first()
+        )
+        if not preferred_club:
+            active_clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
+            preferred_club = active_clubs[0] if len(active_clubs) == 1 else None
+        preferred_club_id = int(getattr(preferred_club, "id", 0) or 0) or None
+
         user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
         if not user:
             user = models.User(
@@ -307,8 +325,18 @@ def _seed_demo_admin_if_enabled() -> None:
                 email=email,
                 password=get_password_hash(password),
                 role=models.UserRole.admin,
+                club_id=preferred_club_id,
             )
             db.add(user)
+            db.flush()
+            if preferred_club_id:
+                sync_user_club_assignment(
+                    db,
+                    user,
+                    club_id=preferred_club_id,
+                    role=models.UserRole.admin,
+                    is_primary=True,
+                )
             db.commit()
             print(f"[DEMO_ADMIN] Created demo admin user: {email} (db_source={DB_SOURCE}).")
             return
@@ -316,6 +344,15 @@ def _seed_demo_admin_if_enabled() -> None:
         if force_reset:
             user.password = get_password_hash(password)
             user.role = models.UserRole.admin
+            user.club_id = preferred_club_id
+            if preferred_club_id:
+                sync_user_club_assignment(
+                    db,
+                    user,
+                    club_id=preferred_club_id,
+                    role=models.UserRole.admin,
+                    is_primary=True,
+                )
             db.commit()
             print(f"[DEMO_ADMIN] Reset demo admin password: {email} (db_source={DB_SOURCE}).")
     except Exception as e:
@@ -329,14 +366,26 @@ def _seed_demo_admin_if_enabled() -> None:
 # -----------------------------------------
 try:
     Base.metadata.create_all(bind=engine)
-    run_auto_migrations(engine)
+    schema_diag = run_auto_migrations(engine)
     print("[DB] Database connected successfully")
-    bootstrap_seed_if_enabled()
+    platform_diag = ensure_platform_ready()
+    app.state.startup_diagnostics = {
+        "status": str(platform_diag.get("status") or "ready"),
+        "schema": schema_diag,
+        "platform": platform_diag,
+        "errors": list(platform_diag.get("errors") or []),
+    }
     _seed_demo_admin_if_enabled()
     seed_demo_if_enabled()
 except Exception as e:
-    log_event("warning", "db.connection_warning", error=str(e)[:100])
-    log_event("warning", "db.offline_mode_enabled")
+    app.state.startup_diagnostics = {
+        "status": "failed",
+        "schema": {},
+        "platform": {},
+        "errors": [f"{type(e).__name__}: {str(e)[:240]}"],
+    }
+    log_event("error", "db.connection_warning", error=str(e)[:240], error_type=type(e).__name__)
+    print(f"[BOOT] Startup failed: {type(e).__name__}: {str(e)[:240]}")
 
 
 # -----------------------------------------

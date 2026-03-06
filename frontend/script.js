@@ -1,6 +1,7 @@
 console.log("GreenLink front-end loaded.");
 const API_BASE = window.location.origin;
 let clubConfig = null;
+let platformState = null;
 
 async function ensureClubConfig() {
     if (clubConfig) return clubConfig;
@@ -10,6 +11,142 @@ async function ensureClubConfig() {
         clubConfig = null;
     }
     return clubConfig;
+}
+
+async function ensurePlatformState() {
+    if (platformState) return platformState;
+    try {
+        const res = await fetch(`${API_BASE}/api/public/platform-state`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Platform state failed: ${res.status}`);
+        platformState = await res.json();
+    } catch (error) {
+        console.error("Failed to load platform state:", error);
+        platformState = {
+            status: "failed",
+            warnings: [],
+            errors: ["Unable to load platform state."],
+            active_clubs: [],
+            active_club_count: 0,
+            requires_club_selection: false,
+        };
+    }
+    return platformState;
+}
+
+function requestedClubTarget() {
+    const params = new URLSearchParams(window.location.search || "");
+    const rawClubId = params.get("club_id") || params.get("clubId");
+    const rawSlug = params.get("club_slug") || params.get("clubSlug");
+    const rawClub = params.get("club");
+    const clubId = String(rawClubId || "").trim() || (/^\d+$/.test(String(rawClub || "").trim()) ? String(rawClub).trim() : "");
+    const clubSlug = String(rawSlug || "").trim() || (!/^\d+$/.test(String(rawClub || "").trim()) ? String(rawClub || "").trim() : "");
+    return {
+        club_id: clubId || "",
+        club_slug: clubSlug || "",
+    };
+}
+
+function setPlatformBanner(state) {
+    const banner = document.getElementById("platformBanner");
+    if (!banner) return;
+
+    const warnings = Array.isArray(state?.warnings) ? state.warnings : [];
+    const errors = Array.isArray(state?.errors) ? state.errors : [];
+    const activeClubs = Array.isArray(state?.active_clubs) ? state.active_clubs : [];
+    const status = String(state?.status || "ready");
+
+    let message = "";
+    if (status === "failed") {
+        message = errors[0] || warnings[0] || "GreenLink could not confirm platform bootstrap state.";
+    } else if (status === "needs_attention") {
+        message = warnings[0] || "Platform boot completed with warnings.";
+    } else if (activeClubs.length > 1) {
+        message = "Choose a club for branding and signup. Account login remains global.";
+    } else if (activeClubs.length === 1) {
+        message = `Ready for ${activeClubs[0].name}.`;
+    }
+
+    if (!message) {
+        banner.style.display = "none";
+        banner.removeAttribute("data-status");
+        banner.textContent = "";
+        return;
+    }
+
+    banner.dataset.status = status;
+    banner.style.display = "block";
+    banner.textContent = message;
+}
+
+function syncClubTargetToUrl(club) {
+    const url = new URL(window.location.href);
+    ["club", "club_id", "clubId", "club_slug", "clubSlug"].forEach(key => url.searchParams.delete(key));
+    if (club?.club_id) {
+        url.searchParams.set("club_id", String(club.club_id));
+    } else if (club?.club_slug) {
+        url.searchParams.set("club_slug", String(club.club_slug));
+    }
+    window.history.replaceState({}, "", url.toString());
+}
+
+async function refreshClubBranding() {
+    clubConfig = null;
+    window.Greenlink?.invalidateClubConfigCache?.();
+    const cfg = await ensureClubConfig();
+    if (cfg) window.Greenlink?.applyClubBranding?.(cfg);
+}
+
+async function handleClubSelectorChange(rawValue) {
+    const value = String(rawValue || "").trim();
+    if (!value) {
+        syncClubTargetToUrl({});
+        await refreshClubBranding();
+        return;
+    }
+
+    if (value.startsWith("slug:")) {
+        syncClubTargetToUrl({ club_slug: value.slice(5) });
+    } else if (value.startsWith("id:")) {
+        syncClubTargetToUrl({ club_id: value.slice(3) });
+    }
+    await refreshClubBranding();
+}
+
+async function initPlatformStateUi() {
+    const state = await ensurePlatformState();
+    setPlatformBanner(state);
+
+    const field = document.getElementById("clubSelectorField");
+    const selector = document.getElementById("loginClubSelector");
+    if (!field || !selector) return;
+
+    const activeClubs = Array.isArray(state?.active_clubs) ? state.active_clubs : [];
+    if (activeClubs.length <= 1) {
+        field.style.display = "none";
+        selector.innerHTML = "";
+        return;
+    }
+
+    const requested = requestedClubTarget();
+    const selectedValue = requested.club_slug
+        ? `slug:${requested.club_slug}`
+        : requested.club_id
+            ? `id:${requested.club_id}`
+            : "";
+
+    selector.innerHTML = [
+        '<option value="">Select a club</option>',
+        ...activeClubs.map(club => {
+            const label = String(club?.name || club?.slug || `Club ${club?.id || ""}`);
+            const value = club?.slug ? `slug:${club.slug}` : `id:${club.id}`;
+            return `<option value="${value}">${label}</option>`;
+        }),
+    ].join("");
+    selector.value = selectedValue;
+    selector.onchange = async () => {
+        await handleClubSelectorChange(selector.value);
+    };
+    field.style.display = "block";
 }
 
 function openModal(id) {
@@ -64,6 +201,7 @@ setAccountType("visitor");
 
 // Apply club branding + datalist options.
 (async () => {
+    await initPlatformStateUi();
     const cfg = await ensureClubConfig();
     if (cfg) window.Greenlink?.applyClubBranding?.(cfg);
 })();
@@ -162,6 +300,11 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
     if (qsClubId) qp.set("club_id", qsClubId);
     else if (qsClubSlug) qp.set("club_slug", qsClubSlug);
     else if (cfgSlug) qp.set("club_slug", cfgSlug);
+
+    if ((platformState?.requires_club_selection || false) && !qp.toString()) {
+        alert("Please choose a club before creating an account.");
+        return;
+    }
 
     // Map signup choices to pricing audiences:
     // - "member" => host-club member green fee (only if home club matches configured keywords)

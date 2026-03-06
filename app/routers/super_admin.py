@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.audit import record_audit_event
 from app.auth import get_db
 from app.auth import get_password_hash
+from app.club_assignments import sync_user_club_assignment
 from app.models import Club, User, UserRole
 from app.password_policy import assert_password_policy
 from app.tenancy import require_super_admin
@@ -247,6 +248,13 @@ def create_staff_user(
         existing.role = role
         existing.club_id = int(payload.club_id)
         existing.password = get_password_hash(payload.password)
+        sync_user_club_assignment(
+            db,
+            existing,
+            club_id=int(payload.club_id),
+            role=role,
+            is_primary=True,
+        )
         _audit_super_event(
             db,
             request,
@@ -269,6 +277,14 @@ def create_staff_user(
         club_id=int(payload.club_id),
     )
     db.add(user)
+    db.flush()
+    sync_user_club_assignment(
+        db,
+        user,
+        club_id=int(payload.club_id),
+        role=role,
+        is_primary=True,
+    )
     _audit_super_event(
         db,
         request,
@@ -312,6 +328,14 @@ def update_staff_user(
             raise HTTPException(status_code=400, detail="password cannot be empty")
         assert_password_policy(payload.password, field_name="password")
         user.password = get_password_hash(payload.password)
+
+    sync_user_club_assignment(
+        db,
+        user,
+        club_id=int(getattr(user, "club_id", 0) or 0) or None,
+        role=getattr(user, "role", None),
+        is_primary=True,
+    )
 
     _audit_super_event(
         db,

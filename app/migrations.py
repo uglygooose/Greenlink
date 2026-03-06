@@ -1,453 +1,297 @@
 from __future__ import annotations
 
+import json
 import os
-from sqlalchemy import text
+
+from sqlalchemy import Column, inspect, text
+from sqlalchemy.schema import CreateColumn, CreateIndex
 
 
-def run_auto_migrations(engine) -> None:
-    """
-    Minimal, idempotent schema migrations for demos.
+def _env_true(key: str) -> bool:
+    return str(os.getenv(key, "")).strip().lower() in {"1", "true", "yes", "y", "on"}
 
-    Why:
-    - SQLAlchemy `create_all()` will not add/alter columns on existing tables.
-    - For Render + Supabase demos we want "push code, redeploy, it works".
 
-    This is gated behind `AUTO_MIGRATE=1` so production can later move to a
-    proper migration tool (alembic/supabase migrations).
-    """
+def _should_run_auto_migrations(engine) -> bool:
+    dialect = str(getattr(getattr(engine, "dialect", None), "name", "") or "").lower()
+    if dialect in {"mysql", "sqlite"}:
+        return True
+    return _env_true("AUTO_MIGRATE")
 
-    if str(os.getenv("AUTO_MIGRATE", "")).strip() not in {"1", "true", "TRUE", "yes", "YES"}:
-        return
 
-    dialect = getattr(getattr(engine, "dialect", None), "name", "") or ""
-    if dialect not in {"postgresql", "postgres"}:
-        return
+def _load_metadata_tables():
+    from app import fee_models, models  # noqa: F401
+    from app.database import Base
 
-    statements: list[str] = [
-        # ----------------------------
-        # Enum extensions (fee_type)
-        # ----------------------------
-        # Adding enum values is not covered by `create_all()` and would otherwise break
-        # when the Python enum is extended.
-        """
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fee_type') THEN
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'fee_type' AND e.enumlabel = 'push_cart'
-            ) THEN
-              ALTER TYPE fee_type ADD VALUE 'push_cart';
-            END IF;
+    return list(Base.metadata.sorted_tables)
 
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'fee_type' AND e.enumlabel = 'PUSH_CART'
-            ) THEN
-              ALTER TYPE fee_type ADD VALUE 'PUSH_CART';
-            END IF;
 
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'fee_type' AND e.enumlabel = 'caddy'
-            ) THEN
-              ALTER TYPE fee_type ADD VALUE 'caddy';
-            END IF;
+def _plain_column(column) -> Column:
+    return Column(column.name, column.type, nullable=column.nullable)
 
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'fee_type' AND e.enumlabel = 'CADDY'
-            ) THEN
-              ALTER TYPE fee_type ADD VALUE 'CADDY';
-            END IF;
-          END IF;
-        END $$;
-        """,
-        # ----------------------------
-        # Enum extensions (userrole)
-        # ----------------------------
-        # Older DBs may have a `userrole` enum missing newer values (super_admin/club_staff).
-        """
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'userrole' AND e.enumlabel = 'club_staff'
-            ) THEN
-              ALTER TYPE userrole ADD VALUE 'club_staff';
-            END IF;
 
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_enum e
-              JOIN pg_type t ON t.oid = e.enumtypid
-              WHERE t.typname = 'userrole' AND e.enumlabel = 'super_admin'
-            ) THEN
-              ALTER TYPE userrole ADD VALUE 'super_admin';
-            END IF;
-          END IF;
-        END $$;
-        """,
-        # ----------------------------
-        # Targets + settings tables
-        # ----------------------------
-        """
-        CREATE TABLE IF NOT EXISTS kpi_targets (
-          id bigserial PRIMARY KEY,
-          year integer NOT NULL,
-          metric text NOT NULL,
-          annual_target double precision NOT NULL,
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now(),
-          UNIQUE (year, metric)
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS club_settings (
-          key text PRIMARY KEY,
-          value text NULL,
-          updated_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        # ----------------------------
-        # Imports + external revenue (parallel test)
-        # ----------------------------
-        """
-        CREATE TABLE IF NOT EXISTS import_batches (
-          id bigserial PRIMARY KEY,
-          kind text NOT NULL,
-          source text NULL,
-          file_name text NULL,
-          sha256 text NULL,
-          imported_at timestamptz NOT NULL DEFAULT now(),
-          rows_total integer NOT NULL DEFAULT 0,
-          rows_inserted integer NOT NULL DEFAULT 0,
-          rows_updated integer NOT NULL DEFAULT 0,
-          rows_failed integer NOT NULL DEFAULT 0,
-          notes text NULL
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS import_batches_kind_source_idx
-          ON import_batches (kind, source, imported_at DESC);
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS revenue_transactions (
-          id bigserial PRIMARY KEY,
-          source text NOT NULL,
-          transaction_date date NOT NULL,
-          external_id text NULL,
-          description text NULL,
-          category text NULL,
-          amount double precision NOT NULL DEFAULT 0,
-          import_batch_id bigint NULL REFERENCES import_batches(id) ON DELETE SET NULL,
-          created_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS revenue_transactions_source_date_idx
-          ON revenue_transactions (source, transaction_date);
-        """,
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS revenue_transactions_source_external_id_uniq
-          ON revenue_transactions (source, external_id)
-          WHERE external_id IS NOT NULL;
-        """,
-        # ----------------------------
-        # Pro shop (inventory + sales)
-        # ----------------------------
-        """
-        CREATE TABLE IF NOT EXISTS pro_shop_products (
-          id bigserial PRIMARY KEY,
-          club_id integer NULL,
-          sku text NOT NULL,
-          name text NOT NULL,
-          category text NULL,
-          unit_price double precision NOT NULL DEFAULT 0,
-          cost_price double precision NULL,
-          stock_qty integer NOT NULL DEFAULT 0,
-          reorder_level integer NOT NULL DEFAULT 0,
-          active integer NOT NULL DEFAULT 1,
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS pro_shop_products_club_sku_uniq
-          ON pro_shop_products (club_id, sku);
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS pro_shop_products_club_active_name_idx
-          ON pro_shop_products (club_id, active, name);
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS pro_shop_sales (
-          id bigserial PRIMARY KEY,
-          club_id integer NULL,
-          sold_by_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
-          customer_name text NULL,
-          notes text NULL,
-          payment_method text NOT NULL DEFAULT 'card',
-          subtotal double precision NOT NULL DEFAULT 0,
-          discount double precision NOT NULL DEFAULT 0,
-          tax double precision NOT NULL DEFAULT 0,
-          total double precision NOT NULL DEFAULT 0,
-          sold_at timestamptz NOT NULL DEFAULT now(),
-          created_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS pro_shop_sales_club_sold_at_idx
-          ON pro_shop_sales (club_id, sold_at DESC);
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS pro_shop_sale_items (
-          id bigserial PRIMARY KEY,
-          club_id integer NULL,
-          sale_id bigint NOT NULL REFERENCES pro_shop_sales(id) ON DELETE CASCADE,
-          product_id bigint NULL REFERENCES pro_shop_products(id) ON DELETE SET NULL,
-          sku_snapshot text NULL,
-          name_snapshot text NOT NULL,
-          category_snapshot text NULL,
-          quantity integer NOT NULL DEFAULT 1,
-          unit_price double precision NOT NULL DEFAULT 0,
-          line_total double precision NOT NULL DEFAULT 0,
-          created_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS pro_shop_sale_items_sale_id_idx
-          ON pro_shop_sale_items (sale_id);
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx
-          ON pro_shop_sale_items (club_id);
-        """,
-        # ----------------------------
-        # Player notifications (in-app messaging)
-        # ----------------------------
-        """
-        CREATE TABLE IF NOT EXISTS player_notifications (
-          id bigserial PRIMARY KEY,
-          club_id integer NULL,
-          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          booking_id integer NULL REFERENCES bookings(id) ON DELETE SET NULL,
-          tee_time_id integer NULL REFERENCES tee_times(id) ON DELETE SET NULL,
-          kind text NOT NULL,
-          topic_key text NULL,
-          title text NOT NULL,
-          body text NOT NULL,
-          payload_json text NULL,
-          status text NOT NULL DEFAULT 'unread',
-          response text NULL,
-          requires_action boolean NOT NULL DEFAULT false,
-          created_by_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
-          created_at timestamptz NOT NULL DEFAULT now(),
-          read_at timestamptz NULL,
-          responded_at timestamptz NULL
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS player_notifications_club_user_idx
-          ON player_notifications (club_id, user_id, created_at DESC);
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS player_notifications_topic_idx
-          ON player_notifications (club_id, kind, topic_key);
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS player_notifications_status_idx
-          ON player_notifications (club_id, status, requires_action, created_at DESC);
-        """,
-        # ----------------------------
-        # Audit logs (admin/security observability)
-        # ----------------------------
-        """
-        CREATE TABLE IF NOT EXISTS audit_logs (
-          id bigserial PRIMARY KEY,
-          club_id integer NULL,
-          actor_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
-          action text NOT NULL,
-          entity_type text NULL,
-          entity_id text NULL,
-          request_id text NULL,
-          payload_json text NULL,
-          created_at timestamptz NOT NULL DEFAULT now()
-        );
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS audit_logs_club_created_idx
-          ON audit_logs (club_id, created_at DESC);
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS audit_logs_action_created_idx
-          ON audit_logs (action, created_at DESC);
-        """,
-        # ----------------------------
-        # Multi-tenant scoping (club_id)
-        # ----------------------------
-        # Older/demo DBs predate club scoping and may be missing `club_id` on core tables.
-        # Add the columns in an idempotent way so the live UI can filter per club.
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE day_closures ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE accounting_settings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE fee_categories ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE club_settings ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE revenue_transactions ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE kpi_targets ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE pro_shop_products ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE pro_shop_sales ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE pro_shop_sale_items ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE player_notifications ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS club_id integer NULL;",
-        "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
-        "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
-        "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
-        "CREATE INDEX IF NOT EXISTS bookings_club_id_idx ON bookings (club_id);",
-        "CREATE INDEX IF NOT EXISTS bookings_club_status_tee_idx ON bookings (club_id, status, tee_time_id);",
-        "CREATE INDEX IF NOT EXISTS bookings_club_player_email_idx ON bookings (club_id, lower(player_email));",
-        "CREATE INDEX IF NOT EXISTS tee_times_club_time_idx ON tee_times (club_id, tee_time);",
-        "CREATE INDEX IF NOT EXISTS ledger_entries_club_id_idx ON ledger_entries (club_id);",
-        "CREATE INDEX IF NOT EXISTS day_closures_club_id_idx ON day_closures (club_id);",
-        "CREATE INDEX IF NOT EXISTS accounting_settings_club_id_idx ON accounting_settings (club_id);",
-        "CREATE INDEX IF NOT EXISTS fee_categories_club_id_idx ON fee_categories (club_id);",
-        "CREATE INDEX IF NOT EXISTS club_settings_club_id_idx ON club_settings (club_id);",
-        "CREATE INDEX IF NOT EXISTS import_batches_club_id_idx ON import_batches (club_id);",
-        "CREATE INDEX IF NOT EXISTS revenue_transactions_club_id_idx ON revenue_transactions (club_id);",
-        "CREATE INDEX IF NOT EXISTS kpi_targets_club_id_idx ON kpi_targets (club_id);",
-        "CREATE INDEX IF NOT EXISTS pro_shop_products_club_id_idx ON pro_shop_products (club_id);",
-        "CREATE INDEX IF NOT EXISTS pro_shop_sales_club_id_idx ON pro_shop_sales (club_id);",
-        "CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx ON pro_shop_sale_items (club_id);",
-        "CREATE INDEX IF NOT EXISTS player_notifications_club_id_idx ON player_notifications (club_id);",
-        "CREATE INDEX IF NOT EXISTS audit_logs_club_id_idx ON audit_logs (club_id);",
-        # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
-        """
-        DO $$
-        DECLARE cid integer;
-        DECLARE n integer;
-        BEGIN
-          SELECT count(*) INTO n FROM clubs WHERE active = 1;
-          IF n = 1 THEN
-            SELECT id INTO cid FROM clubs WHERE active = 1 ORDER BY id ASC LIMIT 1;
-            UPDATE tee_times SET club_id = cid WHERE club_id IS NULL;
-            UPDATE bookings SET club_id = cid WHERE club_id IS NULL;
-            UPDATE members SET club_id = cid WHERE club_id IS NULL;
-            UPDATE ledger_entries SET club_id = cid WHERE club_id IS NULL;
-            UPDATE day_closures SET club_id = cid WHERE club_id IS NULL;
-            UPDATE accounting_settings SET club_id = cid WHERE club_id IS NULL;
-            UPDATE import_batches SET club_id = cid WHERE club_id IS NULL;
-            UPDATE revenue_transactions SET club_id = cid WHERE club_id IS NULL;
-            UPDATE club_settings SET club_id = cid WHERE club_id IS NULL;
-            UPDATE kpi_targets SET club_id = cid WHERE club_id IS NULL;
-            UPDATE pro_shop_products SET club_id = cid WHERE club_id IS NULL;
-            UPDATE pro_shop_sales SET club_id = cid WHERE club_id IS NULL;
-            UPDATE pro_shop_sale_items SET club_id = cid WHERE club_id IS NULL;
-            UPDATE player_notifications SET club_id = cid WHERE club_id IS NULL;
-            UPDATE audit_logs SET club_id = cid WHERE club_id IS NULL;
-          END IF;
-        END $$;
-        """,
-        # ----------------------------
-        # Users additions
-        # ----------------------------
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_sa_id text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS home_course text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_number text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS greenlink_id text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date timestamptz NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS gender text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS player_category text NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS handicap_index double precision NULL;",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS student boolean NULL;",
-        # ----------------------------
-        # Members additions
-        # ----------------------------
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS member_number text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS email text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS phone text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS handicap_number text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS home_club text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS player_category text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS handicap_index double precision NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS handicap_sa_id text NULL;",
-        "ALTER TABLE members ADD COLUMN IF NOT EXISTS student boolean NULL;",
-        # ----------------------------
-        # Bookings additions (snapshot + requirements)
-        # ----------------------------
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS player_type text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS holes integer NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS prepaid boolean NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS gender text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS player_category text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS handicap_sa_id text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS home_club text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS handicap_index_at_booking double precision NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS handicap_index_at_play double precision NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cart boolean NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS push_cart boolean NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS caddy boolean NULL;",
-        # External mirroring fields
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_group_id text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_row_id text NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS mirrored_at timestamptz NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS capacity_conflict boolean NULL;",
-        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS import_batch_id bigint NULL;",
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS bookings_external_row_uniq
-          ON bookings (external_provider, external_row_id)
-          WHERE external_provider IS NOT NULL AND external_row_id IS NOT NULL;
-        """,
-        # ----------------------------
-        # Tee times additions
-        # ----------------------------
-        "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS available_from timestamptz NULL;",
-        "ALTER TABLE tee_times ADD COLUMN IF NOT EXISTS bookable_until timestamptz NULL;",
-        # ----------------------------
-        # Supabase hardening (PostgREST exposure)
-        # ----------------------------
-        # Supabase's Security Advisor flags tables in the `public` schema without RLS enabled.
-        # Our app uses a server-side DB connection (not the Supabase client SDK), so it's safe
-        # to enable RLS without policies: PostgREST access is denied by default.
-        "ALTER TABLE IF EXISTS public.fee_categories ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.accounting_settings ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.day_closures ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.rounds ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.ledger_entries ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.ledger_entry_meta ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.members ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.tee_times ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.bookings ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.kpi_targets ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.club_settings ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.import_batches ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.revenue_transactions ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.pro_shop_products ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.pro_shop_sales ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.pro_shop_sale_items ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.player_notifications ENABLE ROW LEVEL SECURITY;",
-        "ALTER TABLE IF EXISTS public.audit_logs ENABLE ROW LEVEL SECURITY;",
+def _table_names(conn) -> set[str]:
+    return set(inspect(conn).get_table_names())
+
+
+def _column_map(conn, table_name: str) -> dict[str, dict]:
+    return {str(col.get("name")): col for col in inspect(conn).get_columns(table_name)}
+
+
+def _index_names(conn, table_name: str) -> set[str]:
+    inspector = inspect(conn)
+    names = {str(idx.get("name")) for idx in inspector.get_indexes(table_name) if idx.get("name")}
+    names.update(
+        str(constraint.get("name"))
+        for constraint in inspector.get_unique_constraints(table_name)
+        if constraint.get("name")
+    )
+    return names
+
+
+def _safe_execute(conn, statement: str, params: dict | None = None) -> None:
+    conn.execute(text(statement), params or {})
+
+
+def _add_missing_columns(conn, table) -> list[str]:
+    changed: list[str] = []
+    existing = _column_map(conn, table.name)
+    for column in table.columns:
+        if column.name in existing:
+            continue
+        ddl = str(CreateColumn(_plain_column(column)).compile(dialect=conn.dialect))
+        _safe_execute(conn, f"ALTER TABLE {table.name} ADD COLUMN {ddl}")
+        changed.append(column.name)
+    return changed
+
+
+def _create_missing_indexes(conn, table) -> list[str]:
+    created: list[str] = []
+    existing = _index_names(conn, table.name)
+    for index in sorted(table.indexes, key=lambda row: row.name or ""):
+        if index.unique:
+            continue
+        if not index.name or index.name in existing:
+            continue
+        ddl = str(CreateIndex(index).compile(dialect=conn.dialect))
+        _safe_execute(conn, ddl)
+        created.append(index.name)
+    return created
+
+
+def _existing_enum_values(conn, table_name: str, column_name: str) -> list[str]:
+    col = _column_map(conn, table_name).get(column_name)
+    if not col:
+        return []
+    col_type = col.get("type")
+    values = getattr(col_type, "enums", None)
+    if not values:
+        return []
+    return [str(v) for v in values]
+
+
+def _ensure_mysql_enum_columns(conn, tables_by_name: dict[str, object]) -> list[str]:
+    if str(getattr(conn.dialect, "name", "")).lower() != "mysql":
+        return []
+
+    repaired: list[str] = []
+    for table_name, column_name in (
+        ("users", "role"),
+        ("fee_categories", "fee_type"),
+        ("bookings", "status"),
+        ("bookings", "source"),
+    ):
+        table = tables_by_name.get(table_name)
+        if table is None or column_name not in table.c:
+            continue
+        desired = [str(v) for v in getattr(table.c[column_name].type, "enums", [])]
+        if not desired:
+            continue
+        current = _existing_enum_values(conn, table_name, column_name)
+        if current and set(desired).issubset(set(current)):
+            continue
+        ddl = str(CreateColumn(_plain_column(table.c[column_name])).compile(dialect=conn.dialect))
+        _safe_execute(conn, f"ALTER TABLE {table_name} MODIFY COLUMN {ddl}")
+        repaired.append(f"{table_name}.{column_name}")
+    return repaired
+
+
+def _ensure_postgres_enum_values(conn, tables_by_name: dict[str, object]) -> list[str]:
+    if str(getattr(conn.dialect, "name", "")).lower() not in {"postgresql", "postgres"}:
+        return []
+
+    repaired: list[str] = []
+    for table_name, column_name in (("users", "role"), ("fee_categories", "fee_type")):
+        table = tables_by_name.get(table_name)
+        if table is None or column_name not in table.c:
+            continue
+        enum_type = getattr(table.c[column_name].type, "name", None)
+        values = [str(v) for v in getattr(table.c[column_name].type, "enums", [])]
+        if not enum_type or not values:
+            continue
+        for value in values:
+            safe_value = value.replace("'", "''")
+            safe_type = str(enum_type).replace('"', "").replace("'", "")
+            statement = f"""
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM pg_type WHERE typname = '{safe_type}') THEN
+                IF NOT EXISTS (
+                  SELECT 1
+                  FROM pg_enum e
+                  JOIN pg_type t ON t.oid = e.enumtypid
+                  WHERE t.typname = '{safe_type}' AND e.enumlabel = '{safe_value}'
+                ) THEN
+                  ALTER TYPE {safe_type} ADD VALUE '{safe_value}';
+                END IF;
+              END IF;
+            END $$;
+            """
+            _safe_execute(conn, statement)
+            repaired.append(f"{safe_type}:{safe_value}")
+    return repaired
+
+
+def _repair_club_settings_primary_key(conn) -> bool:
+    dialect = str(getattr(conn.dialect, "name", "")).lower()
+    if dialect not in {"mysql", "postgresql", "postgres"}:
+        return False
+    if "club_settings" not in _table_names(conn):
+        return False
+    cols = _column_map(conn, "club_settings")
+    if "club_id" not in cols or "key" not in cols:
+        return False
+    null_count = int(conn.execute(text("SELECT COUNT(*) FROM club_settings WHERE club_id IS NULL")).scalar() or 0)
+    if null_count > 0:
+        return False
+    pk_cols = [str(v).lower() for v in (inspect(conn).get_pk_constraint("club_settings").get("constrained_columns") or [])]
+    if pk_cols == ["club_id", "key"] or pk_cols == ["key", "club_id"]:
+        return False
+    if pk_cols != ["key"]:
+        return False
+    if dialect == "mysql":
+        _safe_execute(conn, "ALTER TABLE club_settings DROP PRIMARY KEY, ADD PRIMARY KEY (club_id, `key`)")
+        return True
+    _safe_execute(conn, "ALTER TABLE club_settings DROP CONSTRAINT IF EXISTS club_settings_pkey")
+    _safe_execute(conn, 'ALTER TABLE club_settings ADD PRIMARY KEY (club_id, "key")')
+    return True
+
+
+def _apply_default_value_backfills(conn) -> list[str]:
+    table_names = _table_names(conn)
+    applied: list[str] = []
+    updates = [
+        ("accounting_settings", "cashbook_contra_gl", "'8400/000'"),
+        ("accounting_settings", "green_fees_gl", "'1000-000'"),
+        ("accounting_settings", "cashbook_name", "'Main Bank'"),
+        ("fee_categories", "active", "1"),
+        ("pro_shop_products", "active", "1"),
+        ("pro_shop_products", "stock_qty", "0"),
+        ("pro_shop_products", "reorder_level", "0"),
+        ("pro_shop_sales", "payment_method", "'card'"),
+        ("pro_shop_sales", "subtotal", "0"),
+        ("pro_shop_sales", "discount", "0"),
+        ("pro_shop_sales", "tax", "0"),
+        ("pro_shop_sales", "total", "0"),
+        ("bookings", "party_size", "1"),
     ]
+    for table_name, column_name, sql_value in updates:
+        if table_name not in table_names:
+            continue
+        cols = _column_map(conn, table_name)
+        if column_name not in cols:
+            continue
+        _safe_execute(
+            conn,
+            f"UPDATE {table_name} SET {column_name} = {sql_value} WHERE {column_name} IS NULL",
+        )
+        applied.append(f"{table_name}.{column_name}")
+    return applied
+
+
+def _record_schema_version(conn, details: dict) -> None:
+    if "schema_versions" not in _table_names(conn):
+        return
+    payload = json.dumps(details, ensure_ascii=True, default=str, separators=(",", ":"))
+    exists = conn.execute(
+        text("SELECT component FROM schema_versions WHERE component = :component"),
+        {"component": "auto_compatibility"},
+    ).scalar()
+    params = {
+        "component": "auto_compatibility",
+        "version": 2,
+        "status": str(details.get("status") or "ready"),
+        "details_json": payload,
+    }
+    if exists:
+        _safe_execute(
+            conn,
+            """
+            UPDATE schema_versions
+            SET version = :version,
+                status = :status,
+                details_json = :details_json,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE component = :component
+            """,
+            params,
+        )
+        return
+    _safe_execute(
+        conn,
+        """
+        INSERT INTO schema_versions (component, version, status, details_json, updated_at)
+        VALUES (:component, :version, :status, :details_json, CURRENT_TIMESTAMP)
+        """,
+        params,
+    )
+
+
+def run_auto_migrations(engine) -> dict[str, object]:
+    diagnostics: dict[str, object] = {
+        "ran": False,
+        "status": "skipped",
+        "dialect": str(getattr(getattr(engine, "dialect", None), "name", "") or "").lower(),
+        "added_columns": [],
+        "created_indexes": [],
+        "enum_repairs": [],
+        "default_backfills": [],
+        "repairs": [],
+    }
+    if not _should_run_auto_migrations(engine):
+        return diagnostics
+
+    tables = _load_metadata_tables()
+    tables_by_name = {table.name: table for table in tables}
 
     with engine.begin() as conn:
-        for stmt in statements:
-            conn.execute(text(stmt))
+        for table in tables:
+            if table.name not in _table_names(conn):
+                continue
+            added = _add_missing_columns(conn, table)
+            if added:
+                diagnostics["added_columns"].append({"table": table.name, "columns": added})
+
+        mysql_repairs = _ensure_mysql_enum_columns(conn, tables_by_name)
+        if mysql_repairs:
+            diagnostics["enum_repairs"].extend(mysql_repairs)
+        postgres_repairs = _ensure_postgres_enum_values(conn, tables_by_name)
+        if postgres_repairs:
+            diagnostics["enum_repairs"].extend(postgres_repairs)
+
+        for table in tables:
+            if table.name not in _table_names(conn):
+                continue
+            created = _create_missing_indexes(conn, table)
+            if created:
+                diagnostics["created_indexes"].append({"table": table.name, "indexes": created})
+
+        backfills = _apply_default_value_backfills(conn)
+        if backfills:
+            diagnostics["default_backfills"] = backfills
+        if _repair_club_settings_primary_key(conn):
+            diagnostics["repairs"].append("club_settings.primary_key")
+
+        diagnostics["ran"] = True
+        diagnostics["status"] = "ready"
+        _record_schema_version(conn, diagnostics)
+    return diagnostics

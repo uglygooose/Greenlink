@@ -4,6 +4,7 @@ from fastapi import Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, get_db
+from app.club_assignments import ensure_user_primary_club
 from app.models import Club, User, UserRole
 
 
@@ -54,7 +55,7 @@ def get_active_club_id(
     """
     Resolve the active club context for this request.
 
-    - Regular staff/admin users: always use `current_user.club_id` (and reject overrides).
+    - Regular staff/admin users: always use their resolved primary club assignment (and reject overrides).
     - Super admins: must specify a club via `club_id` query param or `X-Club-Id` header.
     """
     override = club_id or _parse_club_id(x_club_id)
@@ -73,11 +74,14 @@ def get_active_club_id(
         db.info["club_id"] = resolved
         return resolved
 
-    user_club_id = getattr(current_user, "club_id", None)
+    user_club_id = ensure_user_primary_club(db, current_user)
     if not user_club_id:
         raise HTTPException(status_code=400, detail="User is not assigned to a club")
     if override and int(override) != int(user_club_id):
         raise HTTPException(status_code=403, detail="Cannot access another club")
+    club = db.query(Club).filter(Club.id == int(user_club_id), Club.active == 1).first()
+    if not club:
+        raise HTTPException(status_code=403, detail="Assigned club is inactive or missing")
     resolved = int(user_club_id)
     db.info["club_id"] = resolved
     return resolved

@@ -5,6 +5,7 @@ from sqlalchemy import func, or_
 from datetime import datetime
 from app import models, schemas
 from app.auth import get_password_hash, verify_password, create_access_token
+from app.club_assignments import ensure_user_primary_club, sync_user_club_assignment
 from app.integrations import handicap_sa
 from app.password_policy import assert_password_policy
 from fastapi import HTTPException
@@ -220,6 +221,15 @@ def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = Non
         except Exception:
             pass
     db.add(db_user)
+    db.flush()
+    if resolved_club_id is not None:
+        sync_user_club_assignment(
+            db,
+            db_user,
+            club_id=int(resolved_club_id),
+            role=getattr(db_user, "role", None),
+            is_primary=True,
+        )
     db.commit()
     db.refresh(db_user)
 
@@ -259,17 +269,15 @@ def authenticate_user(db: Session, email: str, password: str):
     if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Backfill: older player accounts may not have a club_id yet.
-    # If there's exactly one active club, assign it automatically so players can book.
-    if getattr(user, "role", None) != models.UserRole.super_admin and not getattr(user, "club_id", None):
-        try:
-            clubs = db.query(models.Club).filter(models.Club.active == 1).order_by(models.Club.id.asc()).all()
-            if len(clubs) == 1:
-                user.club_id = int(clubs[0].id)
-                db.commit()
-        except Exception:
-            # Non-blocking: login should still work even if assignment fails.
-            pass
+    if getattr(user, "role", None) != models.UserRole.super_admin:
+        resolved_club_id = ensure_user_primary_club(db, user)
+        if not resolved_club_id:
+            raise HTTPException(
+                status_code=403,
+                detail="User is not assigned to a club. Ask a super admin to complete club access setup.",
+            )
+        if getattr(user, "club_id", None) != int(resolved_club_id):
+            db.commit()
 
     token = create_access_token({
         "sub": user.email,

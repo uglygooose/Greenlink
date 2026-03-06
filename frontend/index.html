@@ -38,8 +38,14 @@
         <main class="auth-card" id="loginCard">
             <h2 class="auth-title">Sign in</h2>
             <p class="auth-subtitle">Use your GreenLink account to continue.</p>
+            <div id="platformBanner" class="platform-banner" style="display:none"></div>
 
             <form id="loginForm" class="auth-form">
+                <div class="field" id="clubSelectorField" style="display:none">
+                    <label for="loginClubSelector">Club</label>
+                    <select id="loginClubSelector"></select>
+                </div>
+
                 <div class="field">
                     <label for="loginEmail">Email</label>
                     <input type="email" id="loginEmail" name="email" autocomplete="email" placeholder="you@example.com" required />
