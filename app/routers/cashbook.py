@@ -1,6 +1,6 @@
 # app/routers/cashbook.py
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, date
@@ -9,10 +9,8 @@ from pydantic import BaseModel
 from io import BytesIO
 import csv
 from io import StringIO
-import os
 import json
 import re
-import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.auth import get_db, get_current_user
@@ -638,23 +636,6 @@ def _require_pastel_mappings(db: Session) -> dict:
     mappings["vat_output_gl"] = vat_gl
     mappings["debit_gl"] = {str(k or "").strip().upper(): str(v or "").strip() for k, v in debit_gl.items()}
     return mappings
-
-
-def _export_base_dir() -> str:
-    raw = str(os.getenv("GREENLINK_SAGE_EXPORT_DIR", "") or os.getenv("GREENLINK_EXPORT_DIR", "") or "").strip()
-    if raw:
-        return raw
-    return os.path.join(".tmp", "SageExports")
-
-
-def _ensure_export_dirs(base_dir: str) -> dict:
-    ready = os.path.join(base_dir, "Ready")
-    imported = os.path.join(base_dir, "Imported")
-    failed = os.path.join(base_dir, "Failed")
-    archive = os.path.join(base_dir, "Archive")
-    for d in (ready, imported, failed, archive):
-        os.makedirs(d, exist_ok=True)
-    return {"base": base_dir, "ready": ready, "imported": imported, "failed": failed, "archive": archive}
 
 
 def create_payment_record(
@@ -1357,60 +1338,6 @@ def export_daily_payments_csv(
 
     csv_text = out.getvalue()
 
-    run_id = uuid.uuid4().hex[:8]
-    base_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}_{run_id}"
-    file_name = f"{base_name}.csv"
-    audit_name = f"{base_name}.audit.json"
-    job_name = f"{base_name}.job.json"
-
-    dirs = _ensure_export_dirs(_export_base_dir())
-    csv_path = os.path.join(dirs["ready"], file_name)
-    audit_path = os.path.join(dirs["ready"], audit_name)
-    job_path = os.path.join(dirs["ready"], job_name)
-
-    try:
-        # Pastel's import is sensitive to UTF-8 BOM in the first field (e.g. "Period"),
-        # so write plain UTF-8 without BOM.
-        with open(csv_path, "w", encoding="utf-8", newline="") as f:
-            f.write(csv_text)
-
-        audit = {
-            "status": "built",
-            "runId": run_id,
-            "date": target_date.strftime("%Y-%m-%d"),
-            "batchRef": batch_ref,
-            "totals": {
-                "gross": float(gross_total),
-                "vat": float(vat_total),
-                "net": float(net_total),
-            },
-            "payment_methods": {k: float(v) for k, v in gross_by_method.items()},
-            "fee_types": {k: float(v) for k, v in gross_by_fee_type.items()},
-            "ledger_entry_count": len(set(ledger_entry_ids)),
-            "booking_count": len(set(booking_ids)),
-            "layout": {
-                "filename": layout.get("filename"),
-                "date_format": layout.get("date_format"),
-                "delimiter": layout.get("delimiter"),
-                "columns": columns,
-            },
-        }
-        with open(audit_path, "w", encoding="utf-8") as f:
-            json.dump(audit, f, indent=2)
-
-        job = {
-            "runId": run_id,
-            "date": target_date.strftime("%Y-%m-%d"),
-            "batchRef": batch_ref,
-            "csv": csv_path,
-            "audit": audit_path,
-        }
-        with open(job_path, "w", encoding="utf-8") as f:
-            json.dump(job, f, indent=2)
-    except Exception as e:
-        print(f"[PASTEL] Failed to write export files: {str(e)[:240]}")
-        raise HTTPException(status_code=500, detail="Failed to write export files")
-
     # Mark ledger entries as exported (idempotency + audit trail).
     try:
         if ledger_entry_ids:
@@ -1425,11 +1352,15 @@ def export_daily_payments_csv(
     except Exception as e:
         print(f"[PASTEL] Failed to mark ledger entries exported: {str(e)[:240]}")
 
-    response = FileResponse(csv_path, media_type="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename={file_name}"
-    response.headers["X-GreenLink-RunId"] = run_id
-    response.headers["X-GreenLink-BatchRef"] = batch_ref
-    return response
+    file_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([csv_text.encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename={file_name}",
+            "X-GreenLink-BatchRef": batch_ref,
+        },
+    )
 
 
 @router.get("/export-preview")
@@ -1846,43 +1777,6 @@ def export_daily_payments_preview(
     }
 
 
-@router.get("/export-job-status")
-def get_export_job_status(
-    export_date: str = Query(..., description="Payment date in YYYY-MM-DD format"),
-    run_id: str = Query(..., description="Run ID returned in X-GreenLink-RunId header"),
-):
-    try:
-        target_date = datetime.strptime(export_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid export_date format. Use YYYY-MM-DD")
-
-    rid = (run_id or "").strip()
-    if not rid or len(rid) > 40:
-        raise HTTPException(status_code=400, detail="Invalid run_id")
-
-    base_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}_{rid}"
-    result_file = f"{base_name}.result.json"
-
-    dirs = _ensure_export_dirs(_export_base_dir())
-    for bucket in ("imported", "failed", "ready"):
-        folder = dirs.get(bucket)
-        if not folder:
-            continue
-        path = os.path.join(folder, result_file)
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-        except Exception:
-            data = {"status": "unknown", "message": "Result file unreadable"}
-        data.setdefault("runId", rid)
-        data.setdefault("date", target_date.strftime("%Y-%m-%d"))
-        return data
-
-    return {"status": "pending", "runId": rid, "date": target_date.strftime("%Y-%m-%d")}
-
-
 @router.get("/close-status")
 def get_close_status(
     summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
@@ -1966,7 +1860,6 @@ def update_accounting_settings_api(
 @router.post("/close-day")
 def close_day(
     close_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
-    auto_push: int = Query(0, description="1 to enable auto-push (placeholder)"),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
@@ -1994,7 +1887,7 @@ def close_day(
     batch_id = f"GL-{target_date.strftime('%Y%m%d')}-{datetime.utcnow().strftime('%H%M%S')}"
 
     # NOTE: Do not mark ledger entries as exported here.
-    # The export job (/cashbook/export-csv) writes the CSV and then marks entries as exported.
+    # /cashbook/export-csv writes the CSV and then marks entries as exported.
 
     filename = f"Cashbook_Payments_{target_date.strftime('%Y%m%d')}.csv"
     close = db.query(DayClose).filter(DayClose.close_date == target_date).first()
@@ -2005,7 +1898,7 @@ def close_day(
         close.export_method = "cashbook"
         close.export_batch_id = batch_id
         close.export_filename = filename
-        close.auto_push = 1 if auto_push else 0
+        close.auto_push = 0
     else:
         close = DayClose(
             club_id=club_id,
@@ -2016,7 +1909,7 @@ def close_day(
             export_method="cashbook",
             export_batch_id=batch_id,
             export_filename=filename,
-            auto_push=1 if auto_push else 0
+            auto_push=0
         )
         db.add(close)
 

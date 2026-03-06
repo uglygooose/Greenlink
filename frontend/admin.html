@@ -320,6 +320,9 @@
                             <select id="ops-import-stream">
                                 <option value="golf" selected>Golf</option>
                                 <option value="pro_shop">Pro Shop</option>
+                                <option value="pub">Pub</option>
+                                <option value="bowls">Bowls</option>
+                                <option value="other">Other</option>
                             </select>
                             <button class="btn-secondary" id="ops-load-settings-btn" type="button">Reload Settings</button>
                             <button class="btn-secondary" id="ops-open-revenue-btn" type="button">Open Revenue Analytics</button>
@@ -1055,10 +1058,10 @@
                             <div class="closeout-actions">
                                 <button class="btn-success" onclick="closeDayCashbook()" id="close-day-btn">Close Day</button>
                                 <button class="btn-secondary" onclick="reopenDayCashbook()" id="reopen-day-btn" disabled>Reopen Day</button>
-                                <button class="btn-primary" onclick="exportCashbookToCSV()" id="export-btn" disabled>Export to Sage (CSV)</button>
+                                <button class="btn-primary" onclick="exportCashbookToCSV()" id="export-btn" disabled>Export Journal (CSV)</button>
                             </div>
                         </div>
-                        <div class="closeout-note">Closing locks bookings for the day. Reopen to make edits.</div>
+                        <div class="closeout-note">Closing locks bookings for the day. Reopen to make edits. Export the journal and upload it into Sage manually.</div>
                     </div>
 
 	                    <div class="dashboard-card accounting-card">

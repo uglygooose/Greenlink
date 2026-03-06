@@ -52,6 +52,14 @@ const operationPageState = {
     bowls: "week",
     other: "week",
 };
+const IMPORT_OPERATIONS = Object.freeze([
+    { key: "golf", label: "Golf" },
+    { key: "pro_shop", label: "Pro Shop" },
+    { key: "pub", label: "Pub" },
+    { key: "bowls", label: "Bowls" },
+    { key: "other", label: "Other" },
+]);
+const IMPORT_OPERATION_KEYS = Object.freeze(IMPORT_OPERATIONS.map(op => op.key));
 const PRIMARY_OPERATIONS = Object.freeze([
     { key: "golf", label: "Golf" },
     { key: "pro_shop", label: "Pro Shop" },
@@ -278,6 +286,10 @@ function isPrimaryOperationStream(stream) {
     return PRIMARY_OPERATION_KEYS.includes(String(stream || "").toLowerCase());
 }
 
+function isImportOperationStream(stream) {
+    return IMPORT_OPERATION_KEYS.includes(String(stream || "").toLowerCase());
+}
+
 function normalizeDashboardStreamKey(raw, fallback = "all") {
     const key = String(raw || "").toLowerCase();
     if (DASHBOARD_STREAM_KEYS.includes(key)) return key;
@@ -286,8 +298,8 @@ function normalizeDashboardStreamKey(raw, fallback = "all") {
 
 function normalizeImportStreamKey(raw, fallback = DEFAULT_IMPORT_STREAM) {
     const key = String(raw || "").toLowerCase();
-    if (isPrimaryOperationStream(key)) return key;
-    return isPrimaryOperationStream(fallback) ? String(fallback).toLowerCase() : DEFAULT_IMPORT_STREAM;
+    if (isImportOperationStream(key)) return key;
+    return isImportOperationStream(fallback) ? String(fallback).toLowerCase() : DEFAULT_IMPORT_STREAM;
 }
 
 function primaryOperationRows() {
@@ -3507,17 +3519,28 @@ function updateRevenueUploadFlowHint() {
     if (!note) return;
 
     if (stream === "golf") {
-        note.textContent = "Selected operation: Golf. Import only true non-booking golf adjustments here (not tee-sheet bookings).";
-    } else {
-        note.textContent = "Selected operation: Pro Shop. Use this for external POS files when sales were not captured in GreenLink checkout.";
+        note.textContent = "Selected operation: Golf. Import only non-booking golf adjustments here (not tee-sheet bookings).";
+        return;
     }
+    if (stream === "pro_shop") {
+        note.textContent = "Selected operation: Pro Shop. Use this for external POS files when sales were not captured in GreenLink checkout.";
+        return;
+    }
+    if (stream === "pub") {
+        note.textContent = "Selected operation: Pub. Import till/POS exports for bar and food revenue reconciliation.";
+        return;
+    }
+    if (stream === "bowls") {
+        note.textContent = "Selected operation: Bowls. Import bowls operations revenue files for day-end balancing.";
+        return;
+    }
+    note.textContent = "Selected operation: Other. Import any remaining operation revenue files and map fields per stream.";
 }
 
 function revenueImportStreamLabel(stream) {
     const key = normalizeImportStreamKey(stream, DEFAULT_IMPORT_STREAM);
-    if (key === "golf") return "Golf";
-    if (key === "pro_shop") return "Pro Shop";
-    return "Operation";
+    const match = IMPORT_OPERATIONS.find(op => op.key === key);
+    return match ? match.label : "Operation";
 }
 
 function normalizeRevenueImportSettings(stream, raw = {}) {
@@ -3611,7 +3634,7 @@ function renderOpsImportSettingsHint(stream, settings, configured) {
     if (!String(settings?.amount_field || "").trim()) requiredMissing.push("amount field");
     const label = revenueImportStreamLabel(stream);
     const overrideNote = settings?.allow_stream_override
-        ? " Stream override is ON, so CSV stream values can reroute rows between Golf and Pro Shop."
+        ? " Stream override is ON, so CSV stream values can reroute rows between configured operations."
         : "";
     if (!configured) {
         hintEl.textContent = `${label}: profile not saved yet. Import once with "Save detected columns on import" enabled, then review and save.${overrideNote}`;
@@ -8503,12 +8526,11 @@ async function exportCashbookToCSV() {
             alert("Error: " + error.detail);
             if (exportBtn) {
                 exportBtn.disabled = false;
-                exportBtn.textContent = originalLabel || "Export to Sage (CSV)";
+                exportBtn.textContent = originalLabel || "Export Journal (CSV)";
             }
             return;
         }
 
-        const runId = response.headers.get("x-greenlink-runid") || "";
         const batchRef = response.headers.get("x-greenlink-batchref") || "";
 
         // Create blob and download
@@ -8531,46 +8553,14 @@ async function exportCashbookToCSV() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-        if (exportBtn) exportBtn.textContent = "Waiting for Pastel import...";
-
-        // Poll for desktop-bot result (if configured). If no bot, this will time out quietly.
-        if (runId) {
-            const started = Date.now();
-            const timeoutMs = 120000;
-            while ((Date.now() - started) < timeoutMs) {
-                try {
-                    const statusRes = await fetch(`${API_BASE}/cashbook/export-job-status?export_date=${dateInput}&run_id=${encodeURIComponent(runId)}`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (statusRes.ok) {
-                        const status = await statusRes.json();
-                        const s = String(status?.status || "").toLowerCase();
-                        if (s === "imported") {
-                            alert(`Imported into Pastel${batchRef ? ` (${batchRef})` : ""}`);
-                            break;
-                        }
-                        if (s === "failed") {
-                            alert(status?.message || "Pastel import failed");
-                            break;
-                        }
-                    }
-                } catch {
-                    // ignore poll errors
-                }
-                await sleep(3000);
-            }
-        } else {
-            alert("Journal exported successfully!");
-        }
+        alert(`Journal exported${batchRef ? ` (${batchRef})` : ""}. Upload this CSV into Sage manually.`);
     } catch (error) {
         console.error("Failed to export cashbook:", error);
         alert("Failed to export cashbook");
     } finally {
         if (exportBtn) {
             exportBtn.disabled = false;
-            exportBtn.textContent = originalLabel || "Export to Sage (CSV)";
+            exportBtn.textContent = originalLabel || "Export Journal (CSV)";
         }
     }
 }
@@ -9184,7 +9174,7 @@ async function closeDayCashbook() {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/cashbook/close-day?close_date=${dateInput}&auto_push=0`, {
+        const response = await fetch(`${API_BASE}/cashbook/close-day?close_date=${dateInput}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` }
         });
