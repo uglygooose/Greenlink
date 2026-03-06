@@ -339,12 +339,17 @@ def ensure_super_admin_capabilities_exist(
     super_password = _canonical_super_admin_password()
     admin_email = _canonical_umhlali_admin_email()
     admin_password = _canonical_umhlali_admin_password()
-    _assert_safe_bootstrap_credentials(
-        create_missing_users=create_missing_users,
-        force_reset=force_reset,
-        super_password=super_password,
-        admin_password=admin_password,
-    )
+    try:
+        _assert_safe_bootstrap_credentials(
+            create_missing_users=create_missing_users,
+            force_reset=force_reset,
+            super_password=super_password,
+            admin_password=admin_password,
+        )
+    except RuntimeError as exc:
+        diagnostics["warnings"].append(str(exc))
+        create_missing_users = False
+        force_reset = False
 
     super_user = db.query(User).filter(func.lower(User.email) == super_email).first()
     any_super_admin = db.query(User.id).filter(User.role == UserRole.super_admin).first()

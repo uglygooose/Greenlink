@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime
 from typing import Any
@@ -27,6 +28,7 @@ from app.models import (
     ImportBatch,
     Member,
     RevenueTransaction,
+    Club,
     ClubSetting,
     TeeTime,
     User,
@@ -36,6 +38,11 @@ from app.people import classify_membership_group, normalize_membership_status, p
 from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
+
+
+def _canonical_umhlali_slug() -> str:
+    value = (os.getenv("GREENLINK_DEFAULT_CLUB_SLUG") or "umhlali").strip().lower()
+    return value or "umhlali"
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -404,6 +411,21 @@ async def sync_umhlali_operational_inputs(
     admin: User = Depends(verify_admin),
     club_id: int = Depends(get_active_club_id),
 ):
+    target_club = db.query(Club).filter(Club.id == int(club_id)).first()
+    if target_club is None:
+        raise HTTPException(status_code=404, detail="Club not found")
+    target_slug = str(getattr(target_club, "slug", "") or "").strip().lower()
+    target_name = str(getattr(target_club, "name", "") or "").strip().lower()
+    expected_slug = _canonical_umhlali_slug()
+    if target_slug != expected_slug and "umhlali" not in target_name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Umhlali operational sync must run in the Umhlali club context "
+                f"(expected slug '{expected_slug}', got '{target_slug or 'unset'}')."
+            ),
+        )
+
     _enforce_import_rate_limit(request, int(club_id), admin)
     try:
         result = seed_umhlali_operational_inputs(db, club_id=int(club_id), force=bool(force))

@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .tmp/
 *.log
+.pytest_cache/
+pytest-cache-files-*/
+.tmp_local/tmps*/
+_codex_*.db

@@ -48,8 +48,8 @@ let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
 let peopleSort = "recent_activity";
-let peopleAreaFilter = "all";
-let peopleStatusFilter = "all";
+let peopleAreaFilter = "golf";
+let peopleStatusFilter = "active";
 let proShopStockFilter = "all";
 let proShopCategoryFilter = "all";
 let proShopSalesWindowDays = 30;
@@ -3049,10 +3049,10 @@ function setupPeopleFilters() {
         peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
     }
     if (areaFilter instanceof HTMLSelectElement) {
-        peopleAreaFilter = String(areaFilter.value || "all").toLowerCase();
+        peopleAreaFilter = String(areaFilter.value || "golf").toLowerCase();
     }
     if (statusFilter instanceof HTMLSelectElement) {
-        peopleStatusFilter = String(statusFilter.value || "all").toLowerCase();
+        peopleStatusFilter = String(statusFilter.value || "active").toLowerCase();
     }
 
     const applyPeopleSortOptions = () => {
@@ -3147,12 +3147,12 @@ function setupPeopleFilters() {
         loadPlayers();
     });
     areaFilter?.addEventListener("change", () => {
-        peopleAreaFilter = String(areaFilter.value || "all").toLowerCase();
+        peopleAreaFilter = String(areaFilter.value || "golf").toLowerCase();
         currentPlayersPage = 1;
         loadPlayers();
     });
     statusFilter?.addEventListener("change", () => {
-        peopleStatusFilter = String(statusFilter.value || "all").toLowerCase();
+        peopleStatusFilter = String(statusFilter.value || "active").toLowerCase();
         currentPlayersPage = 1;
         loadPlayers();
     });

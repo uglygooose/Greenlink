@@ -678,8 +678,8 @@ def seed_umhlali_operational_inputs(
     out["setup_dir"] = str(setup.setup_dir)
 
     if not force:
-        has_people = bool(
-            db.query(models.Person.id).filter(models.Person.club_id == int(club_id)).first()
+        has_members = bool(
+            db.query(models.Member.id).filter(models.Member.club_id == int(club_id)).first()
         )
         has_accounts = bool(
             db.query(models.AccountCustomer.id).filter(models.AccountCustomer.club_id == int(club_id)).first()
@@ -687,7 +687,10 @@ def seed_umhlali_operational_inputs(
         has_golf_day = bool(
             db.query(models.GolfDayBooking.id).filter(models.GolfDayBooking.club_id == int(club_id)).first()
         )
-        if has_people and has_accounts and has_golf_day:
+        has_staff_roles = bool(
+            db.query(models.StaffRoleProfile.id).filter(models.StaffRoleProfile.club_id == int(club_id)).first()
+        )
+        if has_members and has_accounts and has_golf_day and has_staff_roles:
             out["status"] = "already_seeded"
             return out
 

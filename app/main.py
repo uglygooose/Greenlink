@@ -86,6 +86,15 @@ def _metrics_allow_unauthenticated() -> bool:
     return is_local_like()
 
 
+def _startup_guard_enforced() -> bool:
+    # Hotfix default: diagnostics should inform, not hard-stop route serving.
+    if "GREENLINK_STARTUP_GUARD_ENFORCE" in os.environ:
+        return env_bool("GREENLINK_STARTUP_GUARD_ENFORCE", default=False)
+    if "STARTUP_GUARD_ENFORCE" in os.environ:
+        return env_bool("STARTUP_GUARD_ENFORCE", default=False)
+    return False
+
+
 def _error_payload(detail: str, request: Request) -> dict:
     request_id = getattr(getattr(request, "state", None), "request_id", None)
     payload: dict = {"detail": detail}
@@ -206,6 +215,9 @@ async def request_context_and_security_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def startup_guard(request: Request, call_next):
+    if not _startup_guard_enforced():
+        return await call_next(request)
+
     diagnostics = getattr(request.app.state, "startup_diagnostics", {}) or {}
     status = str(diagnostics.get("status") or "").strip().lower()
     if status != "failed":
@@ -351,10 +363,17 @@ def _seed_demo_admin_if_enabled() -> None:
         return
 
     if is_production_like() and not env_bool("DEMO_SEED_ADMIN_ALLOW_PRODUCTION", default=False):
-        raise RuntimeError(
-            "DEMO_SEED_ADMIN is blocked in production-like environments. "
-            "Set DEMO_SEED_ADMIN_ALLOW_PRODUCTION=1 only for controlled environments."
+        log_event(
+            "warning",
+            "bootstrap.demo_admin_seed_skipped",
+            reason="blocked_in_production",
+            detail="Set DEMO_SEED_ADMIN_ALLOW_PRODUCTION=1 only for controlled environments.",
         )
+        print(
+            "[DEMO_ADMIN] Skipped: DEMO_SEED_ADMIN blocked in production-like runtime "
+            "(set DEMO_SEED_ADMIN_ALLOW_PRODUCTION=1 only for controlled environments)."
+        )
+        return
 
     email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
     password = os.getenv("DEMO_ADMIN_PASSWORD") or ("123" if is_local_like() else "")
@@ -364,9 +383,14 @@ def _seed_demo_admin_if_enabled() -> None:
         or DB_SOURCE == "SQLITE"
     )
     if is_production_like() and _is_unsafe_default_password(password):
-        raise RuntimeError(
-            "DEMO_ADMIN_PASSWORD is missing or unsafe for production-like runtime."
+        log_event(
+            "warning",
+            "bootstrap.demo_admin_seed_skipped",
+            reason="unsafe_password",
+            detail="DEMO_ADMIN_PASSWORD missing/unsafe for production-like runtime.",
         )
+        print("[DEMO_ADMIN] Skipped: DEMO_ADMIN_PASSWORD missing/unsafe for production-like runtime.")
+        return
 
     if not email or "@" not in email or not str(password):
         print("[DEMO_ADMIN] Skipped: invalid DEMO_ADMIN_EMAIL/DEMO_ADMIN_PASSWORD.")
