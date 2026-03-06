@@ -33,6 +33,13 @@ const state = {
   clubConfig: null
 };
 
+const API_TIMEOUT_MS = 15000;
+const API_RETRY_ATTEMPTS = 2;
+const API_RETRY_BASE_MS = 320;
+const TEE_RANGE_CACHE_TTL_MS = 30000;
+const TEE_RANGE_CACHE_MAX_ENTRIES = 24;
+const teeRangeCache = new Map();
+
 function todayYmd() {
   const d = new Date();
   const y = d.getFullYear();
@@ -179,28 +186,87 @@ function logout() {
   window.location.href = "/frontend/index.html";
 }
 
+function delayMs(ms) {
+  const wait = Math.max(0, Number(ms || 0));
+  return new Promise(resolve => window.setTimeout(resolve, wait));
+}
+
+function isReadMethod(method) {
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+function retryAfterDelayMs(response) {
+  const raw = String(response?.headers?.get?.("Retry-After") || "").trim();
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, at - Date.now());
+}
+
+function shouldRetryStatus(status) {
+  const code = Number(status || 0);
+  return code === 408 || code === 429 || code >= 500;
+}
+
 async function api(path, options = {}) {
   const opts = { ...options };
+  const method = String(opts.method || "GET").trim().toUpperCase() || "GET";
   const headers = new Headers(opts.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
   if (opts.body != null && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   opts.headers = headers;
-  const response = await fetch(`${API_BASE}${path}`, opts);
-  const raw = await response.text();
-  let data = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = null;
+  opts.method = method;
+
+  const canRetry = isReadMethod(method);
+  const maxAttempts = canRetry ? (API_RETRY_ATTEMPTS + 1) : 1;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${API_BASE}${path}`, { ...opts, signal: controller.signal });
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+
+      if (response.ok) return data;
+
+      let detail = data?.detail;
+      if (detail && typeof detail === "object") detail = detail.message || JSON.stringify(detail);
+      const error = new Error(String(detail || raw || `Request failed (${response.status})`));
+      lastError = error;
+
+      if (!canRetry || !shouldRetryStatus(response.status) || attempt >= (maxAttempts - 1)) {
+        throw error;
+      }
+
+      const retryDelay = Math.max(
+        retryAfterDelayMs(response),
+        Math.round(API_RETRY_BASE_MS * Math.pow(2, attempt))
+      );
+      await delayMs(retryDelay);
+    } catch (err) {
+      lastError = err;
+      const transientNetworkError = err?.name === "AbortError" || err instanceof TypeError;
+      if (!canRetry || !transientNetworkError || attempt >= (maxAttempts - 1)) {
+        throw err;
+      }
+      await delayMs(Math.round(API_RETRY_BASE_MS * Math.pow(2, attempt)));
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   }
-  if (!response.ok) {
-    let detail = data?.detail;
-    if (detail && typeof detail === "object") detail = detail.message || JSON.stringify(detail);
-    throw new Error(String(detail || raw || `Request failed (${response.status})`));
-  }
-  return data;
+
+  throw lastError || new Error("Request failed");
 }
 
 function buildRangeForDate(dateYmd) {
@@ -212,6 +278,46 @@ function buildRangeForDate(dateYmd) {
     startIso: `${dateToYmd(start)}T00:00:00`,
     endIso: `${dateToYmd(end)}T00:00:00`
   };
+}
+
+function teeRangeCacheKey(range) {
+  return `${String(range?.startIso || "")}|${String(range?.endIso || "")}`;
+}
+
+function getCachedTeeRange(range) {
+  const key = teeRangeCacheKey(range);
+  const entry = teeRangeCache.get(key);
+  if (!entry || !Array.isArray(entry.rows)) return null;
+  const age = Date.now() - Number(entry.cachedAt || 0);
+  if (age > TEE_RANGE_CACHE_TTL_MS) {
+    teeRangeCache.delete(key);
+    return null;
+  }
+  return entry.rows.map(row => ({ ...row }));
+}
+
+function setCachedTeeRange(range, rows) {
+  const key = teeRangeCacheKey(range);
+  teeRangeCache.set(key, {
+    cachedAt: Date.now(),
+    rows: Array.isArray(rows) ? rows.map(row => ({ ...row })) : []
+  });
+
+  if (teeRangeCache.size <= TEE_RANGE_CACHE_MAX_ENTRIES) return;
+  let oldestKey = null;
+  let oldestTs = Number.MAX_SAFE_INTEGER;
+  for (const [k, value] of teeRangeCache.entries()) {
+    const ts = Number(value?.cachedAt || 0);
+    if (ts < oldestTs) {
+      oldestTs = ts;
+      oldestKey = k;
+    }
+  }
+  if (oldestKey) teeRangeCache.delete(oldestKey);
+}
+
+function invalidateTeeCache() {
+  teeRangeCache.clear();
 }
 
 function applyRouteState() {
@@ -747,7 +853,7 @@ async function respondToWeatherNotification(notificationId, action) {
   }
 }
 
-async function loadTeeTimes() {
+async function loadTeeTimes(forceRefresh = false) {
   state.teeDate = clampBookDate(state.teeDate);
   syncBookDateConstraints();
   const range = buildRangeForDate(state.teeDate);
@@ -756,12 +862,25 @@ async function loadTeeTimes() {
     renderTeeTimes();
     return;
   }
+  let hadCachedRows = false;
+  if (!forceRefresh) {
+    const cachedRows = getCachedTeeRange(range);
+    if (cachedRows) {
+      hadCachedRows = true;
+      state.teeTimes = cachedRows;
+      renderTeeTimes();
+    }
+  }
+
   try {
     const response = await api(`/tsheet/range?start=${encodeURIComponent(range.startIso)}&end=${encodeURIComponent(range.endIso)}`);
     state.teeTimes = Array.isArray(response) ? response : [];
+    setCachedTeeRange(range, state.teeTimes);
   } catch (err) {
-    state.teeTimes = [];
-    showToast(err?.message || "Failed to load tee sheet", "error");
+    if (!hadCachedRows) {
+      state.teeTimes = [];
+      showToast(err?.message || "Failed to load tee sheet", "error");
+    }
   }
   renderTeeTimes();
   if (state.pendingRouteTeeTimeId) {
@@ -976,6 +1095,7 @@ async function submitBookingDraft() {
     if (created > 0) {
       showToast(`Created ${formatInteger(created)} booking${created === 1 ? "" : "s"}.`, "ok");
       closeSheet("booking");
+      invalidateTeeCache();
       await Promise.all([loadTeeTimes(), loadMyBookings()]);
       renderAll();
     }
@@ -1182,7 +1302,7 @@ function bindEvents() {
   });
 
   document.getElementById("refresh-tee-btn")?.addEventListener("click", async () => {
-    await loadTeeTimes();
+    await loadTeeTimes(true);
   });
 
   document.getElementById("tee-list")?.addEventListener("click", event => {

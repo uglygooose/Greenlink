@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
+from requests.adapters import HTTPAdapter
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
+from urllib3.util.retry import Retry
 
 from app import models
+from app.observability import log_event
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -18,6 +22,21 @@ DEFAULT_FORECAST_TIMEZONE = "Africa/Johannesburg"
 MET_NO_USER_AGENT = "GreenLink/1.0 (+https://greenlink.app)"
 FORECAST_CACHE_TTL_MINUTES = 45
 _FORECAST_CACHE: dict[str, dict[str, Any]] = {}
+_FORECAST_CACHE_LOCK = threading.Lock()
+
+_WEATHER_HTTP_RETRY = Retry(
+    total=2,
+    connect=2,
+    read=2,
+    backoff_factor=0.35,
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset(["GET"]),
+    raise_on_status=False,
+)
+_WEATHER_HTTP_ADAPTER = HTTPAdapter(max_retries=_WEATHER_HTTP_RETRY, pool_connections=8, pool_maxsize=8)
+_WEATHER_HTTP_SESSION = requests.Session()
+_WEATHER_HTTP_SESSION.mount("https://", _WEATHER_HTTP_ADAPTER)
+_WEATHER_HTTP_SESSION.mount("http://", _WEATHER_HTTP_ADAPTER)
 
 # Known club fallbacks for demo reliability when geocoding is unavailable.
 # Umhlali Country Club (Ballito, KZN) from OpenStreetMap/Mapcarta reference.
@@ -120,9 +139,25 @@ def _forecast_cache_key(latitude: float, longitude: float, target_date: date) ->
     return f"{round(float(latitude), 4)}|{round(float(longitude), 4)}|{target_date.isoformat()}"
 
 
+def _http_get_json(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_s: float = 12.0,
+) -> dict[str, Any]:
+    response = _WEATHER_HTTP_SESSION.get(url, params=params, headers=headers, timeout=float(timeout_s))
+    response.raise_for_status()
+    if not response.content:
+        return {}
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
 def _get_cached_forecast(latitude: float, longitude: float, target_date: date) -> tuple[dict[str, Any] | None, str | None]:
     key = _forecast_cache_key(latitude, longitude, target_date)
-    entry = _FORECAST_CACHE.get(key)
+    with _FORECAST_CACHE_LOCK:
+        entry = _FORECAST_CACHE.get(key)
     if not isinstance(entry, dict):
         return None, None
 
@@ -146,10 +181,11 @@ def _set_cached_forecast(latitude: float, longitude: float, target_date: date, p
     if not isinstance(payload, dict):
         return
     key = _forecast_cache_key(latitude, longitude, target_date)
-    _FORECAST_CACHE[key] = {
-        "cached_at": datetime.utcnow(),
-        "payload": payload,
-    }
+    with _FORECAST_CACHE_LOCK:
+        _FORECAST_CACHE[key] = {
+            "cached_at": datetime.utcnow(),
+            "payload": payload,
+        }
 
 
 def _get_club_name(db: Session, club_id: int) -> str:
@@ -218,7 +254,7 @@ def get_club_coordinates(db: Session, club_id: int, timeout_s: float = 10.0) -> 
 
     for query_name in search_names:
         try:
-            response = requests.get(
+            payload = _http_get_json(
                 OPEN_METEO_GEOCODE_URL,
                 params={
                     "name": query_name,
@@ -228,8 +264,6 @@ def get_club_coordinates(db: Session, club_id: int, timeout_s: float = 10.0) -> 
                 },
                 timeout=timeout_s,
             )
-            response.raise_for_status()
-            payload = response.json() if response.content else {}
         except Exception:
             continue
 
@@ -273,7 +307,7 @@ def fetch_hourly_forecast(
     target_date: date,
     timeout_s: float = 12.0,
 ) -> dict[str, Any]:
-    response = requests.get(
+    payload = _http_get_json(
         OPEN_METEO_FORECAST_URL,
         params={
             "latitude": f"{float(latitude):.6f}",
@@ -285,8 +319,6 @@ def fetch_hourly_forecast(
         },
         timeout=timeout_s,
     )
-    response.raise_for_status()
-    payload = response.json() if response.content else {}
 
     hourly = payload.get("hourly") if isinstance(payload, dict) else {}
     times = hourly.get("time") if isinstance(hourly, dict) else []
@@ -321,7 +353,7 @@ def fetch_hourly_forecast_met_no(
     target_date: date,
     timeout_s: float = 12.0,
 ) -> dict[str, Any]:
-    response = requests.get(
+    payload = _http_get_json(
         MET_NO_FORECAST_URL,
         params={
             "lat": f"{float(latitude):.6f}",
@@ -333,8 +365,6 @@ def fetch_hourly_forecast_met_no(
         },
         timeout=timeout_s,
     )
-    response.raise_for_status()
-    payload = response.json() if response.content else {}
 
     properties = payload.get("properties") if isinstance(payload, dict) else {}
     time_series = properties.get("timeseries") if isinstance(properties, dict) else []
@@ -607,7 +637,15 @@ def build_weather_booking_candidates(
             provider_name = "met_no"
             hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
             hourly = hourly_raw if isinstance(hourly_raw, dict) else {}
-    except requests.RequestException:
+    except requests.RequestException as primary_exc:
+        log_event(
+            "warning",
+            "weather.primary_provider_failed",
+            club_id=int(club_id),
+            target_date=target_date.isoformat(),
+            error_type=type(primary_exc).__name__,
+            error=str(primary_exc)[:220],
+        )
         try:
             forecast = fetch_hourly_forecast_met_no(
                 latitude=latitude,
@@ -617,7 +655,15 @@ def build_weather_booking_candidates(
             provider_name = "met_no"
             hourly_raw = forecast.get("hourly") if isinstance(forecast, dict) else {}
             hourly = hourly_raw if isinstance(hourly_raw, dict) else {}
-        except requests.RequestException:
+        except requests.RequestException as backup_exc:
+            log_event(
+                "warning",
+                "weather.backup_provider_failed",
+                club_id=int(club_id),
+                target_date=target_date.isoformat(),
+                error_type=type(backup_exc).__name__,
+                error=str(backup_exc)[:220],
+            )
             provider_unavailable = True
             provider_note = "Live rain forecast temporarily unavailable."
 
@@ -639,6 +685,13 @@ def build_weather_booking_candidates(
             forecast = cached_forecast or {}
             hourly = cached_hourly
             provider_note = f"Using cached forecast from {cached_stamp}."
+            log_event(
+                "info",
+                "weather.cache_fallback_used",
+                club_id=int(club_id),
+                target_date=target_date.isoformat(),
+                cached_at=cached_stamp,
+            )
 
     user_cache: dict[str, models.User | None] = {}
     items: list[dict[str, Any]] = []

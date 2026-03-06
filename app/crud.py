@@ -6,6 +6,7 @@ from datetime import datetime
 from app import models, schemas
 from app.auth import get_password_hash, verify_password, create_access_token
 from app.integrations import handicap_sa
+from app.password_policy import assert_password_policy
 from fastapi import HTTPException
 
 def _require_club_id(db: Session) -> int:
@@ -13,6 +14,15 @@ def _require_club_id(db: Session) -> int:
     if not club_id:
         raise HTTPException(status_code=400, detail="club_id is required")
     return int(club_id)
+
+
+def _clean_text(value: str | None, max_len: int = 255) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) > max_len:
+        text = text[:max_len]
+    return text
 
 def _append_note(notes: str | None, line: str) -> str:
     if not notes:
@@ -147,9 +157,19 @@ def is_day_closed(db: Session, target_date):
     ).first() is not None
 
 def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = None):
-    existing = db.query(models.User).filter(models.User.email == user.email).first()
+    normalized_email = str(user.email).strip().lower()
+    if not normalized_email or "@" not in normalized_email:
+        raise HTTPException(status_code=400, detail="valid email is required")
+
+    name = _clean_text(user.name, max_len=120)
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    existing = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    assert_password_policy(user.password)
     hashed = get_password_hash(user.password)
 
     home_club = (getattr(user, "home_club", None) or "").strip() or None
@@ -178,8 +198,8 @@ def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = Non
         resolved_club_id = cid if cid > 0 else None
 
     db_user = models.User(
-        name=user.name,
-        email=str(user.email).strip().lower(),
+        name=name,
+        email=normalized_email,
         password=hashed,
         club_id=resolved_club_id,
         phone=phone,
@@ -258,7 +278,7 @@ def authenticate_user(db: Session, email: str, password: str):
     return {
         "access_token": token,
         "token_type": "bearer",
-        "role": user.role or "player"
+        "role": str(getattr(getattr(user, "role", None), "value", getattr(user, "role", None)) or "player"),
     }
 
 # tee-time / booking crud
@@ -352,11 +372,21 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     if existing_total + party_size > (tee_time.capacity or 4):
         raise HTTPException(status_code=409, detail="Tee time capacity exceeded")
 
+    player_name = _clean_text(getattr(booking_in, "player_name", None), max_len=200)
+    if not player_name:
+        raise HTTPException(status_code=400, detail="player_name is required")
+
+    player_email = _clean_text(getattr(booking_in, "player_email", None), max_len=200)
+    if player_email:
+        player_email = player_email.lower()
+
+    notes_val = _clean_text(getattr(booking_in, "notes", None), max_len=4000)
+
     # Resolve member link (explicit id or match by email)
     resolved_member_id = getattr(booking_in, "member_id", None)
     resolved_user = None
-    if not resolved_member_id and getattr(booking_in, "player_email", None):
-        email = str(booking_in.player_email).strip().lower()
+    if not resolved_member_id and player_email:
+        email = str(player_email).strip().lower()
         if email:
             resolved_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
             member_match = (
@@ -380,8 +410,8 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         member = None
 
     # Resolve registered user (player profile) by email when available.
-    if resolved_user is None and getattr(booking_in, "player_email", None):
-        email = str(booking_in.player_email).strip().lower()
+    if resolved_user is None and player_email:
+        email = str(player_email).strip().lower()
         if email:
             resolved_user = db.query(models.User).filter(func.lower(models.User.email) == email).first()
 
@@ -451,7 +481,6 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     # Fee resolution
     fee_category_id = getattr(booking_in, "fee_category_id", None)
     price = booking_in.price if getattr(booking_in, "price", None) is not None else 350.0
-    notes_val = getattr(booking_in, "notes", None)
     resolved_fee_cat = None
 
     # If fee_category_id is provided, get price from fee table
@@ -482,8 +511,8 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                 birth_date = getattr(booking_in, "birth_date", None)
                 if birth_date:
                     age = compute_age(tee_time.tee_time.date(), birth_date)
-                elif getattr(booking_in, "player_email", None):
-                    user = db.query(models.User).filter(models.User.email == booking_in.player_email).first()
+                elif player_email:
+                    user = db.query(models.User).filter(func.lower(models.User.email) == player_email).first()
                     if user and user.birth_date:
                         age = compute_age(tee_time.tee_time.date(), user.birth_date.date())
 
@@ -668,8 +697,8 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         tee_time_id=booking_in.tee_time_id,
         member_id=resolved_member_id,
         created_by_user_id=getattr(current_user, "id", None) if current_user is not None else None,
-        player_name=booking_in.player_name,
-        player_email=booking_in.player_email,
+        player_name=player_name,
+        player_email=player_email,
         club_card=booking_in.club_card,
         handicap_number=getattr(booking_in, "handicap_number", None),
         greenlink_id=getattr(booking_in, "greenlink_id", None),
@@ -699,30 +728,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     
     # Record payment only once the booking is paid (checked-in/completed).
     if b.status in (models.BookingStatus.checked_in, models.BookingStatus.completed):
-        # Get fee description for ledger
-        fee_description = f"Green fee - {b.player_name}"
-        if fee_category_id:
-            if not resolved_fee_cat:
-                from app.fee_models import FeeCategory
-                resolved_fee_cat = db.query(FeeCategory).filter(FeeCategory.id == fee_category_id).first()
-            if resolved_fee_cat:
-                fee_description = resolved_fee_cat.description
-        notes = str(getattr(b, "notes", "") or "")
-        if bool(getattr(b, "cart", False)) or ("Cart:" in notes):
-            fee_description = f"{fee_description} + Cart"
-        if bool(getattr(b, "push_cart", False)):
-            fee_description = f"{fee_description} + Push Cart"
-        if bool(getattr(b, "caddy", False)):
-            fee_description = f"{fee_description} + Caddy"
-
-        # Create ledger entry with actual price
-        le = models.LedgerEntry(
-            club_id=club_id,
-            booking_id=b.id,
-            description=fee_description,
-            amount=b.price
-        )
-        db.add(le)
+        ensure_paid_ledger_entry(db, b)
         db.commit()
     
     # DEPRECATED: Sage One / Pastel accounting sync removed

@@ -80,6 +80,39 @@ let weatherReconfirmRows = [];
 let teeWeatherRiskMap = new Map();
 let teeWeatherRequestSeq = 0;
 let weatherPreviewDebounceTimer = null;
+let dashboardAutoRefreshTimer = null;
+let operationalAlertsCache = null;
+
+const AUTH_FETCH_TIMEOUT_MS = 15000;
+const AUTH_FETCH_RETRY_ATTEMPTS = 2;
+const AUTH_FETCH_RETRY_BASE_MS = 320;
+const DASHBOARD_CACHE_KEY = "greenlink_admin_dashboard_cache_v1";
+const DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+
+function delayMs(ms) {
+    const wait = Math.max(0, Number(ms || 0));
+    return new Promise(resolve => window.setTimeout(resolve, wait));
+}
+
+function parseRetryAfterMs(response) {
+    const raw = String(response?.headers?.get?.("Retry-After") || "").trim();
+    if (!raw) return 0;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+    const at = Date.parse(raw);
+    if (!Number.isFinite(at)) return 0;
+    return Math.max(0, at - Date.now());
+}
+
+function isRetryableMethod(method) {
+    const m = String(method || "").toUpperCase();
+    return m === "GET" || m === "HEAD" || m === "OPTIONS";
+}
+
+function isRetryableStatus(status) {
+    const code = Number(status || 0);
+    return code === 408 || code === 429 || code >= 500;
+}
 
 function installAuthFetch() {
     if (authFetchInstalled) return;
@@ -87,7 +120,7 @@ function installAuthFetch() {
 
     const originalFetch = window.fetch.bind(window);
 
-    window.fetch = (input, init) => {
+    window.fetch = async (input, init) => {
         const token = localStorage.getItem("token");
         if (!token) return originalFetch(input, init);
 
@@ -117,6 +150,53 @@ function installAuthFetch() {
         }
 
         nextInit.headers = headers;
+        const method = String(
+            nextInit.method
+            || (input && typeof input.method === "string" ? input.method : "GET")
+            || "GET"
+        ).toUpperCase();
+        const canRetry = isRetryableMethod(method);
+        const maxAttempts = canRetry ? (AUTH_FETCH_RETRY_ATTEMPTS + 1) : 1;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS);
+
+            const externalSignal = nextInit.signal;
+            let onAbort = null;
+            if (externalSignal) {
+                if (externalSignal.aborted) {
+                    controller.abort();
+                } else {
+                    onAbort = () => controller.abort();
+                    externalSignal.addEventListener("abort", onAbort, { once: true });
+                }
+            }
+
+            try {
+                const response = await originalFetch(input, { ...nextInit, signal: controller.signal });
+                if (!canRetry || !isRetryableStatus(response.status) || attempt >= (maxAttempts - 1)) {
+                    return response;
+                }
+                const retryDelay = Math.max(
+                    parseRetryAfterMs(response),
+                    Math.round(AUTH_FETCH_RETRY_BASE_MS * Math.pow(2, attempt))
+                );
+                await delayMs(retryDelay);
+            } catch (error) {
+                const transient = error?.name === "AbortError" || error instanceof TypeError;
+                if (!canRetry || !transient || attempt >= (maxAttempts - 1)) {
+                    throw error;
+                }
+                await delayMs(Math.round(AUTH_FETCH_RETRY_BASE_MS * Math.pow(2, attempt)));
+            } finally {
+                window.clearTimeout(timeoutId);
+                if (externalSignal && onAbort) {
+                    externalSignal.removeEventListener("abort", onAbort);
+                }
+            }
+        }
+
         return originalFetch(input, nextInit);
     };
 }
@@ -188,6 +268,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupDashboardPeriodFilters();
     setupAiAssistantActions();
     setupCloseModals();
+    document.getElementById("dashboard-alerts-refresh-btn")?.addEventListener("click", () => {
+        loadOperationalAlerts({ silent: false, useCache: false });
+    });
     updateTime();
     setInterval(updateTime, 1000);
     refreshNavGroupVisibility();
@@ -209,6 +292,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setupRevenueFilters();
         setupRevenueImport();
         loadBookingWindowSettings();
+        startDashboardAutoRefresh();
         loadDashboard();
     } else {
         applyStaffMode(role);
@@ -265,6 +349,46 @@ async function fetchJson(url, options) {
         throw err;
     }
     return data;
+}
+
+function readDashboardCache() {
+    try {
+        const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+        const cachedAt = Number(parsed.cached_at || 0);
+        if (!Number.isFinite(cachedAt) || cachedAt <= 0) return null;
+        if ((Date.now() - cachedAt) > DASHBOARD_CACHE_TTL_MS) return null;
+        if (!parsed.data || typeof parsed.data !== "object") return null;
+        return { cachedAt, data: parsed.data };
+    } catch {
+        return null;
+    }
+}
+
+function writeDashboardCache(data) {
+    try {
+        localStorage.setItem(
+            DASHBOARD_CACHE_KEY,
+            JSON.stringify({
+                cached_at: Date.now(),
+                data: data || {},
+            })
+        );
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+function startDashboardAutoRefresh() {
+    if (dashboardAutoRefreshTimer) {
+        window.clearInterval(dashboardAutoRefreshTimer);
+    }
+    dashboardAutoRefreshTimer = window.setInterval(() => {
+        if (currentActivePage !== "dashboard") return;
+        loadDashboard({ silent: true, useCache: false });
+    }, 60000);
 }
 
 function statusToClass(status) {
@@ -746,6 +870,9 @@ function showPage(pageName) {
         applyDashboardStreamButtonState();
         applyDashboardPeriodButtonState();
         applyDashboardStreamView(dashboardDataCache);
+        if (operationalAlertsCache) {
+            renderOperationalAlerts(operationalAlertsCache, { cached: true });
+        }
     }
 
     if (pageName === "pub-ops") loadOperationWorkbench("pub");
@@ -1989,41 +2116,132 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
 }
 
 // Dashboard
-async function loadDashboard() {
+function renderOperationalAlerts(payload, options = {}) {
+    const alertsCard = document.getElementById("dashboard-alerts-card");
+    const listEl = document.getElementById("dashboard-alerts-list");
+    const noteEl = document.getElementById("dashboard-alerts-note");
+    if (!alertsCard || !listEl) return;
+
+    const summary = payload?.summary || {};
+    const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+    const generatedAt = payload?.generated_at ? formatDateTimeDMY(payload.generated_at) : null;
+    const sourceLabel = options?.cached ? "cache" : "live";
+
+    if (!alerts.length) {
+        listEl.innerHTML = `<div class="action-note">No active alerts. Operations are within expected ranges.</div>`;
+    } else {
+        listEl.innerHTML = alerts.slice(0, 8).map(item => {
+            const severity = String(item?.severity || "low").toLowerCase();
+            const pillClass = severity === "high" ? "bad" : severity === "medium" ? "warn" : "good";
+            const metricValue = item?.metric_value == null ? "-" : String(item.metric_value);
+            return `
+                <div class="ai-assistant-item">
+                    <span class="ai-pill ${pillClass}">${escapeHtml(severity.toUpperCase())}</span>
+                    <div class="title">${escapeHtml(item?.title || "Operational alert")}</div>
+                    <div class="detail">${escapeHtml(item?.message || "")}</div>
+                    <div class="detail">${escapeHtml(String(item?.metric_key || "metric"))}: ${escapeHtml(metricValue)}</div>
+                </div>
+            `;
+        }).join("");
+    }
+
+    if (noteEl) {
+        noteEl.textContent = `${formatInteger(summary.high || 0)} high, ${formatInteger(summary.medium || 0)} medium, ${formatInteger(summary.low || 0)} low alerts (${sourceLabel}${generatedAt ? ` at ${generatedAt}` : ""}).`;
+    }
+}
+
+async function loadOperationalAlerts(options = {}) {
     const token = localStorage.getItem("token");
+    const silent = Boolean(options?.silent);
+    const useCache = options?.useCache !== false;
+    const refreshBtn = document.getElementById("dashboard-alerts-refresh-btn");
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    try {
+        if (useCache && operationalAlertsCache) {
+            renderOperationalAlerts(operationalAlertsCache, { cached: true });
+        }
+
+        const data = await fetchJson(`${API_BASE}/api/admin/operational-alerts?lookahead_days=7`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        operationalAlertsCache = data || { alerts: [], summary: { total: 0, high: 0, medium: 0, low: 0 } };
+        renderOperationalAlerts(operationalAlertsCache, { cached: false });
+    } catch (error) {
+        console.error("Failed to load operational alerts:", error);
+        if (operationalAlertsCache) {
+            renderOperationalAlerts(operationalAlertsCache, { cached: true });
+            if (!silent) toastInfo("Operational alerts are showing cached data.");
+        } else if (!silent) {
+            toastError(error?.message || "Operational alerts failed to load");
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+    }
+}
+
+function applyDashboardPayload(data, options = {}) {
+    const isCached = Boolean(options?.cached);
+    const cachedAt = options?.cachedAt ? formatDateTimeDMY(options.cachedAt) : null;
+
+    document.getElementById("total-bookings").textContent = formatInteger(data.total_bookings);
+    document.getElementById("total-members").textContent = formatInteger(data.total_members ?? data.total_players);
+    document.getElementById("completed-rounds").textContent = formatInteger(data.completed_rounds);
+    document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
+    dashboardDataCache = data;
+    applyDashboardStreamView(data);
+    if (currentActivePage === "pub-ops") loadOperationWorkbench("pub");
+    if (currentActivePage === "bowls-ops") loadOperationWorkbench("bowls");
+    if (currentActivePage === "other-ops") loadOperationWorkbench("other");
+
+    // Import freshness (parallel mirror run)
+    const lastBookingsEl = document.getElementById("last-bookings-import");
+    const lastRevenueEl = document.getElementById("last-revenue-import");
+    const hintEl = document.getElementById("import-log-hint");
+    const lastBookings = data?.imports?.bookings || null;
+    const lastRevenue = data?.imports?.revenue || null;
+    if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
+    if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
+    if (hintEl) {
+        const cacheSuffix = isCached && cachedAt ? ` Showing cached dashboard from ${cachedAt}.` : "";
+        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, General > Operations Config for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
+    }
+
+    renderTargetsTable(data.targets);
+}
+
+async function loadDashboard(options = {}) {
+    const token = localStorage.getItem("token");
+    const silent = Boolean(options?.silent);
+    const useCache = options?.useCache !== false;
+    let renderedFromCache = false;
+
+    if (useCache && !dashboardDataCache) {
+        const cached = readDashboardCache();
+        if (cached?.data) {
+            renderedFromCache = true;
+            applyDashboardPayload(cached.data, { cached: true, cachedAt: cached.cachedAt });
+            loadOperationalAlerts({ silent: true, useCache: true });
+        }
+    }
 
     try {
         const data = await fetchJson(`${API_BASE}/api/admin/dashboard`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-
-        document.getElementById("total-bookings").textContent = formatInteger(data.total_bookings);
-        document.getElementById("total-members").textContent = formatInteger(data.total_members ?? data.total_players);
-        document.getElementById("completed-rounds").textContent = formatInteger(data.completed_rounds);
-        document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
-        dashboardDataCache = data;
-        applyDashboardStreamView(data);
-        if (currentActivePage === "pub-ops") loadOperationWorkbench("pub");
-        if (currentActivePage === "bowls-ops") loadOperationWorkbench("bowls");
-        if (currentActivePage === "other-ops") loadOperationWorkbench("other");
-
-        // Import freshness (parallel mirror run)
-        const lastBookingsEl = document.getElementById("last-bookings-import");
-        const lastRevenueEl = document.getElementById("last-revenue-import");
-        const hintEl = document.getElementById("import-log-hint");
-        const lastBookings = data?.imports?.bookings || null;
-        const lastRevenue = data?.imports?.revenue || null;
-        if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
-        if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
-        if (hintEl) hintEl.textContent = "Use Tee Sheet > Manage Tee Sheet for bookings imports, General > Operations Config for non-booking revenue imports, and Pro Shop Sales for direct checkout.";
-
-        renderTargetsTable(data.targets);
+        writeDashboardCache(data);
+        applyDashboardPayload(data, { cached: false });
+        loadOperationalAlerts({ silent: true, useCache: true });
 
         // Revenue chart
         loadRevenueChart();
     } catch (error) {
         console.error("Failed to load dashboard:", error);
-        toastError(error?.message || "Dashboard failed to load");
+        if (dashboardDataCache || renderedFromCache) {
+            if (!silent) toastInfo("Live dashboard refresh failed. Showing cached data.");
+        } else if (!silent) {
+            toastError(error?.message || "Dashboard failed to load");
+        }
     }
 }
 

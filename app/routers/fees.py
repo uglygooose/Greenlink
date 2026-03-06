@@ -31,6 +31,25 @@ class FeeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _normalize_holes(value: int | None) -> int:
+    try:
+        holes = int(value or 18)
+    except Exception:
+        holes = 18
+    return 9 if holes == 9 else 18
+
+
+def _get_tee_time_for_club(db: Session, tee_time_id: int, club_id: int):
+    tee_time = (
+        db.query(models.TeeTime)
+        .filter(models.TeeTime.id == int(tee_time_id), models.TeeTime.club_id == int(club_id))
+        .first()
+    )
+    if not tee_time:
+        raise HTTPException(status_code=404, detail="Tee time not found")
+    return tee_time
+
+
 def _fees_for_club(db: Session, club_id: int, fee_type: FeeType | None = None) -> list[FeeCategory]:
     """
     Return active fee categories for a club, including global defaults (club_id IS NULL),
@@ -135,11 +154,8 @@ def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db), 
     Suggest a single best-matching golf fee based on booking details.
     Useful for UIs that want "auto pricing" but still want to display the price before booking.
     """
-    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
-    if not tee_time:
-        raise HTTPException(status_code=404, detail="Tee time not found")
-
-    holes = int(req.holes or 18)
+    tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
+    holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
     gender = normalize_gender(req.gender)
 
@@ -186,11 +202,8 @@ def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db), 
     """
     Suggest a cart hire fee based on booking details (member/visitor + weekday/weekend + holes).
     """
-    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
-    if not tee_time:
-        raise HTTPException(status_code=404, detail="Tee time not found")
-
-    holes = int(req.holes or 18)
+    tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
+    holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
 
     ctx = PricingContext(
@@ -228,11 +241,8 @@ def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get
     """
     Suggest a push cart fee based on booking details.
     """
-    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
-    if not tee_time:
-        raise HTTPException(status_code=404, detail="Tee time not found")
-
-    holes = int(req.holes or 18)
+    tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
+    holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
 
     ctx = PricingContext(
@@ -264,11 +274,8 @@ def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)
     """
     Suggest a caddy fee based on booking details.
     """
-    tee_time = db.query(models.TeeTime).filter(models.TeeTime.id == req.tee_time_id).first()
-    if not tee_time:
-        raise HTTPException(status_code=404, detail="Tee time not found")
-
-    holes = int(req.holes or 18)
+    tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
+    holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
 
     ctx = PricingContext(

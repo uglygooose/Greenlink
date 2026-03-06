@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+import math
 from sqlalchemy import func, or_
 from app.auth import get_db, get_current_user
 from app import models
+from app.fee_models import FeeCategory, FeeType
 from app.tenancy import get_active_club_id
 from app.weather_alerts import append_booking_note, serialize_notification_payload
 
@@ -50,6 +52,7 @@ class PlayerProfileResponse(BaseModel):
 class PlayerNotificationAction(BaseModel):
     action: str
 
+
 def _name_parts(full_name: str | None) -> tuple[str, str]:
     raw = str(full_name or "").strip()
     if not raw:
@@ -67,6 +70,45 @@ def _normalize_account_type(value: str | None) -> str | None:
     if raw in {"member", "visitor", "non_affiliated"}:
         return raw
     return None
+
+
+def _normalize_name(value: str | None) -> str:
+    name = str(value or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    return name[:120]
+
+
+def _normalize_gender(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"male", "female", "unknown"}:
+        return raw
+    return None
+
+
+def _normalize_player_category(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"adult", "student", "pensioner", "junior"}:
+        return raw
+    return None
+
+
+def _normalize_handicap_index(value: float | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid handicap index")
+    if not math.isfinite(parsed):
+        raise HTTPException(status_code=400, detail="Invalid handicap index")
+    if parsed < 0 or parsed > 60:
+        raise HTTPException(status_code=400, detail="Handicap index must be between 0 and 60")
+    return parsed
 
 
 def _resolve_linked_member(
@@ -217,7 +259,7 @@ def _require_player_user(current_user: models.User = Depends(get_current_user)) 
 
 
 @router.get("/me", response_model=PlayerProfileResponse)
-def get_my_profile(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def get_my_profile(db: Session = Depends(get_db), current_user: models.User = Depends(_require_player_user)):
     """Get current player's profile"""
     user = db.query(models.User).filter(func.lower(models.User.email) == str(current_user.email).strip().lower()).first()
     if not user:
@@ -226,14 +268,18 @@ def get_my_profile(db: Session = Depends(get_db), current_user = Depends(get_cur
     return _build_profile_response(user, member)
 
 @router.put("/me", response_model=PlayerProfileResponse)
-def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def update_my_profile(
+    profile_update: PlayerProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(_require_player_user),
+):
     """Update current player's profile"""
     user = db.query(models.User).filter(func.lower(models.User.email) == str(current_user.email).strip().lower()).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     # Update fields
-    user.name = profile_update.name
+    user.name = _normalize_name(profile_update.name)
     if profile_update.phone is not None:
         user.phone = (profile_update.phone or "").strip() or None
     if profile_update.birth_date is not None:
@@ -252,16 +298,22 @@ def update_my_profile(profile_update: PlayerProfileUpdate, db: Session = Depends
     if profile_update.home_course is not None:
         user.home_course = (profile_update.home_course or "").strip() or None
     if profile_update.account_type is not None:
-        user.account_type = _normalize_account_type(profile_update.account_type)
+        normalized_account_type = _normalize_account_type(profile_update.account_type)
+        if normalized_account_type is None and str(profile_update.account_type).strip():
+            raise HTTPException(status_code=400, detail="account_type must be member, visitor, or non_affiliated")
+        user.account_type = normalized_account_type
     if profile_update.gender is not None:
-        user.gender = (profile_update.gender or "").strip() or None
+        normalized_gender = _normalize_gender(profile_update.gender)
+        if normalized_gender is None and str(profile_update.gender).strip():
+            raise HTTPException(status_code=400, detail="gender must be male, female, or unknown")
+        user.gender = normalized_gender
     if profile_update.player_category is not None:
-        user.player_category = (profile_update.player_category or "").strip() or None
+        normalized_category = _normalize_player_category(profile_update.player_category)
+        if normalized_category is None and str(profile_update.player_category).strip():
+            raise HTTPException(status_code=400, detail="player_category must be adult, student, pensioner, or junior")
+        user.player_category = normalized_category
     if profile_update.handicap_index is not None:
-        try:
-            user.handicap_index = float(profile_update.handicap_index)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid handicap index")
+        user.handicap_index = _normalize_handicap_index(profile_update.handicap_index)
 
     member = _upsert_linked_member(db, user, profile_update)
     db.commit()
@@ -426,9 +478,13 @@ def respond_to_notification(
     }
 
 @router.get("/fees-available")
-def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def get_available_fees(db: Session = Depends(get_db), current_user: models.User = Depends(_require_player_user)):
     """Get fees available for current player based on age (prices hidden from players)"""
-    user = db.query(models.User).filter(models.User.email == current_user.email).first()
+    user = (
+        db.query(models.User)
+        .filter(func.lower(models.User.email) == str(current_user.email).strip().lower())
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -440,12 +496,12 @@ def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get
     age = today.year - user.birth_date.year - ((today.month, today.day) < (user.birth_date.month, user.birth_date.day))
     
     # Get fees matching player's age
-    from app.fee_models import FeeCategory
     club_id = getattr(user, "club_id", None)
     q = db.query(FeeCategory).filter(
         FeeCategory.active == 1,
-        or_(FeeCategory.min_age == None, FeeCategory.min_age <= age),
-        or_(FeeCategory.max_age == None, FeeCategory.max_age >= age),
+        FeeCategory.fee_type == FeeType.GOLF,
+        or_(FeeCategory.min_age.is_(None), FeeCategory.min_age <= age),
+        or_(FeeCategory.max_age.is_(None), FeeCategory.max_age >= age),
     )
     if club_id is not None:
         try:
@@ -453,9 +509,7 @@ def get_available_fees(db: Session = Depends(get_db), current_user = Depends(get
         except Exception:
             cid = 0
         if cid > 0:
-            from sqlalchemy import or_ as sa_or
-
-            q = q.filter(sa_or(FeeCategory.club_id == cid, FeeCategory.club_id == None))
+            q = q.filter(or_(FeeCategory.club_id == cid, FeeCategory.club_id.is_(None)))
 
     fees = q.all()
 

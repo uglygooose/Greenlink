@@ -5,18 +5,49 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.audit import record_audit_event
 from app.auth import get_db
 from app.auth import get_password_hash
 from app.models import Club, User, UserRole
+from app.password_policy import assert_password_policy
 from app.tenancy import require_super_admin
 
 
 router = APIRouter(prefix="/api/super", tags=["super-admin"])
+
+
+def _request_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    return str(getattr(getattr(request, "state", None), "request_id", "") or "").strip() or None
+
+
+def _audit_super_event(
+    db: Session,
+    request: Request | None,
+    actor: User | None,
+    action: str,
+    entity_type: str,
+    *,
+    entity_id: str | int | None = None,
+    club_id: int | None = None,
+    payload: dict | None = None,
+) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type=entity_type,
+        actor_user_id=int(getattr(actor, "id", 0) or 0) or None,
+        entity_id=entity_id,
+        payload=payload,
+        request_id=_request_id(request),
+        club_id=(int(club_id) if club_id is not None else None),
+    )
 
 
 def _slugify(value: str) -> str:
@@ -89,7 +120,12 @@ def list_clubs(db: Session = Depends(get_db), _: User = Depends(require_super_ad
 
 
 @router.post("/clubs", response_model=ClubOut)
-def create_club(payload: ClubCreate, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+def create_club(
+    payload: ClubCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_super_admin),
+):
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -108,13 +144,28 @@ def create_club(payload: ClubCreate, db: Session = Depends(get_db), _: User = De
 
     club = Club(name=name, slug=slug, active=1 if payload.active else 0)
     db.add(club)
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.club_created",
+        entity_type="club",
+        entity_id=slug,
+        payload={"name": name, "slug": slug, "active": bool(payload.active)},
+    )
     db.commit()
     db.refresh(club)
     return club
 
 
 @router.put("/clubs/{club_id}", response_model=ClubOut)
-def update_club(club_id: int, payload: ClubUpdate, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+def update_club(
+    club_id: int,
+    payload: ClubUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_super_admin),
+):
     club = db.query(Club).filter(Club.id == int(club_id)).first()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
@@ -141,6 +192,15 @@ def update_club(club_id: int, payload: ClubUpdate, db: Session = Depends(get_db)
     if payload.active is not None:
         club.active = 1 if payload.active else 0
 
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.club_updated",
+        entity_type="club",
+        entity_id=int(club.id),
+        payload={"name": club.name, "slug": club.slug, "active": bool(club.active)},
+    )
     db.commit()
     db.refresh(club)
     return club
@@ -164,8 +224,9 @@ def list_staff(
 @router.post("/staff", response_model=StaffUserOut)
 def create_staff_user(
     payload: StaffUserCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_super_admin),
+    actor: User = Depends(require_super_admin),
 ):
     club = db.query(Club).filter(Club.id == int(payload.club_id), Club.active == 1).first()
     if not club:
@@ -175,6 +236,7 @@ def create_staff_user(
     name = (payload.name or "").strip() or email
     if not payload.password:
         raise HTTPException(status_code=400, detail="password is required")
+    assert_password_policy(payload.password, field_name="password")
 
     role = _parse_staff_role(payload.role)
     existing = db.query(User).filter(func.lower(User.email) == email).first()
@@ -185,6 +247,16 @@ def create_staff_user(
         existing.role = role
         existing.club_id = int(payload.club_id)
         existing.password = get_password_hash(payload.password)
+        _audit_super_event(
+            db,
+            request,
+            actor,
+            action="super_admin.staff_reset",
+            entity_type="user",
+            entity_id=int(existing.id),
+            club_id=int(payload.club_id),
+            payload={"email": email, "role": str(role.value), "force_reset": True},
+        )
         db.commit()
         db.refresh(existing)
         return existing
@@ -197,6 +269,16 @@ def create_staff_user(
         club_id=int(payload.club_id),
     )
     db.add(user)
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.staff_created",
+        entity_type="user",
+        entity_id=email,
+        club_id=int(payload.club_id),
+        payload={"email": email, "role": str(role.value), "force_reset": False},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -206,8 +288,9 @@ def create_staff_user(
 def update_staff_user(
     user_id: int,
     payload: StaffUserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_super_admin),
+    actor: User = Depends(require_super_admin),
 ):
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user:
@@ -227,9 +310,19 @@ def update_staff_user(
     if payload.password is not None:
         if not str(payload.password):
             raise HTTPException(status_code=400, detail="password cannot be empty")
+        assert_password_policy(payload.password, field_name="password")
         user.password = get_password_hash(payload.password)
 
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.staff_updated",
+        entity_type="user",
+        entity_id=int(user.id),
+        club_id=int(getattr(user, "club_id", 0) or 0) or None,
+        payload={"email": str(user.email), "role": str(getattr(user.role, "value", user.role))},
+    )
     db.commit()
     db.refresh(user)
     return user
-

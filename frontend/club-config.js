@@ -1,5 +1,7 @@
 (function () {
   const API_BASE = window.location.origin;
+  const CLUB_CFG_CACHE_PREFIX = "greenlink.club_config.v1";
+  const CLUB_CFG_CACHE_TTL_MS = 5 * 60 * 1000;
 
   const DEFAULT_CFG = Object.freeze({
     club_name: "GreenLink",
@@ -16,6 +18,48 @@
   });
 
   let _clubPromise = null;
+  
+  function _cacheKey(requested, hasAuth) {
+    const clubId = String(requested?.club_id || "").trim();
+    const clubSlug = String(requested?.club_slug || "").trim().toLowerCase();
+    const authPart = hasAuth ? "auth" : "anon";
+    return `${CLUB_CFG_CACHE_PREFIX}:${authPart}:${clubId || "-"}:${clubSlug || "-"}`;
+  }
+
+  function _readCachedConfig(key) {
+    try {
+      if (!window.localStorage || !key) return null;
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const expiresAt = Number(parsed.expires_at || 0);
+      if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      const data = parsed.data;
+      if (!data || typeof data !== "object") return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function _writeCachedConfig(key, cfg) {
+    try {
+      if (!window.localStorage || !key || !cfg) return;
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          expires_at: Date.now() + CLUB_CFG_CACHE_TTL_MS,
+          data: cfg,
+        })
+      );
+    } catch {
+      // Non-blocking cache write.
+    }
+  }
 
   function _requestedClubFromUrl() {
     try {
@@ -43,6 +87,10 @@
       try {
         const token = window.localStorage ? localStorage.getItem("token") : null;
         const requested = _requestedClubFromUrl();
+        const cacheKey = _cacheKey(requested, Boolean(token));
+        const cached = _readCachedConfig(cacheKey);
+        if (cached) return cached;
+
         const qp = new URLSearchParams();
         if (requested.club_id) qp.set("club_id", requested.club_id);
         else if (requested.club_slug) qp.set("club_slug", requested.club_slug);
@@ -50,16 +98,25 @@
         const baseUrl = token ? `${API_BASE}/api/public/club/me` : `${API_BASE}/api/public/club`;
         const url = (!token && qp.toString()) ? `${baseUrl}?${qp.toString()}` : baseUrl;
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(url, { cache: "no-store", headers });
+
+        let res = await fetch(url, { cache: "no-store", headers });
+        if (!res.ok && token) {
+          // Token may be stale while the page still needs branding.
+          const publicUrl = qp.toString() ? `${API_BASE}/api/public/club?${qp.toString()}` : `${API_BASE}/api/public/club`;
+          res = await fetch(publicUrl, { cache: "no-store" });
+        }
         if (!res.ok) return DEFAULT_CFG;
+
         const data = await res.json();
-        return {
+        const merged = {
           ...DEFAULT_CFG,
           ...data,
           labels: { ...DEFAULT_CFG.labels, ...(data?.labels || {}) },
           home_club_keywords: Array.isArray(data?.home_club_keywords) ? data.home_club_keywords : DEFAULT_CFG.home_club_keywords,
           suggested_home_clubs: Array.isArray(data?.suggested_home_clubs) ? data.suggested_home_clubs : DEFAULT_CFG.suggested_home_clubs,
         };
+        _writeCachedConfig(cacheKey, merged);
+        return merged;
       } catch {
         return DEFAULT_CFG;
       }
@@ -109,6 +166,20 @@
     loadClubConfig,
     homeClubIsMember,
     applyClubBranding,
+    invalidateClubConfigCache: function invalidateClubConfigCache() {
+      try {
+        if (!window.localStorage) return;
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(`${CLUB_CFG_CACHE_PREFIX}:`)) keys.push(key);
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+      } catch {
+        // Ignore storage errors.
+      }
+      _clubPromise = null;
+    },
     DEFAULT_CFG,
   });
 

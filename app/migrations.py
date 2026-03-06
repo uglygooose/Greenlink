@@ -271,6 +271,30 @@ def run_auto_migrations(engine) -> None:
           ON player_notifications (club_id, status, requires_action, created_at DESC);
         """,
         # ----------------------------
+        # Audit logs (admin/security observability)
+        # ----------------------------
+        """
+        CREATE TABLE IF NOT EXISTS audit_logs (
+          id bigserial PRIMARY KEY,
+          club_id integer NULL,
+          actor_user_id integer NULL REFERENCES users(id) ON DELETE SET NULL,
+          action text NOT NULL,
+          entity_type text NULL,
+          entity_id text NULL,
+          request_id text NULL,
+          payload_json text NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS audit_logs_club_created_idx
+          ON audit_logs (club_id, created_at DESC);
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS audit_logs_action_created_idx
+          ON audit_logs (action, created_at DESC);
+        """,
+        # ----------------------------
         # Multi-tenant scoping (club_id)
         # ----------------------------
         # Older/demo DBs predate club scoping and may be missing `club_id` on core tables.
@@ -291,10 +315,14 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE pro_shop_sales ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE pro_shop_sale_items ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "ALTER TABLE player_notifications ADD COLUMN IF NOT EXISTS club_id integer NULL;",
+        "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS club_id integer NULL;",
         "CREATE INDEX IF NOT EXISTS users_club_id_idx ON users (club_id);",
         "CREATE INDEX IF NOT EXISTS members_club_id_idx ON members (club_id);",
         "CREATE INDEX IF NOT EXISTS tee_times_club_id_idx ON tee_times (club_id);",
         "CREATE INDEX IF NOT EXISTS bookings_club_id_idx ON bookings (club_id);",
+        "CREATE INDEX IF NOT EXISTS bookings_club_status_tee_idx ON bookings (club_id, status, tee_time_id);",
+        "CREATE INDEX IF NOT EXISTS bookings_club_player_email_idx ON bookings (club_id, lower(player_email));",
+        "CREATE INDEX IF NOT EXISTS tee_times_club_time_idx ON tee_times (club_id, tee_time);",
         "CREATE INDEX IF NOT EXISTS ledger_entries_club_id_idx ON ledger_entries (club_id);",
         "CREATE INDEX IF NOT EXISTS day_closures_club_id_idx ON day_closures (club_id);",
         "CREATE INDEX IF NOT EXISTS accounting_settings_club_id_idx ON accounting_settings (club_id);",
@@ -307,6 +335,7 @@ def run_auto_migrations(engine) -> None:
         "CREATE INDEX IF NOT EXISTS pro_shop_sales_club_id_idx ON pro_shop_sales (club_id);",
         "CREATE INDEX IF NOT EXISTS pro_shop_sale_items_club_id_idx ON pro_shop_sale_items (club_id);",
         "CREATE INDEX IF NOT EXISTS player_notifications_club_id_idx ON player_notifications (club_id);",
+        "CREATE INDEX IF NOT EXISTS audit_logs_club_id_idx ON audit_logs (club_id);",
         # If there's exactly one active club, backfill NULL club_id rows so older seed data becomes visible.
         """
         DO $$
@@ -330,6 +359,7 @@ def run_auto_migrations(engine) -> None:
             UPDATE pro_shop_sales SET club_id = cid WHERE club_id IS NULL;
             UPDATE pro_shop_sale_items SET club_id = cid WHERE club_id IS NULL;
             UPDATE player_notifications SET club_id = cid WHERE club_id IS NULL;
+            UPDATE audit_logs SET club_id = cid WHERE club_id IS NULL;
           END IF;
         END $$;
         """,
@@ -415,6 +445,7 @@ def run_auto_migrations(engine) -> None:
         "ALTER TABLE IF EXISTS public.pro_shop_sales ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.pro_shop_sale_items ENABLE ROW LEVEL SECURITY;",
         "ALTER TABLE IF EXISTS public.player_notifications ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE IF EXISTS public.audit_logs ENABLE ROW LEVEL SECURITY;",
     ]
 
     with engine.begin() as conn:

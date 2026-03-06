@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
-from sqlalchemy import event
+from sqlalchemy import event, func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
@@ -27,6 +27,13 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440)
 )
+
+_CLOUD_HINTS = ("RENDER", "RENDER_SERVICE_ID", "RENDER_INSTANCE_ID", "K_SERVICE", "GOOGLE_CLOUD_PROJECT")
+_IS_CLOUD = any(os.getenv(k) for k in _CLOUD_HINTS)
+if SECRET_KEY == "CHANGE_ME" and _IS_CLOUD:
+    raise RuntimeError("SECRET_KEY must be set for cloud deployments.")
+if SECRET_KEY == "CHANGE_ME":
+    print("[SECURITY] Warning: SECRET_KEY is using the default development value.")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -98,6 +105,7 @@ _TENANT_SCOPED_MODELS = (
     models.ProShopSale,
     models.ProShopSaleItem,
     models.PlayerNotification,
+    models.AuditLog,
 )
 
 
@@ -177,11 +185,7 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = (
-        db.query(models.User)
-        .filter(models.User.email == email)
-        .first()
-    )
+    user = db.query(models.User).filter(func.lower(models.User.email) == str(email).strip().lower()).first()
 
     if not user:
         raise credentials_exception

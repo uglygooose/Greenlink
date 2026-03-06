@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 from sqlalchemy.orm import Session
 
 from app import models
-from app.club_config import get_club_config
+from app.club_config import get_club_config, get_club_settings_map
 
 
 DEFAULT_BOOKING_WINDOW_DAYS: Dict[str, int] = {
@@ -33,18 +33,9 @@ def _normalize_player_type(value: str | None) -> str | None:
         return str(value).strip().lower() or None
 
 
-def _club_setting_int(db: Session, club_id: int | None, key: str, default: int) -> int:
+def _club_setting_int(settings_map: dict[str, str], key: str, default: int) -> int:
     try:
-        if not club_id:
-            return int(default)
-        row = (
-            db.query(models.ClubSetting)
-            .filter(models.ClubSetting.club_id == int(club_id), models.ClubSetting.key == key)
-            .first()
-        )
-        if not row or row.value is None:
-            return int(default)
-        raw = str(row.value).strip()
+        raw = str(settings_map.get(key) or "").strip()
         if not raw:
             return int(default)
         return int(float(raw))
@@ -69,12 +60,13 @@ def resolve_player_type_for_user(db: Session, user: models.User) -> str:
 
 
 def get_booking_window_config(db: Session, club_id: int | None) -> Dict[str, int]:
+    settings_map = get_club_settings_map(db, club_id)
     return {
-        "member": max(0, _club_setting_int(db, club_id, SETTING_KEYS["member"], DEFAULT_BOOKING_WINDOW_DAYS["member"])),
-        "visitor": max(0, _club_setting_int(db, club_id, SETTING_KEYS["visitor"], DEFAULT_BOOKING_WINDOW_DAYS["visitor"])),
+        "member": max(0, _club_setting_int(settings_map, SETTING_KEYS["member"], DEFAULT_BOOKING_WINDOW_DAYS["member"])),
+        "visitor": max(0, _club_setting_int(settings_map, SETTING_KEYS["visitor"], DEFAULT_BOOKING_WINDOW_DAYS["visitor"])),
         "non_affiliated": max(
             0,
-            _club_setting_int(db, club_id, SETTING_KEYS["non_affiliated"], DEFAULT_BOOKING_WINDOW_DAYS["non_affiliated"]),
+            _club_setting_int(settings_map, SETTING_KEYS["non_affiliated"], DEFAULT_BOOKING_WINDOW_DAYS["non_affiliated"]),
         ),
     }
 

@@ -130,7 +130,7 @@ class Booking(Base):
     member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     player_name = Column(String(200), nullable=False)
-    player_email = Column(String(200), nullable=True)
+    player_email = Column(String(200), nullable=True, index=True)
     club_card = Column(String(100), nullable=True)
     handicap_number = Column(String(50), nullable=True)
     greenlink_id = Column(String(50), nullable=True)
@@ -145,7 +145,7 @@ class Booking(Base):
     party_size = Column(Integer, default=1)
     fee_category_id = Column(Integer, ForeignKey("fee_categories.id"), nullable=True)
     price = Column(Float, default=350.0)  # Default green fee
-    status = Column(Enum(BookingStatus), default=BookingStatus.booked)
+    status = Column(Enum(BookingStatus), default=BookingStatus.booked, index=True)
     # Booking-level attributes (snapshotted at booking time for reporting)
     player_type = Column(String(30), nullable=True)  # member | visitor | non_affiliated | reciprocity
     holes = Column(Integer, nullable=True)
@@ -363,3 +363,17 @@ class PlayerNotification(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     read_at = Column(DateTime, nullable=True)
     responded_at = Column(DateTime, nullable=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(120), nullable=False, index=True)
+    entity_type = Column(String(80), nullable=True, index=True)
+    entity_id = Column(String(120), nullable=True, index=True)
+    request_id = Column(String(64), nullable=True, index=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

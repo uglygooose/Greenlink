@@ -8,13 +8,16 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
 
+from app.audit import record_audit_event
 from app.auth import get_current_user, get_db
+from app.observability import log_event
+from app.rate_limit import IMPORT_RATE_LIMITER, client_ip_from_request, normalize_identity
 from app.tenancy import get_active_club_id
 from app.models import (
     Booking,
@@ -37,6 +40,48 @@ def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
+
+
+def _request_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    return str(getattr(getattr(request, "state", None), "request_id", "") or "").strip() or None
+
+
+def _enforce_import_rate_limit(request: Request | None, club_id: int, admin: User) -> None:
+    ip = client_ip_from_request(request) if request is not None else "unknown"
+    identity = normalize_identity(getattr(admin, "email", None), default=f"user-{int(getattr(admin, 'id', 0) or 0)}")
+    key = f"{int(club_id)}:{identity}:{ip}"
+    allowed, retry_after, _remaining = IMPORT_RATE_LIMITER.check(key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many import requests. Please retry shortly.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _audit_import_event(
+    db: Session,
+    request: Request | None,
+    admin: User,
+    action: str,
+    entity_type: str,
+    *,
+    club_id: int,
+    entity_id: str | int | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type=entity_type,
+        actor_user_id=int(getattr(admin, "id", 0) or 0) or None,
+        entity_id=entity_id,
+        payload=payload,
+        request_id=_request_id(request),
+        club_id=int(club_id),
+    )
 
 
 def _norm_key(value: str) -> str:
@@ -348,6 +393,7 @@ def get_revenue_import_settings(
 @router.put("/revenue-settings")
 def save_revenue_import_settings(
     payload: RevenueImportSettingsPayload,
+    request: Request,
     stream: str = Query("other", description="Revenue stream: golf|pro_shop|pub|bowls|other"),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
@@ -356,6 +402,16 @@ def save_revenue_import_settings(
     stream_norm = _normalize_revenue_stream_for_settings(stream)
     normalized = _normalize_revenue_import_settings(payload.dict(), stream_norm)
     _write_revenue_import_settings(db, club_id, stream_norm, normalized)
+    _audit_import_event(
+        db,
+        request,
+        admin,
+        action="imports.revenue_settings_saved",
+        entity_type="import_settings",
+        club_id=int(club_id),
+        entity_id=stream_norm,
+        payload={"stream": stream_norm, "settings": normalized},
+    )
     db.commit()
     return {
         "status": "ok",
@@ -400,12 +456,19 @@ def list_import_batches(
             ]
         }
     except SQLAlchemyError as e:
-        print(f"[IMPORTS] DB error (list): {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.list.db_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=503, detail="Database connection unavailable")
 
 
 @router.post("/revenue-csv")
 async def import_revenue_csv(
+    request: Request,
     stream: str = Query("other", description="Revenue stream: pub|bowls|golf|pro_shop|other"),
     dedupe_without_external_id: bool | None = Query(None, description="Override dedupe behavior for rows without external IDs"),
     use_saved_settings: bool = Query(True, description="Apply saved import settings for this stream when available"),
@@ -415,6 +478,7 @@ async def import_revenue_csv(
     admin: User = Depends(verify_admin),
     club_id: int = Depends(get_active_club_id),
 ):
+    _enforce_import_rate_limit(request, int(club_id), admin)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -617,6 +681,25 @@ async def import_revenue_csv(
         batch.rows_updated = updated
         batch.rows_failed = failed
         batch.notes = "\n".join(notes) if notes else None
+        _audit_import_event(
+            db,
+            request,
+            admin,
+            action="imports.revenue_csv_imported",
+            entity_type="import_batch",
+            club_id=int(club_id),
+            entity_id=int(batch.id),
+            payload={
+                "batch_id": int(batch.id),
+                "stream": str(batch.source or stream_norm),
+                "rows_total": int(total),
+                "rows_inserted": int(inserted),
+                "rows_updated": int(updated),
+                "rows_failed": int(failed),
+                "settings_source": settings_source,
+                "settings_saved": bool(settings_saved),
+            },
+        )
         db.commit()
 
         return {
@@ -637,25 +720,45 @@ async def import_revenue_csv(
         }
     except IntegrityError as e:
         db.rollback()
-        print(f"[IMPORTS] Integrity error (revenue): {str(e)[:240]}")
+        log_event(
+            "warning",
+            "imports.revenue.integrity_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=409, detail="Import conflict (duplicate external IDs?)")
     except SQLAlchemyError as e:
         db.rollback()
-        print(f"[IMPORTS] DB error (revenue): {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.revenue.db_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     except Exception as e:
         db.rollback()
-        print(f"[IMPORTS] Unexpected error (revenue): {type(e).__name__}: {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.revenue.unexpected_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=500, detail="Revenue import failed")
 
 
 @router.post("/members-csv")
 async def import_members_csv(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
     club_id: int = Depends(get_active_club_id),
 ):
+    _enforce_import_rate_limit(request, int(club_id), admin)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -748,6 +851,22 @@ async def import_members_csv(
         batch.rows_updated = updated
         batch.rows_failed = failed
         batch.notes = "\n".join(notes) if notes else None
+        _audit_import_event(
+            db,
+            request,
+            admin,
+            action="imports.members_csv_imported",
+            entity_type="import_batch",
+            club_id=int(club_id),
+            entity_id=int(batch.id),
+            payload={
+                "batch_id": int(batch.id),
+                "rows_total": int(total),
+                "rows_inserted": int(inserted),
+                "rows_updated": int(updated),
+                "rows_failed": int(failed),
+            },
+        )
         db.commit()
 
         return {
@@ -763,26 +882,46 @@ async def import_members_csv(
         }
     except IntegrityError as e:
         db.rollback()
-        print(f"[IMPORTS] Integrity error (members): {str(e)[:240]}")
+        log_event(
+            "warning",
+            "imports.members.integrity_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=409, detail="Import conflict (duplicate members?)")
     except SQLAlchemyError as e:
         db.rollback()
-        print(f"[IMPORTS] DB error (members): {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.members.db_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     except Exception as e:
         db.rollback()
-        print(f"[IMPORTS] Unexpected error (members): {type(e).__name__}: {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.members.unexpected_error",
+            club_id=int(club_id),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=500, detail="Member import failed")
 
 
 @router.post("/bookings-csv")
 async def import_bookings_csv(
+    request: Request,
     provider: str = Query(..., description="Upstream provider: golfscape|hna|other"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
     club_id: int = Depends(get_active_club_id),
 ):
+    _enforce_import_rate_limit(request, int(club_id), admin)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -992,6 +1131,24 @@ async def import_bookings_csv(
         batch.rows_updated = updated
         batch.rows_failed = failed
         batch.notes = "\n".join(notes) if notes else None
+        _audit_import_event(
+            db,
+            request,
+            admin,
+            action="imports.bookings_csv_imported",
+            entity_type="import_batch",
+            club_id=int(club_id),
+            entity_id=int(batch.id),
+            payload={
+                "batch_id": int(batch.id),
+                "provider": provider_norm,
+                "rows_total": int(total),
+                "rows_inserted": int(inserted),
+                "rows_updated": int(updated),
+                "rows_failed": int(failed),
+                "tee_times_touched": len(touched_tee_ids),
+            },
+        )
         db.commit()
 
         return {
@@ -1008,13 +1165,34 @@ async def import_bookings_csv(
         }
     except IntegrityError as e:
         db.rollback()
-        print(f"[IMPORTS] Integrity error (bookings): {str(e)[:240]}")
+        log_event(
+            "warning",
+            "imports.bookings.integrity_error",
+            club_id=int(club_id),
+            provider=provider_norm,
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=409, detail="Import conflict (duplicate external row IDs?)")
     except SQLAlchemyError as e:
         db.rollback()
-        print(f"[IMPORTS] DB error (bookings): {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.bookings.db_error",
+            club_id=int(club_id),
+            provider=provider_norm,
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     except Exception as e:
         db.rollback()
-        print(f"[IMPORTS] Unexpected error (bookings): {type(e).__name__}: {str(e)[:240]}")
+        log_event(
+            "error",
+            "imports.bookings.unexpected_error",
+            club_id=int(club_id),
+            provider=provider_norm,
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+        )
         raise HTTPException(status_code=500, detail="Booking import failed")

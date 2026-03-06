@@ -1,5 +1,5 @@
 # app/routers/cashbook.py
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,8 +14,11 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.auth import get_db, get_current_user
+from app.audit import record_audit_event
 from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntryMeta, DayClose, AccountingSetting, User, UserRole, ClubSetting
 from app.fee_models import FeeCategory
+from app.club_config import invalidate_club_config_cache
+from app.observability import log_event
 from app.tenancy import get_active_club_id
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -28,6 +31,34 @@ def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
+
+
+def _request_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    return str(getattr(getattr(request, "state", None), "request_id", "") or "").strip() or None
+
+
+def _audit_cashbook_event(
+    db: Session,
+    request: Request | None,
+    actor: User | None,
+    action: str,
+    entity_type: str,
+    *,
+    entity_id: str | int | None = None,
+    payload: dict | None = None,
+) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type=entity_type,
+        actor_user_id=int(getattr(actor, "id", 0) or 0) or None,
+        entity_id=entity_id,
+        payload=payload,
+        request_id=_request_id(request),
+        club_id=int(getattr(db, "info", {}).get("club_id") or 0) or None,
+    )
 
 class PaymentRecord(BaseModel):
     """Individual payment record"""
@@ -73,7 +104,7 @@ def get_accounting_settings(db: Session) -> AccountingSetting:
     if not club_id:
         raise HTTPException(status_code=400, detail="club_id is required")
 
-    settings = db.query(AccountingSetting).first()
+    settings = db.query(AccountingSetting).filter(AccountingSetting.club_id == int(club_id)).first()
     if settings:
         return settings
     settings = AccountingSetting(club_id=int(club_id))
@@ -88,16 +119,20 @@ def _upsert_club_setting(db: Session, key: str, value: str) -> None:
     if not club_id:
         raise HTTPException(status_code=400, detail="club_id is required")
 
-    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
     if row:
         row.value = value
         row.updated_at = datetime.utcnow()
     else:
         db.add(ClubSetting(club_id=int(club_id), key=key, value=value))
+    invalidate_club_config_cache(int(club_id))
 
 
 def _get_club_setting(db: Session, key: str) -> Optional[str]:
-    row = db.query(ClubSetting).filter(ClubSetting.key == key).first()
+    club_id = getattr(db, "info", {}).get("club_id")
+    if not club_id:
+        return None
+    row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
     if not row or row.value is None:
         return None
     return str(row.value)
@@ -823,7 +858,8 @@ def create_csv_content(payments: List[PaymentRecord]) -> StringIO:
 @router.get("/daily-summary")
 def get_daily_summary(
     summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
 ) -> DailyPaymentsSummary:
     """Get summary of all payments collected for a specific day"""
     
@@ -869,7 +905,8 @@ def get_daily_summary(
 @router.get("/export-excel")
 def export_daily_payments_excel(
     export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
 ):
     """Export daily payments to Excel file"""
     
@@ -910,9 +947,11 @@ def export_daily_payments_excel(
 
 @router.get("/export-csv")
 def export_daily_payments_csv(
+    request: Request,
     export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
     force: int = Query(0, description="1 to allow re-export for the same payment date (not recommended)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
 ):
     """
     Export a balanced daily VAT journal in the club's Pastel Partner journal import layout.
@@ -1349,8 +1388,34 @@ def export_daily_payments_csv(
                 synchronize_session=False,
             )
             db.commit()
+            _audit_cashbook_event(
+                db,
+                request,
+                admin,
+                action="cashbook.csv_exported",
+                entity_type="cashbook_export",
+                entity_id=batch_ref,
+                payload={
+                    "date": target_date.isoformat(),
+                    "batch_ref": batch_ref,
+                    "force": int(force or 0),
+                    "ledger_entries": len(set(ledger_entry_ids)),
+                    "bookings": len(set(booking_ids)),
+                    "gross_total": float(gross_total),
+                    "net_total": float(net_total),
+                    "vat_total": float(vat_total),
+                },
+            )
+            db.commit()
     except Exception as e:
-        print(f"[PASTEL] Failed to mark ledger entries exported: {str(e)[:240]}")
+        log_event(
+            "warning",
+            "cashbook.export.mark_failed",
+            request_id=_request_id(request),
+            error_type=type(e).__name__,
+            error=str(e)[:240],
+            batch_ref=batch_ref,
+        )
 
     file_name = f"PASTEL_JOURNAL_GREENLINK_{target_date.strftime('%Y%m%d')}.csv"
     return StreamingResponse(
@@ -1366,6 +1431,7 @@ def export_daily_payments_csv(
 @router.get("/export-preview")
 def export_daily_payments_preview(
     export_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: User = Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
     """
@@ -1780,7 +1846,8 @@ def export_daily_payments_preview(
 @router.get("/close-status")
 def get_close_status(
     summary_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
 ):
     if summary_date:
         try:
@@ -1859,6 +1926,7 @@ def update_accounting_settings_api(
 
 @router.post("/close-day")
 def close_day(
+    request: Request,
     close_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
@@ -1913,6 +1981,20 @@ def close_day(
         )
         db.add(close)
 
+    _audit_cashbook_event(
+        db,
+        request,
+        admin,
+        action="cashbook.day_closed",
+        entity_type="day_close",
+        entity_id=target_date.isoformat(),
+        payload={
+            "date": target_date.isoformat(),
+            "batch_id": batch_id,
+            "bookings": len(booking_ids),
+            "export_filename": filename,
+        },
+    )
     db.commit()
 
     return {
@@ -1926,6 +2008,7 @@ def close_day(
 
 @router.post("/reopen-day")
 def reopen_day(
+    request: Request,
     reopen_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
@@ -1956,6 +2039,15 @@ def reopen_day(
     close.status = "reopened"
     close.reopened_by_user_id = admin.id
     close.reopened_at = datetime.utcnow()
+    _audit_cashbook_event(
+        db,
+        request,
+        admin,
+        action="cashbook.day_reopened",
+        entity_type="day_close",
+        entity_id=target_date.isoformat(),
+        payload={"date": target_date.isoformat(), "booking_count": len(booking_ids)},
+    )
     db.commit()
 
     return {
@@ -1966,8 +2058,10 @@ def reopen_day(
 
 @router.post("/finalize-day")
 def finalize_day_payments(
+    request: Request,
     finalize_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
 ):
     """
     Finalize payments for a day:
@@ -2014,6 +2108,31 @@ def finalize_day_payments(
     # Calculate totals
     total_payments = sum(r.amount for r in records)
     total_tax = sum(r.tax_amount for r in records)
+    _audit_cashbook_event(
+        db,
+        request,
+        admin,
+        action="cashbook.day_finalized",
+        entity_type="cashbook_finalize",
+        entity_id=target_date.isoformat(),
+        payload={
+            "date": target_date.isoformat(),
+            "transaction_count": len(records),
+            "total_amount": float(total_payments),
+            "total_tax": float(total_tax),
+        },
+    )
+    db.commit()
+    log_event(
+        "info",
+        "cashbook.finalize_day",
+        request_id=_request_id(request),
+        actor_user_id=int(getattr(admin, "id", 0) or 0),
+        date=target_date.isoformat(),
+        transaction_count=len(records),
+        total_amount=float(total_payments),
+        total_tax=float(total_tax),
+    )
     
     return {
         "status": "success",

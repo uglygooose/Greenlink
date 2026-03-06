@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
+
+_CACHE_TTL_SECONDS = max(5, int(str(os.getenv("CLUB_CONFIG_CACHE_TTL_SECONDS", "60")).strip() or 60))
+_SETTINGS_CACHE: dict[int, tuple[float, dict[str, str]]] = {}
+_SETTINGS_CACHE_LOCK = threading.Lock()
 
 
 def _env(key: str) -> str | None:
@@ -16,21 +22,60 @@ def _env(key: str) -> str | None:
     return value or None
 
 
-def _db_setting(db: Session | None, club_id: int | None, key: str) -> str | None:
+def _db_settings_map(db: Session | None, club_id: int | None) -> dict[str, str]:
     if db is None:
-        return None
+        return {}
     if not club_id:
-        return None
+        return {}
+
+    cid = int(club_id)
+    now = time.monotonic()
+    with _SETTINGS_CACHE_LOCK:
+        cached = _SETTINGS_CACHE.get(cid)
+        if cached and (now - cached[0]) <= _CACHE_TTL_SECONDS:
+            return dict(cached[1])
+
     try:
         from app.models import ClubSetting
 
-        row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
-        if not row:
-            return None
-        value = str(row.value or "").strip()
-        return value or None
+        rows = db.query(ClubSetting).filter(ClubSetting.club_id == cid).all()
+        values: dict[str, str] = {}
+        for row in rows:
+            key = str(getattr(row, "key", "") or "").strip()
+            if not key:
+                continue
+            value = str(getattr(row, "value", "") or "").strip()
+            if value:
+                values[key] = value
+
+        with _SETTINGS_CACHE_LOCK:
+            _SETTINGS_CACHE[cid] = (now, values)
+        return dict(values)
     except Exception:
+        return {}
+
+
+def _db_setting(db: Session | None, club_id: int | None, key: str) -> str | None:
+    value = _db_settings_map(db, club_id).get(str(key or "").strip())
+    if value is None:
         return None
+    out = str(value or "").strip()
+    return out or None
+
+
+def get_club_settings_map(db: Session | None, club_id: int | None) -> dict[str, str]:
+    return _db_settings_map(db, club_id)
+
+
+def invalidate_club_config_cache(club_id: int | None = None) -> None:
+    with _SETTINGS_CACHE_LOCK:
+        if club_id is None:
+            _SETTINGS_CACHE.clear()
+            return
+        try:
+            _SETTINGS_CACHE.pop(int(club_id), None)
+        except Exception:
+            pass
 
 
 def _parse_list(value: str | None) -> list[str]:
@@ -114,41 +159,46 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
     - safe defaults
     """
 
-    club_name = (
-        _db_setting(db, club_id, "club_name")
-        or _env("CLUB_NAME")
-        or "GreenLink"
-    )
-    club_slug = _db_setting(db, club_id, "club_slug") or _env("CLUB_SLUG")
+    settings = _db_settings_map(db, club_id)
+
+    def _s(key: str) -> str | None:
+        value = settings.get(key)
+        if value is None:
+            return None
+        text = str(value or "").strip()
+        return text or None
+
+    club_name = _s("club_name") or _env("CLUB_NAME") or "GreenLink"
+    club_slug = _s("club_slug") or _env("CLUB_SLUG")
 
     logo_url = (
-        _db_setting(db, club_id, "club_logo_url")
+        _s("club_logo_url")
         or _env("CLUB_LOGO_URL")
         or "/frontend/assets/logo.png"
     )
     currency_symbol = (
-        _db_setting(db, club_id, "club_currency_symbol")
+        _s("club_currency_symbol")
         or _env("CLUB_CURRENCY_SYMBOL")
         or "R"
     )
 
     member_label = (
-        _db_setting(db, club_id, "club_member_label")
+        _s("club_member_label")
         or _env("CLUB_MEMBER_LABEL")
         or "Member"
     )
     visitor_label = (
-        _db_setting(db, club_id, "club_visitor_label")
+        _s("club_visitor_label")
         or _env("CLUB_VISITOR_LABEL")
         or "Affiliated Visitor"
     )
     non_affiliated_label = (
-        _db_setting(db, club_id, "club_non_affiliated_label")
+        _s("club_non_affiliated_label")
         or _env("CLUB_NON_AFFILIATED_LABEL")
         or "Visitor (No HNA)"
     )
 
-    home_keywords_raw = _db_setting(db, club_id, "club_home_club_keywords") or _env("CLUB_HOME_CLUB_KEYWORDS")
+    home_keywords_raw = _s("club_home_club_keywords") or _env("CLUB_HOME_CLUB_KEYWORDS")
     home_keywords = _norm_keywords(_parse_list(home_keywords_raw))
     if not home_keywords:
         # Best-effort fallback using club name/slug so "Member" signups work out-of-the-box.
@@ -158,7 +208,7 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
         derived.append(club_name)
         home_keywords = _norm_keywords(derived)
 
-    suggested_raw = _db_setting(db, club_id, "club_suggested_home_clubs") or _env("CLUB_SUGGESTED_HOME_CLUBS")
+    suggested_raw = _s("club_suggested_home_clubs") or _env("CLUB_SUGGESTED_HOME_CLUBS")
     suggested_home_clubs = _parse_list(suggested_raw)
 
     return ClubConfig(

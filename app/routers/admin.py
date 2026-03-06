@@ -10,13 +10,14 @@ import uuid
 import json
 import requests
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import String, asc, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Any, Optional
 from app import crud
+from app.audit import record_audit_event
 from app.models import (
     User,
     Booking,
@@ -35,13 +36,17 @@ from app.models import (
     ProShopSale,
     ProShopSaleItem,
     PlayerNotification,
+    AuditLog,
 )
 from app.fee_models import FeeCategory, FeeType
 from app.auth import get_current_user, get_db, get_password_hash
+from app.observability import log_event
+from app.password_policy import assert_password_policy
 from calendar import isleap
-from app.club_config import club_config_response
+from app.club_config import club_config_response, invalidate_club_config_cache
 from app.tee_profile import load_tee_sheet_profile, save_tee_sheet_profile, tee_sheet_plan_for_date
 from app.tenancy import get_active_club_id
+from app.ttl_cache import TTLCache
 from app.weather_alerts import (
     build_weather_booking_candidates,
     build_weather_prompt_payload,
@@ -53,6 +58,48 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(get_active_club_id)],
 )
+
+ADMIN_DASHBOARD_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=64)
+ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
+
+
+def _request_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    return str(getattr(getattr(request, "state", None), "request_id", "") or "").strip() or None
+
+
+def _invalidate_admin_caches(club_id: int | None = None) -> None:
+    if club_id is not None and int(club_id) > 0:
+        ADMIN_DASHBOARD_CACHE.delete(f"dashboard:{int(club_id)}")
+        ADMIN_ALERTS_CACHE.clear()
+        log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=int(club_id))
+        return
+    ADMIN_DASHBOARD_CACHE.clear()
+    ADMIN_ALERTS_CACHE.clear()
+    log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
+
+
+def _audit_event(
+    db: Session,
+    request: Request | None,
+    actor: User | None,
+    action: str,
+    entity_type: str,
+    *,
+    entity_id: str | int | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type=entity_type,
+        actor_user_id=(int(actor.id) if actor and getattr(actor, "id", None) else None),
+        entity_id=entity_id,
+        payload=payload,
+        request_id=_request_id(request),
+        club_id=int(getattr(db, "info", {}).get("club_id") or 0) or None,
+    )
 
 
 def _safe_rollback(db: Session | None) -> None:
@@ -225,6 +272,7 @@ def _upsert_setting(db: Session, key: str, value: int | float | str) -> None:
         row.updated_at = datetime.utcnow()
     else:
         db.add(ClubSetting(club_id=int(club_id), key=key, value=str(value)))
+    invalidate_club_config_cache(int(club_id))
 
 
 def _normalize_revenue_stream(raw: str | None) -> str:
@@ -1022,7 +1070,11 @@ async def get_dashboard_stats(
     club_id: int = Depends(get_active_club_id),
 ):
     """Get main dashboard statistics"""
-    
+    cache_key = f"dashboard:{int(club_id)}"
+    cached = ADMIN_DASHBOARD_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
 
     # Total bookings
@@ -2510,7 +2562,7 @@ async def get_dashboard_stats(
             "rounds_target": _derive_target(annual_rounds_target, year, elapsed_days),
         }
 
-    return {
+    payload = {
         "total_bookings": total_bookings,
         "total_players": total_players,
         "total_members": total_members,
@@ -2552,6 +2604,229 @@ async def get_dashboard_stats(
         "periods": kpis,
     },
     }
+    ADMIN_DASHBOARD_CACHE.set(cache_key, payload)
+    return payload
+
+
+@router.get("/operational-alerts")
+async def get_operational_alerts(
+    lookahead_days: int = Query(7, ge=1, le=14),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    safe_days = max(1, min(14, int(lookahead_days or 7)))
+    cache_key = f"alerts:{int(club_id)}:{safe_days}"
+    cached = ADMIN_ALERTS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    now = datetime.utcnow()
+    start_of_today = datetime.combine(now.date(), datetime.min.time())
+    lookahead_end = now + timedelta(days=safe_days)
+    severity_weight = {"high": 3, "medium": 2, "low": 1}
+    alerts: list[dict[str, Any]] = []
+
+    def _add_alert(
+        *,
+        severity: str,
+        title: str,
+        message: str,
+        metric_key: str,
+        metric_value: int | float,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        level = str(severity or "").strip().lower()
+        if level not in {"high", "medium", "low"}:
+            level = "low"
+        alerts.append(
+            {
+                "severity": level,
+                "title": str(title or "").strip() or "Operational alert",
+                "message": str(message or "").strip() or "Attention required",
+                "metric_key": str(metric_key or "").strip() or "metric",
+                "metric_value": metric_value,
+                "context": context or {},
+            }
+        )
+
+    def _hours_old(value: datetime | None) -> float | None:
+        if not isinstance(value, datetime):
+            return None
+        return max(0.0, (now - value).total_seconds() / 3600.0)
+
+    last_booking_import = (
+        db.query(ImportBatch.imported_at)
+        .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "bookings")
+        .order_by(desc(ImportBatch.imported_at))
+        .first()
+    )
+    last_revenue_import = (
+        db.query(ImportBatch.imported_at)
+        .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "revenue")
+        .order_by(desc(ImportBatch.imported_at))
+        .first()
+    )
+
+    booking_import_dt = last_booking_import[0] if last_booking_import else None
+    revenue_import_dt = last_revenue_import[0] if last_revenue_import else None
+    booking_import_hours = _hours_old(booking_import_dt)
+    revenue_import_hours = _hours_old(revenue_import_dt)
+
+    if booking_import_dt is None:
+        _add_alert(
+            severity="high",
+            title="Bookings import missing",
+            message="No bookings mirror import has been recorded for this club.",
+            metric_key="bookings_import_hours",
+            metric_value=-1,
+        )
+    elif booking_import_hours is not None and booking_import_hours > 24:
+        _add_alert(
+            severity="medium",
+            title="Bookings import stale",
+            message="Bookings import is older than 24 hours. Sync latest upstream sheet.",
+            metric_key="bookings_import_hours",
+            metric_value=round(float(booking_import_hours), 1),
+        )
+
+    if revenue_import_dt is None:
+        _add_alert(
+            severity="medium",
+            title="Revenue import missing",
+            message="No revenue import has been recorded for this club.",
+            metric_key="revenue_import_hours",
+            metric_value=-1,
+        )
+    elif revenue_import_hours is not None and revenue_import_hours > 24:
+        _add_alert(
+            severity="medium",
+            title="Revenue import stale",
+            message="Revenue import is older than 24 hours. Upload the latest operational revenues.",
+            metric_key="revenue_import_hours",
+            metric_value=round(float(revenue_import_hours), 1),
+        )
+
+    occupying_statuses = [BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed]
+    capacity_conflicts = (
+        db.query(func.count(Booking.id))
+        .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+        .filter(
+            Booking.club_id == club_id,
+            Booking.capacity_conflict == True,  # noqa: E712
+            Booking.status.in_(occupying_statuses),
+            TeeTime.tee_time >= now,
+            TeeTime.tee_time < lookahead_end,
+        )
+        .scalar()
+        or 0
+    )
+    if int(capacity_conflicts) > 0:
+        _add_alert(
+            severity="high",
+            title="Capacity conflicts detected",
+            message=f"{int(capacity_conflicts)} booking(s) exceed tee capacity in the next {safe_days} day(s).",
+            metric_key="capacity_conflicts",
+            metric_value=int(capacity_conflicts),
+            context={"lookahead_days": safe_days},
+        )
+
+    unresolved_weather = (
+        db.query(func.count(PlayerNotification.id))
+        .filter(
+            PlayerNotification.club_id == club_id,
+            PlayerNotification.kind == "weather_reconfirm",
+            PlayerNotification.requires_action == 1,
+            PlayerNotification.response.is_(None),
+            PlayerNotification.created_at >= (now - timedelta(days=2)),
+        )
+        .scalar()
+        or 0
+    )
+    if int(unresolved_weather) > 0:
+        _add_alert(
+            severity="medium",
+            title="Weather reconfirm responses pending",
+            message=f"{int(unresolved_weather)} weather prompt(s) still need player response.",
+            metric_key="pending_weather_responses",
+            metric_value=int(unresolved_weather),
+        )
+
+    stale_unexported_ledger = (
+        db.query(func.count(LedgerEntry.id))
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+            or_(LedgerEntry.pastel_synced == 0, LedgerEntry.pastel_synced.is_(None)),
+            LedgerEntry.created_at < start_of_today,
+        )
+        .scalar()
+        or 0
+    )
+    if int(stale_unexported_ledger) > 0:
+        _add_alert(
+            severity="medium",
+            title="Cashbook export backlog",
+            message=f"{int(stale_unexported_ledger)} paid ledger entries are still not exported.",
+            metric_key="stale_unexported_ledger",
+            metric_value=int(stale_unexported_ledger),
+        )
+
+    low_stock_count = (
+        db.query(func.count(ProShopProduct.id))
+        .filter(
+            ProShopProduct.club_id == club_id,
+            ProShopProduct.active == 1,
+            ProShopProduct.reorder_level > 0,
+            ProShopProduct.stock_qty <= ProShopProduct.reorder_level,
+        )
+        .scalar()
+        or 0
+    )
+    out_of_stock_count = (
+        db.query(func.count(ProShopProduct.id))
+        .filter(
+            ProShopProduct.club_id == club_id,
+            ProShopProduct.active == 1,
+            ProShopProduct.stock_qty <= 0,
+        )
+        .scalar()
+        or 0
+    )
+    if int(low_stock_count) > 0:
+        _add_alert(
+            severity="high" if int(out_of_stock_count) > 0 else "low",
+            title="Pro shop stock risk",
+            message=(
+                f"{int(low_stock_count)} product(s) are at or below reorder level, "
+                f"including {int(out_of_stock_count)} out of stock."
+            ),
+            metric_key="low_stock_products",
+            metric_value=int(low_stock_count),
+            context={"out_of_stock": int(out_of_stock_count)},
+        )
+
+    alerts.sort(
+        key=lambda row: (
+            -int(severity_weight.get(str(row.get("severity", "low")), 1)),
+            str(row.get("title", "")),
+        )
+    )
+
+    summary = {
+        "total": len(alerts),
+        "high": sum(1 for row in alerts if str(row.get("severity")) == "high"),
+        "medium": sum(1 for row in alerts if str(row.get("severity")) == "medium"),
+        "low": sum(1 for row in alerts if str(row.get("severity")) == "low"),
+    }
+    payload = {
+        "generated_at": now.isoformat(),
+        "lookahead_days": int(safe_days),
+        "summary": summary,
+        "alerts": alerts,
+    }
+    ADMIN_ALERTS_CACHE.set(cache_key, payload)
+    return payload
 
 
 class KpiTargetUpsert(BaseModel):
@@ -2563,6 +2838,7 @@ class KpiTargetUpsert(BaseModel):
 @router.put("/targets")
 async def upsert_kpi_target(
     payload: KpiTargetUpsert,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
 ):
@@ -2576,16 +2852,43 @@ async def upsert_kpi_target(
 
     from app.models import KpiTarget
 
-    row = db.query(KpiTarget).filter(KpiTarget.year == payload.year, KpiTarget.metric == metric).first()
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if club_id <= 0:
+        raise HTTPException(status_code=400, detail="club_id is required")
+
+    row = (
+        db.query(KpiTarget)
+        .filter(
+            KpiTarget.club_id == club_id,
+            KpiTarget.year == payload.year,
+            KpiTarget.metric == metric,
+        )
+        .first()
+    )
     if not row:
-        row = KpiTarget(year=payload.year, metric=metric, annual_target=float(payload.annual_target))
+        row = KpiTarget(
+            club_id=club_id,
+            year=payload.year,
+            metric=metric,
+            annual_target=float(payload.annual_target),
+        )
         db.add(row)
     else:
         row.annual_target = float(payload.annual_target)
         row.updated_at = datetime.utcnow()
 
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="kpi_target.upserted",
+        entity_type="kpi_target",
+        entity_id=f"{row.year}:{row.metric}",
+        payload={"year": int(row.year), "metric": str(row.metric), "annual_target": float(row.annual_target)},
+    )
     db.commit()
     db.refresh(row)
+    _invalidate_admin_caches(club_id)
 
     return {"status": "ok", "year": row.year, "metric": row.metric, "annual_target": float(row.annual_target)}
 
@@ -2595,6 +2898,7 @@ async def get_all_bookings(
     skip: int = 0,
     limit: int = 50,
     status: str = None,
+    q: Optional[str] = None,
     sort: Optional[str] = None,  # created_desc | created_asc | tee_asc | tee_desc
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
@@ -2614,6 +2918,21 @@ async def get_all_bookings(
     
     if status:
         query = query.filter(Booking.status == status)
+    if q:
+        needle = str(q).strip().lower()
+        like = f"%{needle}%"
+        filters = [
+            func.lower(Booking.player_name).like(like),
+            func.lower(Booking.player_email).like(like),
+            func.lower(Booking.club_card).like(like),
+            func.lower(Booking.external_provider).like(like),
+            func.lower(Booking.external_booking_id).like(like),
+            func.lower(Booking.external_row_id).like(like),
+            func.lower(Booking.notes).like(like),
+        ]
+        if needle.isdigit():
+            filters.append(cast(Booking.id, String).like(f"%{needle}%"))
+        query = query.filter(or_(*filters))
 
     basis = str(date_basis or "tee_time").strip().lower()
     if basis not in {"tee_time", "created"}:
@@ -2817,6 +3136,7 @@ class BookingBatchUpdate(BaseModel):
 async def update_booking_status(
     booking_id: int,
     payload: BookingStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff)
 ):
@@ -2836,6 +3156,7 @@ async def update_booking_status(
     if payload.status == BookingStatus.cancelled.value:
         _enforce_group_cancel_window(db, booking, staff)
 
+    previous_status = str(getattr(booking.status, "value", booking.status) or "")
     booking.status = BookingStatus(payload.status)
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
 
@@ -2848,8 +3169,23 @@ async def update_booking_status(
             db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
         db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete(synchronize_session=False)
 
+    _audit_event(
+        db,
+        request,
+        staff,
+        action="booking.status_updated",
+        entity_type="booking",
+        entity_id=booking.id,
+        payload={
+            "booking_id": int(booking.id),
+            "from_status": previous_status,
+            "to_status": str(payload.status),
+            "payment_method": (payload.payment_method or None),
+        },
+    )
     db.commit()
     db.refresh(booking)
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
 
     return {
         "status": "success",
@@ -2861,6 +3197,7 @@ async def update_booking_status(
 @router.delete("/bookings/{booking_id}")
 async def delete_booking(
     booking_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
@@ -2882,8 +3219,26 @@ async def delete_booking(
     db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).delete(synchronize_session=False)
     db.query(Round).filter(Round.booking_id == booking_id).delete()
 
+    booking_snapshot = {
+        "booking_id": int(booking.id),
+        "player_name": str(getattr(booking, "player_name", "") or ""),
+        "player_email": str(getattr(booking, "player_email", "") or ""),
+        "status": str(getattr(getattr(booking, "status", None), "value", booking.status) or ""),
+        "tee_time_id": int(getattr(booking, "tee_time_id", 0) or 0),
+    }
+
     db.delete(booking)
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="booking.deleted",
+        entity_type="booking",
+        entity_id=booking_id,
+        payload=booking_snapshot,
+    )
     db.commit()
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
 
     return {"status": "success", "booking_id": booking_id}
 
@@ -2892,6 +3247,7 @@ async def delete_booking(
 async def update_booking_payment_method(
     booking_id: int,
     payload: BookingPaymentMethodUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -2919,7 +3275,17 @@ async def update_booking_payment_method(
     else:
         db.add(LedgerEntryMeta(ledger_entry_id=ledger_entry.id, payment_method=method))
 
+    _audit_event(
+        db,
+        request,
+        staff,
+        action="booking.payment_method_updated",
+        entity_type="booking",
+        entity_id=booking_id,
+        payload={"booking_id": int(booking_id), "ledger_entry_id": int(ledger_entry.id), "payment_method": method},
+    )
     db.commit()
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
     return {"status": "success", "booking_id": booking_id, "ledger_entry_id": ledger_entry.id, "payment_method": method}
 
 
@@ -2927,6 +3293,7 @@ async def update_booking_payment_method(
 async def update_booking_account_code(
     booking_id: int,
     payload: BookingAccountCodeUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -2939,13 +3306,24 @@ async def update_booking_account_code(
 
     code = str(payload.account_code or "").strip()
     booking.club_card = code or None
+    _audit_event(
+        db,
+        request,
+        staff,
+        action="booking.account_code_updated",
+        entity_type="booking",
+        entity_id=booking_id,
+        payload={"booking_id": int(booking_id), "account_code": booking.club_card},
+    )
     db.commit()
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
     return {"status": "success", "booking_id": booking_id, "account_code": booking.club_card}
 
 
 @router.put("/bookings/batch-update")
 async def batch_update_bookings(
     payload: BookingBatchUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -3043,7 +3421,24 @@ async def batch_update_bookings(
     if not requested_status and not payment_method and not apply_account_code:
         raise HTTPException(status_code=400, detail="No updates requested. Set status, payment_method, or account_code.")
 
+    _audit_event(
+        db,
+        request,
+        staff,
+        action="booking.batch_updated",
+        entity_type="booking",
+        payload={
+            "booking_ids": updated_ids,
+            "count": len(updated_ids),
+            "status": requested_status.value if requested_status else None,
+            "payment_method": payment_method or None,
+            "account_code": account_code or None,
+            "ledger_updates": int(ledger_updated),
+            "account_updates": int(account_updated),
+        },
+    )
     db.commit()
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
     return {
         "status": "success",
         "updated": len(updated_ids),
@@ -3798,6 +4193,7 @@ async def create_staff_user_for_club(
         existing.name = name
         existing.role = role
         if payload.password:
+            assert_password_policy(payload.password, field_name="password")
             existing.password = get_password_hash(payload.password)
         db.commit()
         db.refresh(existing)
@@ -3805,6 +4201,7 @@ async def create_staff_user_for_club(
 
     if not payload.password:
         raise HTTPException(status_code=400, detail="password is required for new staff users")
+    assert_password_policy(payload.password, field_name="password")
 
     u = User(
         name=name,
@@ -3846,6 +4243,7 @@ async def update_staff_user_for_club(
     # Do not allow role changes beyond club_staff here.
     user.role = _parse_staff_role_for_club_admin(payload.role)
     if payload.password:
+        assert_password_policy(payload.password, field_name="password")
         user.password = get_password_hash(payload.password)
 
     # email changes are risky (linking + auth); disallow in club admin UI for now.
@@ -4211,6 +4609,7 @@ async def list_pro_shop_sales(
 @router.post("/pro-shop/sales")
 async def create_pro_shop_sale(
     payload: ProShopSaleCreatePayload,
+    request: Request,
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
     club_id: int = Depends(get_active_club_id),
@@ -4318,7 +4717,26 @@ async def create_pro_shop_sale(
             )
         )
 
+        _audit_event(
+            db,
+            request,
+            staff,
+            action="pro_shop.sale_created",
+            entity_type="pro_shop_sale",
+            entity_id=int(sale.id),
+            payload={
+                "sale_id": int(sale.id),
+                "club_id": int(club_id),
+                "item_count": len(line_items),
+                "payment_method": payment_method,
+                "subtotal": float(subtotal),
+                "discount": float(discount),
+                "tax": float(tax),
+                "total": float(total),
+            },
+        )
         db.commit()
+        _invalidate_admin_caches(int(club_id))
     except HTTPException:
         db.rollback()
         raise
@@ -4623,6 +5041,76 @@ async def get_ledger_entries(
             for le in entries
         ]
     }
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    skip: int = 0,
+    limit: int = 100,
+    action: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    query = db.query(AuditLog)
+    if action:
+        query = query.filter(func.lower(AuditLog.action) == str(action).strip().lower())
+    if entity_type:
+        query = query.filter(func.lower(AuditLog.entity_type) == str(entity_type).strip().lower())
+    if actor_user_id is not None and int(actor_user_id) > 0:
+        query = query.filter(AuditLog.actor_user_id == int(actor_user_id))
+    if start is not None:
+        query = query.filter(AuditLog.created_at >= start)
+    if end is not None:
+        query = query.filter(AuditLog.created_at < end)
+    if q:
+        needle = str(q).strip().lower()
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                func.lower(AuditLog.entity_id).like(like),
+                func.lower(AuditLog.request_id).like(like),
+                func.lower(AuditLog.payload_json).like(like),
+            )
+        )
+
+    total = query.count()
+    rows = query.order_by(desc(AuditLog.created_at), desc(AuditLog.id)).offset(skip).limit(limit).all()
+
+    actor_ids = {
+        int(getattr(row, "actor_user_id", 0) or 0)
+        for row in rows
+        if getattr(row, "actor_user_id", None) is not None
+    }
+    actor_names: dict[int, str] = {}
+    if actor_ids:
+        for user in db.query(User).filter(User.id.in_(list(actor_ids))).all():
+            actor_names[int(user.id)] = str(getattr(user, "name", "") or "").strip() or str(getattr(user, "email", "") or "")
+
+    items = []
+    for row in rows:
+        actor_id_raw = getattr(row, "actor_user_id", None)
+        actor_id = int(actor_id_raw) if actor_id_raw is not None else None
+        items.append(
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "club_id": int(getattr(row, "club_id", 0) or 0) if getattr(row, "club_id", None) is not None else None,
+                "actor_user_id": actor_id,
+                "actor_name": actor_names.get(actor_id or 0) if actor_id is not None else None,
+                "action": str(getattr(row, "action", "") or ""),
+                "entity_type": str(getattr(row, "entity_type", "") or ""),
+                "entity_id": str(getattr(row, "entity_id", "") or "") or None,
+                "request_id": str(getattr(row, "request_id", "") or "") or None,
+                "payload_json": str(getattr(row, "payload_json", "") or "") or None,
+                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+            }
+        )
+
+    return {"total": int(total or 0), "items": items}
 
 
 @router.get("/summary")

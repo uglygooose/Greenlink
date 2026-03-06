@@ -18,11 +18,11 @@
         <div class="header-card fade-in-slow">
             <img src="assets/logo.png" alt="Club Logo" class="logo" data-club-logo />
             <h1>Score Entry</h1>
-            <p>Enter your scorecard</p>
+            <p>Enter a completed scorecard</p>
         </div>
 
         <div class="card fade-in">
-            <h2>Select Your Booking</h2>
+            <h2>Select Booking</h2>
             <input type="number" id="bookingId" placeholder="Enter Booking ID" />
             <button onclick="loadRound()">Load Scorecard</button>
         </div>
@@ -54,84 +54,118 @@
                 </div>
 
                 <button onclick="submitScores()" style="font-size: 18px; padding: 15px;">
-                    ✓ Submit Scorecard
+                    Submit Scorecard
                 </button>
             </div>
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
-            <button onclick="goBack()" style="background: #666;">← Back to Dashboard</button>
+            <button onclick="goBack()" style="background: #666;">Back to Dashboard</button>
         </div>
     </div>
 
     <script>
-        const token = localStorage.getItem('token');
-        if (!token) window.location.href = '/frontend/index.html';
+        const token = localStorage.getItem("token");
+        if (!token) window.location.href = "/frontend/index.html";
 
+        const API_BASE = window.location.origin;
         let currentBooking = null;
         let currentRound = null;
 
-        // Standard par for 18 holes (can be customized)
+        // Standard par setup (customize per club if needed).
         const parValues = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 3, 5, 4, 4];
 
+        async function apiRequest(path, options = {}) {
+            const headers = new Headers(options.headers || {});
+            headers.set("Authorization", `Bearer ${token}`);
+            if (options.body != null && !headers.has("Content-Type")) {
+                headers.set("Content-Type", "application/json");
+            }
+
+            const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+            const raw = await response.text();
+            let data = null;
+            try {
+                data = raw ? JSON.parse(raw) : null;
+            } catch {
+                data = null;
+            }
+
+            if (!response.ok) {
+                const detail = data?.detail || raw || `Request failed (${response.status})`;
+                throw new Error(String(detail));
+            }
+            return data;
+        }
+
+        async function loadBookingDetail(bookingId) {
+            const id = Number(bookingId || 0);
+            if (id <= 0) throw new Error("Enter a valid booking ID.");
+
+            try {
+                return await apiRequest(`/api/admin/bookings/${id}`);
+            } catch (error) {
+                // Fallback for environments where admin endpoints are unavailable.
+                const response = await apiRequest("/scoring/my-bookings?days=180&include_past=true");
+                const rows = Array.isArray(response?.bookings) ? response.bookings : [];
+                const row = rows.find((item) => Number(item?.booking_id || 0) === id);
+                if (!row) throw error;
+                return {
+                    id: Number(row.booking_id || 0),
+                    player_name: row.player_name || "Unknown player",
+                    status: row.status || "booked",
+                    round: row.round || null,
+                };
+            }
+        }
+
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = String(value ?? "");
+        }
+
         async function loadRound() {
-            const bookingId = document.getElementById('bookingId').value;
-            if (!bookingId) {
-                alert('Please enter a booking ID');
+            const bookingId = Number(document.getElementById("bookingId").value || 0);
+            if (bookingId <= 0) {
+                alert("Please enter a valid booking ID.");
                 return;
             }
 
-            // Fetch booking details (we'll need to create an endpoint or fetch from tee times)
-            const res = await fetch('/tsheet/', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
+            try {
+                const booking = await loadBookingDetail(bookingId);
+                const status = String(booking?.status || "").toLowerCase();
+                if (!["checked_in", "completed", "booked"].includes(status)) {
+                    alert(`Booking status '${status || "unknown"}' cannot be scored.`);
+                    return;
+                }
 
-            const teeTimes = await res.json();
-            let foundBooking = null;
-
-            for (const tt of teeTimes) {
-                const bookingsRes = await fetch(`/tsheet/bookings/${tt.id}`, {
-                    headers: { 'Authorization': 'Bearer ' + token }
-                });
-                const bookings = await bookingsRes.json();
-                foundBooking = bookings.find(b => b.id === parseInt(bookingId));
-                if (foundBooking) break;
+                currentBooking = booking;
+                currentRound = booking?.round || null;
+                displayScorecard();
+            } catch (error) {
+                alert(`Unable to load booking: ${error?.message || "Unknown error"}`);
             }
-
-            if (!foundBooking) {
-                alert('Booking not found');
-                return;
-            }
-
-            if (foundBooking.status !== 'checked_in' && foundBooking.status !== 'completed') {
-                alert('Player must be checked in before entering scores');
-                return;
-            }
-
-            currentBooking = foundBooking;
-            displayScorecard();
         }
 
         function displayScorecard() {
-            document.getElementById('scorecardSection').style.display = 'block';
-            document.getElementById('playerName').textContent = currentBooking.player_name;
-            document.getElementById('displayBookingId').textContent = currentBooking.id;
-            document.getElementById('roundId').textContent = 'Pending...';
+            document.getElementById("scorecardSection").style.display = "block";
+            setText("playerName", currentBooking?.player_name || "Unknown player");
+            setText("displayBookingId", currentBooking?.id || "");
+            setText("roundId", currentRound?.id || currentRound?.handicap_sa_round_id || "Pending");
 
-            const table = document.getElementById('scorecardTable');
-            let rows = '';
-
-            for (let i = 1; i <= 18; i++) {
+            const table = document.getElementById("scorecardTable");
+            let rows = "";
+            for (let hole = 1; hole <= 18; hole += 1) {
                 rows += `
                     <tr>
-                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center; font-weight: 600;">${i}</td>
-                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${parValues[i-1]}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center; font-weight: 600;">${hole}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${parValues[hole - 1]}</td>
                         <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">
-                            <input 
-                                type="number" 
-                                id="score_${i}" 
-                                min="1" 
-                                max="15" 
+                            <input
+                                type="number"
+                                id="score_${hole}"
+                                min="1"
+                                max="15"
                                 style="width: 60px; text-align: center; padding: 5px;"
                                 onchange="calculateTotal()"
                             />
@@ -139,61 +173,60 @@
                     </tr>
                 `;
             }
-
             table.innerHTML = rows;
+            calculateTotal();
         }
 
         function calculateTotal() {
             let total = 0;
-            for (let i = 1; i <= 18; i++) {
-                const score = parseInt(document.getElementById(`score_${i}`).value) || 0;
-                total += score;
+            for (let hole = 1; hole <= 18; hole += 1) {
+                const score = Number(document.getElementById(`score_${hole}`)?.value || 0);
+                if (Number.isFinite(score)) total += score;
             }
-            document.getElementById('totalScore').textContent = total;
+            setText("totalScore", total);
         }
 
         async function submitScores() {
-            // Collect all scores
-            const scores = [];
-            for (let i = 1; i <= 18; i++) {
-                const score = parseInt(document.getElementById(`score_${i}`).value);
-                if (!score || score < 1) {
-                    alert(`Please enter a valid score for hole ${i}`);
-                    return;
-                }
-                scores.push({ hole: i, par: parValues[i-1], score: score });
+            if (!currentBooking?.id) {
+                alert("Load a booking first.");
+                return;
             }
 
-            const scoresJson = JSON.stringify(scores);
+            const scores = [];
+            for (let hole = 1; hole <= 18; hole += 1) {
+                const value = Number(document.getElementById(`score_${hole}`)?.value || 0);
+                if (!Number.isInteger(value) || value < 1) {
+                    alert(`Please enter a valid score for hole ${hole}.`);
+                    return;
+                }
+                scores.push({ hole, par: parValues[hole - 1], score: value });
+            }
 
-            const res = await fetch('/scoring/submit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({
-                    booking_id: currentBooking.id,
-                    scores_json: scoresJson
-                })
-            });
+            try {
+                const payload = {
+                    booking_id: Number(currentBooking.id),
+                    scores_json: JSON.stringify(scores),
+                };
+                const data = await apiRequest("/scoring/submit", {
+                    method: "POST",
+                    body: JSON.stringify(payload),
+                });
+                const total = scores.reduce((sum, item) => sum + item.score, 0);
+                alert(
+                    `Scores submitted successfully.\n\nTotal: ${total}\nRound ID: ${data?.round_id || "N/A"}`
+                );
 
-            if (res.ok) {
-                const data = await res.json();
-                const total = scores.reduce((sum, s) => sum + s.score, 0);
-                alert(`✓ Scores submitted successfully!\n\nTotal: ${total}\nRound closed and synced to Handicap SA`);
-                
-                // Clear form
-                document.getElementById('bookingId').value = '';
-                document.getElementById('scorecardSection').style.display = 'none';
+                document.getElementById("bookingId").value = "";
+                document.getElementById("scorecardSection").style.display = "none";
                 currentBooking = null;
-            } else {
-                alert('Error submitting scores. Please try again.');
+                currentRound = null;
+            } catch (error) {
+                alert(`Error submitting scores: ${error?.message || "Please try again."}`);
             }
         }
 
         function goBack() {
-            window.location.href = '/frontend/dashboard.html';
+            window.location.href = "/frontend/dashboard.html";
         }
     </script>
 </body>
