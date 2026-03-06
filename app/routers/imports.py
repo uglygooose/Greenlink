@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import io
 import json
 import re
 from datetime import date, datetime
@@ -34,6 +33,7 @@ from app.models import (
     UserRole,
 )
 from app.people import classify_membership_group, normalize_membership_status, parse_membership_date, sync_member_person
+from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
 
@@ -88,105 +88,32 @@ def _audit_import_event(
 
 
 def _norm_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9_]+", "_", (value or "").strip().lower()).strip("_")
+    return imports_service.normalize_key(value)
 
 
 def _row_keys(row: dict[str, Any]) -> dict[str, Any]:
-    return {_norm_key(str(k)): v for k, v in (row or {}).items()}
+    return imports_service.normalize_row_keys(row)
 
 
 def _parse_date(value: Any) -> date | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    # Common formats: YYYY-MM-DD, DD/MM/YYYY, YYYY/MM/DD
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(raw, fmt).date()
-        except Exception:
-            continue
-    # ISO datetime
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-    except Exception:
-        return None
+    return imports_service.parse_import_date(value)
 
 
 def _parse_datetime(value: Any) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    # ISO datetime
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except Exception:
-        pass
-    # Fallback: YYYY-MM-DD HH:MM
-    for fmt in ("%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M", "%d/%m/%Y %H:%M"):
-        try:
-            return datetime.strptime(raw, fmt)
-        except Exception:
-            continue
-    return None
+    return imports_service.parse_import_datetime(value)
 
 
 def _parse_amount(value: Any) -> float | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    neg = False
-    if raw.startswith("(") and raw.endswith(")"):
-        neg = True
-        raw = raw[1:-1]
-    raw = raw.replace("R", "").replace("$", "").replace("£", "").replace("€", "")
-    raw = raw.replace(",", "").strip()
-    try:
-        v = float(raw)
-        return -v if neg else v
-    except Exception:
-        return None
-
+    return imports_service.parse_import_amount(value)
 
 def _sha256_bytes(data: bytes) -> str:
-    h = hashlib.sha256()
-    h.update(data)
-    return h.hexdigest()
-
+    return imports_service.sha256_bytes(data)
 
 def _open_csv_bytes(content: bytes) -> csv.DictReader:
-    # Best-effort decode for CSV exports.
-    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
-        try:
-            text = content.decode(enc)
-            return csv.DictReader(io.StringIO(text))
-        except Exception:
-            continue
-    raise HTTPException(status_code=400, detail="Could not decode CSV file")
+    return imports_service.open_csv_reader(content)
 
 def _norm_stream(value: Any) -> str | None:
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return None
-    # Normalize common synonyms
-    aliases = {
-        "bar": "pub",
-        "restaurant": "pub",
-        "food": "pub",
-        "fnb": "pub",
-        "clubhouse": "pub",
-        "bowling": "bowls",
-        "greens": "bowls",
-        "golfshop": "golf",
-        "proshop": "pro_shop",
-        "pro_shop": "pro_shop",
-        "retail": "pro_shop",
-        "shop": "pro_shop",
-        "greenfee": "golf",
-        "green_fees": "golf",
-        "green fees": "golf",
-    }
-    return aliases.get(raw, raw)
-
+    return imports_service.normalize_revenue_stream(value)
 
 _ALLOWED_REVENUE_STREAMS = {"golf", "pro_shop", "pub", "bowls", "other"}
 

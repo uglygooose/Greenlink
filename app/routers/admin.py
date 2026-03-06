@@ -53,6 +53,19 @@ from app.people import (
     sync_user_person,
 )
 from app.password_policy import assert_password_policy
+from app.services.account_customers_service import (
+    build_account_customers_query,
+    ensure_unique_account_code,
+    resolve_account_customer,
+    serialize_account_customer,
+)
+from app.services.bookings_service import (
+    clear_booking_ledger_entries,
+    get_booking_or_404,
+    normalize_booking_ids,
+    set_booking_payment_method_if_exists,
+    set_booking_payment_method_meta,
+)
 from app.services.payment_methods import (
     normalize_booking_payment_method,
     normalize_pro_shop_payment_method,
@@ -323,24 +336,11 @@ def _account_customer_from_input(
     account_code: str | None = None,
     account_customer_id: int | None = None,
 ) -> AccountCustomer | None:
-    if account_customer_id is not None and int(account_customer_id) > 0:
-        row = (
-            db.query(AccountCustomer)
-            .filter(AccountCustomer.club_id == int(club_id), AccountCustomer.id == int(account_customer_id))
-            .first()
-        )
-        if row:
-            return row
-    code = str(account_code or "").strip()
-    if not code:
-        return None
-    return (
-        db.query(AccountCustomer)
-        .filter(
-            AccountCustomer.club_id == int(club_id),
-            func.lower(AccountCustomer.account_code) == code.lower(),
-        )
-        .first()
+    return resolve_account_customer(
+        db,
+        club_id=int(club_id),
+        account_code=account_code,
+        account_customer_id=account_customer_id,
     )
 
 
@@ -3362,9 +3362,7 @@ async def update_booking_status(
 ):
     """Update booking status (admin quick actions)"""
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+    booking = get_booking_or_404(db, int(booking_id))
 
     if booking.tee_time:
         assert_day_open(db, booking.tee_time.tee_time.date())
@@ -3389,10 +3387,7 @@ async def update_booking_status(
         crud.ensure_paid_ledger_entry(db, booking, payment_method=normalized_payment_method)
     else:
         # If a booking is moved back to an unpaid state, remove its payment record.
-        ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking.id).all()]
-        if ids:
-            db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
-        db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete(synchronize_session=False)
+        clear_booking_ledger_entries(db, booking_id=int(booking.id))
 
     _audit_event(
         db,
@@ -3428,9 +3423,7 @@ async def delete_booking(
 ):
     """Delete a booking and related records (admin only)"""
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+    booking = get_booking_or_404(db, int(booking_id))
 
     _enforce_group_cancel_window(db, booking, admin)
 
@@ -3438,10 +3431,7 @@ async def delete_booking(
         assert_day_open(db, booking.tee_time.tee_time.date())
 
     # Remove related records
-    ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking_id).all()]
-    if ids:
-        db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
-    db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking_id).delete(synchronize_session=False)
+    clear_booking_ledger_entries(db, booking_id=int(booking_id))
     db.query(Round).filter(Round.booking_id == booking_id).delete()
 
     booking_snapshot = {
@@ -3476,31 +3466,12 @@ async def update_booking_payment_method(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    ledger_entry = (
-        db.query(LedgerEntry)
-        .filter(LedgerEntry.booking_id == booking_id)
-        .order_by(desc(LedgerEntry.id))
-        .first()
+    get_booking_or_404(db, int(booking_id))
+    ledger_entry_id, method = set_booking_payment_method_meta(
+        db,
+        booking_id=int(booking_id),
+        payment_method=payload.payment_method,
     )
-    if not ledger_entry:
-        raise HTTPException(status_code=400, detail="Booking has no payment record yet")
-
-    method = normalize_booking_payment_method(
-        payload.payment_method,
-        allow_empty=False,
-        field_name="payment method",
-    )
-
-    meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
-    if meta:
-        meta.payment_method = method
-        meta.updated_at = datetime.utcnow()
-    else:
-        db.add(LedgerEntryMeta(ledger_entry_id=ledger_entry.id, payment_method=method))
 
     _audit_event(
         db,
@@ -3509,11 +3480,11 @@ async def update_booking_payment_method(
         action="booking.payment_method_updated",
         entity_type="booking",
         entity_id=booking_id,
-        payload={"booking_id": int(booking_id), "ledger_entry_id": int(ledger_entry.id), "payment_method": method},
+        payload={"booking_id": int(booking_id), "ledger_entry_id": int(ledger_entry_id), "payment_method": method},
     )
     db.commit()
     _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0))
-    return {"status": "success", "booking_id": booking_id, "ledger_entry_id": ledger_entry.id, "payment_method": method}
+    return {"status": "success", "booking_id": booking_id, "ledger_entry_id": ledger_entry_id, "payment_method": method}
 
 
 @router.put("/bookings/{booking_id}/account-code")
@@ -3524,9 +3495,7 @@ async def update_booking_account_code(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+    booking = get_booking_or_404(db, int(booking_id))
 
     if booking.tee_time:
         assert_day_open(db, booking.tee_time.tee_time.date())
@@ -3536,9 +3505,9 @@ async def update_booking_account_code(
         raise HTTPException(status_code=400, detail="club_id is required")
 
     code = str(payload.account_code or "").strip()
-    matched = _account_customer_from_input(
+    matched = resolve_account_customer(
         db,
-        club_id=club_id,
+        club_id=int(club_id),
         account_code=code or None,
         account_customer_id=payload.account_customer_id,
     )
@@ -3581,18 +3550,7 @@ async def batch_update_bookings(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    raw_ids = payload.booking_ids if isinstance(payload.booking_ids, list) else []
-    booking_ids: list[int] = []
-    seen: set[int] = set()
-    for raw in raw_ids:
-        try:
-            bid = int(raw)
-        except Exception:
-            continue
-        if bid <= 0 or bid in seen:
-            continue
-        seen.add(bid)
-        booking_ids.append(bid)
+    booking_ids = normalize_booking_ids(payload.booking_ids if isinstance(payload.booking_ids, list) else [])
 
     if not booking_ids:
         raise HTTPException(status_code=400, detail="At least one valid booking_id is required")
@@ -3612,7 +3570,7 @@ async def batch_update_bookings(
     )
 
     account_code = str(payload.account_code or "").strip()
-    selected_account_customer = _account_customer_from_input(
+    selected_account_customer = resolve_account_customer(
         db,
         club_id=int(getattr(db, "info", {}).get("club_id") or 0),
         account_code=account_code or None,
@@ -3658,24 +3616,14 @@ async def batch_update_bookings(
                 crud.ensure_paid_ledger_entry(db, booking, payment_method=payment_method or None)
                 ledger_updated += 1
             else:
-                ids = [row[0] for row in db.query(LedgerEntry.id).filter(LedgerEntry.booking_id == booking.id).all()]
-                if ids:
-                    db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(ids)).delete(synchronize_session=False)
-                db.query(LedgerEntry).filter(LedgerEntry.booking_id == booking.id).delete(synchronize_session=False)
+                clear_booking_ledger_entries(db, booking_id=int(booking.id))
         elif payment_method:
-            ledger_entry = (
-                db.query(LedgerEntry)
-                .filter(LedgerEntry.booking_id == booking.id)
-                .order_by(desc(LedgerEntry.id))
-                .first()
+            was_updated, _ledger_entry_id, _normalized = set_booking_payment_method_if_exists(
+                db,
+                booking_id=int(booking.id),
+                payment_method=payment_method,
             )
-            if ledger_entry:
-                meta = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id == ledger_entry.id).first()
-                if meta:
-                    meta.payment_method = payment_method
-                    meta.updated_at = datetime.utcnow()
-                else:
-                    db.add(LedgerEntryMeta(ledger_entry_id=ledger_entry.id, payment_method=payment_method))
+            if was_updated:
                 ledger_updated += 1
 
         if apply_account_code:
@@ -3735,45 +3683,15 @@ async def get_account_customers(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    query = db.query(AccountCustomer)
-    if active_only:
-        query = query.filter(AccountCustomer.active == 1)
-    if q:
-        needle = q.strip().lower()
-        like = f"%{needle}%"
-        query = query.filter(
-            or_(
-                func.lower(AccountCustomer.name).like(like),
-                func.lower(func.coalesce(AccountCustomer.account_code, "")).like(like),
-                func.lower(func.coalesce(AccountCustomer.billing_contact, "")).like(like),
-            )
-        )
-
-    sort_key = str(sort or "name_asc").strip().lower()
-    if sort_key == "name_desc":
-        query = query.order_by(func.lower(AccountCustomer.name).desc(), AccountCustomer.id.desc())
-    elif sort_key == "code_asc":
-        query = query.order_by(func.lower(func.coalesce(AccountCustomer.account_code, "zzz")).asc(), AccountCustomer.name.asc())
-    else:
-        query = query.order_by(AccountCustomer.active.desc(), func.lower(AccountCustomer.name).asc(), AccountCustomer.id.asc())
-
-    rows = query.all()
+    rows = build_account_customers_query(
+        db,
+        q=q,
+        active_only=bool(active_only),
+        sort=sort,
+    ).all()
     return {
         "total": len(rows),
-        "account_customers": [
-            {
-                "id": int(row.id),
-                "name": str(row.name or ""),
-                "account_code": str(row.account_code or "") or None,
-                "billing_contact": str(row.billing_contact or "") or None,
-                "terms": str(row.terms_label or "") or None,
-                "terms_days": int(row.terms_days) if row.terms_days is not None else None,
-                "active": bool(int(row.active or 0) == 1),
-                "notes": str(row.notes or "") or None,
-                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-            }
-            for row in rows
-        ],
+        "account_customers": [serialize_account_customer(row) for row in rows],
     }
 
 
@@ -3789,20 +3707,12 @@ async def create_account_customer(
         raise HTTPException(status_code=400, detail="name is required")
 
     account_code = str(payload.account_code or "").strip() or None
-    if account_code:
-        dup = (
-            db.query(AccountCustomer.id)
-            .filter(
-                AccountCustomer.club_id == int(getattr(db, "info", {}).get("club_id") or 0),
-                func.lower(AccountCustomer.account_code) == account_code.lower(),
-            )
-            .first()
-        )
-        if dup:
-            raise HTTPException(status_code=409, detail="account_code already exists for this club")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    if not ensure_unique_account_code(db, club_id=club_id, account_code=account_code):
+        raise HTTPException(status_code=409, detail="account_code already exists for this club")
 
     row = AccountCustomer(
-        club_id=int(getattr(db, "info", {}).get("club_id") or 0),
+        club_id=club_id,
         name=name,
         account_code=account_code,
         billing_contact=str(payload.billing_contact or "").strip() or None,
@@ -3823,18 +3733,11 @@ async def create_account_customer(
     )
     db.commit()
     db.refresh(row)
+    created_payload = serialize_account_customer(row)
+    created_payload.pop("updated_at", None)
     return {
         "status": "success",
-        "account_customer": {
-            "id": int(row.id),
-            "name": row.name,
-            "account_code": row.account_code,
-            "billing_contact": row.billing_contact,
-            "terms": row.terms_label,
-            "terms_days": row.terms_days,
-            "active": bool(int(row.active or 0) == 1),
-            "notes": row.notes,
-        },
+        "account_customer": created_payload,
     }
 
 
@@ -3854,18 +3757,13 @@ async def update_account_customer(
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     account_code = str(payload.account_code or "").strip() or None
-    if account_code:
-        dup = (
-            db.query(AccountCustomer.id)
-            .filter(
-                AccountCustomer.club_id == row.club_id,
-                func.lower(AccountCustomer.account_code) == account_code.lower(),
-                AccountCustomer.id != row.id,
-            )
-            .first()
-        )
-        if dup:
-            raise HTTPException(status_code=409, detail="account_code already exists for this club")
+    if not ensure_unique_account_code(
+        db,
+        club_id=int(getattr(row, "club_id", 0) or 0),
+        account_code=account_code,
+        exclude_account_customer_id=int(row.id),
+    ):
+        raise HTTPException(status_code=409, detail="account_code already exists for this club")
 
     row.name = name
     row.account_code = account_code

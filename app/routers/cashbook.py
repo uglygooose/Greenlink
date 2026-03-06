@@ -19,6 +19,7 @@ from app.models import Booking, TeeTime, BookingStatus, LedgerEntry, LedgerEntry
 from app.fee_models import FeeCategory
 from app.club_config import invalidate_club_config_cache
 from app.observability import log_event
+from app.services.cashbook_service import build_daily_journal_lines
 from app.tenancy import get_active_club_id
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1519,193 +1520,22 @@ def export_daily_payments_csv(
     if not rows:
         raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
 
-    # Validate payment_method presence.
-    missing_pm = []
-    for le, b, fee_cat, meta in rows:
-        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
-        if not method:
-            missing_pm.append(int(getattr(b, "id", 0) or 0))
-    missing_pm = [bid for bid in missing_pm if bid]
-    if missing_pm:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
-                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE/ACCOUNT) "
-                "or backfill test data locally."
-            )
-        )
-
-    debit_gl = mappings.get("debit_gl") or {}
+    journal = build_daily_journal_lines(
+        rows=rows,
+        settings=settings,
+        mappings=mappings,
+        target_date=target_date,
+        clean_text=_clean_text,
+    )
     vat_output_gl = mappings.get("vat_output_gl")
-
-    # Aggregate gross totals.
-    gross_by_method: dict[str, Decimal] = {}
-    gross_by_account_code: dict[str, Decimal] = {}
-    unassigned_account_booking_ids: list[int] = []
-    gross_by_fee_type: dict[str, Decimal] = {}
-    ledger_entry_ids: list[int] = []
-    booking_ids: list[int] = []
-
-    for le, b, fee_cat, meta in rows:
-        amount = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
-        if amount <= 0:
-            continue
-
-        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
-        fee_type_raw = getattr(fee_cat, "fee_type", None)
-        fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
-
-        gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
-        if method == "ACCOUNT":
-            account_code = str(getattr(b, "club_card", "") or "").strip()
-            if account_code:
-                gross_by_account_code[account_code] = _q2(gross_by_account_code.get(account_code, Decimal("0")) + amount)
-            else:
-                bid = int(getattr(b, "id", 0) or 0)
-                if bid:
-                    unassigned_account_booking_ids.append(bid)
-        gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
-
-        if getattr(le, "id", None):
-            ledger_entry_ids.append(int(le.id))
-        if getattr(b, "id", None):
-            booking_ids.append(int(b.id))
-
-    if not gross_by_method:
-        raise HTTPException(status_code=404, detail=f"No positive-value payments found for {target_date}")
-
-    # Validate debit GL mappings for used methods.
-    used_methods = sorted(gross_by_method.keys())
-    missing_debits = [m for m in used_methods if m != "ACCOUNT" and not str(debit_gl.get(m, "") or "").strip()]
-    account_fallback_gl = str(debit_gl.get("ACCOUNT", "") or "").strip()
-    if "ACCOUNT" in used_methods and not account_fallback_gl and unassigned_account_booking_ids:
-        missing_debits.append("ACCOUNT")
-    if missing_debits:
-        raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
-
-    # VAT calculations (inclusive amounts).
-    # Use transaction-level rounding, then aggregate. This matches the on-screen daily summary
-    # and avoids 0.01 drift from rounding only at the total level.
-    try:
-        rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
-    except Exception:
-        rate = Decimal("0.15")
-    if rate < 0:
-        rate = Decimal("0")
-
-    vat_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
-    net_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
-
-    for le, b, fee_cat, meta in rows:
-        gross = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
-        if gross <= 0:
-            continue
-        fee_type_raw = getattr(fee_cat, "fee_type", None)
-        ft = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
-        if rate > 0:
-            vat = _q2(gross * (rate / (Decimal("1") + rate)))
-        else:
-            vat = Decimal("0.00")
-        net = _q2(gross - vat)
-        vat_by_fee_type[ft] = _q2(vat_by_fee_type.get(ft, Decimal("0.00")) + vat)
-        net_by_fee_type[ft] = _q2(net_by_fee_type.get(ft, Decimal("0.00")) + net)
-
-    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0.00")))
-    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0.00")))
-    gross_total = _q2(sum(gross_by_method.values(), Decimal("0")))
-
-    if _q2(net_total + vat_total) != gross_total:
-        raise HTTPException(status_code=500, detail="VAT split does not balance to gross total after rounding.")
-
-    batch_ref = f"GREENLINK_{target_date.strftime('%Y%m%d')}"
-    batch_desc = _clean_text(f"Daily golf takings {target_date.strftime('%Y-%m-%d')}", max_len=60)
-
-    # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
-    lines: list[dict] = []
-    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
-    ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
-    for method in ordered_methods:
-        if method == "ACCOUNT":
-            continue
-        account = str(debit_gl.get(method) or "").strip()
-        lines.append({
-            "account": account,
-            "debit": gross_by_method[method],
-            "credit": Decimal("0.00"),
-            "ref": _clean_text(method, max_len=20),
-            "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
-        })
-
-    if "ACCOUNT" in gross_by_method:
-        allocated = Decimal("0.00")
-        for account_code in sorted(gross_by_account_code.keys()):
-            amt = _q2(gross_by_account_code.get(account_code, Decimal("0.00")))
-            if amt == 0:
-                continue
-            allocated = _q2(allocated + amt)
-            lines.append({
-                "account": account_code,
-                "debit": amt,
-                "credit": Decimal("0.00"),
-                "ref": _clean_text(f"ACC {account_code}", max_len=20),
-                "desc": _clean_text(f"{batch_desc} ACCOUNT {account_code}", max_len=60),
-            })
-
-        remainder = _q2(gross_by_method.get("ACCOUNT", Decimal("0.00")) - allocated)
-        if remainder != 0:
-            fallback_account = account_fallback_gl
-            if not fallback_account:
-                sample = ", ".join(str(x) for x in unassigned_account_booking_ids[:20])
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "ACCOUNT payments require either booking account codes (Booking -> Debtor account) "
-                        "or an ACCOUNT debit GL mapping. "
-                        f"Bookings missing account code: {sample}"
-                    ),
-                )
-            lines.append({
-                "account": fallback_account,
-                "debit": remainder,
-                "credit": Decimal("0.00"),
-                "ref": "ACCOUNT",
-                "desc": _clean_text(f"{batch_desc} ACCOUNT", max_len=60),
-            })
-
-    # Revenue credits
-    revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
-    revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}
-    for ft in sorted(net_by_fee_type.keys()):
-        net_amt = net_by_fee_type[ft]
-        if net_amt == 0:
-            continue
-        account = str(revenue_by_fee_type.get(ft) or revenue_gl_default or "").strip()
-        if not account:
-            raise HTTPException(status_code=400, detail=f"Missing revenue GL mapping for fee type '{ft}'.")
-        lines.append({
-            "account": account,
-            "debit": Decimal("0.00"),
-            "credit": net_amt,
-            "ref": _clean_text(str(ft).upper(), max_len=20),
-            "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
-            "vat": vat_by_fee_type.get(ft, Decimal("0.00")),
-        })
-
-    # VAT credit
-    if vat_total != 0:
-        lines.append({
-            "account": str(vat_output_gl).strip(),
-            "debit": Decimal("0.00"),
-            "credit": vat_total,
-            "ref": "VAT CONT",
-            "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
-        })
-
-    debit_sum = _q2(sum((l["debit"] for l in lines), Decimal("0")))
-    credit_sum = _q2(sum((l["credit"] for l in lines), Decimal("0")))
-    if debit_sum != credit_sum:
-        raise HTTPException(status_code=500, detail="Journal is out of balance after rounding.")
+    lines = journal.lines
+    gross_total = journal.gross_total
+    net_total = journal.net_total
+    vat_total = journal.vat_total
+    batch_ref = journal.batch_ref
+    rate = journal.rate
+    ledger_entry_ids = journal.ledger_entry_ids
+    booking_ids = journal.booking_ids
 
     # Render CSV according to stored Pastel layout.
     columns = layout.get("columns") or []
@@ -1989,188 +1819,24 @@ def export_daily_payments_preview(
     if not rows:
         raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
 
-    # Reuse the exporter path by building the same aggregated journal lines.
-    # We do this inline to avoid changing existing behavior of /export-csv.
+    journal = build_daily_journal_lines(
+        rows=rows,
+        settings=settings,
+        mappings=mappings,
+        target_date=target_date,
+        clean_text=_clean_text,
+    )
 
-    # Validate payment_method presence.
-    missing_pm = []
-    for le, b, fee_cat, meta in rows:
-        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
-        if not method:
-            missing_pm.append(int(getattr(b, "id", 0) or 0))
-    missing_pm = [bid for bid in missing_pm if bid]
-    if missing_pm:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Missing payment method for {len(missing_pm)} booking(s): {', '.join([str(x) for x in missing_pm[:30]])}. "
-                "Fix by checking-in those bookings with a payment method (CARD/CASH/EFT/ONLINE/ACCOUNT) "
-                "or backfill test data locally."
-            ),
-        )
-
-    debit_gl = mappings.get("debit_gl") or {}
     vat_output_gl = mappings.get("vat_output_gl")
-
-    # Aggregate gross totals.
-    gross_by_method: dict[str, Decimal] = {}
-    gross_by_account_code: dict[str, Decimal] = {}
-    unassigned_account_booking_ids: list[int] = []
-    gross_by_fee_type: dict[str, Decimal] = {}
-
-    for le, b, fee_cat, meta in rows:
-        amount = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
-        if amount <= 0:
-            continue
-
-        method = str(getattr(meta, "payment_method", "") or "").strip().upper()
-        fee_type_raw = getattr(fee_cat, "fee_type", None)
-        fee_type = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
-
-        gross_by_method[method] = _q2(gross_by_method.get(method, Decimal("0")) + amount)
-        if method == "ACCOUNT":
-            account_code = str(getattr(b, "club_card", "") or "").strip()
-            if account_code:
-                gross_by_account_code[account_code] = _q2(gross_by_account_code.get(account_code, Decimal("0")) + amount)
-            else:
-                bid = int(getattr(b, "id", 0) or 0)
-                if bid:
-                    unassigned_account_booking_ids.append(bid)
-        gross_by_fee_type[fee_type] = _q2(gross_by_fee_type.get(fee_type, Decimal("0")) + amount)
-
-    if not gross_by_method:
-        raise HTTPException(status_code=404, detail=f"No positive-value payments found for {target_date}")
-
-    # Validate debit GL mappings for used methods.
-    used_methods = sorted(gross_by_method.keys())
-    missing_debits = [m for m in used_methods if m != "ACCOUNT" and not str(debit_gl.get(m, "") or "").strip()]
-    account_fallback_gl = str(debit_gl.get("ACCOUNT", "") or "").strip()
-    if "ACCOUNT" in used_methods and not account_fallback_gl and unassigned_account_booking_ids:
-        missing_debits.append("ACCOUNT")
-    if missing_debits:
-        raise HTTPException(status_code=400, detail=f"Missing debit GL mapping for payment method(s): {', '.join(missing_debits)}")
-
-    # VAT calculations (inclusive amounts) – transaction-level rounding then aggregate.
-    try:
-        rate = Decimal(str(settings.vat_rate if getattr(settings, "vat_rate", None) is not None else 0.15))
-    except Exception:
-        rate = Decimal("0.15")
-    if rate < 0:
-        rate = Decimal("0")
-
-    vat_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
-    net_by_fee_type: dict[str, Decimal] = {k: Decimal("0.00") for k in gross_by_fee_type.keys()}
-
-    for le, b, fee_cat, meta in rows:
-        gross = _q2(_to_decimal(getattr(le, "amount", 0) or 0))
-        if gross <= 0:
-            continue
-        fee_type_raw = getattr(fee_cat, "fee_type", None)
-        ft = str(getattr(fee_type_raw, "value", fee_type_raw) or "golf").strip().lower() or "golf"
-        if rate > 0:
-            vat = _q2(gross * (rate / (Decimal("1") + rate)))
-        else:
-            vat = Decimal("0.00")
-        net = _q2(gross - vat)
-        vat_by_fee_type[ft] = _q2(vat_by_fee_type.get(ft, Decimal("0.00")) + vat)
-        net_by_fee_type[ft] = _q2(net_by_fee_type.get(ft, Decimal("0.00")) + net)
-
-    vat_total = _q2(sum(vat_by_fee_type.values(), Decimal("0.00")))
-    net_total = _q2(sum(net_by_fee_type.values(), Decimal("0.00")))
-    gross_total = _q2(sum(gross_by_method.values(), Decimal("0")))
-
-    if _q2(net_total + vat_total) != gross_total:
-        raise HTTPException(status_code=500, detail="VAT split does not balance to gross total after rounding.")
-
-    batch_ref = f"GREENLINK_{target_date.strftime('%Y%m%d')}"
-    batch_desc = _clean_text(f"Daily golf takings {target_date.strftime('%Y-%m-%d')}", max_len=60)
-
-    # Build journal lines (debits per payment method; credits net revenue per fee type + output VAT).
-    lines: list[dict] = []
-    method_order = ["CASH", "CARD", "EFT", "ONLINE", "ACCOUNT"]
-    ordered_methods = [m for m in method_order if m in gross_by_method] + [m for m in used_methods if m not in method_order]
-    for method in ordered_methods:
-        if method == "ACCOUNT":
-            continue
-        account = str(debit_gl.get(method) or "").strip()
-        lines.append({
-            "account": account,
-            "debit": gross_by_method[method],
-            "credit": Decimal("0.00"),
-            "ref": _clean_text(method, max_len=20),
-            "desc": _clean_text(f"{batch_desc} {method}", max_len=60),
-        })
-
-    if "ACCOUNT" in gross_by_method:
-        allocated = Decimal("0.00")
-        for account_code in sorted(gross_by_account_code.keys()):
-            amt = _q2(gross_by_account_code.get(account_code, Decimal("0.00")))
-            if amt == 0:
-                continue
-            allocated = _q2(allocated + amt)
-            lines.append({
-                "account": account_code,
-                "debit": amt,
-                "credit": Decimal("0.00"),
-                "ref": _clean_text(f"ACC {account_code}", max_len=20),
-                "desc": _clean_text(f"{batch_desc} ACCOUNT {account_code}", max_len=60),
-            })
-
-        remainder = _q2(gross_by_method.get("ACCOUNT", Decimal("0.00")) - allocated)
-        if remainder != 0:
-            fallback_account = account_fallback_gl
-            if not fallback_account:
-                sample = ", ".join(str(x) for x in unassigned_account_booking_ids[:20])
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "ACCOUNT payments require either booking account codes (Booking -> Debtor account) "
-                        "or an ACCOUNT debit GL mapping. "
-                        f"Bookings missing account code: {sample}"
-                    ),
-                )
-            lines.append({
-                "account": fallback_account,
-                "debit": remainder,
-                "credit": Decimal("0.00"),
-                "ref": "ACCOUNT",
-                "desc": _clean_text(f"{batch_desc} ACCOUNT", max_len=60),
-            })
-
-    revenue_gl_default = (getattr(settings, "green_fees_gl", None) or "").strip()
-    revenue_by_fee_type = (mappings.get("revenue_gl") or {}) if isinstance(mappings.get("revenue_gl"), dict) else {}
-    for ft in sorted(net_by_fee_type.keys()):
-        net_amt = net_by_fee_type[ft]
-        if net_amt == 0:
-            continue
-        account = str(revenue_by_fee_type.get(ft) or revenue_gl_default or "").strip()
-        if not account:
-            raise HTTPException(status_code=400, detail=f"Missing revenue GL mapping for fee type '{ft}'.")
-        lines.append({
-            "account": account,
-            "debit": Decimal("0.00"),
-            "credit": net_amt,
-            "ref": _clean_text(str(ft).upper(), max_len=20),
-            "desc": _clean_text(f"{batch_desc} {ft}", max_len=60),
-            "vat": vat_by_fee_type.get(ft, Decimal("0.00")),
-        })
-
     if not str(vat_output_gl or "").strip():
         raise HTTPException(status_code=400, detail="Missing VAT output GL account in Pastel mappings.")
 
-    if vat_total != 0:
-        lines.append({
-            "account": str(vat_output_gl).strip(),
-            "debit": Decimal("0.00"),
-            "credit": vat_total,
-            "ref": "VAT CONT",
-            "desc": _clean_text(f"Output VAT {target_date.strftime('%Y-%m-%d')}", max_len=60),
-        })
-
-    debit_sum = _q2(sum((l["debit"] for l in lines), Decimal("0")))
-    credit_sum = _q2(sum((l["credit"] for l in lines), Decimal("0")))
-    if debit_sum != credit_sum:
-        raise HTTPException(status_code=500, detail="Journal is out of balance after rounding.")
+    lines = journal.lines
+    gross_total = journal.gross_total
+    net_total = journal.net_total
+    vat_total = journal.vat_total
+    batch_ref = journal.batch_ref
+    rate = journal.rate
 
     # Render CSV rows for an exact preview (matches file output).
     columns = layout.get("columns") or []

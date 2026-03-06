@@ -95,13 +95,39 @@ const AUTH_FETCH_RETRY_ATTEMPTS = 2;
 const AUTH_FETCH_RETRY_BASE_MS = 320;
 const DASHBOARD_CACHE_KEY = "greenlink_admin_dashboard_cache_v1";
 const DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+const ADMIN_API = (() => {
+    try {
+        if (window.GreenLinkApiClient && typeof window.GreenLinkApiClient.create === "function") {
+            return window.GreenLinkApiClient.create({ baseUrl: API_BASE });
+        }
+    } catch {
+        // Fallback to legacy fetchJson usage.
+    }
+    return null;
+})();
+
+function apiGetJson(path, options) {
+    const safePath = String(path || "").startsWith("/") ? String(path || "") : `/${String(path || "")}`;
+    if (ADMIN_API && typeof ADMIN_API.getJson === "function") {
+        return ADMIN_API.getJson(safePath, options);
+    }
+    return fetchJson(`${API_BASE}${safePath}`, options);
+}
 
 function delayMs(ms) {
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.delayMs === "function") {
+        return requestUtils.delayMs(ms);
+    }
     const wait = Math.max(0, Number(ms || 0));
     return new Promise(resolve => window.setTimeout(resolve, wait));
 }
 
 function parseRetryAfterMs(response) {
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.parseRetryAfterMs === "function") {
+        return requestUtils.parseRetryAfterMs(response);
+    }
     const raw = String(response?.headers?.get?.("Retry-After") || "").trim();
     if (!raw) return 0;
     const seconds = Number(raw);
@@ -112,11 +138,19 @@ function parseRetryAfterMs(response) {
 }
 
 function isRetryableMethod(method) {
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.isRetryableMethod === "function") {
+        return requestUtils.isRetryableMethod(method);
+    }
     const m = String(method || "").toUpperCase();
     return m === "GET" || m === "HEAD" || m === "OPTIONS";
 }
 
 function isRetryableStatus(status) {
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.isRetryableStatus === "function") {
+        return requestUtils.isRetryableStatus(status);
+    }
     const code = Number(status || 0);
     return code === 408 || code === 429 || code >= 500;
 }
@@ -124,88 +158,16 @@ function isRetryableStatus(status) {
 function installAuthFetch() {
     if (authFetchInstalled) return;
     authFetchInstalled = true;
-
-    const originalFetch = window.fetch.bind(window);
-
-    window.fetch = async (input, init) => {
-        const token = localStorage.getItem("token");
-        if (!token) return originalFetch(input, init);
-
-        let url = "";
-        if (typeof input === "string") url = input;
-        else if (input && typeof input.url === "string") url = input.url;
-
-        try {
-            const resolved = new URL(url, window.location.origin);
-            if (resolved.origin !== window.location.origin) {
-                return originalFetch(input, init);
-            }
-        } catch {
-            // If URL parsing fails, fall back to raw fetch.
-            return originalFetch(input, init);
-        }
-
-        const nextInit = init ? { ...init } : {};
-        const headers = new Headers(nextInit.headers || {});
-        if (!headers.has("Authorization")) {
-            headers.set("Authorization", `Bearer ${token}`);
-        }
-
-        const activeClubId = localStorage.getItem("active_club_id");
-        if (currentUserRole === "super_admin" && activeClubId && !headers.has("X-Club-Id")) {
-            headers.set("X-Club-Id", String(activeClubId));
-        }
-
-        nextInit.headers = headers;
-        const method = String(
-            nextInit.method
-            || (input && typeof input.method === "string" ? input.method : "GET")
-            || "GET"
-        ).toUpperCase();
-        const canRetry = isRetryableMethod(method);
-        const maxAttempts = canRetry ? (AUTH_FETCH_RETRY_ATTEMPTS + 1) : 1;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-            const controller = new AbortController();
-            const timeoutId = window.setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS);
-
-            const externalSignal = nextInit.signal;
-            let onAbort = null;
-            if (externalSignal) {
-                if (externalSignal.aborted) {
-                    controller.abort();
-                } else {
-                    onAbort = () => controller.abort();
-                    externalSignal.addEventListener("abort", onAbort, { once: true });
-                }
-            }
-
-            try {
-                const response = await originalFetch(input, { ...nextInit, signal: controller.signal });
-                if (!canRetry || !isRetryableStatus(response.status) || attempt >= (maxAttempts - 1)) {
-                    return response;
-                }
-                const retryDelay = Math.max(
-                    parseRetryAfterMs(response),
-                    Math.round(AUTH_FETCH_RETRY_BASE_MS * Math.pow(2, attempt))
-                );
-                await delayMs(retryDelay);
-            } catch (error) {
-                const transient = error?.name === "AbortError" || error instanceof TypeError;
-                if (!canRetry || !transient || attempt >= (maxAttempts - 1)) {
-                    throw error;
-                }
-                await delayMs(Math.round(AUTH_FETCH_RETRY_BASE_MS * Math.pow(2, attempt)));
-            } finally {
-                window.clearTimeout(timeoutId);
-                if (externalSignal && onAbort) {
-                    externalSignal.removeEventListener("abort", onAbort);
-                }
-            }
-        }
-
-        return originalFetch(input, nextInit);
-    };
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.installAuthFetch === "function") {
+        requestUtils.installAuthFetch({
+            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+            retryAttempts: AUTH_FETCH_RETRY_ATTEMPTS,
+            retryBaseMs: AUTH_FETCH_RETRY_BASE_MS,
+            getCurrentUserRole: () => currentUserRole,
+        });
+        return;
+    }
 }
 
 function showToast(message, type = "info", title = null, timeoutMs = 3200) {
@@ -342,6 +304,10 @@ function formatYMDToDMY(value) {
 }
 
 async function fetchJson(url, options) {
+    const requestUtils = window.GreenLinkRequest || {};
+    if (typeof requestUtils.fetchJson === "function") {
+        return requestUtils.fetchJson(url, options);
+    }
     const res = await fetch(url, options);
     const raw = await res.text();
     let data = null;
@@ -361,6 +327,10 @@ async function fetchJson(url, options) {
 }
 
 function readDashboardCache() {
+    const stateUtils = window.GreenLinkState || {};
+    if (typeof stateUtils.readTtlCache === "function") {
+        return stateUtils.readTtlCache(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_TTL_MS);
+    }
     try {
         const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
         if (!raw) return null;
@@ -377,6 +347,11 @@ function readDashboardCache() {
 }
 
 function writeDashboardCache(data) {
+    const stateUtils = window.GreenLinkState || {};
+    if (typeof stateUtils.writeTtlCache === "function") {
+        stateUtils.writeTtlCache(DASHBOARD_CACHE_KEY, data);
+        return;
+    }
     try {
         localStorage.setItem(
             DASHBOARD_CACHE_KEY,
@@ -401,6 +376,10 @@ function startDashboardAutoRefresh() {
 }
 
 function statusToClass(status) {
+    const dashboardUtils = window.GreenLinkAdminDashboard || {};
+    if (typeof dashboardUtils.statusToClass === "function") {
+        return dashboardUtils.statusToClass(status);
+    }
     switch (status) {
         case "checked_in":
             return "checked-in";
@@ -412,6 +391,10 @@ function statusToClass(status) {
 }
 
 function statusToLabel(status) {
+    const dashboardUtils = window.GreenLinkAdminDashboard || {};
+    if (typeof dashboardUtils.statusToLabel === "function") {
+        return dashboardUtils.statusToLabel(status);
+    }
     return String(status || "").replaceAll("_", " ");
 }
 
@@ -647,7 +630,7 @@ function resolveActiveClubFromPlatform(platform) {
 
 async function loadPlatformStatus() {
     try {
-        platformStateCache = await fetchJson(`${API_BASE}/api/public/platform-state`);
+        platformStateCache = await apiGetJson("/api/public/platform-state");
     } catch (error) {
         console.error("Failed to load platform status:", error);
         setClubContextChip("");
@@ -667,7 +650,7 @@ async function loadPlatformStatus() {
         setClubContextChip(clubName ? `Platform: ${clubName}` : "Platform");
     } else {
         try {
-            const clubCfg = await fetchJson(`${API_BASE}/api/public/club/me`);
+            const clubCfg = await apiGetJson("/api/public/club/me");
             clubName = String(clubCfg?.club_name || "").trim();
         } catch (error) {
             console.error("Failed to load club context:", error);
@@ -965,7 +948,7 @@ async function loadAccountCustomersCache({ silent = false } = {}) {
     try {
         const token = localStorage.getItem("token");
         if (!token) return [];
-        const data = await fetchJson(`${API_BASE}/api/admin/account-customers?active_only=true`, {
+        const data = await apiGetJson("/api/admin/account-customers?active_only=true", {
             headers: { Authorization: `Bearer ${token}` },
         });
         const rows = Array.isArray(data?.account_customers) ? data.account_customers : [];
@@ -994,6 +977,10 @@ async function loadAccountCustomersCache({ silent = false } = {}) {
 }
 
 function normalizeAccountCodeInput(raw) {
+    const bookingUtils = window.GreenLinkAdminBookings || {};
+    if (typeof bookingUtils.normalizeAccountCode === "function") {
+        return bookingUtils.normalizeAccountCode(raw);
+    }
     const value = String(raw || "").trim();
     if (!value) return "";
     if (value.includes(" - ")) {
@@ -1003,6 +990,10 @@ function normalizeAccountCodeInput(raw) {
 }
 
 function findAccountCustomerByCode(accountCode) {
+    const accountUtils = window.GreenLinkAdminAccountCustomers || {};
+    if (typeof accountUtils.findByCode === "function") {
+        return accountUtils.findByCode(accountCustomersCache, accountCode);
+    }
     const code = normalizeAccountCodeInput(accountCode).toLowerCase();
     if (!code) return null;
     return accountCustomersCache.find((row) => String(row?.account_code || "").trim().toLowerCase() === code) || null;
@@ -8682,6 +8673,16 @@ document.addEventListener("change", (e) => {
 function updateProShopExportButtonState() {
     const btn = document.getElementById("export-pro-shop-btn");
     if (!btn || btn.dataset.loading === "1") return;
+    const cashbookUtils = window.GreenLinkAdminCashbook || {};
+    if (typeof cashbookUtils.resolveProShopExportButton === "function") {
+        const state = cashbookUtils.resolveProShopExportButton(
+            Boolean(proShopCashbookHasRecords),
+            Boolean(proShopCashbookAlreadyExported),
+        );
+        btn.disabled = Boolean(state?.disabled);
+        btn.textContent = String(state?.label || "Export Pro Shop (CSV)");
+        return;
+    }
     if (!proShopCashbookHasRecords) {
         btn.disabled = true;
         btn.textContent = "Export Pro Shop (CSV)";

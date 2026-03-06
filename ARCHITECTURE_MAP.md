@@ -54,6 +54,9 @@
   - password hashing/verifying, JWT creation/decoding, current-user resolver.
 - `app/crud.py`
   - core booking/check-in/score submission logic and ledger linkage.
+- `app/services/`
+  - extracted service-layer business logic for shared router workflows.
+  - currently includes booking/account-customer/cashbook/payment-method services used by admin and cashbook routers.
 - `app/pricing.py` + `app/fee_models.py`
   - fee catalog model and fee-selection engine.
 - `app/tenancy.py`
@@ -66,6 +69,16 @@
   - tee-sheet profile normalization and seasonal schedule planning.
 - `app/migrations.py`
   - idempotent auto-migration path for Postgres (`AUTO_MIGRATE`).
+- `app/runtime_env.py`
+  - environment-mode helpers used by startup security guards (production-like vs local-like behavior).
+
+## 4.1) Frontend Admin Modularity
+- `frontend/admin.html` remains the same entrypoint path and now loads modular helper scripts first:
+  - `frontend/js/utils/request.js`
+  - `frontend/js/utils/state.js`
+  - `frontend/js/api/client.js`
+  - `frontend/js/admin/*`
+- `frontend/admin.js` remains the top-level page controller, with request/state and domain helper delegation extracted to the modules above.
 
 ## 5) API Surface Map
 

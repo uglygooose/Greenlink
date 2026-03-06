@@ -31,6 +31,7 @@ from app.rate_limit import (
     client_ip_from_request,
     normalize_identity,
 )
+from app.runtime_env import env_bool, is_local_like, is_production_like
 from app.routers import (
     admin,
     cashbook,
@@ -47,6 +48,18 @@ from app.routers import (
 from app.static_files import FrontendStaticFiles
 
 APP_STARTED_MONOTONIC = time.monotonic()
+_UNSAFE_DEFAULT_PASSWORDS = {
+    "",
+    "123",
+    "123456",
+    "password",
+    "admin",
+    "admin123",
+    "change_me",
+    "changeme",
+    "greenlink123!",
+    "admin123!",
+}
 
 
 def _parse_csv_env(key: str, default: list[str]) -> list[str]:
@@ -55,6 +68,22 @@ def _parse_csv_env(key: str, default: list[str]) -> list[str]:
         return list(default)
     values = [v.strip() for v in str(raw).split(",") if v.strip()]
     return values or list(default)
+
+
+def _is_unsafe_default_password(raw_value: str | None) -> bool:
+    password = str(raw_value or "").strip()
+    if not password:
+        return True
+    if password.lower() in _UNSAFE_DEFAULT_PASSWORDS:
+        return True
+    return len(password) < 12
+
+
+def _metrics_allow_unauthenticated() -> bool:
+    # Backward-compatible local behavior with production fail-closed defaults.
+    if "METRICS_ALLOW_UNAUTHENTICATED" in os.environ:
+        return env_bool("METRICS_ALLOW_UNAUTHENTICATED", default=False)
+    return is_local_like()
 
 
 def _error_payload(detail: str, request: Request) -> dict:
@@ -302,6 +331,8 @@ def metrics(request: Request):
         provided = str(request.headers.get("x-metrics-token") or "").strip()
         if provided != token:
             raise HTTPException(status_code=403, detail="Forbidden")
+    elif not _metrics_allow_unauthenticated():
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     return {
         "uptime_s": int(max(0, time.monotonic() - APP_STARTED_MONOTONIC)),
@@ -319,13 +350,23 @@ def _seed_demo_admin_if_enabled() -> None:
     if not enabled:
         return
 
+    if is_production_like() and not env_bool("DEMO_SEED_ADMIN_ALLOW_PRODUCTION", default=False):
+        raise RuntimeError(
+            "DEMO_SEED_ADMIN is blocked in production-like environments. "
+            "Set DEMO_SEED_ADMIN_ALLOW_PRODUCTION=1 only for controlled environments."
+        )
+
     email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
-    password = os.getenv("DEMO_ADMIN_PASSWORD") or "123"
+    password = os.getenv("DEMO_ADMIN_PASSWORD") or ("123" if is_local_like() else "")
     name = (os.getenv("DEMO_ADMIN_NAME") or "Admin").strip() or "Admin"
     force_reset = (
         str(os.getenv("DEMO_ADMIN_FORCE_RESET", "")).strip().lower() in {"1", "true", "yes"}
         or DB_SOURCE == "SQLITE"
     )
+    if is_production_like() and _is_unsafe_default_password(password):
+        raise RuntimeError(
+            "DEMO_ADMIN_PASSWORD is missing or unsafe for production-like runtime."
+        )
 
     if not email or "@" not in email or not str(password):
         print("[DEMO_ADMIN] Skipped: invalid DEMO_ADMIN_EMAIL/DEMO_ADMIN_PASSWORD.")

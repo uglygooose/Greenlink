@@ -1,0 +1,530 @@
+{
+  "generated_from": "app.main",
+  "total": 131,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/account-customers"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/account-customers"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/account-customers/{account_customer_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/audit-logs"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/booking-window"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/booking-window"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bookings"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bookings/batch-update"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/bookings/{booking_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bookings/{booking_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bookings/{booking_id}/account-code"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bookings/{booking_id}/payment-method"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bookings/{booking_id}/price"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bookings/{booking_id}/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/club-profile"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/club-profile"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/fee-categories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/golf-day-bookings"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/golf-day-bookings"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/golf-day-bookings/{golf_day_booking_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/guests"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/imports"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/imports/bookings-csv"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/imports/members-csv"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/imports/revenue-csv"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/imports/revenue-settings"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/imports/revenue-settings"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/imports/umhlali-operational-sync"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ledger"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/members"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/members"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/members/search"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/members/{member_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/members/{member_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/operational-alerts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/players"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/players/{player_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/players/{player_id}/price"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/players/{player_id}/price-info"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/pro-shop/products"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pro-shop/products"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/pro-shop/products/{product_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pro-shop/products/{product_id}/adjust-stock"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/pro-shop/sales"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pro-shop/sales"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/revenue"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/staff"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/staff"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/staff-role-context"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/staff/{user_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/summary"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/targets"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tee-sheet-profile"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/tee-sheet-profile"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/tee-sheet/bulk-book"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/tee-sheet/bulk-book/{group_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tee-sheet/weather/auto-flags"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tee-sheet/weather/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/tee-sheet/weather/reconfirm"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tee-sheet/weather/responses"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tee-times"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/club"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/club/me"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/platform-state"
+    },
+    {
+      "method": "GET",
+      "path": "/api/super/clubs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/super/clubs"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/super/clubs/{club_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/super/staff"
+    },
+    {
+      "method": "POST",
+      "path": "/api/super/staff"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/super/staff/{user_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/cashbook/close-day"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/close-status"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/daily-summary"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/export-csv"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/export-csv-pro-shop"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/export-excel"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/export-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/cashbook/finalize-day"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/pastel-layout"
+    },
+    {
+      "method": "POST",
+      "path": "/cashbook/pastel-layout"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/pastel-mappings"
+    },
+    {
+      "method": "PUT",
+      "path": "/cashbook/pastel-mappings"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/pro-shop-summary"
+    },
+    {
+      "method": "POST",
+      "path": "/cashbook/reopen-day"
+    },
+    {
+      "method": "GET",
+      "path": "/cashbook/settings"
+    },
+    {
+      "method": "PUT",
+      "path": "/cashbook/settings"
+    },
+    {
+      "method": "POST",
+      "path": "/checkin/{booking_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/docs"
+    },
+    {
+      "method": "GET",
+      "path": "/docs/oauth2-redirect"
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/caddy"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/cart"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/code/{code}"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/golf"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/push-cart"
+    },
+    {
+      "method": "POST",
+      "path": "/fees/suggest/caddy"
+    },
+    {
+      "method": "POST",
+      "path": "/fees/suggest/cart"
+    },
+    {
+      "method": "POST",
+      "path": "/fees/suggest/golf"
+    },
+    {
+      "method": "POST",
+      "path": "/fees/suggest/push-cart"
+    },
+    {
+      "method": "GET",
+      "path": "/fees/{fee_id}"
+    },
+    {
+      "method": "",
+      "path": "/frontend"
+    },
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "POST",
+      "path": "/login"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/openapi.json"
+    },
+    {
+      "method": "GET",
+      "path": "/profile/fees-available"
+    },
+    {
+      "method": "GET",
+      "path": "/profile/me"
+    },
+    {
+      "method": "PUT",
+      "path": "/profile/me"
+    },
+    {
+      "method": "GET",
+      "path": "/profile/notifications"
+    },
+    {
+      "method": "POST",
+      "path": "/profile/notifications/{notification_id}/action"
+    },
+    {
+      "method": "GET",
+      "path": "/redoc"
+    },
+    {
+      "method": "GET",
+      "path": "/scoring/my-bookings"
+    },
+    {
+      "method": "GET",
+      "path": "/scoring/my-rounds"
+    },
+    {
+      "method": "POST",
+      "path": "/scoring/my-rounds/open"
+    },
+    {
+      "method": "POST",
+      "path": "/scoring/my-rounds/{round_id}/no-return"
+    },
+    {
+      "method": "PUT",
+      "path": "/scoring/my-rounds/{round_id}/submit"
+    },
+    {
+      "method": "POST",
+      "path": "/scoring/submit"
+    },
+    {
+      "method": "GET",
+      "path": "/settings/booking-window"
+    },
+    {
+      "method": "GET",
+      "path": "/tsheet/"
+    },
+    {
+      "method": "POST",
+      "path": "/tsheet/booking"
+    },
+    {
+      "method": "PUT",
+      "path": "/tsheet/bookings/{booking_id}/move"
+    },
+    {
+      "method": "GET",
+      "path": "/tsheet/bookings/{tee_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/tsheet/create"
+    },
+    {
+      "method": "POST",
+      "path": "/tsheet/generate"
+    },
+    {
+      "method": "GET",
+      "path": "/tsheet/range"
+    },
+    {
+      "method": "GET",
+      "path": "/users/"
+    },
+    {
+      "method": "POST",
+      "path": "/users/"
+    },
+    {
+      "method": "GET",
+      "path": "/users/me"
+    }
+  ]
+}

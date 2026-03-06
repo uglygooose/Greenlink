@@ -24,12 +24,15 @@ from app.models import (
 )
 from app.observability import log_event
 from app.people import sync_user_person
+from app.runtime_env import is_local_like, is_production_like
 from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
 from app.umhlali_operational_seed import seed_umhlali_operational_inputs
 from app.weather_alerts import DEFAULT_FORECAST_TIMEZONE, KNOWN_COURSE_COORDS
 
 UMHLALI_CLUB_NAME = "Umhlali Country Club"
 UMHLALI_CLUB_SLUG = "umhlali"
+DEFAULT_SUPER_ADMIN_PASSWORD = "GreenLink123!"
+DEFAULT_CLUB_ADMIN_PASSWORD = "Admin123!"
 UMHLALI_HOME_CLUB_KEYWORDS = ["umhlali", "umhlali country club", "umhlali cc"]
 UMHLALI_SUGGESTED_HOME_CLUBS = [
     "Umhlali Country Club",
@@ -61,6 +64,16 @@ TENANT_BACKFILL_TABLES = (
     "player_notifications",
     "audit_logs",
 )
+_UNSAFE_PASSWORD_VALUES = {
+    "",
+    "123",
+    "123456",
+    "password",
+    "admin",
+    "admin123",
+    "changeme",
+    "change_me",
+}
 
 
 def _env(key: str, default: str | None = None) -> str | None:
@@ -146,7 +159,7 @@ def _canonical_super_admin_email() -> str:
 
 
 def _canonical_super_admin_password() -> str:
-    return _env("GREENLINK_SUPER_ADMIN_PASSWORD", "GreenLink123!") or "GreenLink123!"
+    return _env("GREENLINK_SUPER_ADMIN_PASSWORD", DEFAULT_SUPER_ADMIN_PASSWORD) or DEFAULT_SUPER_ADMIN_PASSWORD
 
 
 def _canonical_umhlali_admin_email() -> str:
@@ -154,7 +167,43 @@ def _canonical_umhlali_admin_email() -> str:
 
 
 def _canonical_umhlali_admin_password() -> str:
-    return _env("GREENLINK_DEFAULT_CLUB_ADMIN_PASSWORD", "Admin123!") or "Admin123!"
+    return _env("GREENLINK_DEFAULT_CLUB_ADMIN_PASSWORD", DEFAULT_CLUB_ADMIN_PASSWORD) or DEFAULT_CLUB_ADMIN_PASSWORD
+
+
+def _is_unsafe_bootstrap_password(password: str, known_default: str) -> bool:
+    value = str(password or "").strip()
+    if not value:
+        return True
+    if value == known_default:
+        return True
+    if value.lower() in _UNSAFE_PASSWORD_VALUES:
+        return True
+    return len(value) < 12
+
+
+def _assert_safe_bootstrap_credentials(
+    *,
+    create_missing_users: bool,
+    force_reset: bool,
+    super_password: str,
+    admin_password: str,
+) -> None:
+    if not is_production_like():
+        return
+    if not (create_missing_users or force_reset):
+        return
+
+    unsafe_vars: list[str] = []
+    if _is_unsafe_bootstrap_password(super_password, DEFAULT_SUPER_ADMIN_PASSWORD):
+        unsafe_vars.append("GREENLINK_SUPER_ADMIN_PASSWORD")
+    if _is_unsafe_bootstrap_password(admin_password, DEFAULT_CLUB_ADMIN_PASSWORD):
+        unsafe_vars.append("GREENLINK_DEFAULT_CLUB_ADMIN_PASSWORD")
+    if unsafe_vars:
+        joined = ", ".join(unsafe_vars)
+        raise RuntimeError(
+            f"Unsafe bootstrap credential configuration for production-like runtime. "
+            f"Set strong values for: {joined}."
+        )
 
 
 def _umhlali_weather_defaults() -> tuple[str | None, str | None]:
@@ -290,6 +339,12 @@ def ensure_super_admin_capabilities_exist(
     super_password = _canonical_super_admin_password()
     admin_email = _canonical_umhlali_admin_email()
     admin_password = _canonical_umhlali_admin_password()
+    _assert_safe_bootstrap_credentials(
+        create_missing_users=create_missing_users,
+        force_reset=force_reset,
+        super_password=super_password,
+        admin_password=admin_password,
+    )
 
     super_user = db.query(User).filter(func.lower(User.email) == super_email).first()
     any_super_admin = db.query(User.id).filter(User.role == UserRole.super_admin).first()
@@ -567,8 +622,10 @@ def ensure_platform_ready() -> dict[str, Any]:
         "timestamp": _utcnow().isoformat(),
     }
 
-    create_missing_users = _env_true("GREENLINK_BOOTSTRAP") or DB_SOURCE in {"MYSQL", "SQLITE"}
-    force_reset = _env_true("GREENLINK_BOOTSTRAP_FORCE_RESET") or DB_SOURCE == "SQLITE"
+    bootstrap_enabled = _env_true("GREENLINK_BOOTSTRAP")
+    bootstrap_force_reset = _env_true("GREENLINK_BOOTSTRAP_FORCE_RESET")
+    create_missing_users = bootstrap_enabled or (DB_SOURCE in {"MYSQL", "SQLITE"} and is_local_like())
+    force_reset = bootstrap_force_reset or (DB_SOURCE == "SQLITE" and is_local_like())
 
     with SessionLocal() as db:
         try:

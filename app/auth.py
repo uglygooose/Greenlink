@@ -15,6 +15,7 @@ from sqlalchemy.orm import with_loader_criteria
 
 from app import models
 from app.database import SessionLocal
+from app.runtime_env import is_cloud_runtime, is_production_like
 
 # ------------------------------------------------------------------
 # ENV & CONFIG
@@ -28,12 +29,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440)
 )
 
-_CLOUD_HINTS = ("RENDER", "RENDER_SERVICE_ID", "RENDER_INSTANCE_ID", "K_SERVICE", "GOOGLE_CLOUD_PROJECT")
-_IS_CLOUD = any(os.getenv(k) for k in _CLOUD_HINTS)
-if SECRET_KEY == "CHANGE_ME" and _IS_CLOUD:
-    raise RuntimeError("SECRET_KEY must be set for cloud deployments.")
+if SECRET_KEY == "CHANGE_ME" and is_production_like():
+    raise RuntimeError("SECRET_KEY must be set for production-like deployments.")
 if SECRET_KEY == "CHANGE_ME":
-    print("[SECURITY] Warning: SECRET_KEY is using the default development value.")
+    if is_cloud_runtime():
+        print("[SECURITY] Warning: SECRET_KEY is using the default value.")
+    else:
+        print("[SECURITY] Warning: SECRET_KEY is using the default development value.")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
