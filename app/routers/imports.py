@@ -34,7 +34,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.people import classify_membership_group, normalize_membership_status, parse_membership_date
+from app.people import classify_membership_group, member_identity_key, normalize_membership_status, parse_membership_date
 from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
@@ -788,15 +788,20 @@ async def import_members_csv(
         for row in existing_rows
         if str(getattr(row, "email", "") or "").strip()
     }
-    by_name = {}
+    by_identity = {}
     for row in existing_rows:
-        first = str(getattr(row, "first_name", "") or "").strip().lower()
-        last = str(getattr(row, "last_name", "") or "").strip().lower()
-        if first and last:
-            by_name[(first, last)] = row
+        key = member_identity_key(
+            first_name=getattr(row, "first_name", None),
+            last_name=getattr(row, "last_name", None),
+            membership_category=getattr(row, "membership_category", None),
+            membership_status=getattr(row, "membership_status", None),
+            membership_date=getattr(row, "membership_date", None),
+            membership_expiration=getattr(row, "membership_expiration", None),
+        )
+        by_identity[key] = row
     pending_by_member_number = {}
     pending_by_email = {}
-    pending_by_name = {}
+    pending_by_identity = {}
     insert_payloads = []
 
     try:
@@ -841,6 +846,14 @@ async def import_members_csv(
                 "active": 1 if membership_status == "active" else 0,
                 "player_category": classify_membership_group(membership_category or ""),
             }
+            identity_key = member_identity_key(
+                first_name=first_name,
+                last_name=last_name,
+                membership_category=membership_category,
+                membership_status=membership_status,
+                membership_date=membership_date,
+                membership_expiration=membership_expiration,
+            )
 
             if not first_name or not last_name:
                 failed += 1
@@ -858,9 +871,9 @@ async def import_members_csv(
             if existing is None and email:
                 existing = pending_by_email.get(email)
             if existing is None:
-                existing = by_name.get((first_name.lower(), last_name.lower()))
+                existing = by_identity.get(identity_key)
             if existing is None:
-                existing = pending_by_name.get((first_name.lower(), last_name.lower()))
+                existing = pending_by_identity.get(identity_key)
 
             if existing:
                 if isinstance(existing, dict):
@@ -896,9 +909,9 @@ async def import_members_csv(
                 else:
                     by_email[email] = existing
             if isinstance(existing, dict):
-                pending_by_name[(first_name.lower(), last_name.lower())] = existing
+                pending_by_identity[identity_key] = existing
             else:
-                by_name[(first_name.lower(), last_name.lower())] = existing
+                by_identity[identity_key] = existing
 
         if insert_payloads:
             chunk_size = 100

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.people import (
     classify_membership_group,
+    member_identity_key,
     normalize_membership_status,
     parse_membership_date,
     parse_terms_days,
@@ -295,6 +296,166 @@ def _find_member_row(
     )
 
 
+def _member_record_score(row: models.Member) -> int:
+    score = 0
+    if str(getattr(row, "member_number", "") or "").strip():
+        score += 100
+    if str(getattr(row, "email", "") or "").strip():
+        score += 40
+    if str(getattr(row, "phone", "") or "").strip():
+        score += 20
+    if getattr(row, "person_id", None):
+        score += 80
+    if str(getattr(row, "handicap_number", "") or "").strip():
+        score += 10
+    if str(getattr(row, "home_club", "") or "").strip():
+        score += 5
+    if getattr(row, "membership_date", None):
+        score += 5
+    if getattr(row, "membership_expiration", None):
+        score += 5
+    return score
+
+
+def _member_duplicate_conflict(canonical: models.Member, duplicate: models.Member) -> bool:
+    comparable_fields = (
+        "member_number",
+        "email",
+        "phone",
+        "person_id",
+        "membership_status",
+        "membership_date",
+        "membership_expiration",
+    )
+    for field_name in comparable_fields:
+        left = getattr(canonical, field_name, None)
+        right = getattr(duplicate, field_name, None)
+        if left in (None, "") or right in (None, ""):
+            continue
+        if left != right:
+            return True
+    return False
+
+
+def _merge_member_rows(canonical: models.Member, duplicate: models.Member) -> None:
+    for field_name in (
+        "member_number",
+        "email",
+        "phone",
+        "handicap_number",
+        "home_club",
+        "country_of_residence",
+        "membership_category",
+        "membership_status",
+        "membership_date",
+        "membership_expiration",
+        "gender",
+        "player_category",
+        "student",
+        "handicap_index",
+        "handicap_sa_id",
+        "person_id",
+    ):
+        current = getattr(canonical, field_name, None)
+        incoming = getattr(duplicate, field_name, None)
+        if current in (None, "") and incoming not in (None, ""):
+            setattr(canonical, field_name, incoming)
+    if int(getattr(duplicate, "active", 0) or 0) == 1:
+        canonical.active = 1
+
+
+def dedupe_umhlali_members(db: Session, *, club_id: int) -> dict[str, int]:
+    rows = (
+        db.query(models.Member)
+        .filter(models.Member.club_id == int(club_id))
+        .order_by(models.Member.id.asc())
+        .all()
+    )
+    groups: dict[tuple[str, str, str, str, str, str], list[models.Member]] = {}
+    for row in rows:
+        key = member_identity_key(
+            first_name=getattr(row, "first_name", None),
+            last_name=getattr(row, "last_name", None),
+            membership_category=getattr(row, "membership_category", None),
+            membership_status=getattr(row, "membership_status", None),
+            membership_date=getattr(row, "membership_date", None),
+            membership_expiration=getattr(row, "membership_expiration", None),
+        )
+        groups.setdefault(key, []).append(row)
+
+    duplicate_groups = 0
+    merged_rows = 0
+    skipped_groups = 0
+    booking_relinks = 0
+    flush_interval = 100
+    pending_writes = 0
+
+    for group_rows in groups.values():
+        if len(group_rows) <= 1:
+            continue
+        duplicate_groups += 1
+        ordered = sorted(group_rows, key=lambda row: (-_member_record_score(row), int(getattr(row, "id", 0) or 0)))
+        canonical = ordered[0]
+        duplicates = ordered[1:]
+
+        safe = True
+        for duplicate in duplicates:
+            if _member_duplicate_conflict(canonical, duplicate):
+                safe = False
+                break
+            if str(getattr(duplicate, "member_number", "") or "").strip() and str(
+                getattr(canonical, "member_number", "") or ""
+            ).strip():
+                safe = False
+                break
+            if getattr(duplicate, "person_id", None) and getattr(canonical, "person_id", None):
+                safe = False
+                break
+        if not safe:
+            skipped_groups += 1
+            continue
+
+        duplicate_ids = [int(duplicate.id) for duplicate in duplicates if getattr(duplicate, "id", None)]
+        booking_counts = {}
+        if duplicate_ids:
+            booking_counts = {
+                int(member_id): int(count or 0)
+                for member_id, count in (
+                    db.query(models.Booking.member_id, func.count(models.Booking.id))
+                    .filter(models.Booking.member_id.in_(duplicate_ids))
+                    .group_by(models.Booking.member_id)
+                    .all()
+                )
+            }
+
+        for duplicate in duplicates:
+            duplicate_id = int(duplicate.id)
+            if int(booking_counts.get(duplicate_id, 0) or 0) > 0:
+                booking_relinks += int(
+                    db.query(models.Booking)
+                    .filter(models.Booking.member_id == duplicate_id)
+                    .update({models.Booking.member_id: int(canonical.id)}, synchronize_session=False)
+                    or 0
+                )
+            _merge_member_rows(canonical, duplicate)
+            db.delete(duplicate)
+            merged_rows += 1
+            pending_writes += 1
+            if pending_writes >= flush_interval:
+                db.flush()
+                pending_writes = 0
+
+    if pending_writes > 0:
+        db.flush()
+
+    return {
+        "duplicate_groups": int(duplicate_groups),
+        "merged_rows": int(merged_rows),
+        "skipped_groups": int(skipped_groups),
+        "booking_relinks": int(booking_relinks),
+    }
+
+
 def _ingest_members(
     db: Session,
     *,
@@ -319,15 +480,20 @@ def _ingest_members(
         for row in existing_rows
         if str(getattr(row, "email", "") or "").strip()
     }
-    by_name = {}
+    by_identity = {}
     for row in existing_rows:
-        first = str(getattr(row, "first_name", "") or "").strip().lower()
-        last = str(getattr(row, "last_name", "") or "").strip().lower()
-        if first and last:
-            by_name[(first, last)] = row
+        key = member_identity_key(
+            first_name=getattr(row, "first_name", None),
+            last_name=getattr(row, "last_name", None),
+            membership_category=getattr(row, "membership_category", None),
+            membership_status=getattr(row, "membership_status", None),
+            membership_date=getattr(row, "membership_date", None),
+            membership_expiration=getattr(row, "membership_expiration", None),
+        )
+        by_identity[key] = row
     pending_by_member_number: dict[str, dict[str, Any]] = {}
     pending_by_email: dict[str, dict[str, Any]] = {}
-    pending_by_name: dict[tuple[str, str], dict[str, Any]] = {}
+    pending_by_identity: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
     insert_payloads: list[dict[str, Any]] = []
 
     for row in rows[1:]:
@@ -363,6 +529,14 @@ def _ingest_members(
             "gender": gender,
             "player_category": classify_membership_group(membership),
         }
+        identity_key = member_identity_key(
+            first_name=first,
+            last_name=last,
+            membership_category=membership,
+            membership_status=norm_status,
+            membership_date=membership_date,
+            membership_expiration=membership_exp,
+        )
 
         existing = None
         if member_number:
@@ -374,9 +548,9 @@ def _ingest_members(
         if existing is None and email:
             existing = pending_by_email.get(email)
         if existing is None:
-            existing = by_name.get((first.lower(), last.lower()))
+            existing = by_identity.get(identity_key)
         if existing is None:
-            existing = pending_by_name.get((first.lower(), last.lower()))
+            existing = pending_by_identity.get(identity_key)
         if existing is None:
             insert_payloads.append(payload)
             inserted += 1
@@ -408,9 +582,9 @@ def _ingest_members(
             else:
                 by_email[email] = existing
         if isinstance(existing, dict):
-            pending_by_name[(first.lower(), last.lower())] = existing
+            pending_by_identity[identity_key] = existing
         else:
-            by_name[(first.lower(), last.lower())] = existing
+            by_identity[identity_key] = existing
 
     if insert_payloads:
         chunk_size = 100
@@ -724,6 +898,9 @@ def seed_umhlali_operational_inputs(
     out["setup_dir"] = str(setup.setup_dir)
 
     if not force:
+        dedup_stats = dedupe_umhlali_members(db, club_id=int(club_id))
+        if int(dedup_stats.get("merged_rows", 0) or 0) > 0:
+            out["members"] = {"deduped_rows": int(dedup_stats.get("merged_rows", 0))}
         has_members = bool(
             db.query(models.Member.id).filter(models.Member.club_id == int(club_id)).first()
         )
@@ -801,6 +978,12 @@ def seed_umhlali_operational_inputs(
         path=setup.account_customers,
         loader=_ingest_account_customers,
     )
+
+    dedup_stats = dedupe_umhlali_members(db, club_id=int(club_id))
+    if int(dedup_stats.get("merged_rows", 0) or 0) > 0:
+        current = out.get("members") if isinstance(out.get("members"), dict) else {}
+        current["deduped_rows"] = int(dedup_stats.get("merged_rows", 0))
+        out["members"] = current
 
     out["status"] = "seeded" if sources_loaded > 0 else "missing_inputs"
     return out

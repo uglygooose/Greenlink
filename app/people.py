@@ -343,3 +343,25 @@ def parse_terms_days(value: Any) -> int | None:
     except Exception:
         return None
     return out if out >= 0 else None
+
+
+def member_identity_key(
+    *,
+    first_name: Any,
+    last_name: Any,
+    membership_category: Any,
+    membership_status: Any = None,
+    membership_date: Any = None,
+    membership_expiration: Any = None,
+) -> tuple[str, str, str, str, str, str]:
+    first = str(first_name or "").strip().lower()
+    last = str(last_name or "").strip().lower()
+    category = str(membership_category or "").strip().lower()
+    status = normalize_membership_status(membership_status)
+    start = membership_date.isoformat() if isinstance(membership_date, date) else str(membership_date or "").strip().lower()
+    end = (
+        membership_expiration.isoformat()
+        if isinstance(membership_expiration, date)
+        else str(membership_expiration or "").strip().lower()
+    )
+    return (first, last, category, status, start, end)
