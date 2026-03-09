@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -1104,6 +1104,8 @@ async def import_bookings_csv(
     total = 0
     notes: list[str] = []
     touched_tee_ids: set[int] = set()
+    pruned = 0
+    seen_external_row_ids: set[str] = set()
 
     try:
         members = (
@@ -1179,6 +1181,8 @@ async def import_bookings_csv(
             else:
                 basis = f"{provider_norm}|{booking_id or ''}|{tee_time.isoformat()}|{tee_val or ''}|{player_name}|{player_email or ''}"
                 external_row_id = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:28]
+            if provider_norm == "tee_sheet" and external_row_id:
+                seen_external_row_ids.add(external_row_id)
 
             status_raw = str(row.get("status") or "").strip().lower()
             status_map = {
@@ -1347,6 +1351,34 @@ async def import_bookings_csv(
                 )
                 inserted += 1
 
+        if provider_norm == "tee_sheet" and tee_sheet_meta and tee_sheet_meta.get("play_date"):
+            play_date = tee_sheet_meta["play_date"]
+            start_dt = datetime.combine(play_date, datetime.min.time())
+            end_dt = start_dt + timedelta(days=1)
+            mirrored_rows = (
+                db.query(Booking)
+                .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+                .filter(
+                    Booking.club_id == club_id,
+                    Booking.external_provider == provider_norm,
+                    TeeTime.club_id == club_id,
+                    TeeTime.tee_time >= start_dt,
+                    TeeTime.tee_time < end_dt,
+                )
+                .all()
+            )
+            for mirrored in mirrored_rows:
+                external_key = str(getattr(mirrored, "external_row_id", "") or "").strip()
+                if external_key and external_key in seen_external_row_ids:
+                    continue
+                tee_time_id = int(getattr(mirrored, "tee_time_id", 0) or 0)
+                if tee_time_id > 0:
+                    touched_tee_ids.add(tee_time_id)
+                db.delete(mirrored)
+                pruned += 1
+            if pruned > 0 and len(notes) < 8:
+                notes.append(f"Removed {pruned} stale tee sheet booking(s) for {play_date.isoformat()}")
+
         # Capacity conflict marking for touched tee times
         if touched_tee_ids:
             occupying_statuses = {BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed}
@@ -1389,6 +1421,7 @@ async def import_bookings_csv(
                 "rows_inserted": int(inserted),
                 "rows_updated": int(updated),
                 "rows_failed": int(failed),
+                "rows_pruned": int(pruned),
                 "tee_times_touched": len(touched_tee_ids),
                 "play_date": tee_sheet_meta.get("play_date").isoformat() if tee_sheet_meta and tee_sheet_meta.get("play_date") else None,
             },
@@ -1404,6 +1437,7 @@ async def import_bookings_csv(
             "rows_inserted": inserted,
             "rows_updated": updated,
             "rows_failed": failed,
+            "rows_pruned": pruned,
             "notes": batch.notes,
             "tee_times_touched": len(touched_tee_ids),
         }

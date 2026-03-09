@@ -291,7 +291,7 @@
                             <div class="ai-assistant-list" id="dashboard-alerts-list">
                                 <div class="action-note">No active alerts.</div>
                             </div>
-                            <div class="action-note" id="dashboard-alerts-note">Monitoring import freshness, tee capacity, weather reconfirm responses, and cashbook backlog.</div>
+                            <div class="action-note" id="dashboard-alerts-note">Monitoring import freshness, tee capacity, and cashbook backlog.</div>
                         </div>
                     </div>
 
@@ -1159,7 +1159,6 @@
                                     <button type="button" class="manage-item" data-action="bulk-book">Bulk Book / Golf Day...</button>
                                     <button type="button" class="manage-item" data-action="import-bookings">Import Tee Sheet CSV...</button>
                                     <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
-                                    <button type="button" class="manage-item" data-action="weather-reconfirm">Weather Reconfirm...</button>
                                     <button type="button" class="manage-item" data-action="tee-profile">Tee Schedule...</button>
                                 </div>
                             </div>
@@ -1184,7 +1183,6 @@
                             <div class="summary-stat"><span>Next Tee</span><strong id="tee-summary-next">-</strong></div>
                         </div>
                     </div>
-                     <div id="tee-sheet-weather-status" class="search-status tee-weather-status" aria-live="polite"></div>
                      <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
                      <div class="tee-sheet-table-wrap">
                         <div class="tee-sheet-head">
@@ -1805,49 +1803,6 @@
             <div class="booking-window-actions">
                 <button class="btn-primary" type="button" onclick="saveTeeProfileSettings()">Save Tee Schedule</button>
                 <span class="booking-window-status" id="tee-profile-status"></span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal for weather reconfirm prompts -->
-    <div id="weather-reconfirm-modal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Weather Reconfirm</h2>
-            <p class="muted-text">Rain-risk flags refresh automatically for the selected date. Send in-app reconfirm prompts only when needed.</p>
-
-            <div class="bulk-book-grid">
-                <label for="weather-reconfirm-date">Date</label>
-                <input type="date" id="weather-reconfirm-date" />
-
-                <label for="weather-reconfirm-rain">Rain probability trigger (%)</label>
-                <input type="number" id="weather-reconfirm-rain" min="0" max="100" value="60" />
-
-                <label for="weather-reconfirm-mm">Rain volume trigger (mm)</label>
-                <input type="number" id="weather-reconfirm-mm" min="0" max="100" step="0.1" value="1.0" />
-            </div>
-
-            <div class="bulk-book-actions">
-                <button class="btn-primary" type="button" id="weather-reconfirm-send-btn">Send In-App Prompts</button>
-                <span class="bulk-book-status" id="weather-reconfirm-status"></span>
-            </div>
-
-            <div class="table-container weather-reconfirm-table-wrap">
-                <table class="data-table weather-reconfirm-table">
-                    <thead>
-                        <tr>
-                            <th>Tee Time</th>
-                            <th>Player</th>
-                            <th>Risk</th>
-                            <th>Forecast</th>
-                            <th>In-App</th>
-                            <th>Response</th>
-                        </tr>
-                    </thead>
-                    <tbody id="weather-reconfirm-body">
-                        <tr><td colspan="6">Rain risk loads automatically.</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
     </div>

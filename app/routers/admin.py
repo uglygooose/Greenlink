@@ -3064,27 +3064,6 @@ async def get_operational_alerts(
             context={"lookahead_days": safe_days},
         )
 
-    unresolved_weather = (
-        db.query(func.count(PlayerNotification.id))
-        .filter(
-            PlayerNotification.club_id == club_id,
-            PlayerNotification.kind == "weather_reconfirm",
-            PlayerNotification.requires_action == 1,
-            PlayerNotification.response.is_(None),
-            PlayerNotification.created_at >= (now - timedelta(days=2)),
-        )
-        .scalar()
-        or 0
-    )
-    if int(unresolved_weather) > 0:
-        _add_alert(
-            severity="medium",
-            title="Weather reconfirm responses pending",
-            message=f"{int(unresolved_weather)} weather prompt(s) still need player response.",
-            metric_key="pending_weather_responses",
-            metric_value=int(unresolved_weather),
-        )
-
     stale_unexported_ledger = (
         db.query(func.count(LedgerEntry.id))
         .filter(
@@ -4390,7 +4369,6 @@ async def get_members(
                 Member.handicap_number,
                 Member.handicap_sa_id,
                 Member.home_club,
-                Member.birth_date,
                 Member.player_category,
                 Member.country_of_residence,
                 Member.membership_category,
