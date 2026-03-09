@@ -6,7 +6,7 @@ let currentUserProfile = null;
 let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
-let peopleView = "members"; // members | guests | staff
+let peopleView = "members"; // members | guests | staff | account_contacts
 let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
@@ -48,12 +48,17 @@ let revenueImportSettingsCache = {};
 let proShopProductsCache = [];
 let proShopCart = [];
 let peopleSort = "recent_activity";
-let peopleAreaFilter = "golf";
+let peopleAreaFilter = "all";
 let peopleStatusFilter = "active";
+let peopleQuickFilter = "all";
 let proShopStockFilter = "all";
 let proShopCategoryFilter = "all";
 let proShopSalesWindowDays = 30;
 let accountCustomersCache = [];
+let accountCustomersPageRows = [];
+let golfDayBookingsPageRows = [];
+let currentOperationContext = "tennis";
+let currentOperationFocus = "overview";
 const operationPageState = {
     pub: "week",
     bowls: "week",
@@ -252,6 +257,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeBookingModal();
     setupTeeSlotManageModal();
     setupPeopleFilters();
+    setupManagementPageControls();
     setupOperationWorkbenchControls();
     setupPageShortcuts();
     setupUmhlaliOperationalSync();
@@ -521,7 +527,18 @@ function applyStaffMode(role) {
     if (role !== "club_staff") return;
 
     // Limit sidebar to operational pages for pro shop staff.
-    const allowed = new Set(["bookings", "tee-times", "players", "pro-shop"]);
+    const allowed = new Set([
+        "bookings",
+        "tee-times",
+        "players",
+        "pro-shop",
+        "account-customers-page",
+        "golf-days-page",
+        "cashbook",
+        "ledger",
+        "revenue",
+        "operation-center",
+    ]);
     document.querySelectorAll(".nav-item[data-page]").forEach(item => {
         const page = item.getAttribute("data-page");
         if (!allowed.has(page)) {
@@ -820,6 +837,86 @@ async function superRefreshStaff() {
 }
 
 // Navigation
+function operationLabel(key) {
+    const value = String(key || "").trim().toLowerCase();
+    if (value === "pro_shop") return "Pro Shop";
+    if (value === "golf") return "Golf";
+    if (value === "tennis") return "Tennis";
+    if (value === "bowls") return "Bowls";
+    if (value === "squash") return "Squash";
+    return "General";
+}
+
+function applyPeoplePreset({ view = null, operation = null, quickFilter = null, status = null } = {}) {
+    if (view) {
+        peopleView = String(view).toLowerCase();
+    }
+    if (operation) {
+        peopleAreaFilter = String(operation).toLowerCase();
+    }
+    if (quickFilter) {
+        peopleQuickFilter = String(quickFilter).toLowerCase();
+    }
+    if (status) {
+        peopleStatusFilter = String(status).toLowerCase();
+    }
+
+    document.querySelectorAll("#players .people-btn").forEach((btn) => {
+        btn.classList.toggle("active", String(btn.dataset.view || "").toLowerCase() === peopleView);
+    });
+    const areaFilter = document.getElementById("people-area-filter");
+    if (areaFilter instanceof HTMLSelectElement) {
+        areaFilter.value = peopleAreaFilter;
+    }
+    const statusFilter = document.getElementById("people-status-filter");
+    if (statusFilter instanceof HTMLSelectElement) {
+        statusFilter.value = peopleStatusFilter;
+    }
+    const quickFilterSelect = document.getElementById("people-quick-filter");
+    if (quickFilterSelect instanceof HTMLSelectElement) {
+        quickFilterSelect.value = peopleQuickFilter;
+    }
+    const title = document.getElementById("people-title");
+    if (title) {
+        title.textContent = peopleView === "members"
+            ? "People"
+            : peopleView === "guests"
+                ? "Guests"
+                : peopleView === "staff"
+                    ? "Staff"
+                    : "Account Contacts";
+    }
+    const guestFilter = document.getElementById("guest-type-filter");
+    if (guestFilter) guestFilter.style.display = peopleView === "guests" ? "" : "none";
+    if (areaFilter instanceof HTMLSelectElement) areaFilter.style.display = peopleView === "guests" ? "none" : "";
+    if (statusFilter instanceof HTMLSelectElement) statusFilter.style.display = peopleView === "guests" ? "none" : "";
+    const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
+    const importBtn = document.getElementById("people-import-btn");
+    if (importBtn) importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
+    const addBtn = document.getElementById("people-add-btn");
+    if (addBtn) {
+        if (!canEdit) {
+            addBtn.style.display = "none";
+        } else if (peopleView === "members") {
+            addBtn.textContent = "Add Member";
+            addBtn.style.display = "";
+        } else if (peopleView === "staff") {
+            addBtn.textContent = "Add Staff";
+            addBtn.style.display = "";
+        } else if (peopleView === "account_contacts") {
+            addBtn.textContent = "Open Account Customers";
+            addBtn.style.display = "";
+        } else {
+            addBtn.style.display = "none";
+        }
+    }
+}
+
+function setOperationCenterContext(operation, focus = "overview") {
+    currentOperationContext = String(operation || "tennis").toLowerCase();
+    currentOperationFocus = String(focus || "overview").toLowerCase();
+}
+
 function setupNavigation() {
     document.querySelectorAll(".nav-item").forEach(item => {
         item.addEventListener("click", (e) => {
@@ -831,12 +928,25 @@ function setupNavigation() {
             e.preventDefault();
             const page = item.dataset.page;
             const streamPreset = String(item.dataset.dashboardStream || "").toLowerCase();
+            const peoplePresetView = String(item.dataset.peopleView || "").toLowerCase();
+            const peoplePresetOperation = String(item.dataset.peopleOperation || "").toLowerCase();
+            const operationContext = String(item.dataset.operationContext || "").toLowerCase();
+            const operationFocus = String(item.dataset.operationFocus || "overview").toLowerCase();
             if (!page) return;
 
             if (page === "dashboard") {
                 const nextStream = normalizeDashboardStreamKey(streamPreset || "all", "all");
                 dashboardMenuContext = nextStream === "all" ? "main" : "operation";
                 setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
+            }
+            if (page === "players") {
+                applyPeoplePreset({
+                    view: peoplePresetView || peopleView,
+                    operation: peoplePresetOperation || peopleAreaFilter,
+                });
+            }
+            if (page === "operation-center") {
+                setOperationCenterContext(operationContext || currentOperationContext, operationFocus || currentOperationFocus);
             }
 
             // Update active nav
@@ -856,6 +966,15 @@ function setupNavigation() {
                     break;
                 case "players":
                     loadPlayers();
+                    break;
+                case "account-customers-page":
+                    loadAccountCustomersPage();
+                    break;
+                case "golf-days-page":
+                    loadGolfDayBookingsPage();
+                    break;
+                case "operation-center":
+                    loadOperationCenter();
                     break;
                 case "revenue":
                     loadRevenue();
@@ -902,9 +1021,9 @@ function applyAdminDensity(value) {
 function applyQuickNavigationValue(raw) {
     const value = String(raw || "").trim();
     if (!value) return false;
-    const [pageName, stream] = value.split("|");
+    const [pageName, arg1, arg2] = value.split("|");
     if (pageName === "dashboard") {
-        const nextStream = normalizeDashboardStreamKey(stream || "all", "all");
+        const nextStream = normalizeDashboardStreamKey(arg1 || "all", "all");
         dashboardMenuContext = nextStream === "all" ? "main" : "operation";
         setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
         const nav = document.querySelector(`.nav-item[data-page="dashboard"][data-dashboard-stream="${nextStream}"]`) || document.querySelector('.nav-item[data-page="dashboard"]');
@@ -914,6 +1033,16 @@ function applyQuickNavigationValue(raw) {
         }
         showPage("dashboard");
         loadDashboard();
+        return true;
+    }
+    if (pageName === "players") {
+        applyPeoplePreset({ view: arg1 || "members", operation: arg2 || "all" });
+        navigateToAdminPage(pageName);
+        return true;
+    }
+    if (pageName === "operation-center") {
+        setOperationCenterContext(arg1 || "tennis", arg2 || "overview");
+        navigateToAdminPage(pageName);
         return true;
     }
     navigateToAdminPage(pageName);
@@ -1062,11 +1191,14 @@ function showPage(pageName) {
         "operations-config": "Operations Config",
         bookings: "Bookings",
         players: "People",
+        "account-customers-page": "Account Customers",
+        "golf-days-page": "Golf Day Bookings",
+        "operation-center": `${operationLabel(currentOperationContext)} Dashboard`,
         "pro-shop": "Pro Shop Sales",
-        revenue: "Revenue Analytics",
+        revenue: "Reconciliation",
         "tee-times": "Tee Sheet",
         ledger: "Ledger",
-        cashbook: "Cashbook Export",
+        cashbook: "Cashbook",
         "super-admin": "Super Admin",
         "pub-ops": "Pub Operations",
         "bowls-ops": "Bowls Operations",
@@ -1087,15 +1219,38 @@ function showPage(pageName) {
     if (pageName === "pub-ops") loadOperationWorkbench("pub");
     if (pageName === "bowls-ops") loadOperationWorkbench("bowls");
     if (pageName === "other-ops") loadOperationWorkbench("other");
+    if (pageName === "operation-center") {
+        const title = document.getElementById("operation-center-title");
+        if (title) title.textContent = `${operationLabel(currentOperationContext)} Dashboard`;
+    }
+}
+
+function setupManagementPageControls() {
+    document.getElementById("account-customers-refresh-btn")?.addEventListener("click", () => loadAccountCustomersPage());
+    document.getElementById("account-customers-search")?.addEventListener("input", () => loadAccountCustomersPage());
+    document.getElementById("account-customers-operation")?.addEventListener("change", () => loadAccountCustomersPage());
+    document.getElementById("account-customers-status")?.addEventListener("change", () => loadAccountCustomersPage());
+    document.getElementById("golf-days-refresh-btn")?.addEventListener("click", () => loadGolfDayBookingsPage());
+    document.getElementById("golf-days-search")?.addEventListener("input", () => loadGolfDayBookingsPage());
+    document.getElementById("golf-days-status")?.addEventListener("change", () => loadGolfDayBookingsPage());
+    document.getElementById("operation-center-open-people-btn")?.addEventListener("click", () => {
+        applyPeoplePreset({ view: "members", operation: currentOperationContext, status: "active" });
+        navigateToAdminPage("players");
+    });
+    document.getElementById("operation-center-open-finance-btn")?.addEventListener("click", () => navigateToAdminPage("ledger"));
 }
 
 function navigateToAdminPage(pageName) {
     const target = String(pageName || "").trim();
     if (!target) return;
     const navItem = document.querySelector(`.nav-item[data-page="${target}"]`);
-    if (navItem instanceof HTMLElement) {
+    if (navItem instanceof HTMLElement && target !== "players" && target !== "operation-center") {
         navItem.click();
         return;
+    }
+    if (navItem instanceof HTMLElement) {
+        document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+        navItem.classList.add("active");
     }
 
     showPage(target);
@@ -1108,6 +1263,15 @@ function navigateToAdminPage(pageName) {
             break;
         case "players":
             loadPlayers();
+            break;
+        case "account-customers-page":
+            loadAccountCustomersPage();
+            break;
+        case "golf-days-page":
+            loadGolfDayBookingsPage();
+            break;
+        case "operation-center":
+            loadOperationCenter();
             break;
         case "revenue":
             loadRevenue();
@@ -3041,6 +3205,7 @@ function setupPeopleFilters() {
     const areaFilter = document.getElementById("people-area-filter");
     const statusFilter = document.getElementById("people-status-filter");
     const sortSelect = document.getElementById("people-sort");
+    const quickFilter = document.getElementById("people-quick-filter");
     const importBtn = document.getElementById("people-import-btn");
     const importLogBtn = document.getElementById("people-import-log-btn");
     const addBtn = document.getElementById("people-add-btn");
@@ -3049,18 +3214,22 @@ function setupPeopleFilters() {
         peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
     }
     if (areaFilter instanceof HTMLSelectElement) {
-        peopleAreaFilter = String(areaFilter.value || "golf").toLowerCase();
+        peopleAreaFilter = String(areaFilter.value || "all").toLowerCase();
     }
     if (statusFilter instanceof HTMLSelectElement) {
         peopleStatusFilter = String(statusFilter.value || "active").toLowerCase();
     }
+    if (quickFilter instanceof HTMLSelectElement) {
+        peopleQuickFilter = String(quickFilter.value || "all").toLowerCase();
+    }
 
     const applyPeopleSortOptions = () => {
         if (!(sortSelect instanceof HTMLSelectElement)) return;
-        const optionsForView = peopleView === "staff"
+        const optionsForView = (peopleView === "staff" || peopleView === "account_contacts")
             ? [
                 { value: "name_asc", label: "Name A-Z" },
                 { value: "name_desc", label: "Name Z-A" },
+                { value: "code_asc", label: "Code A-Z" },
             ]
             : [
                 { value: "recent_activity", label: "Recent Activity" },
@@ -3078,18 +3247,57 @@ function setupPeopleFilters() {
         sortSelect.value = peopleSort;
     };
 
+    const applyQuickFilterPreset = () => {
+        switch (peopleQuickFilter) {
+            case "golf_members":
+                peopleView = "members";
+                peopleAreaFilter = "golf";
+                peopleStatusFilter = "active";
+                break;
+            case "tennis_members":
+                peopleView = "members";
+                peopleAreaFilter = "tennis";
+                peopleStatusFilter = "active";
+                break;
+            case "bowls_members":
+                peopleView = "members";
+                peopleAreaFilter = "bowls";
+                peopleStatusFilter = "active";
+                break;
+            case "non_golf_members":
+                peopleView = "members";
+                peopleAreaFilter = "general";
+                peopleStatusFilter = "active";
+                break;
+            case "staff":
+                peopleView = "staff";
+                peopleAreaFilter = "general";
+                peopleStatusFilter = "active";
+                break;
+            default:
+                break;
+        }
+        applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
+    };
+
     const updateTitle = () => {
         if (!title) return;
-        title.textContent = peopleView === "members" ? "Members" : peopleView === "guests" ? "Guests" : "Staff";
+        title.textContent = peopleView === "members"
+            ? "People"
+            : peopleView === "guests"
+                ? "Guests"
+                : peopleView === "staff"
+                    ? "Staff"
+                    : "Account Contacts";
         const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
         if (guestFilter) {
             guestFilter.style.display = peopleView === "guests" ? "" : "none";
         }
         if (areaFilter) {
-            areaFilter.style.display = peopleView === "members" ? "" : "none";
+            areaFilter.style.display = peopleView === "guests" ? "none" : "";
         }
         if (statusFilter) {
-            statusFilter.style.display = peopleView === "members" ? "" : "none";
+            statusFilter.style.display = peopleView === "guests" ? "none" : "";
         }
         if (importBtn) {
             importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
@@ -3106,6 +3314,9 @@ function setupPeopleFilters() {
             } else if (peopleView === "staff") {
                 addBtn.textContent = "Add Staff";
                 addBtn.style.display = "";
+            } else if (peopleView === "account_contacts") {
+                addBtn.textContent = "Open Account Customers";
+                addBtn.style.display = "";
             } else {
                 addBtn.style.display = "none";
             }
@@ -3113,6 +3324,7 @@ function setupPeopleFilters() {
         if (sortSelect) {
             sortSelect.style.display = "";
         }
+        applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
         applyPeopleSortOptions();
     };
 
@@ -3121,6 +3333,7 @@ function setupPeopleFilters() {
             buttons.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
             peopleView = btn.dataset.view || "members";
+            peopleQuickFilter = "all";
             currentPlayersPage = 1;
 
             // Reset horizontal scroll when switching between wide tables (members) and narrow ones (staff).
@@ -3156,6 +3369,13 @@ function setupPeopleFilters() {
         currentPlayersPage = 1;
         loadPlayers();
     });
+    quickFilter?.addEventListener("change", () => {
+        peopleQuickFilter = String(quickFilter.value || "all").toLowerCase();
+        currentPlayersPage = 1;
+        applyQuickFilterPreset();
+        updateTitle();
+        loadPlayers();
+    });
 
     sortSelect?.addEventListener("change", () => {
         peopleSort = String(sortSelect.value || "recent_activity").toLowerCase();
@@ -3168,6 +3388,8 @@ function setupPeopleFilters() {
             openMemberEditModal(null);
         } else if (peopleView === "staff") {
             openStaffEditModal(null);
+        } else if (peopleView === "account_contacts") {
+            navigateToAdminPage("account-customers-page");
         }
     });
     importBtn?.addEventListener("click", () => {
@@ -3202,7 +3424,9 @@ async function loadPlayers() {
                 url += `&guest_type=${encodeURIComponent(guestTypeFilter)}`;
             }
         } else if (peopleView === "staff") {
-            url = `${API_BASE}/api/admin/staff?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
+            url = `${API_BASE}/api/admin/staff?skip=0&limit=250`;
+        } else if (peopleView === "account_contacts") {
+            url = `${API_BASE}/api/admin/account-customers`;
         }
         if (search) url += `&q=${encodeURIComponent(search)}`;
         if (peopleSort) url += `&sort=${encodeURIComponent(peopleSort)}`;
@@ -3211,16 +3435,15 @@ async function loadPlayers() {
 
         if (peopleView === "members") {
             tableHead.innerHTML = `
-                <th>Name</th>
-                <th>Member #</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Category</th>
-                <th>Status</th>
-                <th>Handicap</th>
-                <th>Bookings</th>
-                <th>Total Spent</th>
-                <th>Last Seen</th>
+                <th>Full Name</th>
+                <th>Club / Home Club</th>
+                <th>Person Type</th>
+                <th>Primary Operation</th>
+                <th>Membership Category</th>
+                <th>Lifecycle Status</th>
+                <th>Contact</th>
+                <th>Last Activity</th>
+                <th>Financial Flags</th>
                 <th>Action</th>
             `;
 
@@ -3228,71 +3451,97 @@ async function loadPlayers() {
             tableBody.innerHTML = members.map(m => `
                 <tr>
                     <td>${escapeHtml(m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim())}</td>
-                    <td>${m.member_number ? escapeHtml(m.member_number) : "-"}</td>
-                    <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</td>
-                    <td>${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</td>
-                    <td>${escapeHtml(String(m.membership_category || m.membership_group || "-"))}</td>
-                    <td>${escapeHtml(String(m.membership_status || (m.active ? "active" : "inactive")))}</td>
-                    <td>${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</td>
-                    <td>${formatInteger(m.bookings_count || 0)}</td>
-                    <td>${formatCurrencyZAR(m.total_spent || 0)}</td>
-                    <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "-"}</td>
-                    <td><button class="btn-view" onclick="viewMemberDetail(${m.id})">View</button></td>
+                    <td>${m.home_club ? escapeHtml(m.home_club) : "-"}</td>
+                    <td>${escapeHtml(String(m.person_type || "Member"))}</td>
+                    <td>${escapeHtml(String(m.primary_operation || "-"))}</td>
+                    <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
+                    <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
+                    <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
+                    <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "<span class=\"muted\">No activity</span>"}</td>
+                    <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
+                    <td class="row-actions">
+                        <button class="btn-view" onclick="viewMemberDetail(${m.id})">Profile</button>
+                        ${(currentUserRole === "admin" || currentUserRole === "super_admin") ? `<button class="btn-secondary" onclick="openMemberEditModal(${m.id})">Edit</button>` : ""}
+                    </td>
                 </tr>
             `).join("");
 
             if (!members.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="11" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
+                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
                     </tr>
                 `;
             }
         } else if (peopleView === "guests") {
             tableHead.innerHTML = `
-                <th>Name</th>
-                <th>Email</th>
-                <th>Handicap</th>
-                <th>Bookings</th>
-                <th>Total Spent</th>
-                <th>Last Seen</th>
+                <th>Full Name</th>
+                <th>Club / Home Club</th>
+                <th>Person Type</th>
+                <th>Primary Operation</th>
+                <th>Membership Category</th>
+                <th>Lifecycle Status</th>
+                <th>Contact</th>
+                <th>Last Activity</th>
+                <th>Financial Flags</th>
             `;
 
             const guests = Array.isArray(data.guests) ? data.guests : [];
             tableBody.innerHTML = guests.map(g => `
                 <tr>
                     <td>${escapeHtml(g.name || "-")}</td>
-                    <td>${g.email ? escapeHtml(g.email) : "-"}</td>
-                    <td>${g.handicap_number ? escapeHtml(g.handicap_number) : "-"}</td>
-                    <td>${formatInteger(g.bookings_count || 0)}</td>
-                    <td>${formatCurrencyZAR(g.total_spent || 0)}</td>
+                    <td>-</td>
+                    <td>Guest</td>
+                    <td>Golf</td>
+                    <td>${guestTypeFilter === "affiliated" ? "Affiliated Guest" : guestTypeFilter === "non_affiliated" ? "Non-affiliated Guest" : "Guest"}</td>
+                    <td>Active</td>
+                    <td>${g.email ? escapeHtml(g.email) : "-"}${g.handicap_number ? `<div>${escapeHtml(g.handicap_number)}</div>` : ""}</td>
                     <td>${g.last_seen ? formatDateTimeDMY(g.last_seen) : "-"}</td>
+                    <td>${formatCurrencyZAR(g.total_spent || 0)}</td>
                 </tr>
             `).join("");
 
             if (!guests.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="6" style="text-align:center; color:#7f8c8d; padding: 18px;">No guests found.</td>
+                        <td colspan="9" style="text-align:center; color:#7f8c8d; padding: 18px;">No guests found.</td>
                     </tr>
                 `;
             }
         } else if (peopleView === "staff") {
+            let staff = Array.isArray(data.staff) ? data.staff : [];
+            if (peopleAreaFilter && peopleAreaFilter !== "all") {
+                staff = staff.filter(s => {
+                    const op = String(s.operation_area || "").toLowerCase();
+                    return peopleAreaFilter === "general" ? !op || op.includes("general") || op.includes("finance") : op.includes(peopleAreaFilter.replace("_", " "));
+                });
+            }
             tableHead.innerHTML = `
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Operational Role</th>
+                <th>Full Name</th>
+                <th>Club / Home Club</th>
+                <th>Person Type</th>
+                <th>Primary Operation</th>
+                <th>Membership Category</th>
+                <th>Lifecycle Status</th>
+                <th>Contact</th>
+                <th>Last Activity</th>
+                <th>Financial Flags</th>
                 <th>Action</th>
             `;
 
-            const staff = Array.isArray(data.staff) ? data.staff : [];
-            tableBody.innerHTML = staff.map(s => `
+            const start = (currentPlayersPage - 1) * 10;
+            const pageRows = staff.slice(start, start + 10);
+            tableBody.innerHTML = pageRows.map(s => `
                 <tr>
                     <td>${escapeHtml(s.name || "-")}</td>
+                    <td>-</td>
+                    <td>Staff</td>
+                    <td>${escapeHtml(String(s.operation_area || "General / Operations"))}</td>
+                    <td>${escapeHtml(String(s.operational_role || s.role || "-"))}</td>
+                    <td>Active</td>
                     <td>${s.email ? `<a href="mailto:${encodeURIComponent(String(s.email))}">${escapeHtml(s.email)}</a>` : "-"}</td>
-                    <td>${escapeHtml(String(s.role || "-"))}</td>
-                    <td>${escapeHtml(String(s.operational_role || "-"))}</td>
+                    <td>-</td>
+                    <td>-</td>
                     <td>${
                         (currentUserRole === "admin" || currentUserRole === "super_admin")
                             ? (String(s.role || "").toLowerCase() === "club_staff"
@@ -3303,13 +3552,75 @@ async function loadPlayers() {
                 </tr>
             `).join("");
 
-            if (!staff.length) {
+            if (!pageRows.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
+                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
                     </tr>
                 `;
             }
+            renderPagination("players-pagination", currentPlayersPage, Math.ceil(staff.length / 10) || 1, (page) => {
+                currentPlayersPage = page;
+                loadPlayers();
+            });
+            return;
+        } else if (peopleView === "account_contacts") {
+            let contacts = Array.isArray(data.account_customers) ? data.account_customers : [];
+            if (peopleAreaFilter && peopleAreaFilter !== "all") {
+                contacts = contacts.filter((row) => {
+                    const op = String(row.operation_area || "").toLowerCase();
+                    if (peopleAreaFilter === "general") return !op || op.includes("general") || op.includes("debtor");
+                    return op.includes(peopleAreaFilter.replace("_", " "));
+                });
+            }
+            if (peopleStatusFilter && peopleStatusFilter !== "all") {
+                contacts = contacts.filter((row) => peopleStatusFilter === "active" ? Boolean(row.active) : !row.active);
+            }
+            accountCustomersPageRows = contacts;
+            tableHead.innerHTML = `
+                <th>Full Name</th>
+                <th>Club / Home Club</th>
+                <th>Person Type</th>
+                <th>Primary Operation</th>
+                <th>Membership Category</th>
+                <th>Lifecycle Status</th>
+                <th>Contact</th>
+                <th>Last Activity</th>
+                <th>Financial Flags</th>
+                <th>Action</th>
+            `;
+            const start = (currentPlayersPage - 1) * 10;
+            const pageRows = contacts.slice(start, start + 10);
+            tableBody.innerHTML = pageRows.map(row => `
+                <tr>
+                    <td>${escapeHtml(String(row.name || "-"))}</td>
+                    <td>-</td>
+                    <td>Account Contact</td>
+                    <td>${escapeHtml(String(row.operation_area || "General / Debtors"))}</td>
+                    <td>${escapeHtml(String(row.customer_type || "Account Customer"))}</td>
+                    <td>${row.active ? "Active" : "Inactive"}</td>
+                    <td>${escapeHtml(String(row.billing_contact || "-"))}</td>
+                    <td>-</td>
+                    <td>${row.account_code ? `<span class="acct-pill">${escapeHtml(String(row.account_code))}</span>` : "-"}</td>
+                    <td class="row-actions">
+                        <button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button>
+                        <button class="btn-secondary" onclick="navigateToAdminPage('golf-days-page')">Golf Days</button>
+                    </td>
+                </tr>
+            `).join("");
+
+            if (!pageRows.length) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No account contacts found.</td>
+                    </tr>
+                `;
+            }
+            renderPagination("players-pagination", currentPlayersPage, Math.ceil(contacts.length / 10) || 1, (page) => {
+                currentPlayersPage = page;
+                loadPlayers();
+            });
+            return;
         } else {
             tableHead.innerHTML = `
                 <th>Name</th>
@@ -3363,6 +3674,180 @@ async function loadPlayers() {
     } catch (error) {
         console.error("Failed to load players:", error);
     }
+}
+
+async function loadAccountCustomersPage() {
+    const token = localStorage.getItem("token");
+    const search = String(document.getElementById("account-customers-search")?.value || "").trim();
+    const operation = String(document.getElementById("account-customers-operation")?.value || "all").toLowerCase();
+    const status = String(document.getElementById("account-customers-status")?.value || "all").toLowerCase();
+    const body = document.getElementById("account-customers-body");
+    if (!body) return;
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/account-customers${search ? `?q=${encodeURIComponent(search)}` : ""}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        let rows = Array.isArray(data?.account_customers) ? data.account_customers : [];
+        if (operation !== "all") {
+            rows = rows.filter((row) => {
+                const area = String(row.operation_area || "").toLowerCase();
+                if (operation === "general") return !area || area.includes("general") || area.includes("debtor");
+                return area.includes(operation.replace("_", " "));
+            });
+        }
+        if (status !== "all") {
+            rows = rows.filter((row) => status === "active" ? Boolean(row.active) : !row.active);
+        }
+        accountCustomersPageRows = rows;
+        document.getElementById("account-customers-total").textContent = formatInteger(rows.length);
+        document.getElementById("account-customers-active").textContent = formatInteger(rows.filter((row) => row.active).length);
+        document.getElementById("account-customers-golf").textContent = formatInteger(rows.filter((row) => String(row.operation_area || "").toLowerCase().includes("golf")).length);
+        document.getElementById("account-customers-contacts").textContent = formatInteger(rows.filter((row) => String(row.billing_contact || "").trim()).length);
+        body.innerHTML = rows.map((row) => `
+            <tr>
+                <td>${escapeHtml(String(row.name || "-"))}</td>
+                <td>${row.account_code ? escapeHtml(String(row.account_code)) : "-"}</td>
+                <td>${escapeHtml(String(row.billing_contact || "-"))}</td>
+                <td>${escapeHtml(String(row.customer_type || "Account Customer"))}</td>
+                <td>${escapeHtml(String(row.operation_area || "General / Debtors"))}</td>
+                <td>${escapeHtml(String(row.terms || "-"))}</td>
+                <td>${row.active ? '<span class="acct-pill good">Active</span>' : '<span class="acct-pill">Inactive</span>'}</td>
+                <td class="row-actions">
+                    <button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button>
+                    <button class="btn-secondary" onclick="navigateToAdminPage('golf-days-page')">Golf Days</button>
+                    <button class="btn-secondary" onclick="navigateToAdminPage('ledger')">Ledger</button>
+                </td>
+            </tr>
+        `).join("") || `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">No account customers found.</td></tr>`;
+    } catch (error) {
+        console.error("Failed to load account customers page:", error);
+        body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load account customers.</td></tr>`;
+    }
+}
+
+async function loadGolfDayBookingsPage() {
+    const token = localStorage.getItem("token");
+    const search = String(document.getElementById("golf-days-search")?.value || "").trim();
+    const status = String(document.getElementById("golf-days-status")?.value || "all").toLowerCase();
+    const body = document.getElementById("golf-days-body");
+    if (!body) return;
+    try {
+        let url = `${API_BASE}/api/admin/golf-day-bookings`;
+        const params = [];
+        if (search) params.push(`q=${encodeURIComponent(search)}`);
+        if (status && status !== "all") params.push(`status=${encodeURIComponent(status)}`);
+        if (params.length) url += `?${params.join("&")}`;
+        const data = await fetchJson(url, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const rows = Array.isArray(data?.bookings) ? data.bookings : [];
+        golfDayBookingsPageRows = rows;
+        document.getElementById("golf-days-total").textContent = formatInteger(rows.length);
+        document.getElementById("golf-days-gross").textContent = formatCurrencyZAR(data?.total_amount || 0);
+        document.getElementById("golf-days-outstanding").textContent = formatCurrencyZAR(data?.outstanding_balance || 0);
+        document.getElementById("golf-days-paid").textContent = formatInteger(rows.filter((row) => String(row.payment_status || "").toLowerCase() === "paid").length);
+        body.innerHTML = rows.map((row) => `
+            <tr>
+                <td>${escapeHtml(String(row.event_name || "-"))}</td>
+                <td>${row.event_date ? formatYMDToDMY(row.event_date) : escapeHtml(String(row.event_date_raw || "-"))}</td>
+                <td>${escapeHtml(String(row.account_customer_name || row.contact_name || "-"))}</td>
+                <td>${escapeHtml(String(row.invoice_reference || "-"))}</td>
+                <td>${formatCurrencyZAR(row.amount || 0)}</td>
+                <td>${row.balance_due == null ? "-" : formatCurrencyZAR(row.balance_due)}</td>
+                <td>${escapeHtml(String(row.payment_status || "-"))}</td>
+                <td class="row-actions">
+                    <button class="btn-view" onclick="openGolfDayBookingDetail(${Number(row.id)})">View</button>
+                    ${row.account_customer_id ? `<button class="btn-secondary" onclick="openAccountCustomerDetail(${Number(row.account_customer_id)})">Customer</button>` : ""}
+                    <button class="btn-secondary" onclick="navigateToAdminPage('ledger')">Ledger</button>
+                </td>
+            </tr>
+        `).join("") || `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">No golf day bookings found.</td></tr>`;
+    } catch (error) {
+        console.error("Failed to load golf day bookings page:", error);
+        body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load golf day bookings.</td></tr>`;
+    }
+}
+
+async function loadOperationCenter() {
+    const token = localStorage.getItem("token");
+    const op = String(currentOperationContext || "tennis").toLowerCase();
+    const body = document.getElementById("operation-center-members-body");
+    const readiness = document.getElementById("operation-center-readiness");
+    const note = document.getElementById("operation-center-note");
+    if (!body || !readiness) return;
+    try {
+        const data = await fetchJson(`${API_BASE}/api/admin/members?limit=12&area=${encodeURIComponent(op)}&membership_status=all&sort=recent_activity`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const rows = Array.isArray(data?.members) ? data.members : [];
+        const activeCount = rows.filter((row) => String(row.member_lifecycle_status || row.membership_status || "").toLowerCase() === "active").length;
+        const heldCount = rows.filter((row) => ["hold", "inactive", "resigned", "deceased", "defaulter"].includes(String(row.member_lifecycle_status || row.membership_status || "").toLowerCase())).length;
+        document.getElementById("operation-center-members").textContent = formatInteger(activeCount);
+        document.getElementById("operation-center-held").textContent = formatInteger(heldCount);
+        document.getElementById("operation-center-last-seen").textContent = rows.find((row) => row.last_seen)?.last_seen ? formatDateTimeDMY(rows.find((row) => row.last_seen).last_seen) : "-";
+        document.getElementById("operation-center-workflow").textContent = currentOperationFocus === "bookings" ? "Placeholder" : "Members live";
+        if (note) {
+            note.textContent = currentOperationFocus === "bookings"
+                ? `${operationLabel(op)} booking workflow is not yet implemented in this repo. The structure is now wired so staff can manage members and reconcile finance cleanly until that module is added.`
+                : `${operationLabel(op)} uses the shared People registry with operation-aware filtering and finance visibility.`;
+        }
+        body.innerHTML = rows.slice(0, 8).map((row) => `
+            <tr>
+                <td>${escapeHtml(String(row.name || "-"))}</td>
+                <td>${escapeHtml(String(row.membership_category_raw || row.membership_category || "-"))}</td>
+                <td>${escapeHtml(String(row.member_lifecycle_status || row.membership_status || "-"))}</td>
+                <td>${row.last_seen ? formatDateTimeDMY(row.last_seen) : "-"}</td>
+            </tr>
+        `).join("") || `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found for this operation.</td></tr>`;
+        readiness.innerHTML = `
+            <div class="today-stat"><span>Members view</span><span class="stat-number">Live from People</span></div>
+            <div class="today-stat"><span>Booking workflow</span><span class="stat-number">${currentOperationFocus === "bookings" ? "Placeholder only" : "Use People filters"}</span></div>
+            <div class="today-stat"><span>Finance linkage</span><span class="stat-number">Use Ledger / Cashbook / Account Customers</span></div>
+        `;
+    } catch (error) {
+        console.error("Failed to load operation center:", error);
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load operation members.</td></tr>`;
+        readiness.innerHTML = `<div class="today-stat"><span>Operation status</span><span class="stat-number">Unavailable</span></div>`;
+    }
+}
+
+function openAccountCustomerDetail(accountCustomerId) {
+    const row = accountCustomersPageRows.find((item) => Number(item.id) === Number(accountCustomerId))
+        || accountCustomersCache.find((item) => Number(item.id) === Number(accountCustomerId));
+    if (!row) {
+        toastError("Account customer not loaded");
+        return;
+    }
+    document.getElementById("player-modal-body").innerHTML = `
+        <div class="modal-section"><h2>${escapeHtml(String(row.name || "Account Customer"))}</h2></div>
+        <div class="modal-section"><div class="modal-label">Account Code</div><div class="modal-value">${escapeHtml(String(row.account_code || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Billing Contact</div><div class="modal-value">${escapeHtml(String(row.billing_contact || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Operation</div><div class="modal-value">${escapeHtml(String(row.operation_area || "General / Debtors"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Terms</div><div class="modal-value">${escapeHtml(String(row.terms || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Source File</div><div class="modal-value">${escapeHtml(String(row.source_file || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Notes</div><div class="modal-value">${escapeHtml(String(row.notes || "No notes recorded."))}</div></div>
+    `;
+    document.getElementById("player-modal").classList.add("show");
+}
+
+function openGolfDayBookingDetail(golfDayBookingId) {
+    const row = golfDayBookingsPageRows.find((item) => Number(item.id) === Number(golfDayBookingId));
+    if (!row) {
+        toastError("Golf day booking not loaded");
+        return;
+    }
+    document.getElementById("player-modal-body").innerHTML = `
+        <div class="modal-section"><h2>${escapeHtml(String(row.event_name || "Golf Day Booking"))}</h2></div>
+        <div class="modal-section"><div class="modal-label">Event Date</div><div class="modal-value">${row.event_date ? formatYMDToDMY(row.event_date) : escapeHtml(String(row.event_date_raw || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Customer</div><div class="modal-value">${escapeHtml(String(row.account_customer_name || row.contact_name || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Invoice</div><div class="modal-value">${escapeHtml(String(row.invoice_reference || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Gross Amount</div><div class="modal-value">${formatCurrencyZAR(row.amount || 0)}</div></div>
+        <div class="modal-section"><div class="modal-label">Balance Due</div><div class="modal-value">${row.balance_due == null ? "-" : formatCurrencyZAR(row.balance_due)}</div></div>
+        <div class="modal-section"><div class="modal-label">Payment Status</div><div class="modal-value">${escapeHtml(String(row.payment_status || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Source File</div><div class="modal-value">${escapeHtml(String(row.source_file || "-"))}</div></div>
+        <div class="modal-section"><div class="modal-label">Notes</div><div class="modal-value">${escapeHtml(String(row.notes || "No notes recorded."))}</div></div>
+    `;
+    document.getElementById("player-modal").classList.add("show");
 }
 
 async function viewPlayerDetail(playerId) {
@@ -7226,98 +7711,99 @@ async function viewMemberDetail(memberId) {
         const acct = data?.linked_account || null;
         const bookings = Array.isArray(data?.recent_bookings) ? data.recent_bookings : [];
 
-        const accountHtml = acct ? `
-            <div class="modal-section">
-                <div class="modal-label">Linked Account</div>
-                <div class="modal-value">
-                    ${escapeHtml(acct.name || "")} (${escapeHtml(acct.email || "")})
-                    <button class="btn-view" style="margin-left:10px" onclick="viewPlayerDetail(${acct.id})">View Account</button>
-                </div>
-            </div>
-        ` : `
-            <div class="modal-section">
-                <div class="modal-label">Linked Account</div>
-                <div class="modal-value"><span class="muted">No app account found for this member email.</span></div>
-            </div>
-        `;
+        const sportAccess = [
+            m.golf_access ? "Golf" : "",
+            m.tennis_access ? "Tennis" : "",
+            m.bowls_access ? "Bowls" : "",
+            m.squash_access ? "Squash" : "",
+        ].filter(Boolean);
 
-        const html = `
-            <div class="modal-section">
-                <div class="modal-label">Member</div>
-                <div class="modal-value">
-                    ${escapeHtml(m.name || "-")}
-                    ${(currentUserRole === "admin" || currentUserRole === "super_admin") ? `<button class="btn-edit" style="margin-left:10px" onclick="openMemberEditModal(${memberId})">Edit</button>` : ""}
+        const sections = [
+            `
+                <div class="modal-section">
+                    <div class="modal-label">Identity</div>
+                    <div class="modal-value">
+                        <strong>${escapeHtml(m.name || "-")}</strong>
+                        ${(currentUserRole === "admin" || currentUserRole === "super_admin") ? `<button class="btn-edit" style="margin-left:10px" onclick="openMemberEditModal(${memberId})">Edit</button>` : ""}
+                        ${m.member_number ? `<div>Member # ${escapeHtml(String(m.member_number))}</div>` : ""}
+                        ${m.person_type ? `<div>${escapeHtml(String(m.person_type))}</div>` : ""}
+                    </div>
                 </div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Member #</div>
-                <div class="modal-value">${m.member_number ? escapeHtml(m.member_number) : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Email</div>
-                <div class="modal-value">${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Phone</div>
-                <div class="modal-value">${m.phone ? `<a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a>` : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Handicap</div>
-                <div class="modal-value">${m.handicap_number ? escapeHtml(m.handicap_number) : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Home Club</div>
-                <div class="modal-value">${m.home_club ? escapeHtml(m.home_club) : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Membership Category</div>
-                <div class="modal-value">${escapeHtml(String(m.membership_category || "-"))}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Membership Status</div>
-                <div class="modal-value">${escapeHtml(String(m.membership_status || (m.active ? "active" : "inactive")))}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Active</div>
-                <div class="modal-value">${m.active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>'}</div>
-            </div>
-            ${accountHtml}
-            <div class="modal-section">
-                <div class="modal-label">Bookings</div>
-                <div class="modal-value">${Number(stats.bookings_count || 0)}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Total Spent</div>
-                <div class="modal-value">R${Number(stats.total_spent || 0).toFixed(2)}</div>
-            </div>
-            <div class="modal-section">
-                <div class="modal-label">Last Seen</div>
-                <div class="modal-value">${stats.last_seen ? formatDateTimeDMY(stats.last_seen) : "-"}</div>
-            </div>
-            <div class="modal-section">
-                <h3>Recent Bookings</h3>
-                <table class="data-table" style="font-size: 12px;">
-                    <thead>
-                        <tr>
-                            <th>Tee Time</th>
-                            <th>Status</th>
-                            <th>Holes</th>
-                            <th>Price</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${bookings.length ? bookings.map(b => `
-                        <tr>
-                            <td>${b.tee_time ? formatDateTimeDMY(b.tee_time) : "-"}</td>
-                            <td><span class="status-badge ${b.status}" style="font-size: 10px;">${escapeHtml(String(b.status || "-"))}</span></td>
-                            <td>${b.holes == null ? "-" : Number(b.holes)}</td>
-                            <td>R${Number(b.price || 0).toFixed(2)}</td>
-                        </tr>
-                        `).join("") : `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 12px;">No bookings yet.</td></tr>`}
-                    </tbody>
-                </table>
-            </div>
-        `;
+            `,
+            `
+                <div class="modal-section">
+                    <div class="modal-label">Membership / Club Category</div>
+                    <div class="modal-value">
+                        <div>${escapeHtml(String(m.membership_category_raw || m.membership_category || "-"))}</div>
+                        <div>${escapeHtml(String(m.primary_operation || "General"))} | ${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</div>
+                        ${m.home_club ? `<div>${escapeHtml(String(m.home_club))}</div>` : ""}
+                    </div>
+                </div>
+            `,
+            sportAccess.length ? `
+                <div class="modal-section">
+                    <div class="modal-label">Sport Access</div>
+                    <div class="modal-value">${sportAccess.map(label => `<span class="acct-pill good">${escapeHtml(label)}</span>`).join(" ")}</div>
+                </div>
+            ` : "",
+            (m.email || m.phone || m.country_of_residence) ? `
+                <div class="modal-section">
+                    <div class="modal-label">Contact Details</div>
+                    <div class="modal-value">
+                        ${m.email ? `<div><a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(String(m.email))}</a></div>` : ""}
+                        ${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(String(m.phone))}</a></div>` : ""}
+                        ${m.country_of_residence ? `<div>${escapeHtml(String(m.country_of_residence))}</div>` : ""}
+                    </div>
+                </div>
+            ` : "",
+            (acct || Number(stats.total_spent || 0) > 0 || String(m.member_lifecycle_status || "").toLowerCase() === "defaulter") ? `
+                <div class="modal-section">
+                    <div class="modal-label">Financial / Debtor Linkage</div>
+                    <div class="modal-value">
+                        ${acct ? `${escapeHtml(acct.name || "")} (${escapeHtml(acct.email || "")}) <button class="btn-view" style="margin-left:10px" onclick="viewPlayerDetail(${acct.id})">View Account</button>` : "No linked app account."}
+                        <div>Total collected: ${formatCurrencyZAR(stats.total_spent || 0)}</div>
+                        ${String(m.member_lifecycle_status || "").toLowerCase() === "defaulter" ? `<div><span class="acct-pill bad">Defaulter</span></div>` : ""}
+                    </div>
+                </div>
+            ` : "",
+            `
+                <div class="modal-section">
+                    <div class="modal-label">Activity</div>
+                    <div class="modal-value">
+                        <div>Bookings: ${formatInteger(stats.bookings_count || 0)}</div>
+                        <div>Last seen: ${stats.last_seen ? formatDateTimeDMY(stats.last_seen) : "No activity recorded"}</div>
+                        ${m.source_file ? `<div>Source: ${escapeHtml(String(m.source_file))}${m.source_row_number != null ? ` row ${escapeHtml(String(m.source_row_number))}` : ""}</div>` : ""}
+                    </div>
+                </div>
+            `,
+            `
+                <div class="modal-section">
+                    <h3>Recent Bookings</h3>
+                    <table class="data-table" style="font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>Tee Time</th>
+                                <th>Status</th>
+                                <th>Holes</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${bookings.length ? bookings.map(b => `
+                            <tr>
+                                <td>${b.tee_time ? formatDateTimeDMY(b.tee_time) : "-"}</td>
+                                <td><span class="status-badge ${b.status}" style="font-size: 10px;">${escapeHtml(String(b.status || "-"))}</span></td>
+                                <td>${b.holes == null ? "-" : Number(b.holes)}</td>
+                                <td>${formatCurrencyZAR(b.price || 0)}</td>
+                            </tr>
+                            `).join("") : `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 12px;">No bookings yet.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `,
+        ].filter(Boolean);
+
+        const html = sections.join("");
 
         document.getElementById("player-modal-body").innerHTML = html;
         document.getElementById("player-modal").classList.add("show");
@@ -7372,7 +7858,7 @@ async function openMemberEditModal(memberId) {
         </div>
         <div class="modal-section">
             <label>Member #</label>
-            <input type="text" id="member-number" value="${escapeHtml(m.member_number || "")}" style="width: 100%; padding: 8px; margin-top: 8px;">
+            <input type="text" id="member-number" value="${escapeHtml(m.member_number || "")}" placeholder="Leave blank when there is no real club member number" style="width: 100%; padding: 8px; margin-top: 8px;">
         </div>
         <div class="modal-section">
             <label>Email</label>
@@ -7402,8 +7888,11 @@ async function openMemberEditModal(memberId) {
             <label>Membership status</label>
             <select id="member-membership-status" style="width: 100%; padding: 8px; margin-top: 8px;">
                 <option value="active" ${String(m.membership_status || "").toLowerCase() === "active" ? "selected" : ""}>Active</option>
-                <option value="suspended" ${String(m.membership_status || "").toLowerCase() === "suspended" ? "selected" : ""}>Suspended</option>
+                <option value="hold" ${String(m.membership_status || "").toLowerCase() === "hold" ? "selected" : ""}>Hold</option>
                 <option value="inactive" ${String(m.membership_status || "").toLowerCase() === "inactive" ? "selected" : ""}>Inactive</option>
+                <option value="resigned" ${String(m.membership_status || "").toLowerCase() === "resigned" ? "selected" : ""}>Resigned</option>
+                <option value="deceased" ${String(m.membership_status || "").toLowerCase() === "deceased" ? "selected" : ""}>Deceased</option>
+                <option value="defaulter" ${String(m.membership_status || "").toLowerCase() === "defaulter" ? "selected" : ""}>Defaulter</option>
             </select>
         </div>
         <div class="modal-section">

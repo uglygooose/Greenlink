@@ -573,6 +573,18 @@ body {
     background: #f8f9fa;
 }
 
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.row-actions .btn-view,
+.row-actions .btn-secondary {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
 .status-badge {
     padding: 4px 12px;
     border-radius: 20px;

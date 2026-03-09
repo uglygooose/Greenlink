@@ -14,9 +14,11 @@ from app import models
 from app.people import (
     classify_membership_group,
     member_identity_key,
+    normalize_primary_operation,
     normalize_membership_status,
     parse_membership_date,
     parse_terms_days,
+    parse_yes_no_flag,
 )
 
 
@@ -28,12 +30,18 @@ DEFAULT_SETUP_DIRS = (
 
 
 @dataclass(frozen=True)
+class SheetRef:
+    path: Path
+    sheet_name: str | None = None
+
+
+@dataclass(frozen=True)
 class SetupFiles:
     setup_dir: Path
-    member_list: Path | None
-    account_customers: Path | None
-    golf_day_bookings: Path | None
-    staff_roles: Path | None
+    member_list: SheetRef | None
+    account_customers: SheetRef | None
+    golf_day_bookings: SheetRef | None
+    staff_roles: SheetRef | None
 
 
 def _clean_text(value: Any, *, max_len: int = 255) -> str | None:
@@ -78,6 +86,21 @@ def _to_date(value: Any) -> date | None:
         return None
 
 
+def _sheet_ref(path: Path | None, sheet_name: str | None = None) -> SheetRef | None:
+    if path is None:
+        return None
+    return SheetRef(path=path, sheet_name=sheet_name)
+
+
+def _workbook_has_sheets(path: Path, required: set[str]) -> bool:
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        names = {str(name or "").strip().lower() for name in wb.sheetnames}
+        return required.issubset(names)
+    except Exception:
+        return False
+
+
 def _find_setup_files() -> SetupFiles | None:
     candidates: list[Path] = []
 
@@ -86,22 +109,44 @@ def _find_setup_files() -> SetupFiles | None:
     env_value = _clean_text(os.getenv("UMHLALI_OPERATING_INPUT_DIR"))
     if env_value:
         candidates.append(Path(env_value))
+    env_file = _clean_text(os.getenv("UMHLALI_OPERATING_INPUT_FILE"))
+    if env_file:
+        candidates.append(Path(env_file))
     for item in DEFAULT_SETUP_DIRS[1:]:
         candidates.append(Path(item))
+    candidates.append(Path.home() / "Downloads")
 
-    setup_dir: Path | None = None
+    workbook_paths: list[Path] = []
     for candidate in candidates:
         try:
-            if candidate.exists() and candidate.is_dir():
-                setup_dir = candidate
-                break
+            if candidate.exists() and candidate.is_file() and candidate.suffix.lower() == ".xlsx":
+                workbook_paths.append(candidate)
+            elif candidate.exists() and candidate.is_dir():
+                workbook_paths.extend(sorted(candidate.glob("*.xlsx")))
         except Exception:
             continue
 
-    if setup_dir is None:
+    if not workbook_paths:
         return None
 
-    file_map = {p.name.lower(): p for p in setup_dir.glob("*.xlsx")}
+    required_clean_sheets = {
+        "members_clean",
+        "account_customers_clean",
+        "golf_day_bookings_clean",
+        "staff_users_clean",
+    }
+    for path in workbook_paths:
+        if _workbook_has_sheets(path, required_clean_sheets):
+            return SetupFiles(
+                setup_dir=path.parent,
+                member_list=_sheet_ref(path, "Members_Clean"),
+                account_customers=_sheet_ref(path, "Account_Customers_Clean"),
+                golf_day_bookings=_sheet_ref(path, "Golf_Day_Bookings_Clean"),
+                staff_roles=_sheet_ref(path, "Staff_Users_Clean"),
+            )
+
+    setup_dir = workbook_paths[0].parent
+    file_map = {p.name.lower(): p for p in workbook_paths}
     member = None
     account = None
     golf_day = None
@@ -118,10 +163,10 @@ def _find_setup_files() -> SetupFiles | None:
 
     return SetupFiles(
         setup_dir=setup_dir,
-        member_list=member,
-        account_customers=account,
-        golf_day_bookings=golf_day,
-        staff_roles=staff,
+        member_list=_sheet_ref(member),
+        account_customers=_sheet_ref(account),
+        golf_day_bookings=_sheet_ref(golf_day),
+        staff_roles=_sheet_ref(staff),
     )
 
 
@@ -129,9 +174,13 @@ def find_umhlali_setup_files() -> SetupFiles | None:
     return _find_setup_files()
 
 
-def _sheet_rows(path: Path) -> list[list[Any]]:
-    wb = openpyxl.load_workbook(path, data_only=True)
-    ws = wb[wb.sheetnames[0]]
+def _sheet_rows(source: SheetRef) -> list[list[Any]]:
+    wb = openpyxl.load_workbook(source.path, data_only=True)
+    preferred = str(source.sheet_name or "").strip()
+    if preferred and preferred in wb.sheetnames:
+        ws = wb[preferred]
+    else:
+        ws = wb[wb.sheetnames[0]]
     return [list(row) for row in ws.iter_rows(values_only=True)]
 
 
@@ -159,6 +208,28 @@ def _extract_cells(row: list[Any], header_map: dict[str, int], *keys: str) -> An
     return None
 
 
+def _find_header_row(rows: list[list[Any]], *required_keys: str) -> tuple[int, dict[str, int]] | None:
+    required = {str(key or "").strip().lower() for key in required_keys if str(key or "").strip()}
+    if not required:
+        return None
+    for idx, row in enumerate(rows[:20]):
+        cells = {str(v or "").strip().lower() for v in row if str(v or "").strip()}
+        if required.issubset(cells):
+            return idx, _header_index_map(row)
+    return None
+
+
+def _find_members_header(rows: list[list[Any]]) -> tuple[int, dict[str, int]] | None:
+    return (
+        _find_header_row(rows, "source_row_number", "first_name", "last_name", "membership_category_raw")
+        or _find_header_row(rows, "first name", "last name", "membership")
+    )
+
+
+def _find_account_customers_header(rows: list[list[Any]]) -> tuple[int, dict[str, int]] | None:
+    return _find_header_row(rows, "customer_name", "account_code") or _find_header_row(rows, "name")
+
+
 def _upsert_import_batch(db: Session, *, club_id: int, source: str, file_name: str | None) -> models.ImportBatch:
     batch = models.ImportBatch(
         club_id=int(club_id),
@@ -180,6 +251,10 @@ def _upsert_account_customer(
     account_code: str | None,
     billing_contact: str | None,
     terms_label: str | None,
+    customer_type: str | None = None,
+    operation_area: str | None = None,
+    source_file: str | None = None,
+    import_reference: str | None = None,
 ) -> tuple[models.AccountCustomer, bool]:
     row = None
     if account_code:
@@ -210,6 +285,10 @@ def _upsert_account_customer(
             billing_contact=billing_contact,
             terms_label=terms_label,
             terms_days=parse_terms_days(terms_label),
+            customer_type=customer_type,
+            operation_area=operation_area,
+            source_file=source_file,
+            import_reference=import_reference,
             active=1,
         )
         db.add(row)
@@ -221,6 +300,10 @@ def _upsert_account_customer(
         row.billing_contact = billing_contact
         row.terms_label = terms_label
         row.terms_days = parse_terms_days(terms_label)
+        row.customer_type = customer_type
+        row.operation_area = operation_area
+        row.source_file = source_file
+        row.import_reference = import_reference
         row.updated_at = datetime.utcnow()
     return row, created
 
@@ -229,21 +312,27 @@ def _ingest_account_customers(
     db: Session,
     *,
     club_id: int,
-    path: Path,
+    path: SheetRef,
 ) -> dict[str, int]:
     rows = _sheet_rows(path)
     if not rows:
         return {"rows": 0, "inserted": 0, "updated": 0}
-    header = _header_index_map(rows[0])
+    header_info = _find_account_customers_header(rows)
+    if header_info is None:
+        return {"rows": 0, "inserted": 0, "updated": 0}
+    header_idx, header = header_info
     inserted = 0
     updated = 0
-    for row in rows[1:]:
-        name = _clean_text(_extract_cells(row, header, "name"), max_len=200)
+    for row in rows[header_idx + 1 :]:
+        name = _clean_text(_extract_cells(row, header, "customer_name", "name"), max_len=200)
         if not name:
             continue
-        code = _clean_text(_extract_cells(row, header, "acc code", "account code", "code"), max_len=40)
+        code = _clean_text(_extract_cells(row, header, "account_code", "acc code", "account code", "code"), max_len=40)
         contact = _clean_text(_extract_cells(row, header, "billing contact", "contact"), max_len=160)
-        terms = _clean_text(_extract_cells(row, header, "terms"), max_len=80)
+        terms = _clean_text(_extract_cells(row, header, "payment_terms", "terms"), max_len=80)
+        customer_type = _clean_text(_extract_cells(row, header, "customer_type"), max_len=60)
+        operation_area = _clean_text(_extract_cells(row, header, "operation_area"), max_len=120)
+        source_file = _clean_text(_extract_cells(row, header, "source_file"), max_len=255) or path.path.name
         _row, created = _upsert_account_customer(
             db,
             club_id=int(club_id),
@@ -251,12 +340,16 @@ def _ingest_account_customers(
             account_code=code,
             billing_contact=contact,
             terms_label=terms,
+            customer_type=customer_type,
+            operation_area=operation_area,
+            source_file=source_file,
+            import_reference=f"{source_file}:{code or name}",
         )
         if created:
             inserted += 1
         else:
             updated += 1
-    return {"rows": max(0, len(rows) - 1), "inserted": inserted, "updated": updated}
+    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated}
 
 
 def _find_member_row(
@@ -300,6 +393,8 @@ def _member_record_score(row: models.Member) -> int:
     score = 0
     if str(getattr(row, "member_number", "") or "").strip():
         score += 100
+    if str(getattr(row, "import_reference", "") or "").strip():
+        score += 40
     if str(getattr(row, "email", "") or "").strip():
         score += 40
     if str(getattr(row, "phone", "") or "").strip():
@@ -346,9 +441,21 @@ def _merge_member_rows(canonical: models.Member, duplicate: models.Member) -> No
         "home_club",
         "country_of_residence",
         "membership_category",
+        "membership_category_raw",
+        "primary_operation",
         "membership_status",
+        "member_lifecycle_status",
+        "record_status",
+        "person_type",
         "membership_date",
         "membership_expiration",
+        "source_file",
+        "source_row_number",
+        "import_reference",
+        "golf_access",
+        "tennis_access",
+        "bowls_access",
+        "squash_access",
         "gender",
         "player_category",
         "student",
@@ -460,13 +567,16 @@ def _ingest_members(
     db: Session,
     *,
     club_id: int,
-    path: Path,
+    path: SheetRef,
 ) -> dict[str, int]:
     rows = _sheet_rows(path)
     if not rows:
         return {"rows": 0, "inserted": 0, "updated": 0, "people_linked": 0}
 
-    header = _header_index_map(rows[0])
+    header_info = _find_members_header(rows)
+    if header_info is None:
+        return {"rows": 0, "inserted": 0, "updated": 0, "people_linked": 0}
+    header_idx, header = header_info
     inserted = 0
     updated = 0
     existing_rows = db.query(models.Member).filter(models.Member.club_id == int(club_id)).all()
@@ -491,43 +601,88 @@ def _ingest_members(
             membership_expiration=getattr(row, "membership_expiration", None),
         )
         by_identity[key] = row
+    by_import_reference = {
+        str(getattr(row, "import_reference", "") or "").strip(): row
+        for row in existing_rows
+        if str(getattr(row, "import_reference", "") or "").strip()
+    }
     pending_by_member_number: dict[str, dict[str, Any]] = {}
     pending_by_email: dict[str, dict[str, Any]] = {}
     pending_by_identity: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
+    pending_by_import_reference: dict[str, dict[str, Any]] = {}
     insert_payloads: list[dict[str, Any]] = []
 
-    for row in rows[1:]:
-        first = _clean_text(_extract_cells(row, header, "first name"), max_len=120)
-        last = _clean_text(_extract_cells(row, header, "last name"), max_len=120)
+    for row in rows[header_idx + 1 :]:
+        first = _clean_text(_extract_cells(row, header, "first_name", "first name"), max_len=120)
+        last = _clean_text(_extract_cells(row, header, "last_name", "last name"), max_len=120)
         if not first or not last:
             continue
 
-        member_number = _clean_text(_extract_cells(row, header, "#"), max_len=50)
-        email = _clean_text(_extract_cells(row, header, "email"), max_len=200)
+        source_row_raw = _extract_cells(row, header, "source_row_number", "source row number")
+        try:
+            source_row_number = int(str(source_row_raw or "").strip()) if str(source_row_raw or "").strip() else None
+        except Exception:
+            source_row_number = None
+        member_number = _clean_text(
+            _extract_cells(row, header, "member_number", "member no", "member number"),
+            max_len=50,
+        )
+        email = _clean_text(_extract_cells(row, header, "email", "member_email"), max_len=200)
         if email:
             email = email.lower()
-        country = _clean_text(_extract_cells(row, header, "country of residence"), max_len=120)
-        membership = _clean_text(_extract_cells(row, header, "membership"), max_len=160) or "Unspecified"
-        membership_date = parse_membership_date(_extract_cells(row, header, "membership date"))
-        membership_exp = parse_membership_date(_extract_cells(row, header, "membership expiration"))
-        status_raw = _clean_text(_extract_cells(row, header, "status"), max_len=40) or "Active"
+        phone = _clean_text(_extract_cells(row, header, "phone", "mobile", "cell"), max_len=50)
+        country = _clean_text(_extract_cells(row, header, "country_of_residence", "country of residence"), max_len=120)
+        home_club = _clean_text(_extract_cells(row, header, "home_club", "home club"), max_len=120) or "Umhlali Country Club"
+        membership = _clean_text(
+            _extract_cells(row, header, "membership_category_raw", "membership_category", "membership"),
+            max_len=160,
+        ) or "Unspecified"
+        primary_operation = normalize_primary_operation(
+            _extract_cells(row, header, "primary_operation", "operation_area"),
+            membership,
+        )
+        membership_date = parse_membership_date(
+            _extract_cells(row, header, "membership_start_date", "membership date", "membership_date")
+        )
+        membership_exp = parse_membership_date(
+            _extract_cells(row, header, "membership_expiration_date", "membership expiration", "membership_expiration")
+        )
+        status_raw = _clean_text(_extract_cells(row, header, "member_lifecycle_status", "status"), max_len=40) or "Active"
         norm_status = normalize_membership_status(status_raw)
         active_flag = 1 if norm_status == "active" else 0
+        record_status = _clean_text(_extract_cells(row, header, "record_status"), max_len=40) or norm_status
+        person_type = _clean_text(_extract_cells(row, header, "person_type"), max_len=40) or "Member"
         gender = _clean_text(_extract_cells(row, header, "gender"), max_len=20)
+        source_file = _clean_text(_extract_cells(row, header, "source_file"), max_len=255) or path.path.name
+        import_reference = f"{source_file}:{source_row_number}" if source_row_number is not None else None
         payload = {
             "club_id": int(club_id),
             "member_number": member_number,
             "first_name": first,
             "last_name": last,
             "email": email,
+            "phone": phone,
+            "home_club": home_club,
             "country_of_residence": country,
             "membership_category": membership,
+            "membership_category_raw": membership,
+            "primary_operation": primary_operation,
             "membership_status": norm_status,
+            "member_lifecycle_status": norm_status,
+            "record_status": record_status,
+            "person_type": person_type,
             "membership_date": membership_date,
             "membership_expiration": membership_exp,
+            "source_file": source_file,
+            "source_row_number": source_row_number,
+            "import_reference": import_reference,
+            "golf_access": parse_yes_no_flag(_extract_cells(row, header, "golf_access")),
+            "tennis_access": parse_yes_no_flag(_extract_cells(row, header, "tennis_access")),
+            "bowls_access": parse_yes_no_flag(_extract_cells(row, header, "bowls_access")),
+            "squash_access": parse_yes_no_flag(_extract_cells(row, header, "squash_access")),
             "active": active_flag,
             "gender": gender,
-            "player_category": classify_membership_group(membership),
+            "player_category": classify_membership_group(primary_operation or membership),
         }
         identity_key = member_identity_key(
             first_name=first,
@@ -539,8 +694,12 @@ def _ingest_members(
         )
 
         existing = None
+        if import_reference:
+            existing = by_import_reference.get(import_reference)
+        if existing is None and import_reference:
+            existing = pending_by_import_reference.get(import_reference)
         if member_number:
-            existing = by_member_number.get(member_number)
+            existing = existing or by_member_number.get(member_number)
         if existing is None and member_number:
             existing = pending_by_member_number.get(member_number)
         if existing is None and email:
@@ -558,19 +717,39 @@ def _ingest_members(
             if isinstance(existing, dict):
                 existing.update(payload)
             else:
-                existing.member_number = member_number or existing.member_number
+                if member_number:
+                    existing.member_number = member_number
                 existing.first_name = first
                 existing.last_name = last
                 existing.email = email or existing.email
+                existing.phone = phone or existing.phone
+                existing.home_club = home_club or existing.home_club or "Umhlali Country Club"
                 existing.country_of_residence = country
                 existing.membership_category = membership
+                existing.membership_category_raw = membership
+                existing.primary_operation = primary_operation
                 existing.membership_status = norm_status
+                existing.member_lifecycle_status = norm_status
+                existing.record_status = record_status
+                existing.person_type = person_type
                 existing.membership_date = membership_date
                 existing.membership_expiration = membership_exp
+                existing.source_file = source_file
+                existing.source_row_number = source_row_number
+                existing.import_reference = import_reference
+                existing.golf_access = payload["golf_access"]
+                existing.tennis_access = payload["tennis_access"]
+                existing.bowls_access = payload["bowls_access"]
+                existing.squash_access = payload["squash_access"]
                 existing.active = active_flag
                 existing.gender = gender or existing.gender
-                existing.player_category = classify_membership_group(membership)
+                existing.player_category = classify_membership_group(primary_operation or membership)
                 updated += 1
+        if import_reference:
+            if isinstance(existing, dict):
+                pending_by_import_reference[import_reference] = existing
+            else:
+                by_import_reference[import_reference] = existing
         if member_number:
             if isinstance(existing, dict):
                 pending_by_member_number[member_number] = existing
@@ -591,7 +770,7 @@ def _ingest_members(
         for start in range(0, len(insert_payloads), chunk_size):
             db.bulk_insert_mappings(models.Member, insert_payloads[start : start + chunk_size])
             db.flush()
-    return {"rows": max(0, len(rows) - 1), "inserted": inserted, "updated": updated, "people_linked": 0}
+    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "people_linked": 0}
 
 
 def _upsert_staff_role_profile(
@@ -600,6 +779,9 @@ def _upsert_staff_role_profile(
     club_id: int,
     staff_name: str,
     role_label: str,
+    operation_area: str | None = None,
+    user_type: str | None = None,
+    source_file: str | None = None,
 ) -> tuple[models.StaffRoleProfile, bool]:
     row = (
         db.query(models.StaffRoleProfile)
@@ -628,6 +810,9 @@ def _upsert_staff_role_profile(
             staff_name=staff_name,
             role_label=role_label,
             linked_user_id=linked_user_id,
+            operation_area=operation_area,
+            user_type=user_type,
+            source_file=source_file,
             active=1,
         )
         db.add(row)
@@ -635,6 +820,9 @@ def _upsert_staff_role_profile(
         created = True
     else:
         row.linked_user_id = linked_user_id
+        row.operation_area = operation_area
+        row.user_type = user_type
+        row.source_file = source_file
         row.active = 1
         row.updated_at = datetime.utcnow()
     return row, created
@@ -644,25 +832,34 @@ def _ingest_staff_roles(
     db: Session,
     *,
     club_id: int,
-    path: Path,
+    path: SheetRef,
 ) -> dict[str, int]:
     rows = _sheet_rows(path)
     if not rows:
         return {"rows": 0, "inserted": 0, "updated": 0, "linked_users": 0}
-    header = _header_index_map(rows[0])
+    header_info = _find_header_row(rows, "staff_name", "role") or _find_header_row(rows, "name", "role")
+    if header_info is None:
+        return {"rows": 0, "inserted": 0, "updated": 0, "linked_users": 0}
+    header_idx, header = header_info
     inserted = 0
     updated = 0
     linked_users = 0
-    for row in rows[1:]:
-        staff_name = _clean_text(_extract_cells(row, header, "name"), max_len=160)
+    for row in rows[header_idx + 1 :]:
+        staff_name = _clean_text(_extract_cells(row, header, "staff_name", "name"), max_len=160)
         role_label = _clean_text(_extract_cells(row, header, "role"), max_len=120)
         if not staff_name or not role_label:
             continue
+        operation_area = _clean_text(_extract_cells(row, header, "operation_area"), max_len=120)
+        user_type = _clean_text(_extract_cells(row, header, "user_type"), max_len=60)
+        source_file = _clean_text(_extract_cells(row, header, "source_file"), max_len=255) or path.path.name
         saved, created = _upsert_staff_role_profile(
             db,
             club_id=int(club_id),
             staff_name=staff_name,
             role_label=role_label,
+            operation_area=operation_area,
+            user_type=user_type,
+            source_file=source_file,
         )
         if created:
             inserted += 1
@@ -670,13 +867,13 @@ def _ingest_staff_roles(
             updated += 1
         if getattr(saved, "linked_user_id", None):
             linked_users += 1
-    return {"rows": max(0, len(rows) - 1), "inserted": inserted, "updated": updated, "linked_users": linked_users}
+    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "linked_users": linked_users}
 
 
 def _find_golf_day_header(rows: list[list[Any]]) -> tuple[int, dict[str, int]] | None:
     for idx, row in enumerate(rows):
         cells = [str(v or "").strip().lower() for v in row]
-        if "name" in cells and ("date of golf day" in cells or "amount" in cells):
+        if ("booking_name" in cells and "invoice_number" in cells) or ("name" in cells and ("date of golf day" in cells or "amount" in cells)):
             return idx, _header_index_map(row)
     return None
 
@@ -763,7 +960,7 @@ def _ingest_golf_day_bookings(
     db: Session,
     *,
     club_id: int,
-    path: Path,
+    path: SheetRef,
 ) -> dict[str, int]:
     rows = _sheet_rows(path)
     if not rows:
@@ -777,22 +974,26 @@ def _ingest_golf_day_bookings(
     updated = 0
 
     for row in rows[header_idx + 1 :]:
-        event_name = _clean_text(_extract_cells(row, header, "name"), max_len=220)
+        event_name = _clean_text(_extract_cells(row, header, "booking_name", "name"), max_len=220)
         if not event_name:
             continue
-        event_date_raw = _clean_text(_extract_cells(row, header, "date of golf day"), max_len=120)
-        event_date = _to_date(event_date_raw)
-        amount = _to_float(_extract_cells(row, header, "amount"))
-        invoice_reference = _clean_text(_extract_cells(row, header, "invoiced"), max_len=80)
+        event_date_raw = _clean_text(_extract_cells(row, header, "event_date_raw", "date of golf day"), max_len=120)
+        event_date = _to_date(_extract_cells(row, header, "event_start_date")) or _to_date(event_date_raw)
+        event_end_date = _to_date(_extract_cells(row, header, "event_end_date"))
+        amount = _to_float(_extract_cells(row, header, "gross_amount_zar", "amount"))
+        invoice_reference = _clean_text(_extract_cells(row, header, "invoice_number", "invoiced"), max_len=80)
 
         deposit_amount, deposit_date, deposit_note = _parse_amount_and_date(
-            _extract_cells(row, header, "deposit received & date")
+            _extract_cells(row, header, "deposit_received_raw", "deposit received & date")
         )
-        balance_due = _to_float(_extract_cells(row, header, "balance due"))
+        balance_due = _to_float(_extract_cells(row, header, "balance_due_zar", "balance due"))
         full_payment_amount, full_payment_date, full_payment_note = _parse_amount_and_date(
-            _extract_cells(row, header, "full payment received & date")
+            _extract_cells(row, header, "full_payment_received_raw", "full payment received & date")
         )
         notes = _clean_text(_extract_cells(row, header, "notes"), max_len=2000)
+        operation_area = _clean_text(_extract_cells(row, header, "operation_area"), max_len=120)
+        source_file = _clean_text(_extract_cells(row, header, "source_file"), max_len=255) or path.path.name
+        import_reference = invoice_reference or f"{source_file}:{event_name}:{event_date_raw or event_date or ''}"
 
         account_code_guess = None
         customer = _resolve_account_customer(
@@ -828,6 +1029,7 @@ def _ingest_golf_day_bookings(
                 account_customer_id=account_customer_id,
                 event_name=event_name,
                 event_date=event_date,
+                event_end_date=event_end_date,
                 event_date_raw=event_date_raw,
                 amount=float(amount or 0.0),
                 invoice_reference=invoice_reference,
@@ -841,6 +1043,9 @@ def _ingest_golf_day_bookings(
                 payment_status=payment_status,
                 contact_name=contact_name,
                 account_code_snapshot=account_code_snapshot,
+                operation_area=operation_area,
+                source_file=source_file,
+                import_reference=import_reference,
                 notes=notes,
             )
             db.add(existing)
@@ -849,6 +1054,7 @@ def _ingest_golf_day_bookings(
         else:
             existing.account_customer_id = account_customer_id
             existing.event_date = event_date
+            existing.event_end_date = event_end_date
             existing.amount = float(amount or 0.0)
             existing.deposit_amount = deposit_amount
             existing.deposit_received_date = deposit_date
@@ -860,6 +1066,9 @@ def _ingest_golf_day_bookings(
             existing.payment_status = payment_status
             existing.contact_name = contact_name
             existing.account_code_snapshot = account_code_snapshot
+            existing.operation_area = operation_area
+            existing.source_file = source_file
+            existing.import_reference = import_reference
             existing.notes = notes
             existing.updated_at = datetime.utcnow()
             updated += 1
@@ -924,11 +1133,11 @@ def seed_umhlali_operational_inputs(
         output_key: str,
         source_name: str,
         missing_label: str,
-        path: Path | None,
+        path: SheetRef | None,
         loader,
     ) -> None:
         nonlocal sources_loaded
-        if path is None or not path.exists():
+        if path is None or not path.path.exists():
             out["missing_files"].append(missing_label)
             return
         try:
@@ -937,7 +1146,7 @@ def seed_umhlali_operational_inputs(
                     db,
                     club_id=int(club_id),
                     source=source_name,
-                    file_name=path.name,
+                    file_name=path.path.name,
                 )
                 stats = loader(db, club_id=int(club_id), path=path)
                 batch.rows_total = int(stats.get("rows", 0))

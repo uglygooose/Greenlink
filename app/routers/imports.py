@@ -34,7 +34,14 @@ from app.models import (
     User,
     UserRole,
 )
-from app.people import classify_membership_group, member_identity_key, normalize_membership_status, parse_membership_date
+from app.people import (
+    classify_membership_group,
+    member_identity_key,
+    normalize_membership_status,
+    normalize_primary_operation,
+    parse_membership_date,
+    parse_yes_no_flag,
+)
 from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
@@ -799,9 +806,15 @@ async def import_members_csv(
             membership_expiration=getattr(row, "membership_expiration", None),
         )
         by_identity[key] = row
+    by_import_reference = {
+        str(getattr(row, "import_reference", "") or "").strip(): row
+        for row in existing_rows
+        if str(getattr(row, "import_reference", "") or "").strip()
+    }
     pending_by_member_number = {}
     pending_by_email = {}
     pending_by_identity = {}
+    pending_by_import_reference = {}
     insert_payloads = []
 
     try:
@@ -810,7 +823,7 @@ async def import_members_csv(
             total += 1
             row = _row_keys(raw_row)
 
-            member_number = str(row.get("member_number") or row.get("member_no") or row.get("number") or "").strip() or None
+            member_number = str(row.get("member_number") or row.get("member_no") or "").strip() or None
             first_name = str(row.get("first_name") or row.get("firstname") or row.get("first") or "").strip()
             last_name = str(row.get("last_name") or row.get("lastname") or row.get("last") or "").strip()
             name = str(row.get("name") or "").strip()
@@ -824,11 +837,23 @@ async def import_members_csv(
             handicap_number = str(row.get("handicap_number") or row.get("hcp") or "").strip() or None
             home_club = str(row.get("home_club") or row.get("club") or "").strip() or None
             country_of_residence = str(row.get("country_of_residence") or row.get("country") or "").strip() or None
-            membership_category = str(row.get("membership") or row.get("membership_category") or "").strip() or None
+            membership_category = str(row.get("membership_category_raw") or row.get("membership") or row.get("membership_category") or "").strip() or None
+            primary_operation = normalize_primary_operation(row.get("primary_operation"), membership_category)
             membership_status_raw = str(row.get("status") or row.get("membership_status") or "active").strip()
             membership_status = normalize_membership_status(membership_status_raw)
             membership_date = parse_membership_date(row.get("membership_date") or row.get("start_date"))
             membership_expiration = parse_membership_date(row.get("membership_expiration") or row.get("expiry_date"))
+            source_row_number_raw = str(row.get("source_row_number") or "").strip()
+            try:
+                source_row_number = int(source_row_number_raw) if source_row_number_raw else None
+            except Exception:
+                source_row_number = None
+            source_file = str(row.get("source_file") or file.filename or "").strip() or None
+            import_reference = f"{source_file}:{source_row_number}" if source_file and source_row_number is not None else None
+            record_status = str(row.get("record_status") or membership_status).strip() or membership_status
+            person_type = str(row.get("person_type") or "Member").strip() or "Member"
+            if not home_club and import_reference and "umhlali" in import_reference.lower():
+                home_club = "Umhlali Country Club"
             payload = {
                 "club_id": club_id,
                 "member_number": member_number,
@@ -840,11 +865,23 @@ async def import_members_csv(
                 "home_club": home_club,
                 "country_of_residence": country_of_residence,
                 "membership_category": membership_category,
+                "membership_category_raw": membership_category,
+                "primary_operation": primary_operation,
                 "membership_status": membership_status,
+                "member_lifecycle_status": membership_status,
+                "record_status": record_status,
+                "person_type": person_type,
                 "membership_date": membership_date,
                 "membership_expiration": membership_expiration,
+                "source_file": source_file,
+                "source_row_number": source_row_number,
+                "import_reference": import_reference,
+                "golf_access": parse_yes_no_flag(row.get("golf_access")),
+                "tennis_access": parse_yes_no_flag(row.get("tennis_access")),
+                "bowls_access": parse_yes_no_flag(row.get("bowls_access")),
+                "squash_access": parse_yes_no_flag(row.get("squash_access")),
                 "active": 1 if membership_status == "active" else 0,
-                "player_category": classify_membership_group(membership_category or ""),
+                "player_category": classify_membership_group(primary_operation or membership_category or ""),
             }
             identity_key = member_identity_key(
                 first_name=first_name,
@@ -862,8 +899,12 @@ async def import_members_csv(
                 continue
 
             existing = None
+            if import_reference:
+                existing = by_import_reference.get(import_reference)
+            if existing is None and import_reference:
+                existing = pending_by_import_reference.get(import_reference)
             if member_number:
-                existing = by_member_number.get(member_number)
+                existing = existing or by_member_number.get(member_number)
             if existing is None and member_number:
                 existing = pending_by_member_number.get(member_number)
             if existing is None and email:
@@ -881,16 +922,30 @@ async def import_members_csv(
                 else:
                     existing.first_name = first_name
                     existing.last_name = last_name
+                    if member_number:
+                        existing.member_number = member_number
                     existing.email = email
                     existing.phone = phone
                     existing.handicap_number = handicap_number
                     existing.home_club = home_club
                     existing.country_of_residence = country_of_residence
                     existing.membership_category = membership_category or existing.membership_category
+                    existing.membership_category_raw = membership_category or existing.membership_category_raw
+                    existing.primary_operation = primary_operation
                     existing.membership_status = membership_status
+                    existing.member_lifecycle_status = membership_status
+                    existing.record_status = record_status
+                    existing.person_type = person_type
                     existing.membership_date = membership_date
                     existing.membership_expiration = membership_expiration
-                    existing.player_category = classify_membership_group(existing.membership_category or "")
+                    existing.source_file = source_file
+                    existing.source_row_number = source_row_number
+                    existing.import_reference = import_reference
+                    existing.golf_access = payload["golf_access"]
+                    existing.tennis_access = payload["tennis_access"]
+                    existing.bowls_access = payload["bowls_access"]
+                    existing.squash_access = payload["squash_access"]
+                    existing.player_category = classify_membership_group(existing.primary_operation or existing.membership_category or "")
                     existing.active = 1 if membership_status == "active" else 0
                     updated += 1
             else:
@@ -898,6 +953,11 @@ async def import_members_csv(
                 existing = payload
                 inserted += 1
 
+            if import_reference:
+                if isinstance(existing, dict):
+                    pending_by_import_reference[import_reference] = existing
+                else:
+                    by_import_reference[import_reference] = existing
             if member_number:
                 if isinstance(existing, dict):
                     pending_by_member_number[member_number] = existing

@@ -47,6 +47,7 @@ from app.club_assignments import sync_user_club_assignment
 from app.observability import log_event
 from app.people import (
     classify_membership_group,
+    normalize_primary_operation,
     normalize_membership_status,
     parse_terms_days,
     sync_member_person,
@@ -321,16 +322,21 @@ def _normalize_revenue_stream(raw: str | None) -> str:
 def _normalize_membership_area(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     if not value or value in {"all", "any"}:
-        return "golf"
+        return "all"
     if value in {"home_owner", "homeowners"}:
         return "homeowners"
     if value in {"non_golf", "non-golf"}:
         return "other"
+    if value in {"proshop", "pro_shop"}:
+        return "pro_shop"
     return value
 
 
 def _membership_area_clause(area_norm: str):
+    primary_op = func.lower(func.coalesce(Member.primary_operation, ""))
     category_col = func.lower(func.coalesce(Member.membership_category, ""))
+    raw_category_col = func.lower(func.coalesce(Member.membership_category_raw, ""))
+    person_type_col = func.lower(func.coalesce(Member.person_type, ""))
     player_col = func.lower(func.coalesce(Member.player_category, ""))
     explicit_non_golf = or_(
         category_col.like("%non golf%"),
@@ -345,21 +351,51 @@ def _membership_area_clause(area_norm: str):
         category_col.like("%staff%"),
         player_col.in_(["bowls", "tennis", "squash", "homeowners", "house", "social", "staff", "other"]),
     )
+    if area_norm == "all":
+        return None
     if area_norm == "golf":
-        return or_(player_col == "golf", ~explicit_non_golf)
+        return or_(primary_op == "golf", Member.golf_access.is_(True), player_col == "golf", ~explicit_non_golf)
     if area_norm == "bowls":
-        return or_(player_col == "bowls", category_col.like("%bowls%"))
+        return or_(primary_op == "bowls", Member.bowls_access.is_(True), player_col == "bowls", category_col.like("%bowls%"))
     if area_norm == "tennis":
-        return or_(player_col == "tennis", category_col.like("%tennis%"))
+        return or_(primary_op == "tennis", Member.tennis_access.is_(True), player_col == "tennis", category_col.like("%tennis%"))
+    if area_norm == "squash":
+        return or_(primary_op == "squash", Member.squash_access.is_(True), player_col == "squash", category_col.like("%squash%"))
+    if area_norm == "general":
+        return or_(
+            primary_op == "general",
+            person_type_col == "staff",
+            category_col.like("%home owner%"),
+            category_col.like("%homeowner%"),
+            category_col.like("%house%"),
+            category_col.like("%social%"),
+            raw_category_col.like("%general%"),
+        )
     if area_norm == "homeowners":
-        return or_(player_col == "homeowners", category_col.like("%home owner%"), category_col.like("%homeowner%"))
+        return or_(primary_op == "general", player_col == "homeowners", category_col.like("%home owner%"), category_col.like("%homeowner%"))
     if area_norm == "house":
         return or_(player_col == "house", category_col.like("%house%"))
     if area_norm == "social":
         return or_(player_col == "social", category_col.like("%social%"))
     if area_norm == "staff":
-        return or_(player_col == "staff", category_col.like("%staff%"))
+        return or_(person_type_col == "staff", player_col == "staff", category_col.like("%staff%"))
+    if area_norm == "pro_shop":
+        return or_(primary_op == "pro shop", primary_op == "pro_shop", category_col.like("%pro shop%"))
     return explicit_non_golf
+
+
+def _membership_status_clause(status_norm: str):
+    normalized = normalize_membership_status(status_norm)
+    status_col = func.lower(func.coalesce(Member.membership_status, ""))
+    if normalized == "all":
+        return None
+    if normalized == "active":
+        return or_(status_col == "active", Member.active == 1)
+    if normalized == "hold":
+        return or_(status_col == "hold", status_col == "suspended")
+    if normalized == "inactive":
+        return or_(status_col == "inactive", Member.active == 0)
+    return status_col == normalized
 
 
 def _account_customer_from_input(
@@ -3704,6 +3740,10 @@ class AccountCustomerUpsertPayload(BaseModel):
     account_code: str | None = None
     billing_contact: str | None = None
     terms: str | None = None
+    customer_type: str | None = None
+    operation_area: str | None = None
+    source_file: str | None = None
+    import_reference: str | None = None
     active: bool = True
     notes: str | None = None
 
@@ -3751,6 +3791,10 @@ async def create_account_customer(
         billing_contact=str(payload.billing_contact or "").strip() or None,
         terms_label=str(payload.terms or "").strip() or None,
         terms_days=parse_terms_days(payload.terms),
+        customer_type=str(payload.customer_type or "").strip() or None,
+        operation_area=str(payload.operation_area or "").strip() or None,
+        source_file=str(payload.source_file or "").strip() or None,
+        import_reference=str(payload.import_reference or "").strip() or None,
         active=1 if payload.active else 0,
         notes=str(payload.notes or "").strip() or None,
     )
@@ -3803,6 +3847,10 @@ async def update_account_customer(
     row.billing_contact = str(payload.billing_contact or "").strip() or None
     row.terms_label = str(payload.terms or "").strip() or None
     row.terms_days = parse_terms_days(payload.terms)
+    row.customer_type = str(payload.customer_type or "").strip() or None
+    row.operation_area = str(payload.operation_area or "").strip() or None
+    row.source_file = str(payload.source_file or "").strip() or None
+    row.import_reference = str(payload.import_reference or "").strip() or None
     row.active = 1 if payload.active else 0
     row.notes = str(payload.notes or "").strip() or None
     row.updated_at = datetime.utcnow()
@@ -3823,6 +3871,7 @@ async def update_account_customer(
 class GolfDayBookingUpsertPayload(BaseModel):
     event_name: str
     event_date: date | None = None
+    event_end_date: date | None = None
     event_date_raw: str | None = None
     amount: float = 0.0
     invoice_reference: str | None = None
@@ -3837,6 +3886,9 @@ class GolfDayBookingUpsertPayload(BaseModel):
     full_payment_date: date | None = None
     full_payment_note: str | None = None
     payment_status: str | None = None
+    operation_area: str | None = None
+    source_file: str | None = None
+    import_reference: str | None = None
     notes: str | None = None
 
 
@@ -3863,7 +3915,13 @@ async def get_golf_day_bookings(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    query = db.query(GolfDayBooking).outerjoin(AccountCustomer, GolfDayBooking.account_customer_id == AccountCustomer.id)
+    query = (
+        db.query(
+            GolfDayBooking,
+            AccountCustomer.name.label("account_customer_name"),
+        )
+        .outerjoin(AccountCustomer, GolfDayBooking.account_customer_id == AccountCustomer.id)
+    )
     if q:
         needle = q.strip().lower()
         like = f"%{needle}%"
@@ -3890,8 +3948,8 @@ async def get_golf_day_bookings(
         query = query.order_by(asc(GolfDayBooking.event_date), asc(GolfDayBooking.id))
 
     rows = query.all()
-    total_amount = sum(float(getattr(row, "amount", 0.0) or 0.0) for row in rows)
-    outstanding = sum(float(getattr(row, "balance_due", 0.0) or 0.0) for row in rows)
+    total_amount = sum(float(getattr(row, "amount", 0.0) or 0.0) for row, _account_name in rows)
+    outstanding = sum(float(getattr(row, "balance_due", 0.0) or 0.0) for row, _account_name in rows)
     return {
         "total": len(rows),
         "total_amount": float(total_amount),
@@ -3901,10 +3959,12 @@ async def get_golf_day_bookings(
                 "id": int(row.id),
                 "event_name": row.event_name,
                 "event_date": row.event_date.isoformat() if row.event_date else None,
+                "event_end_date": row.event_end_date.isoformat() if row.event_end_date else None,
                 "event_date_raw": row.event_date_raw,
                 "amount": float(row.amount or 0.0),
                 "invoice_reference": row.invoice_reference,
                 "account_customer_id": row.account_customer_id,
+                "account_customer_name": str(account_customer_name or "") or None,
                 "account_code": row.account_code_snapshot,
                 "contact_name": row.contact_name,
                 "deposit_amount": float(row.deposit_amount or 0.0) if row.deposit_amount is not None else None,
@@ -3915,10 +3975,13 @@ async def get_golf_day_bookings(
                 "full_payment_date": row.full_payment_date.isoformat() if row.full_payment_date else None,
                 "full_payment_note": row.full_payment_note,
                 "payment_status": row.payment_status,
+                "operation_area": row.operation_area,
+                "source_file": row.source_file,
+                "import_reference": row.import_reference,
                 "notes": row.notes,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             }
-            for row in rows
+            for row, account_customer_name in rows
         ],
     }
 
@@ -3950,6 +4013,7 @@ async def create_golf_day_booking(
         account_customer_id=int(customer.id) if customer else None,
         event_name=name,
         event_date=payload.event_date,
+        event_end_date=payload.event_end_date,
         event_date_raw=str(payload.event_date_raw or "").strip() or None,
         amount=float(payload.amount or 0.0),
         invoice_reference=str(payload.invoice_reference or "").strip() or None,
@@ -3963,6 +4027,9 @@ async def create_golf_day_booking(
         payment_status=_golf_day_payment_status(payload),
         contact_name=str(payload.contact_name or "").strip() or (str(customer.billing_contact) if customer and customer.billing_contact else None),
         account_code_snapshot=str(payload.account_code or "").strip() or (str(customer.account_code) if customer and customer.account_code else None),
+        operation_area=str(payload.operation_area or "").strip() or None,
+        source_file=str(payload.source_file or "").strip() or None,
+        import_reference=str(payload.import_reference or payload.invoice_reference or "").strip() or None,
         notes=str(payload.notes or "").strip() or None,
     )
     db.add(row)
@@ -4002,6 +4069,7 @@ async def update_golf_day_booking(
         raise HTTPException(status_code=404, detail="Account customer not found")
     row.event_name = str(payload.event_name or row.event_name or "").strip() or row.event_name
     row.event_date = payload.event_date
+    row.event_end_date = payload.event_end_date
     row.event_date_raw = str(payload.event_date_raw or "").strip() or None
     row.amount = float(payload.amount or 0.0)
     row.invoice_reference = str(payload.invoice_reference or "").strip() or None
@@ -4016,6 +4084,9 @@ async def update_golf_day_booking(
     row.full_payment_date = payload.full_payment_date
     row.full_payment_note = str(payload.full_payment_note or "").strip() or None
     row.payment_status = _golf_day_payment_status(payload)
+    row.operation_area = str(payload.operation_area or "").strip() or row.operation_area
+    row.source_file = str(payload.source_file or "").strip() or row.source_file
+    row.import_reference = str(payload.import_reference or payload.invoice_reference or "").strip() or row.import_reference
     row.notes = str(payload.notes or "").strip() or None
     row.updated_at = datetime.utcnow()
 
@@ -4184,8 +4255,8 @@ async def get_members(
     limit: int = 50,
     q: Optional[str] = None,
     sort: Optional[str] = "recent_activity",
-    area: Optional[str] = "all",  # all | golf | bowls | tennis | homeowners | house | social | other | staff
-    membership_status: Optional[str] = "all",  # all | active | suspended | inactive
+    area: Optional[str] = "all",  # all | general | golf | bowls | tennis | squash | homeowners | house | social | other | staff
+    membership_status: Optional[str] = "all",  # all | active | hold | inactive | resigned | deceased | defaulter
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
@@ -4193,28 +4264,14 @@ async def get_members(
 
     base_query = db.query(Member)
     area_norm = _normalize_membership_area(area)
-    if area_norm:
-        base_query = base_query.filter(_membership_area_clause(area_norm))
+    area_clause = _membership_area_clause(area_norm)
+    if area_clause is not None:
+        base_query = base_query.filter(area_clause)
 
     status_norm = str(membership_status or "all").strip().lower()
-    if status_norm and status_norm not in {"all", "any"}:
-        normalized = normalize_membership_status(status_norm)
-        if normalized == "active":
-            base_query = base_query.filter(
-                or_(
-                    func.lower(func.coalesce(Member.membership_status, "")) == "active",
-                    Member.active == 1,
-                )
-            )
-        elif normalized == "suspended":
-            base_query = base_query.filter(func.lower(func.coalesce(Member.membership_status, "")) == "suspended")
-        else:
-            base_query = base_query.filter(
-                or_(
-                    func.lower(func.coalesce(Member.membership_status, "")) == "inactive",
-                    Member.active == 0,
-                )
-            )
+    status_clause = _membership_status_clause(status_norm)
+    if status_clause is not None:
+        base_query = base_query.filter(status_clause)
 
     if q:
         needle = q.strip().lower()
@@ -4227,6 +4284,8 @@ async def get_members(
                 func.lower(Member.member_number).like(like),
                 func.lower(Member.phone).like(like),
                 func.lower(Member.handicap_number).like(like),
+                func.lower(func.coalesce(Member.membership_category_raw, "")).like(like),
+                func.lower(func.coalesce(Member.primary_operation, "")).like(like),
             )
         )
 
@@ -4258,27 +4317,11 @@ async def get_members(
         )
         .outerjoin(stats, stats.c.member_id == Member.id)
     )
-    if area_norm:
-        query = query.filter(_membership_area_clause(area_norm))
+    if area_clause is not None:
+        query = query.filter(area_clause)
 
-    if status_norm and status_norm not in {"all", "any"}:
-        normalized = normalize_membership_status(status_norm)
-        if normalized == "active":
-            query = query.filter(
-                or_(
-                    func.lower(func.coalesce(Member.membership_status, "")) == "active",
-                    Member.active == 1,
-                )
-            )
-        elif normalized == "suspended":
-            query = query.filter(func.lower(func.coalesce(Member.membership_status, "")) == "suspended")
-        else:
-            query = query.filter(
-                or_(
-                    func.lower(func.coalesce(Member.membership_status, "")) == "inactive",
-                    Member.active == 0,
-                )
-            )
+    if status_clause is not None:
+        query = query.filter(status_clause)
 
     if q:
         needle = q.strip().lower()
@@ -4291,6 +4334,8 @@ async def get_members(
                 func.lower(Member.member_number).like(like),
                 func.lower(Member.phone).like(like),
                 func.lower(Member.handicap_number).like(like),
+                func.lower(func.coalesce(Member.membership_category_raw, "")).like(like),
+                func.lower(func.coalesce(Member.primary_operation, "")).like(like),
             )
         )
 
@@ -4330,10 +4375,23 @@ async def get_members(
                 "home_club": m.home_club,
                 "country_of_residence": getattr(m, "country_of_residence", None),
                 "membership_category": getattr(m, "membership_category", None),
+                "membership_category_raw": getattr(m, "membership_category_raw", None),
+                "primary_operation": normalize_primary_operation(getattr(m, "primary_operation", None), getattr(m, "membership_category", None)),
                 "membership_group": classify_membership_group(getattr(m, "membership_category", None)),
                 "membership_status": getattr(m, "membership_status", None),
+                "member_lifecycle_status": getattr(m, "member_lifecycle_status", None),
+                "record_status": getattr(m, "record_status", None),
+                "person_type": getattr(m, "person_type", None) or "Member",
                 "membership_date": getattr(m, "membership_date", None).isoformat() if getattr(m, "membership_date", None) else None,
                 "membership_expiration": getattr(m, "membership_expiration", None).isoformat() if getattr(m, "membership_expiration", None) else None,
+                "source_file": getattr(m, "source_file", None),
+                "source_row_number": getattr(m, "source_row_number", None),
+                "import_reference": getattr(m, "import_reference", None),
+                "golf_access": getattr(m, "golf_access", None),
+                "tennis_access": getattr(m, "tennis_access", None),
+                "bowls_access": getattr(m, "bowls_access", None),
+                "squash_access": getattr(m, "squash_access", None),
+                "financial_flag": "defaulter" if str(getattr(m, "member_lifecycle_status", "") or "").strip().lower() == "defaulter" else None,
                 "active": bool(m.active),
                 "bookings_count": int(bookings_count or 0),
                 "total_spent": float(total_spent or 0.0),
@@ -4359,9 +4417,21 @@ class MemberUpsertPayload(BaseModel):
     handicap_sa_id: str | None = None
     country_of_residence: str | None = None
     membership_category: str | None = None
+    membership_category_raw: str | None = None
+    primary_operation: str | None = None
     membership_status: str | None = None
+    member_lifecycle_status: str | None = None
+    record_status: str | None = None
+    person_type: str | None = None
     membership_date: date | None = None
     membership_expiration: date | None = None
+    source_file: str | None = None
+    source_row_number: int | None = None
+    import_reference: str | None = None
+    golf_access: bool | None = None
+    tennis_access: bool | None = None
+    bowls_access: bool | None = None
+    squash_access: bool | None = None
     active: bool | None = True
 
 
@@ -4390,7 +4460,13 @@ async def create_member(
     handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
     country_of_residence = (payload.country_of_residence or "").strip() or None
     membership_category = (payload.membership_category or "").strip() or None
-    membership_status = normalize_membership_status(payload.membership_status or ("active" if bool(payload.active) else "inactive"))
+    membership_category_raw = (payload.membership_category_raw or membership_category or "").strip() or membership_category
+    primary_operation = normalize_primary_operation(payload.primary_operation, membership_category_raw)
+    membership_status = normalize_membership_status(
+        payload.member_lifecycle_status or payload.membership_status or ("active" if bool(payload.active) else "inactive")
+    )
+    record_status = (payload.record_status or membership_status or "").strip() or membership_status
+    person_type = (payload.person_type or "Member").strip() or "Member"
 
     row = Member(
         club_id=club_id,
@@ -4403,12 +4479,24 @@ async def create_member(
         home_club=home_club,
         country_of_residence=country_of_residence,
         membership_category=membership_category,
+        membership_category_raw=membership_category_raw,
+        primary_operation=primary_operation,
         membership_status=membership_status,
+        member_lifecycle_status=membership_status,
+        record_status=record_status,
+        person_type=person_type,
         membership_date=payload.membership_date,
         membership_expiration=payload.membership_expiration,
+        source_file=(payload.source_file or "").strip() or None,
+        source_row_number=payload.source_row_number,
+        import_reference=(payload.import_reference or "").strip() or None,
+        golf_access=payload.golf_access,
+        tennis_access=payload.tennis_access,
+        bowls_access=payload.bowls_access,
+        squash_access=payload.squash_access,
         active=1 if bool(payload.active) else 0,
         gender=gender,
-        player_category=player_category or classify_membership_group(membership_category),
+        player_category=player_category or classify_membership_group(primary_operation or membership_category),
         student=payload.student,
         handicap_index=float(payload.handicap_index) if payload.handicap_index is not None else None,
         handicap_sa_id=handicap_sa_id,
@@ -4452,11 +4540,23 @@ async def update_member(
     row.home_club = (payload.home_club or "").strip() or None
     row.country_of_residence = (payload.country_of_residence or "").strip() or None
     row.membership_category = (payload.membership_category or "").strip() or row.membership_category
-    row.membership_status = normalize_membership_status(payload.membership_status or row.membership_status)
+    row.membership_category_raw = (payload.membership_category_raw or payload.membership_category or "").strip() or row.membership_category_raw
+    row.primary_operation = normalize_primary_operation(payload.primary_operation, row.membership_category_raw or row.membership_category)
+    row.membership_status = normalize_membership_status(payload.member_lifecycle_status or payload.membership_status or row.membership_status)
+    row.member_lifecycle_status = row.membership_status
+    row.record_status = (payload.record_status or "").strip() or row.record_status or row.membership_status
+    row.person_type = (payload.person_type or "").strip() or row.person_type
     row.membership_date = payload.membership_date
     row.membership_expiration = payload.membership_expiration
+    row.source_file = (payload.source_file or "").strip() or row.source_file
+    row.source_row_number = payload.source_row_number if payload.source_row_number is not None else row.source_row_number
+    row.import_reference = (payload.import_reference or "").strip() or row.import_reference
+    row.golf_access = payload.golf_access if payload.golf_access is not None else row.golf_access
+    row.tennis_access = payload.tennis_access if payload.tennis_access is not None else row.tennis_access
+    row.bowls_access = payload.bowls_access if payload.bowls_access is not None else row.bowls_access
+    row.squash_access = payload.squash_access if payload.squash_access is not None else row.squash_access
     row.gender = (payload.gender or "").strip() or None
-    row.player_category = (payload.player_category or "").strip() or classify_membership_group(row.membership_category)
+    row.player_category = (payload.player_category or "").strip() or classify_membership_group(row.primary_operation or row.membership_category)
     row.student = payload.student
     row.handicap_index = float(payload.handicap_index) if payload.handicap_index is not None else None
     row.handicap_sa_id = (payload.handicap_sa_id or "").strip() or None
@@ -4546,13 +4646,25 @@ async def get_member_detail(
             "home_club": member.home_club,
             "country_of_residence": getattr(member, "country_of_residence", None),
             "membership_category": getattr(member, "membership_category", None),
+            "membership_category_raw": getattr(member, "membership_category_raw", None),
+            "primary_operation": normalize_primary_operation(getattr(member, "primary_operation", None), getattr(member, "membership_category", None)),
             "membership_group": classify_membership_group(getattr(member, "membership_category", None)),
             "membership_status": getattr(member, "membership_status", None),
+            "member_lifecycle_status": getattr(member, "member_lifecycle_status", None),
+            "record_status": getattr(member, "record_status", None),
+            "person_type": getattr(member, "person_type", None) or "Member",
             "membership_date": getattr(member, "membership_date", None).isoformat() if getattr(member, "membership_date", None) else None,
             "membership_expiration": getattr(member, "membership_expiration", None).isoformat() if getattr(member, "membership_expiration", None) else None,
             "gender": getattr(member, "gender", None),
             "player_category": getattr(member, "player_category", None),
             "student": bool(getattr(member, "student", False)) if getattr(member, "student", None) is not None else None,
+            "source_file": getattr(member, "source_file", None),
+            "source_row_number": getattr(member, "source_row_number", None),
+            "import_reference": getattr(member, "import_reference", None),
+            "golf_access": getattr(member, "golf_access", None),
+            "tennis_access": getattr(member, "tennis_access", None),
+            "bowls_access": getattr(member, "bowls_access", None),
+            "squash_access": getattr(member, "squash_access", None),
             "active": bool(member.active),
         },
         "linked_account": linked_account,
@@ -4817,7 +4929,16 @@ async def get_staff_users(
             .order_by(StaffRoleProfile.id.asc())
             .all()
         )
-    profile_map = {int(p.linked_user_id): str(getattr(p, "role_label", "") or "").strip() for p in profiles if getattr(p, "linked_user_id", None)}
+    profile_map = {
+        int(p.linked_user_id): {
+            "role_label": str(getattr(p, "role_label", "") or "").strip() or None,
+            "operation_area": str(getattr(p, "operation_area", "") or "").strip() or None,
+            "user_type": str(getattr(p, "user_type", "") or "").strip() or None,
+            "source_file": str(getattr(p, "source_file", "") or "").strip() or None,
+        }
+        for p in profiles
+        if getattr(p, "linked_user_id", None)
+    }
 
     return {
         "total": total,
@@ -4827,7 +4948,10 @@ async def get_staff_users(
                 "name": u.name,
                 "email": u.email,
                 "role": getattr(u.role, "value", u.role),
-                "operational_role": profile_map.get(int(u.id)),
+                "operational_role": (profile_map.get(int(u.id)) or {}).get("role_label"),
+                "operation_area": (profile_map.get(int(u.id)) or {}).get("operation_area"),
+                "user_type": (profile_map.get(int(u.id)) or {}).get("user_type"),
+                "source_file": (profile_map.get(int(u.id)) or {}).get("source_file"),
             }
             for u in rows
         ],

@@ -3,7 +3,7 @@
 
     function normalizePeopleView(raw, fallback = "members") {
         const value = String(raw || "").trim().toLowerCase();
-        if (value === "members" || value === "guests" || value === "staff") return value;
+        if (value === "members" || value === "guests" || value === "staff" || value === "account_contacts") return value;
         return String(fallback || "members");
     }
 

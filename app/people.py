@@ -40,10 +40,12 @@ def normalize_membership_status(value: Any) -> str:
         return "active"
     if raw in {"active", "current"}:
         return "active"
-    if raw in {"suspended", "hold"}:
-        return "suspended"
-    if raw in {"resigned", "inactive", "lapsed", "expired", "deceased", "defaulter", "absentee"}:
+    if raw in {"suspended", "suspend", "hold", "on hold"}:
+        return "hold"
+    if raw in {"inactive", "lapsed", "expired", "absentee"}:
         return "inactive"
+    if raw in {"resigned", "deceased", "defaulter"}:
+        return raw
     return raw[:40]
 
 
@@ -68,6 +70,45 @@ def classify_membership_group(membership_name: Any) -> str:
     if "staff" in value:
         return "staff"
     return "other"
+
+
+def normalize_primary_operation(value: Any, membership_name: Any = None) -> str:
+    raw = str(value or membership_name or "").strip().lower()
+    if not raw:
+        return "General"
+    if "pro shop" in raw or "pro_shop" in raw or "retail" in raw or "shop" in raw:
+        return "Pro Shop"
+    if "golf" in raw or "academy" in raw or "weekday" in raw or "u35" in raw:
+        return "Golf"
+    if "tennis" in raw:
+        return "Tennis"
+    if "bowls" in raw:
+        return "Bowls"
+    if "squash" in raw:
+        return "Squash"
+    if raw in {"general", "all", "house", "social", "homeowners", "homeowner", "staff"}:
+        return "General"
+    group = classify_membership_group(raw)
+    if group == "golf":
+        return "Golf"
+    if group == "tennis":
+        return "Tennis"
+    if group == "bowls":
+        return "Bowls"
+    if group == "squash":
+        return "Squash"
+    return "General"
+
+
+def parse_yes_no_flag(value: Any) -> bool | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"yes", "y", "true", "1"}:
+        return True
+    if raw in {"no", "n", "false", "0"}:
+        return False
+    return None
 
 
 def parse_membership_date(value: Any) -> date | None:

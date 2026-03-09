@@ -22,9 +22,12 @@
                 <details class="nav-group">
                     <summary class="nav-group-toggle">General</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard (All)</a>
-                        <a href="#revenue" class="nav-item" data-page="revenue">Revenue Analytics</a>
-                        <a href="#operations-config" class="nav-item" data-page="operations-config">Operations Config</a>
+                        <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="all">People</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="staff" data-people-operation="general">Staff</a>
+                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
+                        <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Bookings</a>
+                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Audit</a>
                     </div>
                 </details>
 
@@ -32,29 +35,60 @@
                     <summary class="nav-group-toggle">Golf</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
-                        <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
-                        <a href="#players" class="nav-item" data-page="players">People</a>
                         <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
+                        <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="golf">Golf Members</a>
                         <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
                         <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
-                        <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Super Admin</a>
+                        <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Bookings</a>
+                        <a href="#revenue" class="nav-item" data-page="revenue">Reconciliation</a>
+                    </div>
+                </details>
+
+                <details class="nav-group">
+                    <summary class="nav-group-toggle">Tennis</summary>
+                    <div class="nav-group-items">
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="tennis" data-operation-focus="overview">Dashboard</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="tennis">Members</a>
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="tennis" data-operation-focus="bookings">Court Bookings</a>
+                    </div>
+                </details>
+
+                <details class="nav-group">
+                    <summary class="nav-group-toggle">Bowls</summary>
+                    <div class="nav-group-items">
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="bowls" data-operation-focus="overview">Dashboard</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="bowls">Members</a>
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="bowls" data-operation-focus="bookings">Rinks / Draws</a>
+                    </div>
+                </details>
+
+                <details class="nav-group">
+                    <summary class="nav-group-toggle">Squash</summary>
+                    <div class="nav-group-items">
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="squash" data-operation-focus="overview">Dashboard</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="squash">Members</a>
+                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="squash" data-operation-focus="bookings">Court Bookings</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
                     <summary class="nav-group-toggle">Pro Shop</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Pro Shop Dashboard</a>
-                        <a href="#pro-shop" class="nav-item" data-page="pro-shop">Pro Shop Sales</a>
+                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Dashboard</a>
+                        <a href="#pro-shop" class="nav-item" data-page="pro-shop">Sales & Stock</a>
+                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Customers</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Imported Operations</summary>
+                    <summary class="nav-group-toggle">Finance / Admin</summary>
                     <div class="nav-group-items">
-                        <a href="#pub-ops" class="nav-item" data-page="pub-ops">Pub Operations</a>
-                        <a href="#bowls-ops" class="nav-item" data-page="bowls-ops">Bowls Operations</a>
-                        <a href="#other-ops" class="nav-item" data-page="other-ops">Other Operations</a>
+                        <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
+                        <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
+                        <a href="#revenue" class="nav-item" data-page="revenue">Reconciliation</a>
+                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports</a>
+                        <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Super Admin</a>
                     </div>
                 </details>
 
@@ -71,26 +105,47 @@
                     <select id="quick-nav" class="club-switcher quick-nav" aria-label="Quick navigation">
                         <option value="">Quick Nav</option>
                         <optgroup label="General">
-                            <option value="dashboard|all">Dashboard (All)</option>
-                            <option value="revenue">Revenue Analytics</option>
+                            <option value="dashboard|all">Dashboard</option>
+                            <option value="players|members|all">People</option>
+                            <option value="players|staff|general">Staff</option>
+                            <option value="account-customers-page">Account Customers</option>
+                            <option value="golf-days-page">Golf Day Bookings</option>
                             <option value="operations-config">Operations Config</option>
                         </optgroup>
                         <optgroup label="Golf">
                             <option value="dashboard|golf">Golf Dashboard</option>
-                            <option value="bookings">Bookings</option>
-                            <option value="players">People</option>
                             <option value="tee-times">Tee Sheet</option>
+                            <option value="bookings">Bookings</option>
+                            <option value="players|members|golf">Golf Members</option>
                             <option value="ledger">Ledger</option>
                             <option value="cashbook">Cashbook</option>
+                            <option value="golf-days-page">Golf Day Bookings</option>
+                        </optgroup>
+                        <optgroup label="Tennis">
+                            <option value="operation-center|tennis|overview">Dashboard</option>
+                            <option value="players|members|tennis">Members</option>
+                            <option value="operation-center|tennis|bookings">Court Bookings</option>
+                        </optgroup>
+                        <optgroup label="Bowls">
+                            <option value="operation-center|bowls|overview">Dashboard</option>
+                            <option value="players|members|bowls">Members</option>
+                            <option value="operation-center|bowls|bookings">Rinks / Draws</option>
+                        </optgroup>
+                        <optgroup label="Squash">
+                            <option value="operation-center|squash|overview">Dashboard</option>
+                            <option value="players|members|squash">Members</option>
+                            <option value="operation-center|squash|bookings">Court Bookings</option>
                         </optgroup>
                         <optgroup label="Pro Shop">
-                            <option value="dashboard|pro_shop">Pro Shop Dashboard</option>
-                            <option value="pro-shop">Pro Shop Sales</option>
+                            <option value="dashboard|pro_shop">Dashboard</option>
+                            <option value="pro-shop">Sales & Stock</option>
+                            <option value="account-customers-page">Customers</option>
                         </optgroup>
-                        <optgroup label="Imported Operations">
-                            <option value="pub-ops">Pub Operations</option>
-                            <option value="bowls-ops">Bowls Operations</option>
-                            <option value="other-ops">Other Operations</option>
+                        <optgroup label="Finance / Admin">
+                            <option value="cashbook">Cashbook</option>
+                            <option value="ledger">Ledger</option>
+                            <option value="revenue">Reconciliation</option>
+                            <option value="operations-config">Imports & Audit</option>
                         </optgroup>
                     </select>
                     <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
@@ -529,11 +584,21 @@
                                 <button class="tee-btn people-btn active" type="button" data-view="members">Members</button>
                                 <button class="tee-btn people-btn" type="button" data-view="guests">Guests</button>
                                 <button class="tee-btn people-btn" type="button" data-view="staff">Staff</button>
+                                <button class="tee-btn people-btn" type="button" data-view="account_contacts">Account Contacts</button>
                             </div>
                             <select id="guest-type-filter" style="display:none">
                                 <option value="all" selected>All guests</option>
                                 <option value="affiliated">Affiliated guests</option>
                                 <option value="non_affiliated">Non-affiliated guests</option>
+                            </select>
+                            <label for="people-quick-filter">Quick Filter</label>
+                            <select id="people-quick-filter">
+                                <option value="all" selected>All People</option>
+                                <option value="golf_members">Golf Members</option>
+                                <option value="tennis_members">Tennis Members</option>
+                                <option value="bowls_members">Bowls Members</option>
+                                <option value="non_golf_members">Non-Golf Members</option>
+                                <option value="staff">Staff</option>
                             </select>
                             <label for="people-sort">Sort</label>
                             <select id="people-sort">
@@ -543,18 +608,27 @@
                                 <option value="name_asc">Name A-Z</option>
                                 <option value="name_desc">Name Z-A</option>
                             </select>
-                            <label for="people-area-filter">Area</label>
+                            <label for="people-area-filter">Operation</label>
                             <select id="people-area-filter">
-                                <option value="golf" selected>Golf</option>
+                                <option value="all" selected>All</option>
+                                <option value="general">General</option>
+                                <option value="golf">Golf</option>
+                                <option value="tennis">Tennis</option>
+                                <option value="bowls">Bowls</option>
+                                <option value="squash">Squash</option>
+                                <option value="pro_shop">Pro Shop</option>
                             </select>
-                            <label for="people-status-filter">Membership Status</label>
+                            <label for="people-status-filter">Status</label>
                             <select id="people-status-filter">
                                 <option value="all">All Statuses</option>
                                 <option value="active" selected>Active</option>
-                                <option value="suspended">Suspended</option>
+                                <option value="hold">Hold</option>
                                 <option value="inactive">Inactive</option>
+                                <option value="resigned">Resigned</option>
+                                <option value="deceased">Deceased</option>
+                                <option value="defaulter">Defaulter</option>
                             </select>
-                            <input type="text" id="people-search" placeholder="Search name / email..." />
+                            <input type="text" id="people-search" placeholder="Search name / email / phone / category..." />
                             <button class="btn-secondary" id="people-import-btn" type="button" style="display:none">Import Members CSV</button>
                             <button class="btn-secondary" id="people-import-log-btn" type="button" style="display:none">Import Log</button>
                             <button class="btn-secondary" id="people-add-btn" type="button" style="display:none"></button>
@@ -573,10 +647,138 @@
                     <div class="pagination" id="players-pagination"></div>
                 </section>
 
+                <section id="account-customers-page" class="page">
+                    <div class="page-header">
+                        <h2>Account Customers</h2>
+                        <div class="filters">
+                            <input type="text" id="account-customers-search" placeholder="Search customer / account code..." />
+                            <label for="account-customers-operation">Operation</label>
+                            <select id="account-customers-operation">
+                                <option value="all" selected>All Operations</option>
+                                <option value="general">General</option>
+                                <option value="golf">Golf</option>
+                                <option value="pro_shop">Pro Shop</option>
+                            </select>
+                            <label for="account-customers-status">Status</label>
+                            <select id="account-customers-status">
+                                <option value="all" selected>All</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                            <button class="btn-secondary" type="button" id="account-customers-refresh-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary">
+                        <div class="summary-stat"><span>Total Customers</span><strong id="account-customers-total">0</strong></div>
+                        <div class="summary-stat"><span>Active</span><strong id="account-customers-active">0</strong></div>
+                        <div class="summary-stat"><span>Golf / Debtors</span><strong id="account-customers-golf">0</strong></div>
+                        <div class="summary-stat"><span>With Billing Contact</span><strong id="account-customers-contacts">0</strong></div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Account Code</th>
+                                    <th>Billing Contact</th>
+                                    <th>Customer Type</th>
+                                    <th>Operation</th>
+                                    <th>Terms</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="account-customers-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="golf-days-page" class="page">
+                    <div class="page-header">
+                        <h2>Golf Day Bookings</h2>
+                        <div class="filters">
+                            <input type="text" id="golf-days-search" placeholder="Search event / invoice / customer..." />
+                            <label for="golf-days-status">Payment Status</label>
+                            <select id="golf-days-status">
+                                <option value="all" selected>All</option>
+                                <option value="pending">Pending</option>
+                                <option value="partial">Partial</option>
+                                <option value="paid">Paid</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                            <button class="btn-secondary" type="button" id="golf-days-refresh-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary">
+                        <div class="summary-stat"><span>Bookings</span><strong id="golf-days-total">0</strong></div>
+                        <div class="summary-stat"><span>Gross Value</span><strong id="golf-days-gross">R0.00</strong></div>
+                        <div class="summary-stat"><span>Outstanding</span><strong id="golf-days-outstanding">R0.00</strong></div>
+                        <div class="summary-stat"><span>Fully Paid</span><strong id="golf-days-paid">0</strong></div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Booking</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th>Invoice</th>
+                                    <th>Gross</th>
+                                    <th>Balance Due</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="golf-days-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="operation-center" class="page">
+                    <div class="page-header">
+                        <div>
+                            <h2 id="operation-center-title">Operation Center</h2>
+                            <p class="action-note" id="operation-center-note">Operation-specific members, workflow readiness, and finance visibility.</p>
+                        </div>
+                        <div class="filters">
+                            <button class="btn-secondary" type="button" id="operation-center-open-people-btn">Open Members</button>
+                            <button class="btn-secondary" type="button" id="operation-center-open-finance-btn">Open Finance</button>
+                        </div>
+                    </div>
+                    <div class="cashbook-summary">
+                        <div class="summary-stat"><span>Active Members</span><strong id="operation-center-members">0</strong></div>
+                        <div class="summary-stat"><span>On Hold / Inactive</span><strong id="operation-center-held">0</strong></div>
+                        <div class="summary-stat"><span>Latest Activity</span><strong id="operation-center-last-seen">-</strong></div>
+                        <div class="summary-stat"><span>Booking Workflow</span><strong id="operation-center-workflow">Placeholder</strong></div>
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Members Snapshot</h3>
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Category</th>
+                                            <th>Status</th>
+                                            <th>Last Seen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="operation-center-members-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Workflow Readiness</h3>
+                            <div class="today-stats" id="operation-center-readiness"></div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Revenue Page -->
                 <section id="revenue" class="page">
                     <div class="page-header">
-                        <h2>Revenue Analytics</h2>
+                        <h2>Revenue & Reconciliation</h2>
                         <div class="filters">
                             <div class="tee-toggle revenue-period-toggle" aria-label="Revenue period">
                                 <button class="tee-btn revenue-period-btn active" type="button" data-period="day">Day</button>

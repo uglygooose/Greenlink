@@ -4,6 +4,7 @@ import json
 import os
 
 from sqlalchemy import Column, inspect, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.schema import CreateColumn, CreateIndex
 
 
@@ -13,7 +14,7 @@ def _env_true(key: str) -> bool:
 
 def _should_run_auto_migrations(engine) -> bool:
     dialect = str(getattr(getattr(engine, "dialect", None), "name", "") or "").lower()
-    if dialect in {"mysql", "sqlite"}:
+    if dialect in {"mysql", "sqlite", "postgresql", "postgres"}:
         return True
     return _env_true("AUTO_MIGRATE")
 
@@ -55,11 +56,21 @@ def _safe_execute(conn, statement: str, params: dict | None = None) -> None:
 def _add_missing_columns(conn, table) -> list[str]:
     changed: list[str] = []
     existing = _column_map(conn, table.name)
+    dialect = str(getattr(conn.dialect, "name", "")).lower()
     for column in table.columns:
         if column.name in existing:
             continue
         ddl = str(CreateColumn(_plain_column(column)).compile(dialect=conn.dialect))
-        _safe_execute(conn, f"ALTER TABLE {table.name} ADD COLUMN {ddl}")
+        statement = f"ALTER TABLE {table.name} ADD COLUMN {ddl}"
+        if dialect in {"postgresql", "postgres"}:
+            statement = f"ALTER TABLE {table.name} ADD COLUMN IF NOT EXISTS {ddl}"
+        try:
+            _safe_execute(conn, statement)
+        except DBAPIError as exc:
+            message = str(getattr(exc, "orig", exc) or "").lower()
+            if "duplicate column" in message or "already exists" in message:
+                continue
+            raise
         changed.append(column.name)
     return changed
 
@@ -183,14 +194,25 @@ def _repair_members_unique_indexes(conn) -> list[str]:
     if "members" not in _table_names(conn):
         return []
 
-    existing = _index_names(conn, "members")
+    inspector = inspect(conn)
+    existing_indexes = {str(idx.get("name")) for idx in inspector.get_indexes("members") if idx.get("name")}
+    existing_constraints = {
+        str(constraint.get("name")) for constraint in inspector.get_unique_constraints("members") if constraint.get("name")
+    }
+    existing = set(existing_indexes) | set(existing_constraints)
     repaired: list[str] = []
 
     if "members_member_number_key" in existing:
-        _safe_execute(conn, "DROP INDEX IF EXISTS members_member_number_key")
+        if "members_member_number_key" in existing_constraints:
+            _safe_execute(conn, "ALTER TABLE members DROP CONSTRAINT IF EXISTS members_member_number_key")
+        else:
+            _safe_execute(conn, "DROP INDEX IF EXISTS members_member_number_key")
         repaired.append("members.drop_global_member_number_unique")
     if "members_email_key" in existing:
-        _safe_execute(conn, "DROP INDEX IF EXISTS members_email_key")
+        if "members_email_key" in existing_constraints:
+            _safe_execute(conn, "ALTER TABLE members DROP CONSTRAINT IF EXISTS members_email_key")
+        else:
+            _safe_execute(conn, "DROP INDEX IF EXISTS members_email_key")
         repaired.append("members.drop_global_email_unique")
 
     refreshed = _index_names(conn, "members")
