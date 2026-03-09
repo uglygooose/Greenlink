@@ -3346,7 +3346,6 @@ function setupPeopleFilters() {
     };
 
     const updateTitle = () => {
-        if (!title) return;
         applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
         applyPeopleSortOptions();
     };
@@ -7555,6 +7554,9 @@ async function loadTeeTimes(options = {}) {
         applyTeeSheetSearchFilter();
         autoFlagTeeSheetWeather(dateStr, { silent: true });
     } catch (error) {
+        if (error?.name === "AbortError") {
+            return;
+        }
         console.error("Failed to load tee sheet:", error);
         tbody.innerHTML = `
             <tr class="empty-row">
