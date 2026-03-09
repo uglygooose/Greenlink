@@ -11,7 +11,7 @@ import json
 import requests
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 from sqlalchemy import String, asc, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
@@ -54,7 +54,7 @@ from app.people import (
     sync_user_person,
 )
 from app.password_policy import assert_password_policy
-from app.pricing import normalize_member_pricing_mode, pricing_mode_to_player_type
+from app.pricing import normalize_member_pricing_mode, pricing_mode_to_player_type, resolve_booking_pricing_profile
 from app.services.account_customers_service import (
     build_account_customers_query,
     ensure_unique_account_code,
@@ -124,10 +124,46 @@ def _member_pricing_payload(member: Member, db: Session | None = None) -> dict[s
     if db is not None and updated_by_id:
         user = db.query(User).filter(User.id == updated_by_id).first()
         updated_by_name = str(getattr(user, "name", "") or "").strip() or str(getattr(user, "email", "") or "").strip() or None
+    membership_text = getattr(member, "membership_category_raw", None) or getattr(member, "membership_category", None)
+    profile = resolve_booking_pricing_profile(
+        tee_time=datetime.utcnow(),
+        member=member,
+        membership_category=membership_text,
+        player_category=getattr(member, "player_category", None),
+        birth_date=getattr(member, "birth_date", None),
+        has_member_link=bool(getattr(member, "id", None)),
+        handicap_sa_id=getattr(member, "handicap_sa_id", None),
+        home_club=getattr(member, "home_club", None),
+    )
+    applied_player_type = str(getattr(profile, "player_type", "") or "").strip().lower() or None
+    pricing_tags = {str(tag or "").strip().lower() for tag in (getattr(profile, "pricing_tags", ()) or ()) if str(tag or "").strip()}
+    pricing_source = str(getattr(profile, "pricing_source", "") or "").strip() or "membership_default"
+    if pricing_source == "member_override":
+        applied_label = {
+            "visitor": "Visitor Override",
+            "non_affiliated": "Non-affiliated Override",
+            "reciprocity": "Reciprocity Override",
+        }.get(applied_player_type, "Override")
+    elif "pensioner" in pricing_tags:
+        applied_label = "Veteran Rate"
+    elif "student" in pricing_tags:
+        applied_label = "Student Rate"
+    elif "junior" in pricing_tags or "scholar" in pricing_tags:
+        applied_label = "Junior Rate"
+    else:
+        applied_label = {
+            "member": "Member Rate",
+            "visitor": "Visitor Rate",
+            "non_affiliated": "Non-affiliated Rate",
+            "reciprocity": "Reciprocity Rate",
+        }.get(applied_player_type, "Membership Default")
     return {
         "pricing_mode": pricing_mode,
         "pricing_label": MEMBER_PRICING_MODE_LABELS.get(pricing_mode, MEMBER_PRICING_MODE_LABELS["membership_default"]),
         "pricing_override_player_type": pricing_mode_to_player_type(pricing_mode),
+        "applied_pricing_label": applied_label,
+        "applied_pricing_player_type": applied_player_type,
+        "applied_pricing_source": pricing_source,
         "pricing_note": getattr(member, "pricing_note", None),
         "pricing_override_updated_at": getattr(member, "pricing_override_updated_at", None).isoformat() if getattr(member, "pricing_override_updated_at", None) else None,
         "pricing_override_updated_by_user_id": updated_by_id,
@@ -4343,6 +4379,43 @@ async def get_members(
             func.coalesce(stats.c.total_spent, 0.0).label("total_spent"),
             stats.c.last_seen.label("last_seen"),
         )
+        .options(
+            load_only(
+                Member.id,
+                Member.member_number,
+                Member.first_name,
+                Member.last_name,
+                Member.email,
+                Member.phone,
+                Member.handicap_number,
+                Member.handicap_sa_id,
+                Member.home_club,
+                Member.birth_date,
+                Member.player_category,
+                Member.country_of_residence,
+                Member.membership_category,
+                Member.membership_category_raw,
+                Member.primary_operation,
+                Member.membership_status,
+                Member.member_lifecycle_status,
+                Member.pricing_mode,
+                Member.pricing_note,
+                Member.pricing_override_updated_at,
+                Member.pricing_override_updated_by_user_id,
+                Member.record_status,
+                Member.person_type,
+                Member.membership_date,
+                Member.membership_expiration,
+                Member.source_file,
+                Member.source_row_number,
+                Member.import_reference,
+                Member.golf_access,
+                Member.tennis_access,
+                Member.bowls_access,
+                Member.squash_access,
+                Member.active,
+            )
+        )
         .outerjoin(stats, stats.c.member_id == Member.id)
     )
     if area_clause is not None:
@@ -4408,11 +4481,7 @@ async def get_members(
                 "membership_group": classify_membership_group(getattr(m, "membership_category", None)),
                 "membership_status": getattr(m, "membership_status", None),
                 "member_lifecycle_status": getattr(m, "member_lifecycle_status", None),
-                "pricing_mode": normalize_member_pricing_mode(getattr(m, "pricing_mode", None)),
-                "pricing_label": MEMBER_PRICING_MODE_LABELS.get(
-                    normalize_member_pricing_mode(getattr(m, "pricing_mode", None)),
-                    MEMBER_PRICING_MODE_LABELS["membership_default"],
-                ),
+                **_member_pricing_payload(m),
                 "record_status": getattr(m, "record_status", None),
                 "person_type": getattr(m, "person_type", None) or "Member",
                 "membership_date": getattr(m, "membership_date", None).isoformat() if getattr(m, "membership_date", None) else None,

@@ -66,6 +66,12 @@ let accountCustomersPageRows = [];
 let golfDayBookingsPageRows = [];
 let currentOperationContext = "tennis";
 let currentOperationFocus = "overview";
+let peopleLoadController = null;
+let peopleLoadRequestKey = "";
+let peopleLoadPromise = null;
+let teeSheetLoadController = null;
+let teeSheetLoadRequestKey = "";
+let teeSheetLoadPromise = null;
 const operationPageState = {
     pub: "week",
     bowls: "week",
@@ -885,6 +891,17 @@ function currentPeoplePageSubtitle() {
     return "Members, staff, guests, and account contacts.";
 }
 
+function syncPeoplePageChrome() {
+    const titleEl = document.getElementById("page-title");
+    if (titleEl && currentActivePage === "players") {
+        titleEl.textContent = currentPeoplePageTitle();
+    }
+    const subtitle = document.getElementById("people-subtitle");
+    if (subtitle) {
+        subtitle.textContent = currentPeoplePageSubtitle();
+    }
+}
+
 function applyPeoplePreset({ view = null, operation = null, quickFilter = null, status = null, contextMode = null } = {}) {
     if (view) {
         peopleView = String(view).toLowerCase();
@@ -918,10 +935,6 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
     const quickFilterSelect = document.getElementById("people-quick-filter");
     if (quickFilterSelect instanceof HTMLSelectElement) {
         quickFilterSelect.value = peopleQuickFilter;
-    }
-    const subtitle = document.getElementById("people-subtitle");
-    if (subtitle) {
-        subtitle.textContent = currentPeoplePageSubtitle();
     }
     const guestFilter = document.getElementById("guest-type-filter");
     if (guestFilter) guestFilter.style.display = peopleView === "guests" ? "" : "none";
@@ -969,6 +982,7 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
             addBtn.style.display = "none";
         }
     }
+    syncPeoplePageChrome();
 }
 
 function setOperationCenterContext(operation, focus = "overview") {
@@ -3345,7 +3359,7 @@ function setupPeopleFilters() {
         applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
     };
 
-    const updateTitle = () => {
+    const syncPeopleViewState = () => {
         applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
         applyPeopleSortOptions();
     };
@@ -3363,7 +3377,7 @@ function setupPeopleFilters() {
             const tableWrap = document.querySelector("#players .table-container");
             if (tableWrap) tableWrap.scrollLeft = 0;
 
-            updateTitle();
+            syncPeopleViewState();
             loadPlayers();
         });
     });
@@ -3396,7 +3410,7 @@ function setupPeopleFilters() {
         peopleQuickFilter = String(quickFilter.value || "all").toLowerCase();
         currentPlayersPage = 1;
         applyQuickFilterPreset();
-        updateTitle();
+        syncPeopleViewState();
         loadPlayers();
     });
 
@@ -3416,7 +3430,7 @@ function setupPeopleFilters() {
         }
     });
 
-    updateTitle();
+    syncPeopleViewState();
 }
 
 function renderPeopleSummary({ total = 0, active = 0, inactive = 0, flagged = 0 } = {}) {
@@ -3430,13 +3444,50 @@ function renderPeopleSummary({ total = 0, active = 0, inactive = 0, flagged = 0 
     if (flaggedEl) flaggedEl.textContent = formatInteger(flagged);
 }
 
+function isAbortLikeError(error) {
+    const name = String(error?.name || "").trim();
+    return name === "AbortError" || name === "CanceledError";
+}
+
+function memberAppliedPricingLabel(member) {
+    const applied = String(member?.applied_pricing_label || "").trim();
+    if (applied) return applied;
+    const mode = String(member?.pricing_mode || "membership_default").trim().toLowerCase();
+    return {
+        membership_default: "Membership Default",
+        visitor_override: "Visitor Override",
+        non_affiliated_override: "Non-affiliated Override",
+        reciprocity_override: "Reciprocity Override",
+    }[mode] || "Membership Default";
+}
+
 async function loadPlayers() {
     const token = localStorage.getItem("token");
     const search = document.getElementById("people-search")?.value?.trim();
     const tableHead = document.getElementById("people-table-head");
     const tableBody = document.getElementById("players-table");
     if (!tableHead || !tableBody) return;
+    const requestKey = JSON.stringify({
+        page: currentPlayersPage,
+        view: peopleView,
+        guestType: guestTypeFilter,
+        area: peopleAreaFilter,
+        status: peopleStatusFilter,
+        sort: peopleSort,
+        quick: peopleQuickFilter,
+        search: search || "",
+    });
+    if (peopleLoadPromise && peopleLoadRequestKey === requestKey) {
+        return peopleLoadPromise;
+    }
+    if (peopleLoadController) {
+        peopleLoadController.abort();
+    }
+    const controller = new AbortController();
+    peopleLoadController = controller;
+    peopleLoadRequestKey = requestKey;
 
+    const requestPromise = (async () => {
     try {
         let url = `${API_BASE}/api/admin/members?skip=${(currentPlayersPage - 1) * 10}&limit=10`;
         if (peopleView === "members") {
@@ -3460,7 +3511,11 @@ async function loadPlayers() {
         if (search) url += `&q=${encodeURIComponent(search)}`;
         if (peopleSort) url += `&sort=${encodeURIComponent(peopleSort)}`;
 
-        const data = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await fetchJson(url, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+            timeoutMs: 20000,
+        });
         const operationalContext = isOperationalPeopleContext();
 
         if (peopleView === "members") {
@@ -3479,6 +3534,7 @@ async function loadPlayers() {
                     <th>Full Name</th>
                     <th>Membership Category</th>
                     <th>Status</th>
+                    <th>Pricing</th>
                     <th>Contact</th>
                     <th>Last Activity</th>
                     <th>Financial Flag</th>
@@ -3489,6 +3545,7 @@ async function loadPlayers() {
                     <th>Person Type</th>
                     <th>Primary Operation</th>
                     <th>Membership Category</th>
+                    <th>Pricing</th>
                     <th>Status</th>
                     <th>Contact</th>
                     <th>Financial Flag</th>
@@ -3500,6 +3557,7 @@ async function loadPlayers() {
                     ${operationalContext ? `
                         <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
                         <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
+                        <td><span class="acct-pill" title="${escapeHtml(String(m.pricing_label || memberAppliedPricingLabel(m)))}">${escapeHtml(memberAppliedPricingLabel(m))}</span></td>
                         <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
                         <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "<span class=\"muted\">No activity</span>"}</td>
                         <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
@@ -3508,6 +3566,7 @@ async function loadPlayers() {
                         <td>${escapeHtml(String(m.person_type || "Member"))}</td>
                         <td>${escapeHtml(String(m.primary_operation || "-"))}</td>
                         <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
+                        <td><span class="acct-pill" title="${escapeHtml(String(m.pricing_label || memberAppliedPricingLabel(m)))}">${escapeHtml(memberAppliedPricingLabel(m))}</span></td>
                         <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
                         <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
                         <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
@@ -3519,7 +3578,7 @@ async function loadPlayers() {
             if (!members.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="${operationalContext ? 7 : 8}" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
+                        <td colspan="${operationalContext ? 8 : 9}" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
                     </tr>
                 `;
             }
@@ -3713,8 +3772,25 @@ async function loadPlayers() {
             loadPlayers();
         });
     } catch (error) {
+        if (isAbortLikeError(error)) {
+            return;
+        }
         console.error("Failed to load players:", error);
+        tableBody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load people.</td></tr>`;
+    } finally {
+        if (peopleLoadController === controller) {
+            peopleLoadController = null;
+        }
+        if (peopleLoadPromise === requestPromise) {
+            peopleLoadPromise = null;
+        }
+        if (peopleLoadRequestKey === requestKey && peopleLoadController == null) {
+            peopleLoadRequestKey = "";
+        }
     }
+    })();
+    peopleLoadPromise = requestPromise;
+    return requestPromise;
 }
 
 async function loadAccountCustomersPage() {
@@ -7375,6 +7451,21 @@ async function loadTeeTimes(options = {}) {
     const preserveScroll = Boolean(options.preserveScroll);
     const wrap = document.querySelector(".tee-sheet-table-wrap");
     const anchor = preserveScroll ? captureWrapAnchor(wrap) : null;
+    const requestKey = JSON.stringify({
+        date: dateStr,
+        tee: selectedTee,
+        holes: selectedHolesView,
+        preserveScroll,
+    });
+    if (teeSheetLoadPromise && teeSheetLoadRequestKey === requestKey) {
+        return teeSheetLoadPromise;
+    }
+    if (teeSheetLoadController) {
+        teeSheetLoadController.abort();
+    }
+    const controller = new AbortController();
+    teeSheetLoadController = controller;
+    teeSheetLoadRequestKey = requestKey;
     teeWeatherRiskMap = new Map();
     setTeeWeatherStatus("Rain risk check: loading...");
 
@@ -7393,6 +7484,7 @@ async function loadTeeTimes(options = {}) {
         wrap.scrollTop = 0;
     }
 
+    const requestPromise = (async () => {
     try {
         const start = `${dateStr}T00:00:00`;
         const [y, m, d] = dateStr.split("-").map(Number);
@@ -7400,7 +7492,9 @@ async function loadTeeTimes(options = {}) {
         const endDateStr = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, "0")}-${String(nextDay.getDate()).padStart(2, "0")}`;
         const end = `${endDateStr}T00:00:00`;
         const response = await fetch(`/tsheet/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+            timeoutMs: 30000,
         });
 
         const raw = await response.text();
@@ -7554,7 +7648,7 @@ async function loadTeeTimes(options = {}) {
         applyTeeSheetSearchFilter();
         autoFlagTeeSheetWeather(dateStr, { silent: true });
     } catch (error) {
-        if (error?.name === "AbortError") {
+        if (isAbortLikeError(error)) {
             return;
         }
         console.error("Failed to load tee sheet:", error);
@@ -7567,7 +7661,20 @@ async function loadTeeTimes(options = {}) {
         `;
         updateTeeSheetSummary([], dateStr);
         setTeeWeatherStatus("");
+    } finally {
+        if (teeSheetLoadController === controller) {
+            teeSheetLoadController = null;
+        }
+        if (teeSheetLoadPromise === requestPromise) {
+            teeSheetLoadPromise = null;
+        }
+        if (teeSheetLoadRequestKey === requestKey && teeSheetLoadController == null) {
+            teeSheetLoadRequestKey = "";
+        }
     }
+    })();
+    teeSheetLoadPromise = requestPromise;
+    return requestPromise;
 }
 
 function openBookingFormAdmin(teeTimeId, teeTimeIso, teeLabel, capacity, existingCount, slotNumber) {
@@ -7781,7 +7888,8 @@ async function viewMemberDetail(memberId) {
                 <div class="modal-section">
                     <div class="modal-label">Pricing Rule</div>
                     <div class="modal-value">
-                        <div>${escapeHtml(String(m.pricing_label || MEMBER_PRICING_LABELS[String(m.pricing_mode || "membership_default")] || MEMBER_PRICING_LABELS.membership_default))}</div>
+                        <div>${escapeHtml(String(m.applied_pricing_label || memberAppliedPricingLabel(m)))}</div>
+                        <div class="muted-text">Rule: ${escapeHtml(String(m.pricing_label || MEMBER_PRICING_LABELS[String(m.pricing_mode || "membership_default")] || MEMBER_PRICING_LABELS.membership_default))}</div>
                         ${m.pricing_note ? `<div>${escapeHtml(String(m.pricing_note))}</div>` : ""}
                         ${m.pricing_override_updated_at ? `<div>Updated ${formatDateTimeDMY(m.pricing_override_updated_at)}${m.pricing_override_updated_by_name ? ` by ${escapeHtml(String(m.pricing_override_updated_by_name))}` : ""}</div>` : ""}
                     </div>

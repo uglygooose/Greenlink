@@ -59,6 +59,10 @@
             }
 
             const nextInit = init ? { ...init } : {};
+            const requestedTimeoutMs = Number(nextInit.timeoutMs);
+            if (Object.prototype.hasOwnProperty.call(nextInit, "timeoutMs")) {
+                delete nextInit.timeoutMs;
+            }
             const headers = new Headers(nextInit.headers || {});
             if (!headers.has("Authorization")) {
                 headers.set("Authorization", `Bearer ${token}`);
@@ -77,18 +81,32 @@
             ).toUpperCase();
             const canRetry = isRetryableMethod(method);
             const maxAttempts = canRetry ? (retryAttempts + 1) : 1;
+            const effectiveTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+                ? requestedTimeoutMs
+                : timeoutMs;
 
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
                 const controller = new AbortController();
-                const timeoutId = global.setTimeout(() => controller.abort(), timeoutMs);
+                let timedOut = false;
+                let abortedByExternal = false;
+                const timeoutId = effectiveTimeoutMs > 0
+                    ? global.setTimeout(() => {
+                        timedOut = true;
+                        controller.abort();
+                    }, effectiveTimeoutMs)
+                    : null;
 
                 const externalSignal = nextInit.signal;
                 let onAbort = null;
                 if (externalSignal) {
                     if (externalSignal.aborted) {
+                        abortedByExternal = true;
                         controller.abort();
                     } else {
-                        onAbort = () => controller.abort();
+                        onAbort = () => {
+                            abortedByExternal = true;
+                            controller.abort();
+                        };
                         externalSignal.addEventListener("abort", onAbort, { once: true });
                     }
                 }
@@ -104,13 +122,27 @@
                     );
                     await delayMs(retryDelay);
                 } catch (error) {
-                    const transient = error?.name === "AbortError" || error instanceof TypeError;
+                    if (error?.name === "AbortError") {
+                        if (abortedByExternal) {
+                            throw error;
+                        }
+                        if (timedOut) {
+                            const timeoutError = new Error(`Request timed out after ${effectiveTimeoutMs}ms`);
+                            timeoutError.name = "TimeoutError";
+                            timeoutError.cause = error;
+                            throw timeoutError;
+                        }
+                        throw error;
+                    }
+                    const transient = error instanceof TypeError;
                     if (!canRetry || !transient || attempt >= (maxAttempts - 1)) {
                         throw error;
                     }
                     await delayMs(Math.round(retryBaseMs * Math.pow(2, attempt)));
                 } finally {
-                    global.clearTimeout(timeoutId);
+                    if (timeoutId != null) {
+                        global.clearTimeout(timeoutId);
+                    }
                     if (externalSignal && onAbort) {
                         externalSignal.removeEventListener("abort", onAbort);
                     }
