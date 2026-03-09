@@ -5335,7 +5335,6 @@ let TEE_DEFAULT_INTERVAL_MIN = 8;
 let TEE_NINE_HOLE_START = "15:40";
 let TEE_NINE_HOLE_END = "17:30";
 let lastNineAutoGenKey = null;
-let lastFullAutoGenKey = null;
 let lastBulkBookGroupId = null;
 
 function defaultTeeProfile() {
