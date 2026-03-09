@@ -6,6 +6,7 @@ from datetime import date as Date
 from datetime import time as Time
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, load_only, selectinload
 from typing import List
@@ -14,6 +15,7 @@ import re
 from app.auth import get_db, get_current_user
 from app import crud, models, schemas
 from app.booking_rules import get_booking_window_for_user
+from app.services.booking_pricing_service import repair_bookings_pricing
 from app.tenancy import get_active_club_id
 
 router = APIRouter(prefix="/tsheet", tags=["tsheet"])
@@ -48,8 +50,9 @@ def _normalize_tee_label(value) -> str | None:
     return raw
 
 
-def _booking_payload(b: models.Booking) -> dict:
+def _booking_payload(b: models.Booking, resolved_charge = None) -> dict:
     # Avoid response-model validation errors if older rows have NULLs.
+    resolved_price = None if resolved_charge is None else float(getattr(resolved_charge, "price", 0.0) or 0.0)
     return {
         "id": b.id,
         "tee_time_id": b.tee_time_id,
@@ -68,7 +71,8 @@ def _booking_payload(b: models.Booking) -> dict:
         "external_provider": getattr(b, "external_provider", None),
         "external_booking_id": getattr(b, "external_booking_id", None),
         "fee_category_id": getattr(b, "fee_category_id", None),
-        "price": float(getattr(b, "price", None) or 0.0),
+        "price": float(resolved_price if resolved_price is not None else (getattr(b, "price", None) or 0.0)),
+        "price_unresolved": bool(getattr(resolved_charge, "unresolved", False)) if resolved_charge is not None else None,
         "status": _to_status_str(getattr(b, "status", None)),
         "holes": getattr(b, "holes", None),
         "prepaid": getattr(b, "prepaid", None),
@@ -344,6 +348,46 @@ def tee_range(
             .all()
         )
         tee_time_ids = [int(getattr(tt, "id", 0) or 0) for tt in tee_times if int(getattr(tt, "id", 0) or 0) > 0]
+        tee_dates = sorted({getattr(tt, "tee_time", None).date() for tt in tee_times if getattr(tt, "tee_time", None) is not None})
+        blocked_dates: set[Date] = set()
+        if tee_dates:
+            blocked_dates.update(
+                row[0]
+                for row in (
+                    db.query(models.DayClose.close_date)
+                    .filter(
+                        models.DayClose.club_id == club_id,
+                        models.DayClose.status == "closed",
+                        models.DayClose.close_date.in_(tee_dates),
+                    )
+                    .all()
+                )
+                if row and row[0] is not None
+            )
+            start_date = tee_dates[0]
+            end_date = tee_dates[-1]
+            golf_day_rows = (
+                db.query(
+                    models.GolfDayBooking.event_date,
+                    func.coalesce(models.GolfDayBooking.event_end_date, models.GolfDayBooking.event_date),
+                )
+                .filter(
+                    models.GolfDayBooking.club_id == club_id,
+                    models.GolfDayBooking.event_date.isnot(None),
+                    func.coalesce(models.GolfDayBooking.payment_status, "pending") != "cancelled",
+                    models.GolfDayBooking.event_date <= end_date,
+                    func.coalesce(models.GolfDayBooking.event_end_date, models.GolfDayBooking.event_date) >= start_date,
+                )
+                .all()
+            )
+            for event_start, event_end in golf_day_rows:
+                if event_start is None or event_end is None:
+                    continue
+                current = max(event_start, start_date)
+                final = min(event_end, end_date)
+                while current <= final:
+                    blocked_dates.add(current)
+                    current = current + timedelta(days=1)
         bookings_by_tee_time_id: dict[int, list[models.Booking]] = {}
         if tee_time_ids:
             occupying_statuses = [
@@ -400,6 +444,19 @@ def tee_range(
                 if tee_time_id <= 0:
                     continue
                 bookings_by_tee_time_id.setdefault(tee_time_id, []).append(booking)
+            pricing_result = repair_bookings_pricing(
+                db,
+                booking_rows,
+                tee_times_by_id={
+                    int(getattr(tt, "id", 0) or 0): getattr(tt, "tee_time", None)
+                    for tt in tee_times
+                    if int(getattr(tt, "id", 0) or 0) > 0 and getattr(tt, "tee_time", None) is not None
+                },
+                persist=False,
+            )
+            resolved_charges = pricing_result.resolved_by_booking_id
+        else:
+            resolved_charges = {}
 
         # Ensure bookings are stable-ordered for frontend slot rendering.
         return [
@@ -408,9 +465,14 @@ def tee_range(
                 "tee_time": tt.tee_time,
                 "hole": _normalize_tee_label(tt.hole),
                 "capacity": int(getattr(tt, "capacity", None) or 4),
-                "status": _blocked_status_for_tee_time(db, tt),
+                "status": (
+                    "blocked"
+                    if str(getattr(tt, "status", None) or "open").strip().lower() == "blocked"
+                    or (getattr(tt, "tee_time", None) is not None and tt.tee_time.date() in blocked_dates)
+                    else str(getattr(tt, "status", None) or "open").strip().lower() or "open"
+                ),
                 "bookings": [
-                    _booking_payload(b)
+                    _booking_payload(b, resolved_charges.get(int(getattr(b, "id", 0) or 0)))
                     for b in bookings_by_tee_time_id.get(int(getattr(tt, "id", 0) or 0), [])
                 ],
             }

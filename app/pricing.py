@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import re
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import or_
@@ -26,6 +27,23 @@ def normalize_gender(value: Optional[str]) -> Optional[str]:
     if value in {"f", "female", "woman"}:
         return "female"
     return value
+
+
+def infer_gender_from_values(*values: Any) -> Optional[str]:
+    for value in values:
+        raw = _normalize_str(str(value or ""))
+        if not raw:
+            continue
+        compact = re.sub(r"[^a-z]+", " ", raw)
+        if any(token in compact for token in (" men ", " mens ", " gentleman ", " gentlemen ", " male ")):
+            return "male"
+        if any(token in compact for token in (" ladies ", " lady ", " women ", " womens ", " female ")):
+            return "female"
+        if compact.startswith("men ") or compact.startswith("mens "):
+            return "male"
+        if compact.startswith("ladies ") or compact.startswith("lady ") or compact.startswith("women "):
+            return "female"
+    return None
 
 
 def normalize_player_type(value: Optional[str]) -> Optional[str]:

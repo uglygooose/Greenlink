@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from app.fee_models import FeeCategory, FeeType
 from app.pricing import (
     PricingContext,
+    infer_gender_from_values,
     resolve_booking_pricing_profile,
     select_best_fee_from_list,
 )
@@ -116,6 +117,56 @@ def test_member_visitor_override_changes_player_type():
     assert profile.pricing_source == "member_override"
     assert "pensioner" in profile.pricing_tags
     assert profile.age == 60
+
+
+def test_veteran_membership_label_infers_gender_for_fee_selection():
+    fees = [
+        FeeCategory(
+            code=11,
+            description="GOLF MEMBER MEN VETERAN - 18 HOLES",
+            price=220,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="member",
+            gender="male",
+            holes=18,
+            priority=10,
+        ),
+        FeeCategory(
+            code=12,
+            description="GOLF MEMBER LADIES VETERAN - 18 HOLES",
+            price=220,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="member",
+            gender="female",
+            holes=18,
+            priority=10,
+        ),
+    ]
+
+    profile = resolve_booking_pricing_profile(
+        tee_time=datetime(2026, 3, 10, 6, 46),
+        member=SimpleNamespace(pricing_mode="membership_default", membership_category="Mens Full Golf - Veteran"),
+        membership_category="Mens Full Golf - Veteran",
+        has_member_link=True,
+    )
+
+    best = select_best_fee_from_list(
+        fees,
+        PricingContext(
+            fee_type=FeeType.GOLF,
+            tee_time=datetime(2026, 3, 10, 6, 46),
+            player_type=profile.player_type,
+            gender=infer_gender_from_values("Mens Full Golf - Veteran"),
+            holes=18,
+            age=profile.age,
+            pricing_tags=profile.pricing_tags,
+        ),
+    )
+
+    assert best is not None
+    assert best.code == 11
 
 
 def test_parse_tee_sheet_csv_normalizes_multiline_rows():

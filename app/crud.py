@@ -573,9 +573,24 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     if not fee_category_id and getattr(booking_in, "price", None) is None and getattr(booking_in, "auto_price", True):
         try:
             from app.fee_models import FeeType, FeeCategory
-            from app.pricing import PricingContext, compute_age, normalize_gender, normalize_player_type, select_best_fee_category
+            from app.pricing import (
+                PricingContext,
+                compute_age,
+                infer_gender_from_values,
+                normalize_gender,
+                normalize_player_type,
+                select_best_fee_category,
+            )
 
-            gender = normalize_gender(getattr(booking_in, "gender", None))
+            gender = (
+                normalize_gender(getattr(booking_in, "gender", None))
+                or normalize_gender(getattr(member, "gender", None))
+                or infer_gender_from_values(
+                    getattr(member, "membership_category_raw", None),
+                    getattr(member, "membership_category", None),
+                    getattr(booking_in, "player_category", None),
+                )
+            )
             holes = int(getattr(booking_in, "holes", None) or holes or 18)
             player_type = player_type_snapshot
 

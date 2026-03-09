@@ -68,6 +68,7 @@ from app.services.bookings_service import (
     set_booking_payment_method_if_exists,
     set_booking_payment_method_meta,
 )
+from app.services.booking_pricing_service import repair_bookings_pricing
 from app.services.payment_methods import (
     normalize_booking_payment_method,
     normalize_pro_shop_payment_method,
@@ -200,6 +201,54 @@ def _safe_rollback(db: Session | None) -> None:
         db.rollback()
     except Exception:
         pass
+
+
+def _repair_booking_pricing_window(
+    db: Session,
+    club_id: int,
+    *,
+    start_dt: datetime,
+    end_dt_exclusive: datetime | None,
+) -> tuple[int, ...]:
+    try:
+        query = (
+            db.query(Booking)
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .options(
+                load_only(
+                    Booking.id,
+                    Booking.tee_time_id,
+                    Booking.member_id,
+                    Booking.fee_category_id,
+                    Booking.price,
+                    Booking.status,
+                    Booking.player_type,
+                    Booking.gender,
+                    Booking.player_category,
+                    Booking.holes,
+                    Booking.handicap_sa_id,
+                    Booking.home_club,
+                    Booking.source,
+                ),
+                selectinload(Booking.tee_time).load_only(TeeTime.id, TeeTime.tee_time),
+            )
+            .filter(
+                Booking.club_id == club_id,
+                TeeTime.club_id == club_id,
+                TeeTime.tee_time >= start_dt,
+                or_(Booking.price.is_(None), Booking.price <= 0),
+            )
+        )
+        if end_dt_exclusive is not None:
+            query = query.filter(TeeTime.tee_time < end_dt_exclusive)
+        rows = query.all()
+        if not rows:
+            return ()
+        result = repair_bookings_pricing(db, rows, persist=False)
+        return result.updated_booking_ids
+    except Exception:
+        _safe_rollback(db)
+        return ()
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -1374,6 +1423,13 @@ async def get_dashboard_stats(
         return cached
 
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    today_anchor = datetime.utcnow().date()
+    _repair_booking_pricing_window(
+        db,
+        club_id,
+        start_dt=datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time()),
+        end_dt_exclusive=datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time()),
+    )
 
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
@@ -3305,6 +3361,13 @@ async def get_all_bookings(
     total = query.count()
     
     bookings = query.offset(skip).limit(limit).all()
+    resolved_prices: dict[int, float] = {}
+    if bookings:
+        pricing_result = repair_bookings_pricing(db, bookings, persist=False)
+        resolved_prices = {
+            booking_id: resolved.price
+            for booking_id, resolved in pricing_result.resolved_by_booking_id.items()
+        }
     
     return {
         "total": total,
@@ -3314,7 +3377,7 @@ async def get_all_bookings(
                 "player_name": b.player_name,
                 "player_email": b.player_email,
                 "club_card": getattr(b, "club_card", None),
-                "price": float(b.price),
+                "price": float(resolved_prices.get(int(getattr(b, "id", 0) or 0), b.price)),
                 "status": b.status,
                 "player_type": getattr(b, "player_type", None),
                 "tee_time": b.tee_time.tee_time.isoformat() if b.tee_time else None,
@@ -3350,7 +3413,13 @@ async def get_booking_detail(
     
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
+
+    resolved_price = float(booking.price or 0.0)
+    pricing_result = repair_bookings_pricing(db, [booking], persist=False)
+    resolved = pricing_result.resolved_by_booking_id.get(int(booking.id))
+    if resolved is not None:
+        resolved_price = float(resolved.price)
+
     round_info = None
     if booking.round:
         round_info = {
@@ -3422,7 +3491,7 @@ async def get_booking_detail(
         },
         "fee_category_id": booking.fee_category_id,
         "fee_category": fee_category,
-        "price": float(booking.price),
+        "price": resolved_price,
         "status": booking.status,
         "player_type": getattr(booking, "player_type", None),
         "tee_time": booking.tee_time.tee_time.isoformat() if booking.tee_time else None,
@@ -5745,6 +5814,13 @@ async def get_revenue_analytics(
         end_date_exclusive = None
         elapsed_days = None
         period_days = days
+
+    _repair_booking_pricing_window(
+        db,
+        club_id,
+        start_dt=start_date,
+        end_dt_exclusive=end_date_exclusive,
+    )
     
     # Daily booked revenue (tee-time date)
     daily_revenue_query = db.query(
@@ -6259,7 +6335,7 @@ async def update_player_price(
             }
         }
     
-    elif price_update.custom_price:
+    elif price_update.custom_price is not None:
         if price_update.custom_price < 0:
             raise HTTPException(status_code=400, detail="Price cannot be negative")
         
@@ -6397,7 +6473,7 @@ async def update_booking_price(
             }
         }
     
-    elif price_update.custom_price:
+    elif price_update.custom_price is not None:
         if price_update.custom_price < 0:
             raise HTTPException(status_code=400, detail="Price cannot be negative")
         

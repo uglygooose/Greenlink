@@ -44,6 +44,7 @@ from app.people import (
 )
 from app.pricing import (
     PricingContext,
+    infer_gender_from_values,
     normalize_gender,
     resolve_booking_pricing_profile,
     select_best_fee_category,
@@ -1295,7 +1296,15 @@ async def import_bookings_csv(
                         fee_type=FeeType.GOLF,
                         tee_time=tt.tee_time,
                         player_type=pricing_profile.player_type,
-                        gender=normalize_gender(getattr(matched_member, "gender", None)),
+                        gender=(
+                            normalize_gender(getattr(matched_member, "gender", None))
+                            or infer_gender_from_values(
+                                membership_label,
+                                getattr(matched_member, "membership_category_raw", None),
+                                getattr(matched_member, "membership_category", None),
+                                getattr(matched_member, "player_category", None),
+                            )
+                        ),
                         holes=holes,
                         age=pricing_profile.age,
                         pricing_tags=pricing_profile.pricing_tags,

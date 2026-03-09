@@ -155,6 +155,7 @@ class BookingOut(BaseModel):
     account_customer_id: Optional[int] = None
     fee_category_id: Optional[int]
     price: float
+    price_unresolved: Optional[bool] = None
     status: str
     holes: Optional[int] = None
     prepaid: Optional[bool] = None

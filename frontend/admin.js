@@ -459,6 +459,13 @@ function formatCurrencyZAR(value) {
     return `R${formatNumber(num, 2, 2)}`;
 }
 
+function formatCompactBookingPrice(booking) {
+    if (booking && booking.price_unresolved) return "—";
+    const num = Number(booking?.price || 0);
+    if (!Number.isFinite(num)) return "—";
+    return `R${num.toFixed(0)}`;
+}
+
 function safeNumber(value) {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
@@ -5791,7 +5798,7 @@ function renderTeeSlotPlayerList(bookings = []) {
         const status = String(booking?.status || "booked");
         const statusClass = statusToClass(status);
         const statusLabel = statusToLabel(status);
-        const price = formatCurrencyZAR(booking?.price || 0);
+        const price = booking?.price_unresolved ? "Pricing unresolved" : formatCurrencyZAR(booking?.price || 0);
 
         return `
             <div class="tee-slot-player-row">
@@ -6636,7 +6643,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                              ${allowDetails ? `onclick="openBookingDetails(${tt.id}, ${booking.id})"` : ""}>
                             <div class="slot-top">
                                 <span class="slot-status">${escapeHtml(statusLabel)}</span>
-                                <span class="slot-price">R${Number(booking.price || 0).toFixed(0)}</span>
+                                <span class="slot-price">${formatCompactBookingPrice(booking)}</span>
                             </div>
                             <div class="slot-name">${escapeHtml(booking.player_name)}</div>
                             <div class="slot-meta">${booking.player_email ? escapeHtml(booking.player_email) : ""}</div>
