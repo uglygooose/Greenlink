@@ -6470,6 +6470,16 @@ function teeKey(dateStr, tee, dateObj) {
     return `${dateStr}|${tee}|${hh}:${mm}`;
 }
 
+function normalizeTeeLabel(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const compact = raw.toLowerCase().replace(/[^0-9a-z]+/g, "");
+    if (compact.startsWith("10")) return "10";
+    if (compact.startsWith("1")) return "1";
+    const match = compact.match(/^(\d+)/);
+    return match ? String(parseInt(match[1], 10)) : raw;
+}
+
 async function generateDaySheet(dateStr, existingKeys, tees = ["1", "10"]) {
     return generateTeeSheetFromPlan(dateStr, 18, tees);
 }
@@ -6559,7 +6569,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         const timeKey = dt.toISOString().slice(0, 16); // UTC minute precision for stable grouping
         const timeLabel = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-        const teeLabel = tt.hole || "1";
+        const teeLabel = normalizeTeeLabel(tt.hole || "1") || "1";
         const allBookings = Array.isArray(tt.bookings) ? [...tt.bookings] : [];
         const bookings = allBookings.slice(0, 4);
         const capacity = tt.capacity || 4;
@@ -7179,29 +7189,37 @@ async function loadTeeTimes(options = {}) {
         if (!response.ok) {
             throw new Error((data && data.detail) ? data.detail : (raw || "Unable to load tee sheet"));
         }
-        const dayAll = (Array.isArray(data) ? data : []).sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
+        const dayAll = (Array.isArray(data) ? data : [])
+            .map((tt) => ({ ...tt, hole: normalizeTeeLabel(tt?.hole || "1") || "1" }))
+            .sort((a, b) => new Date(a.tee_time) - new Date(b.tee_time));
 
         const existingKeys = new Set();
         dayAll.forEach(tt => {
-            const tee = tt.hole || "1";
+            const tee = normalizeTeeLabel(tt.hole || "1") || "1";
             existingKeys.add(teeKey(dateStr, tee, new Date(tt.tee_time)));
         });
 
-        const scheduleTees = (Array.isArray(dayPlan18?.tees) && dayPlan18.tees.length) ? dayPlan18.tees.map(String) : ["1", "10"];
-        const teeListForView = String(selectedTee) === "all" ? scheduleTees : [String(selectedTee || "1")];
-        const dayTeeRaw = dayAll.filter(tt => teeListForView.includes(String(tt.hole || "1")));
+        const scheduleTees = (Array.isArray(dayPlan18?.tees) && dayPlan18.tees.length)
+            ? dayPlan18.tees.map((tee) => normalizeTeeLabel(tee)).filter(Boolean)
+            : ["1", "10"];
+        const holesPresent = Array.from(new Set(dayAll.map((tt) => normalizeTeeLabel(tt?.hole || "1")).filter(Boolean)));
+        const teeListForView = String(selectedTee) === "all"
+            ? (holesPresent.length ? holesPresent : scheduleTees)
+            : [normalizeTeeLabel(selectedTee || "1") || "1"];
+        const dayTeeRaw = dayAll.filter(tt => teeListForView.includes(normalizeTeeLabel(tt.hole || "1")));
 
         // Group duplicates by tee_time (minute precision) + tee
         const grouped = new Map();
         dayTeeRaw.forEach(tt => {
             const d = new Date(tt.tee_time);
             const timeKey = d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
-            const teeKeyVal = String(tt.hole || "1");
+            const teeKeyVal = normalizeTeeLabel(tt.hole || "1") || "1";
             const key = `${timeKey}|${teeKeyVal}`;
             const existing = grouped.get(key);
             if (!existing) {
                 grouped.set(key, {
                     ...tt,
+                    hole: teeKeyVal,
                     bookings: Array.isArray(tt.bookings) ? [...tt.bookings] : []
                 });
             } else {
@@ -7219,29 +7237,6 @@ async function loadTeeTimes(options = {}) {
         });
         const filteredTeeTimes = filterTeeTimesByHoles(dayTeeTimes, dateStr);
         const isNineView = String(selectedHolesView) === "9";
-
-        if (!isNineView) {
-            const hasEdgeSlot = (timeValue, teeValue) =>
-                dayAll.some(tt => {
-                    const t = String(tt.tee_time || "");
-                    const hhmm = t.length >= 16 ? t.slice(11, 16) : "";
-                    return hhmm === timeValue && String(tt.hole || "1") === String(teeValue);
-                });
-            const missingEdge = (dayPlan18.windows || []).some((window) =>
-                (dayPlan18.tees || []).some((tee) =>
-                    !hasEdgeSlot(window.start, tee) || !hasEdgeSlot(window.end, tee)
-                )
-            );
-
-            const fullKey = `${dateStr}|full`;
-            if (missingEdge && lastFullAutoGenKey !== fullKey) {
-                lastFullAutoGenKey = fullKey;
-                const created = await generateDaySheet(dateStr, existingKeys, dayPlan18.tees || ["1", "10"]);
-                if (created && created > 0) {
-                    return loadTeeTimes(options);
-                }
-            }
-        }
 
         if (dayAll.length === 0) {
             if (isNineView) {

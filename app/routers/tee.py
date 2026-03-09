@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 from typing import List
 from pydantic import BaseModel
+import re
 from app.auth import get_db, get_current_user
 from app import crud, models, schemas
 from app.booking_rules import get_booking_window_for_user
@@ -30,6 +31,21 @@ def _to_status_str(value) -> str:
         return str(getattr(value, "value", value))
     except Exception:
         return str(value)
+
+
+def _normalize_tee_label(value) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    compact = re.sub(r"[^0-9a-z]+", "", raw.lower())
+    if compact.startswith("10"):
+        return "10"
+    if compact.startswith("1"):
+        return "1"
+    match = re.match(r"^(\d+)", compact)
+    if match:
+        return str(int(match.group(1)))
+    return raw
 
 
 def _booking_payload(b: models.Booking) -> dict:
@@ -107,7 +123,7 @@ def create_tee(
     _=Depends(_verify_staff),
     club_id: int = Depends(get_active_club_id),
 ):
-    tt = crud.create_tee_time(db, tee.tee_time, tee.hole, tee.capacity or 4, tee.status or "open")
+    tt = crud.create_tee_time(db, tee.tee_time, _normalize_tee_label(tee.hole), tee.capacity or 4, tee.status or "open")
     return tt
 
 
@@ -215,7 +231,8 @@ def generate_tee_sheet(
         if block_reason == "manual_close":
             raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
 
-        tees = [str(t).strip() for t in (req.tees or []) if str(t).strip()]
+        tees = [_normalize_tee_label(t) for t in (req.tees or [])]
+        tees = [str(t).strip() for t in tees if str(t or "").strip()]
         if not tees:
             raise HTTPException(status_code=400, detail="No tees provided")
 
@@ -252,7 +269,7 @@ def generate_tee_sheet(
         for tee_time, hole in existing_rows:
             if tee_time is None:
                 continue
-            existing.add((tee_time.replace(second=0, microsecond=0), str(hole or "")))
+            existing.add((tee_time.replace(second=0, microsecond=0), str(_normalize_tee_label(hole) or "")))
 
         created = 0
         new_rows: list[models.TeeTime] = []
@@ -324,7 +341,7 @@ def tee_range(
             {
                 "id": tt.id,
                 "tee_time": tt.tee_time,
-                "hole": tt.hole,
+                "hole": _normalize_tee_label(tt.hole),
                 "capacity": int(getattr(tt, "capacity", None) or 4),
                 "status": _blocked_status_for_tee_time(db, tt),
                 "bookings": [
@@ -362,7 +379,7 @@ def all_tee(
             {
                 "id": tt.id,
                 "tee_time": tt.tee_time,
-                "hole": tt.hole,
+                "hole": _normalize_tee_label(tt.hole),
                 "capacity": int(getattr(tt, "capacity", None) or 4),
                 "status": _blocked_status_for_tee_time(db, tt),
                 "bookings": [

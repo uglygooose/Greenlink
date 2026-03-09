@@ -148,6 +148,21 @@ def _normalize_import_provider(value: Any) -> str:
     return aliases.get(raw, raw)
 
 
+def _normalize_tee_label(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    compact = re.sub(r"[^0-9a-z]+", "", raw.lower())
+    if compact.startswith("10"):
+        return "10"
+    if compact.startswith("1"):
+        return "1"
+    match = re.match(r"^(\d+)", compact)
+    if match:
+        return str(int(match.group(1)))
+    return raw
+
+
 def _normalized_name_key(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
 
@@ -1156,7 +1171,7 @@ async def import_bookings_csv(
         for idx, row in enumerate(upstream_rows):
             total += 1
 
-            tee_val = str(row.get("tee") or row.get("hole") or row.get("start_tee") or "").strip() or None
+            tee_val = _normalize_tee_label(row.get("tee") or row.get("hole") or row.get("start_tee"))
             tee_time = row.get("tee_time") if provider_norm == "tee_sheet" else _parse_datetime(row.get("tee_time") or row.get("start_time") or row.get("datetime") or "")
             if tee_time is None:
                 d = _parse_date(row.get("date") or row.get("booking_date") or row.get("tee_date"))
@@ -1202,19 +1217,27 @@ async def import_bookings_csv(
             explicit_price = _parse_amount(row.get("price") or row.get("amount") or row.get("fee"))
 
             # Ensure tee_time row exists.
+            tee_time_key = tee_time.replace(second=0, microsecond=0)
             tt = (
                 db.query(TeeTime)
                 .filter(
                     TeeTime.club_id == club_id,
-                    TeeTime.tee_time == tee_time.replace(second=0, microsecond=0),
-                    TeeTime.hole == tee_val,
+                    TeeTime.tee_time == tee_time_key,
                 )
-                .first()
+                .all()
+            )
+            tt = next(
+                (
+                    row_tt
+                    for row_tt in tt
+                    if _normalize_tee_label(getattr(row_tt, "hole", None)) == tee_val
+                ),
+                None,
             )
             if not tt:
                 tt = TeeTime(
                     club_id=club_id,
-                    tee_time=tee_time.replace(second=0, microsecond=0),
+                    tee_time=tee_time_key,
                     hole=tee_val,
                     capacity=4,
                     status="open",
@@ -1222,6 +1245,8 @@ async def import_bookings_csv(
                 db.add(tt)
                 db.commit()
                 db.refresh(tt)
+            elif _normalize_tee_label(getattr(tt, "hole", None)) != str(getattr(tt, "hole", "") or "").strip():
+                tt.hole = tee_val
 
             touched_tee_ids.add(int(tt.id))
 
