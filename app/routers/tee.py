@@ -7,7 +7,7 @@ from datetime import time as Time
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 from typing import List
 from pydantic import BaseModel
 import re
@@ -326,15 +326,80 @@ def tee_range(
 
         tee_times = (
             db.query(models.TeeTime)
-            .options(selectinload(models.TeeTime.bookings))
+            .options(
+                load_only(
+                    models.TeeTime.id,
+                    models.TeeTime.tee_time,
+                    models.TeeTime.hole,
+                    models.TeeTime.capacity,
+                    models.TeeTime.status,
+                )
+            )
             .filter(
                 models.TeeTime.club_id == club_id,
                 models.TeeTime.tee_time >= start,
                 models.TeeTime.tee_time < end,
             )
-            .order_by(models.TeeTime.tee_time)
+            .order_by(models.TeeTime.tee_time, models.TeeTime.id)
             .all()
         )
+        tee_time_ids = [int(getattr(tt, "id", 0) or 0) for tt in tee_times if int(getattr(tt, "id", 0) or 0) > 0]
+        bookings_by_tee_time_id: dict[int, list[models.Booking]] = {}
+        if tee_time_ids:
+            occupying_statuses = [
+                models.BookingStatus.booked,
+                models.BookingStatus.checked_in,
+                models.BookingStatus.completed,
+            ]
+            booking_rows = (
+                db.query(models.Booking)
+                .options(
+                    load_only(
+                        models.Booking.id,
+                        models.Booking.tee_time_id,
+                        models.Booking.party_size,
+                        models.Booking.member_id,
+                        models.Booking.created_by_user_id,
+                        models.Booking.player_name,
+                        models.Booking.player_email,
+                        models.Booking.club_card,
+                        models.Booking.account_customer_id,
+                        models.Booking.handicap_number,
+                        models.Booking.greenlink_id,
+                        models.Booking.handicap_sa_id,
+                        models.Booking.home_club,
+                        models.Booking.source,
+                        models.Booking.external_provider,
+                        models.Booking.external_booking_id,
+                        models.Booking.fee_category_id,
+                        models.Booking.price,
+                        models.Booking.status,
+                        models.Booking.holes,
+                        models.Booking.prepaid,
+                        models.Booking.cart,
+                        models.Booking.push_cart,
+                        models.Booking.caddy,
+                        models.Booking.gender,
+                        models.Booking.player_category,
+                        models.Booking.handicap_index_at_booking,
+                        models.Booking.handicap_index_at_play,
+                        models.Booking.notes,
+                        models.Booking.created_at,
+                    )
+                )
+                .filter(
+                    models.Booking.club_id == club_id,
+                    models.Booking.tee_time_id.in_(tee_time_ids),
+                    models.Booking.status.in_(occupying_statuses),
+                )
+                .order_by(models.Booking.tee_time_id, models.Booking.id)
+                .all()
+            )
+            for booking in booking_rows:
+                tee_time_id = int(getattr(booking, "tee_time_id", 0) or 0)
+                if tee_time_id <= 0:
+                    continue
+                bookings_by_tee_time_id.setdefault(tee_time_id, []).append(booking)
 
         # Ensure bookings are stable-ordered for frontend slot rendering.
         return [
@@ -346,10 +411,7 @@ def tee_range(
                 "status": _blocked_status_for_tee_time(db, tt),
                 "bookings": [
                     _booking_payload(b)
-                    for b in [
-                        b for b in sorted(list(tt.bookings or []), key=lambda b: b.id or 0)
-                        if _is_occupying_booking(b)
-                    ]
+                    for b in bookings_by_tee_time_id.get(int(getattr(tt, "id", 0) or 0), [])
                 ],
             }
             for tt in tee_times
