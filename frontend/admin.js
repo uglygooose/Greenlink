@@ -51,6 +51,7 @@ let peopleSort = "recent_activity";
 let peopleAreaFilter = "all";
 let peopleStatusFilter = "active";
 let peopleQuickFilter = "all";
+let peopleContextMode = "general";
 let proShopStockFilter = "all";
 let proShopCategoryFilter = "all";
 let proShopSalesWindowDays = 30;
@@ -847,7 +848,38 @@ function operationLabel(key) {
     return "General";
 }
 
-function applyPeoplePreset({ view = null, operation = null, quickFilter = null, status = null } = {}) {
+function isOperationalPeopleContext() {
+    return peopleContextMode === "operation" && peopleView === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(peopleAreaFilter);
+}
+
+function toggleFilterControl(control, visible) {
+    if (!(control instanceof HTMLElement)) return;
+    control.style.display = visible ? "" : "none";
+    const label = control.previousElementSibling;
+    if (label instanceof HTMLLabelElement) {
+        label.style.display = visible ? "" : "none";
+    }
+}
+
+function currentPeoplePageTitle() {
+    if (peopleView === "guests") return "Guests";
+    if (peopleView === "staff") return "Staff";
+    if (peopleView === "account_contacts") return "Account Contacts";
+    if (isOperationalPeopleContext()) return `${operationLabel(peopleAreaFilter)} Members`;
+    return "People";
+}
+
+function currentPeoplePageSubtitle() {
+    if (isOperationalPeopleContext()) {
+        return `${operationLabel(peopleAreaFilter)} members only. Filters below refine this view inside the selected operation.`;
+    }
+    if (peopleView === "staff") return "Shared staff directory for club operations and admin support.";
+    if (peopleView === "account_contacts") return "Debtor and account contact directory across the club.";
+    if (peopleView === "guests") return "Guest activity and contact visibility for front-desk staff.";
+    return "Cross-club registry across members, staff, guests, and account contacts.";
+}
+
+function applyPeoplePreset({ view = null, operation = null, quickFilter = null, status = null, contextMode = null } = {}) {
     if (view) {
         peopleView = String(view).toLowerCase();
     }
@@ -859,6 +891,11 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
     }
     if (status) {
         peopleStatusFilter = String(status).toLowerCase();
+    }
+    if (contextMode) {
+        peopleContextMode = String(contextMode).toLowerCase() === "operation" ? "operation" : "general";
+    } else if (peopleView !== "members") {
+        peopleContextMode = "general";
     }
 
     document.querySelectorAll("#players .people-btn").forEach((btn) => {
@@ -878,24 +915,44 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
     }
     const title = document.getElementById("people-title");
     if (title) {
-        title.textContent = peopleView === "members"
-            ? "People"
-            : peopleView === "guests"
-                ? "Guests"
-                : peopleView === "staff"
-                    ? "Staff"
-                    : "Account Contacts";
+        title.textContent = currentPeoplePageTitle();
+    }
+    const subtitle = document.getElementById("people-subtitle");
+    if (subtitle) {
+        subtitle.textContent = currentPeoplePageSubtitle();
     }
     const guestFilter = document.getElementById("guest-type-filter");
     if (guestFilter) guestFilter.style.display = peopleView === "guests" ? "" : "none";
-    if (areaFilter instanceof HTMLSelectElement) areaFilter.style.display = peopleView === "guests" ? "none" : "";
-    if (statusFilter instanceof HTMLSelectElement) statusFilter.style.display = peopleView === "guests" ? "none" : "";
+    const operationalContext = isOperationalPeopleContext();
+    const toggleButtons = document.querySelector("#players .people-toggle");
+    if (toggleButtons instanceof HTMLElement) {
+        toggleButtons.style.display = operationalContext ? "none" : "";
+    }
+    if (areaFilter instanceof HTMLSelectElement) {
+        areaFilter.value = peopleAreaFilter;
+        toggleFilterControl(areaFilter, peopleView !== "guests" && !operationalContext);
+    }
+    if (statusFilter instanceof HTMLSelectElement) {
+        statusFilter.value = peopleStatusFilter;
+        toggleFilterControl(statusFilter, peopleView !== "guests");
+    }
+    if (quickFilterSelect instanceof HTMLSelectElement) {
+        toggleFilterControl(quickFilterSelect, !operationalContext && peopleView !== "guests" && peopleView !== "staff" && peopleView !== "account_contacts");
+    }
+    const sortSelect = document.getElementById("people-sort");
+    if (sortSelect instanceof HTMLSelectElement) {
+        toggleFilterControl(sortSelect, true);
+    }
+    const searchInput = document.getElementById("people-search");
+    if (searchInput instanceof HTMLInputElement) {
+        searchInput.placeholder = operationalContext
+            ? `Search ${operationLabel(peopleAreaFilter).toLowerCase()} members...`
+            : "Search name / email / phone / category...";
+    }
     const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
-    const importBtn = document.getElementById("people-import-btn");
-    if (importBtn) importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
     const addBtn = document.getElementById("people-add-btn");
     if (addBtn) {
-        if (!canEdit) {
+        if (!canEdit || operationalContext) {
             addBtn.style.display = "none";
         } else if (peopleView === "members") {
             addBtn.textContent = "Add Member";
@@ -943,6 +1000,9 @@ function setupNavigation() {
                 applyPeoplePreset({
                     view: peoplePresetView || peopleView,
                     operation: peoplePresetOperation || peopleAreaFilter,
+                    contextMode: peoplePresetView === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(peoplePresetOperation)
+                        ? "operation"
+                        : "general",
                 });
             }
             if (page === "operation-center") {
@@ -1036,7 +1096,14 @@ function applyQuickNavigationValue(raw) {
         return true;
     }
     if (pageName === "players") {
-        applyPeoplePreset({ view: arg1 || "members", operation: arg2 || "all" });
+        const operation = arg2 || "all";
+        applyPeoplePreset({
+            view: arg1 || "members",
+            operation,
+            contextMode: (arg1 || "members") === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(String(operation).toLowerCase())
+                ? "operation"
+                : "general",
+        });
         navigateToAdminPage(pageName);
         return true;
     }
@@ -1177,7 +1244,10 @@ function setupPageShortcuts() {
     opsOpenRevenueBtn?.addEventListener("click", () => navigateToAdminPage("revenue"));
 
     const opsOpenPeopleBtn = document.getElementById("ops-open-people-btn");
-    opsOpenPeopleBtn?.addEventListener("click", () => navigateToAdminPage("players"));
+    opsOpenPeopleBtn?.addEventListener("click", () => {
+        applyPeoplePreset({ view: "members", operation: "all", contextMode: "general" });
+        navigateToAdminPage("players");
+    });
 }
 
 function showPage(pageName) {
@@ -1188,9 +1258,9 @@ function showPage(pageName) {
     // Update title
     const titles = {
         dashboard: "Dashboard",
-        "operations-config": "Operations Config",
+        "operations-config": "Imports & Audit",
         bookings: "Bookings",
-        players: "People",
+        players: currentPeoplePageTitle(),
         "account-customers-page": "Account Customers",
         "golf-days-page": "Golf Day Bookings",
         "operation-center": `${operationLabel(currentOperationContext)} Dashboard`,
@@ -1234,10 +1304,10 @@ function setupManagementPageControls() {
     document.getElementById("golf-days-search")?.addEventListener("input", () => loadGolfDayBookingsPage());
     document.getElementById("golf-days-status")?.addEventListener("change", () => loadGolfDayBookingsPage());
     document.getElementById("operation-center-open-people-btn")?.addEventListener("click", () => {
-        applyPeoplePreset({ view: "members", operation: currentOperationContext, status: "active" });
+        applyPeoplePreset({ view: "members", operation: currentOperationContext, status: "active", contextMode: "operation" });
         navigateToAdminPage("players");
     });
-    document.getElementById("operation-center-open-finance-btn")?.addEventListener("click", () => navigateToAdminPage("ledger"));
+    document.getElementById("operation-center-open-finance-btn")?.addEventListener("click", () => navigateToAdminPage("revenue"));
 }
 
 function navigateToAdminPage(pageName) {
@@ -2128,7 +2198,7 @@ async function loadOperationWorkbench(streamKey) {
     if (avgTicketEl) avgTicketEl.textContent = formatCurrencyZAR(selectedPeriod.avg_ticket);
     if (targetEl) targetEl.textContent = targetContribution == null ? "-" : formatPct(targetContribution);
     if (noteEl) {
-        noteEl.textContent = `${selectedPeriod.label} operational snapshot for ${selected.label}. Use this page for stream-level execution and run imports from Operations Config.`;
+        noteEl.textContent = `${selectedPeriod.label} operational snapshot for ${selected.label}. Use this page for stream-level execution and run imports from Finance / Admin.`;
     }
 
     const streamInsight = data?.operation_insights?.[stream] || {};
@@ -2149,11 +2219,11 @@ async function loadOperationWorkbench(streamKey) {
             { label: "Rows (30d)", value: formatInteger(importRow.rows_total_30d) },
             { label: "Fail Rate (30d)", value: formatPct(safeNumber(importRow.failure_rate_30d)) },
             { label: "Last Import", value: importRow.last_import_at ? formatDateTimeDMY(importRow.last_import_at) : "No import yet" },
-            { label: "Next Action", value: String(importRow.recommendation || "Review operation mapping in Operations Config") },
+            { label: "Next Action", value: String(importRow.recommendation || "Review operation mapping in Imports & Audit") },
         ]
         : [
             { label: "Import Health", value: "NO PROFILE" },
-            { label: "Next Action", value: "Open Operations Config and save import profile for this stream." },
+            { label: "Next Action", value: "Open Imports & Audit and save the import profile for this stream." },
         ];
     renderOperationWorkbenchRows(`${prefix}-import`, importRows);
 }
@@ -2337,7 +2407,7 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
                 status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(status)}</span>${formatInteger(configured)}/${formatInteger(totalStreams)} streams configured | ${formatInteger(staleStreams)} stale | ${formatInteger(highFailStreams)} high-fail`,
                 items,
                 actionPage: "operations-config",
-                actionLabel: "Open Operations Config",
+                actionLabel: "Open Imports & Audit",
             };
         }
 
@@ -2577,7 +2647,7 @@ function applyDashboardPayload(data, options = {}) {
     if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
     if (hintEl) {
         const cacheSuffix = isCached && cachedAt ? ` Showing cached dashboard from ${cachedAt}.` : "";
-        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, General > Operations Config for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
+        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, Finance / Admin > Imports & Audit for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
     }
 
     renderTargetsTable(data.targets);
@@ -3206,8 +3276,6 @@ function setupPeopleFilters() {
     const statusFilter = document.getElementById("people-status-filter");
     const sortSelect = document.getElementById("people-sort");
     const quickFilter = document.getElementById("people-quick-filter");
-    const importBtn = document.getElementById("people-import-btn");
-    const importLogBtn = document.getElementById("people-import-log-btn");
     const addBtn = document.getElementById("people-add-btn");
     if (!buttons.length) return;
     if (sortSelect instanceof HTMLSelectElement) {
@@ -3282,48 +3350,6 @@ function setupPeopleFilters() {
 
     const updateTitle = () => {
         if (!title) return;
-        title.textContent = peopleView === "members"
-            ? "People"
-            : peopleView === "guests"
-                ? "Guests"
-                : peopleView === "staff"
-                    ? "Staff"
-                    : "Account Contacts";
-        const canEdit = currentUserRole === "admin" || currentUserRole === "super_admin";
-        if (guestFilter) {
-            guestFilter.style.display = peopleView === "guests" ? "" : "none";
-        }
-        if (areaFilter) {
-            areaFilter.style.display = peopleView === "guests" ? "none" : "";
-        }
-        if (statusFilter) {
-            statusFilter.style.display = peopleView === "guests" ? "none" : "";
-        }
-        if (importBtn) {
-            importBtn.style.display = canEdit && peopleView === "members" ? "" : "none";
-        }
-        if (importLogBtn) {
-            importLogBtn.style.display = canEdit ? "" : "none";
-        }
-        if (addBtn) {
-            if (!canEdit) {
-                addBtn.style.display = "none";
-            } else if (peopleView === "members") {
-                addBtn.textContent = "Add Member";
-                addBtn.style.display = "";
-            } else if (peopleView === "staff") {
-                addBtn.textContent = "Add Staff";
-                addBtn.style.display = "";
-            } else if (peopleView === "account_contacts") {
-                addBtn.textContent = "Open Account Customers";
-                addBtn.style.display = "";
-            } else {
-                addBtn.style.display = "none";
-            }
-        }
-        if (sortSelect) {
-            sortSelect.style.display = "";
-        }
         applyPeoplePreset({ view: peopleView, operation: peopleAreaFilter, quickFilter: peopleQuickFilter, status: peopleStatusFilter });
         applyPeopleSortOptions();
     };
@@ -3334,6 +3360,7 @@ function setupPeopleFilters() {
             btn.classList.add("active");
             peopleView = btn.dataset.view || "members";
             peopleQuickFilter = "all";
+            peopleContextMode = "general";
             currentPlayersPage = 1;
 
             // Reset horizontal scroll when switching between wide tables (members) and narrow ones (staff).
@@ -3392,13 +3419,19 @@ function setupPeopleFilters() {
             navigateToAdminPage("account-customers-page");
         }
     });
-    importBtn?.addEventListener("click", () => {
-        if (peopleView !== "members") return;
-        openMembersImportModal();
-    });
-    importLogBtn?.addEventListener("click", () => openImportLog());
 
     updateTitle();
+}
+
+function renderPeopleSummary({ total = 0, active = 0, inactive = 0, flagged = 0 } = {}) {
+    const totalEl = document.getElementById("people-summary-total");
+    const activeEl = document.getElementById("people-summary-active");
+    const inactiveEl = document.getElementById("people-summary-inactive");
+    const flaggedEl = document.getElementById("people-summary-flagged");
+    if (totalEl) totalEl.textContent = formatInteger(total);
+    if (activeEl) activeEl.textContent = formatInteger(active);
+    if (inactiveEl) inactiveEl.textContent = formatInteger(inactive);
+    if (flaggedEl) flaggedEl.textContent = formatInteger(flagged);
 }
 
 async function loadPlayers() {
@@ -3432,69 +3465,87 @@ async function loadPlayers() {
         if (peopleSort) url += `&sort=${encodeURIComponent(peopleSort)}`;
 
         const data = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } });
+        const operationalContext = isOperationalPeopleContext();
 
         if (peopleView === "members") {
-            tableHead.innerHTML = `
-                <th>Full Name</th>
-                <th>Club / Home Club</th>
-                <th>Person Type</th>
-                <th>Primary Operation</th>
-                <th>Membership Category</th>
-                <th>Lifecycle Status</th>
-                <th>Contact</th>
-                <th>Last Activity</th>
-                <th>Financial Flags</th>
-                <th>Action</th>
-            `;
-
             const members = Array.isArray(data.members) ? data.members : [];
+            const activeCount = members.filter((m) => String(m.member_lifecycle_status || m.membership_status || "").toLowerCase() === "active").length;
+            const inactiveCount = members.filter((m) => ["hold", "inactive", "resigned", "deceased"].includes(String(m.member_lifecycle_status || m.membership_status || "").toLowerCase())).length;
+            const flaggedCount = members.filter((m) => Boolean(m.financial_flag) || String(m.member_lifecycle_status || "").toLowerCase() === "defaulter").length;
+            renderPeopleSummary({
+                total: Number(data.total || members.length),
+                active: activeCount,
+                inactive: inactiveCount,
+                flagged: flaggedCount,
+            });
+            tableHead.innerHTML = operationalContext
+                ? `
+                    <th>Full Name</th>
+                    <th>Membership Category</th>
+                    <th>Status</th>
+                    <th>Contact</th>
+                    <th>Last Activity</th>
+                    <th>Financial Flag</th>
+                    <th>Action</th>
+                `
+                : `
+                    <th>Full Name</th>
+                    <th>Person Type</th>
+                    <th>Primary Operation</th>
+                    <th>Membership Category</th>
+                    <th>Status</th>
+                    <th>Contact</th>
+                    <th>Financial Flag</th>
+                    <th>Action</th>
+                `;
             tableBody.innerHTML = members.map(m => `
                 <tr>
                     <td>${escapeHtml(m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim())}</td>
-                    <td>${m.home_club ? escapeHtml(m.home_club) : "-"}</td>
-                    <td>${escapeHtml(String(m.person_type || "Member"))}</td>
-                    <td>${escapeHtml(String(m.primary_operation || "-"))}</td>
-                    <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
-                    <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
-                    <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
-                    <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "<span class=\"muted\">No activity</span>"}</td>
-                    <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
-                    <td class="row-actions">
-                        <button class="btn-view" onclick="viewMemberDetail(${m.id})">Profile</button>
-                        ${(currentUserRole === "admin" || currentUserRole === "super_admin") ? `<button class="btn-secondary" onclick="openMemberEditModal(${m.id})">Edit</button>` : ""}
-                    </td>
+                    ${operationalContext ? `
+                        <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
+                        <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
+                        <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
+                        <td>${m.last_seen ? formatDateTimeDMY(m.last_seen) : "<span class=\"muted\">No activity</span>"}</td>
+                        <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
+                        <td class="row-actions"><button class="btn-view" onclick="viewMemberDetail(${m.id})">Profile</button></td>
+                    ` : `
+                        <td>${escapeHtml(String(m.person_type || "Member"))}</td>
+                        <td>${escapeHtml(String(m.primary_operation || "-"))}</td>
+                        <td>${escapeHtml(String(m.membership_category_raw || m.membership_category || m.membership_group || "-"))}</td>
+                        <td>${escapeHtml(String(m.member_lifecycle_status || m.membership_status || (m.active ? "active" : "inactive")))}</td>
+                        <td>${m.email ? `<a href="mailto:${encodeURIComponent(String(m.email))}">${escapeHtml(m.email)}</a>` : "-"}${m.phone ? `<div><a href="tel:${escapeHtml(String(m.phone))}">${escapeHtml(m.phone)}</a></div>` : ""}</td>
+                        <td>${m.financial_flag ? `<span class="acct-pill bad">${escapeHtml(String(m.financial_flag))}</span>` : (Number(m.total_spent || 0) > 0 ? `<span class="acct-pill">${formatCurrencyZAR(m.total_spent || 0)} collected</span>` : "-")}</td>
+                        <td class="row-actions"><button class="btn-view" onclick="viewMemberDetail(${m.id})">Profile</button></td>
+                    `}
                 </tr>
             `).join("");
 
             if (!members.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
+                        <td colspan="${operationalContext ? 7 : 8}" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found.</td>
                     </tr>
                 `;
             }
         } else if (peopleView === "guests") {
+            const guests = Array.isArray(data.guests) ? data.guests : [];
+            renderPeopleSummary({
+                total: guests.length,
+                active: guests.length,
+                inactive: 0,
+                flagged: guests.filter((g) => Number(g.total_spent || 0) > 0).length,
+            });
             tableHead.innerHTML = `
                 <th>Full Name</th>
-                <th>Club / Home Club</th>
-                <th>Person Type</th>
-                <th>Primary Operation</th>
-                <th>Membership Category</th>
-                <th>Lifecycle Status</th>
+                <th>Type</th>
                 <th>Contact</th>
                 <th>Last Activity</th>
-                <th>Financial Flags</th>
+                <th>Spend</th>
             `;
-
-            const guests = Array.isArray(data.guests) ? data.guests : [];
             tableBody.innerHTML = guests.map(g => `
                 <tr>
                     <td>${escapeHtml(g.name || "-")}</td>
-                    <td>-</td>
-                    <td>Guest</td>
-                    <td>Golf</td>
                     <td>${guestTypeFilter === "affiliated" ? "Affiliated Guest" : guestTypeFilter === "non_affiliated" ? "Non-affiliated Guest" : "Guest"}</td>
-                    <td>Active</td>
                     <td>${g.email ? escapeHtml(g.email) : "-"}${g.handicap_number ? `<div>${escapeHtml(g.handicap_number)}</div>` : ""}</td>
                     <td>${g.last_seen ? formatDateTimeDMY(g.last_seen) : "-"}</td>
                     <td>${formatCurrencyZAR(g.total_spent || 0)}</td>
@@ -3504,7 +3555,7 @@ async function loadPlayers() {
             if (!guests.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="9" style="text-align:center; color:#7f8c8d; padding: 18px;">No guests found.</td>
+                        <td colspan="5" style="text-align:center; color:#7f8c8d; padding: 18px;">No guests found.</td>
                     </tr>
                 `;
             }
@@ -3516,16 +3567,17 @@ async function loadPlayers() {
                     return peopleAreaFilter === "general" ? !op || op.includes("general") || op.includes("finance") : op.includes(peopleAreaFilter.replace("_", " "));
                 });
             }
+            renderPeopleSummary({
+                total: staff.length,
+                active: staff.length,
+                inactive: 0,
+                flagged: staff.filter((s) => String(s.role || "").toLowerCase() !== "club_staff").length,
+            });
             tableHead.innerHTML = `
                 <th>Full Name</th>
-                <th>Club / Home Club</th>
-                <th>Person Type</th>
-                <th>Primary Operation</th>
-                <th>Membership Category</th>
-                <th>Lifecycle Status</th>
+                <th>Role</th>
+                <th>Operation</th>
                 <th>Contact</th>
-                <th>Last Activity</th>
-                <th>Financial Flags</th>
                 <th>Action</th>
             `;
 
@@ -3534,18 +3586,13 @@ async function loadPlayers() {
             tableBody.innerHTML = pageRows.map(s => `
                 <tr>
                     <td>${escapeHtml(s.name || "-")}</td>
-                    <td>-</td>
-                    <td>Staff</td>
-                    <td>${escapeHtml(String(s.operation_area || "General / Operations"))}</td>
                     <td>${escapeHtml(String(s.operational_role || s.role || "-"))}</td>
-                    <td>Active</td>
+                    <td>${escapeHtml(String(s.operation_area || "General / Operations"))}</td>
                     <td>${s.email ? `<a href="mailto:${encodeURIComponent(String(s.email))}">${escapeHtml(s.email)}</a>` : "-"}</td>
-                    <td>-</td>
-                    <td>-</td>
                     <td>${
                         (currentUserRole === "admin" || currentUserRole === "super_admin")
                             ? (String(s.role || "").toLowerCase() === "club_staff"
-                                ? `<button class="btn-view" onclick="openStaffEditModal(${s.id})">Edit</button>`
+                                ? `<button class="btn-view" onclick="openStaffEditModal(${s.id})">Open</button>`
                                 : `<span class="muted">Super Admin only</span>`)
                             : ""
                     }</td>
@@ -3555,7 +3602,7 @@ async function loadPlayers() {
             if (!pageRows.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
+                        <td colspan="5" style="text-align:center; color:#7f8c8d; padding: 18px;">No staff found.</td>
                     </tr>
                 `;
             }
@@ -3577,16 +3624,19 @@ async function loadPlayers() {
                 contacts = contacts.filter((row) => peopleStatusFilter === "active" ? Boolean(row.active) : !row.active);
             }
             accountCustomersPageRows = contacts;
+            renderPeopleSummary({
+                total: contacts.length,
+                active: contacts.filter((row) => row.active).length,
+                inactive: contacts.filter((row) => !row.active).length,
+                flagged: contacts.filter((row) => Boolean(row.account_code)).length,
+            });
             tableHead.innerHTML = `
                 <th>Full Name</th>
-                <th>Club / Home Club</th>
-                <th>Person Type</th>
                 <th>Primary Operation</th>
-                <th>Membership Category</th>
-                <th>Lifecycle Status</th>
+                <th>Type</th>
+                <th>Status</th>
                 <th>Contact</th>
-                <th>Last Activity</th>
-                <th>Financial Flags</th>
+                <th>Financial Flag</th>
                 <th>Action</th>
             `;
             const start = (currentPlayersPage - 1) * 10;
@@ -3594,25 +3644,19 @@ async function loadPlayers() {
             tableBody.innerHTML = pageRows.map(row => `
                 <tr>
                     <td>${escapeHtml(String(row.name || "-"))}</td>
-                    <td>-</td>
-                    <td>Account Contact</td>
                     <td>${escapeHtml(String(row.operation_area || "General / Debtors"))}</td>
                     <td>${escapeHtml(String(row.customer_type || "Account Customer"))}</td>
                     <td>${row.active ? "Active" : "Inactive"}</td>
                     <td>${escapeHtml(String(row.billing_contact || "-"))}</td>
-                    <td>-</td>
                     <td>${row.account_code ? `<span class="acct-pill">${escapeHtml(String(row.account_code))}</span>` : "-"}</td>
-                    <td class="row-actions">
-                        <button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button>
-                        <button class="btn-secondary" onclick="navigateToAdminPage('golf-days-page')">Golf Days</button>
-                    </td>
+                    <td class="row-actions"><button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button></td>
                 </tr>
             `).join("");
 
             if (!pageRows.length) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="10" style="text-align:center; color:#7f8c8d; padding: 18px;">No account contacts found.</td>
+                        <td colspan="6" style="text-align:center; color:#7f8c8d; padding: 18px;">No account contacts found.</td>
                     </tr>
                 `;
             }
@@ -3622,6 +3666,7 @@ async function loadPlayers() {
             });
             return;
         } else {
+            renderPeopleSummary();
             tableHead.innerHTML = `
                 <th>Name</th>
                 <th>Email</th>
@@ -3709,19 +3754,14 @@ async function loadAccountCustomersPage() {
                 <td>${row.account_code ? escapeHtml(String(row.account_code)) : "-"}</td>
                 <td>${escapeHtml(String(row.billing_contact || "-"))}</td>
                 <td>${escapeHtml(String(row.customer_type || "Account Customer"))}</td>
-                <td>${escapeHtml(String(row.operation_area || "General / Debtors"))}</td>
                 <td>${escapeHtml(String(row.terms || "-"))}</td>
                 <td>${row.active ? '<span class="acct-pill good">Active</span>' : '<span class="acct-pill">Inactive</span>'}</td>
-                <td class="row-actions">
-                    <button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button>
-                    <button class="btn-secondary" onclick="navigateToAdminPage('golf-days-page')">Golf Days</button>
-                    <button class="btn-secondary" onclick="navigateToAdminPage('ledger')">Ledger</button>
-                </td>
+                <td class="row-actions"><button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button></td>
             </tr>
-        `).join("") || `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">No account customers found.</td></tr>`;
+        `).join("") || `<tr><td colspan="7" style="text-align:center; color:#7f8c8d; padding: 18px;">No account customers found.</td></tr>`;
     } catch (error) {
         console.error("Failed to load account customers page:", error);
-        body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load account customers.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load account customers.</td></tr>`;
     }
 }
 
@@ -3755,11 +3795,7 @@ async function loadGolfDayBookingsPage() {
                 <td>${formatCurrencyZAR(row.amount || 0)}</td>
                 <td>${row.balance_due == null ? "-" : formatCurrencyZAR(row.balance_due)}</td>
                 <td>${escapeHtml(String(row.payment_status || "-"))}</td>
-                <td class="row-actions">
-                    <button class="btn-view" onclick="openGolfDayBookingDetail(${Number(row.id)})">View</button>
-                    ${row.account_customer_id ? `<button class="btn-secondary" onclick="openAccountCustomerDetail(${Number(row.account_customer_id)})">Customer</button>` : ""}
-                    <button class="btn-secondary" onclick="navigateToAdminPage('ledger')">Ledger</button>
-                </td>
+                <td class="row-actions"><button class="btn-view" onclick="openGolfDayBookingDetail(${Number(row.id)})">View</button></td>
             </tr>
         `).join("") || `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">No golf day bookings found.</td></tr>`;
     } catch (error) {
@@ -3788,8 +3824,8 @@ async function loadOperationCenter() {
         document.getElementById("operation-center-workflow").textContent = currentOperationFocus === "bookings" ? "Placeholder" : "Members live";
         if (note) {
             note.textContent = currentOperationFocus === "bookings"
-                ? `${operationLabel(op)} booking workflow is not yet implemented in this repo. The structure is now wired so staff can manage members and reconcile finance cleanly until that module is added.`
-                : `${operationLabel(op)} uses the shared People registry with operation-aware filtering and finance visibility.`;
+                ? `${operationLabel(op)} booking workflow is not yet implemented in this repo. Staff can manage the member base here while finance and imports stay in Finance / Admin.`
+                : `${operationLabel(op)} uses the shared registry, already scoped to this operation for faster daily work.`;
         }
         body.innerHTML = rows.slice(0, 8).map((row) => `
             <tr>
@@ -3801,8 +3837,8 @@ async function loadOperationCenter() {
         `).join("") || `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found for this operation.</td></tr>`;
         readiness.innerHTML = `
             <div class="today-stat"><span>Members view</span><span class="stat-number">Live from People</span></div>
-            <div class="today-stat"><span>Booking workflow</span><span class="stat-number">${currentOperationFocus === "bookings" ? "Placeholder only" : "Use People filters"}</span></div>
-            <div class="today-stat"><span>Finance linkage</span><span class="stat-number">Use Ledger / Cashbook / Account Customers</span></div>
+            <div class="today-stat"><span>Booking workflow</span><span class="stat-number">${currentOperationFocus === "bookings" ? "Placeholder only" : "Member list ready"}</span></div>
+            <div class="today-stat"><span>Finance linkage</span><span class="stat-number">Finance / Admin</span></div>
         `;
     } catch (error) {
         console.error("Failed to load operation center:", error);
@@ -5406,7 +5442,8 @@ function floorToInterval(dateObj, intervalMin) {
     return d;
 }
 
-function isTeeTimeClosed(dateStr, teeTimeIso) {
+function isTeeTimeClosed(dateStr, teeTimeIso, teeStatus = "open") {
+    if (String(teeStatus || "").toLowerCase() === "blocked") return true;
     const [y, m, d] = String(dateStr || "").split("-").map(Number);
     if (!y || !m || !d) return false;
 
@@ -6782,7 +6819,8 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         const bookings = allBookings.slice(0, 4);
         const capacity = tt.capacity || 4;
         const bookedCount = Math.min(allBookings.length, capacity);
-        const closed = isTeeTimeClosed(dateStr, tt.tee_time);
+        const closed = isTeeTimeClosed(dateStr, tt.tee_time, tt.status);
+        const blockedByGolfDay = String(tt.status || "").toLowerCase() === "blocked";
         teeSheetTeeTimeMap.set(String(tt.id), {
             ...tt,
             hole: teeLabel,
@@ -6806,7 +6844,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 Manage Slot
                 <span>${formatInteger(bookedCount)} player${bookedCount === 1 ? "" : "s"}</span>
             </button>
-            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>Open</span>
+            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>${blockedByGolfDay ? "Booked Out" : "Open"}</span>
         `;
 
         const cells = [];
@@ -6858,8 +6896,8 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                     cells.push(`
                         <td>
                             <div class="slot-card closed">
-                                <div class="slot-name">Closed</div>
-                                <div class="slot-meta">Past time</div>
+                                <div class="slot-name">${blockedByGolfDay ? "Booked Out" : "Closed"}</div>
+                                <div class="slot-meta">${blockedByGolfDay ? "Golf day" : "Past time"}</div>
                             </div>
                         </td>
                     `);
@@ -6935,7 +6973,7 @@ function _updateOpenSlotsForRow(row) {
     const capacity = _inferCapacityFromRow(row);
 
     const bookedCount = row.querySelectorAll('.slot-card[data-booking-id]').length;
-    const isClosed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso) : false;
+    const isClosed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso, tt?.status) : false;
     const manageBtn = row.querySelector(".tee-row-manage-btn");
     const manageMeta = manageBtn?.querySelector("span");
     const manageMuted = row.querySelector(".tee-row-manage-muted");
@@ -6979,7 +7017,7 @@ function _updateOpenSlotsForRow(row) {
 function _buildSlotPlaceholderForRow(row, teeTimeId, slotNumber) {
     const dateStr = lastTeeSheetDateStr;
     const teeTimeIso = row?.getAttribute?.("data-tee-time-iso") || "";
-    const closed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso) : false;
+    const closed = dateStr ? isTeeTimeClosed(dateStr, teeTimeIso, tt?.status) : false;
 
     const el = document.createElement("div");
     if (closed) {

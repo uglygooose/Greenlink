@@ -27,21 +27,17 @@
                         <a href="#players" class="nav-item" data-page="players" data-people-view="staff" data-people-operation="general">Staff</a>
                         <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
                         <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Bookings</a>
-                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Audit</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
                     <summary class="nav-group-toggle">Golf</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
+                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Dashboard</a>
                         <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="golf">Members</a>
                         <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="golf">Golf Members</a>
-                        <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
-                        <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
-                        <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Bookings</a>
-                        <a href="#revenue" class="nav-item" data-page="revenue">Reconciliation</a>
+                        <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Operations</a>
                     </div>
                 </details>
 
@@ -84,10 +80,11 @@
                 <details class="nav-group">
                     <summary class="nav-group-toggle">Finance / Admin</summary>
                     <div class="nav-group-items">
-                        <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
-                        <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
                         <a href="#revenue" class="nav-item" data-page="revenue">Reconciliation</a>
-                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports</a>
+                        <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
+                        <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
+                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Debtors / Account Customers</a>
+                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Audit</a>
                         <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Super Admin</a>
                     </div>
                 </details>
@@ -110,16 +107,13 @@
                             <option value="players|staff|general">Staff</option>
                             <option value="account-customers-page">Account Customers</option>
                             <option value="golf-days-page">Golf Day Bookings</option>
-                            <option value="operations-config">Operations Config</option>
                         </optgroup>
                         <optgroup label="Golf">
-                            <option value="dashboard|golf">Golf Dashboard</option>
+                            <option value="dashboard|golf">Dashboard</option>
                             <option value="tee-times">Tee Sheet</option>
+                            <option value="players|members|golf">Members</option>
                             <option value="bookings">Bookings</option>
-                            <option value="players|members|golf">Golf Members</option>
-                            <option value="ledger">Ledger</option>
-                            <option value="cashbook">Cashbook</option>
-                            <option value="golf-days-page">Golf Day Bookings</option>
+                            <option value="golf-days-page">Golf Day Operations</option>
                         </optgroup>
                         <optgroup label="Tennis">
                             <option value="operation-center|tennis|overview">Dashboard</option>
@@ -142,9 +136,10 @@
                             <option value="account-customers-page">Customers</option>
                         </optgroup>
                         <optgroup label="Finance / Admin">
-                            <option value="cashbook">Cashbook</option>
-                            <option value="ledger">Ledger</option>
                             <option value="revenue">Reconciliation</option>
+                            <option value="ledger">Ledger</option>
+                            <option value="cashbook">Cashbook</option>
+                            <option value="account-customers-page">Debtors / Account Customers</option>
                             <option value="operations-config">Imports & Audit</option>
                         </optgroup>
                     </select>
@@ -388,7 +383,7 @@
 
                 <section id="operations-config" class="page">
                     <div class="page-header">
-                        <h2>Operations Configuration</h2>
+                        <h2>Imports & Audit</h2>
                         <div class="filters">
                             <label for="ops-import-stream">Operation</label>
                             <select id="ops-import-stream">
@@ -578,7 +573,10 @@
                 <!-- Players Page -->
                 <section id="players" class="page">
                     <div class="page-header">
-                        <h2 id="people-title">People</h2>
+                        <div>
+                            <h2 id="people-title">People</h2>
+                            <p class="action-note" id="people-subtitle">Cross-club registry across members, staff, guests, and account contacts.</p>
+                        </div>
                         <div class="filters">
                             <div class="tee-toggle people-toggle" role="group" aria-label="People view">
                                 <button class="tee-btn people-btn active" type="button" data-view="members">Members</button>
@@ -629,10 +627,14 @@
                                 <option value="defaulter">Defaulter</option>
                             </select>
                             <input type="text" id="people-search" placeholder="Search name / email / phone / category..." />
-                            <button class="btn-secondary" id="people-import-btn" type="button" style="display:none">Import Members CSV</button>
-                            <button class="btn-secondary" id="people-import-log-btn" type="button" style="display:none">Import Log</button>
                             <button class="btn-secondary" id="people-add-btn" type="button" style="display:none"></button>
                         </div>
+                    </div>
+                    <div class="cashbook-summary">
+                        <div class="summary-stat"><span>Total</span><strong id="people-summary-total">0</strong></div>
+                        <div class="summary-stat"><span>Active</span><strong id="people-summary-active">0</strong></div>
+                        <div class="summary-stat"><span>Inactive / Hold</span><strong id="people-summary-inactive">0</strong></div>
+                        <div class="summary-stat"><span>Flagged</span><strong id="people-summary-flagged">0</strong></div>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -681,8 +683,7 @@
                                     <th>Customer</th>
                                     <th>Account Code</th>
                                     <th>Billing Contact</th>
-                                    <th>Customer Type</th>
-                                    <th>Operation</th>
+                                    <th>Type</th>
                                     <th>Terms</th>
                                     <th>Status</th>
                                     <th>Action</th>
@@ -795,14 +796,14 @@
                                 <option value="other_imported">Imported Non-Booking (All)</option>
                                 <option value="pro_shop">Pro Shop Imported</option>
                             </select>
-                            <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Import Setup</button>
+                            <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Imports & Audit</button>
                         </div>
                     </div>
 
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Revenue Data Flow</h3>
                         <ol class="flow-steps">
-                            <li>Use <code>General → Operations Config</code> to import non-booking revenue per operation.</li>
+                            <li>Use <code>Finance / Admin → Imports & Audit</code> to import non-booking revenue per operation.</li>
                             <li>Golf paid revenue is captured from bookings and ledger entries automatically.</li>
                             <li>Use this page to validate trends, collection rate, and stream mix.</li>
                         </ol>
@@ -1060,7 +1061,7 @@
                                 <option value="" selected>Select</option>
                                 <option value="dashboard|pub">Open Pub Dashboard</option>
                                 <option value="revenue">Open Revenue Analytics</option>
-                                <option value="operations-config">Open Operations Config</option>
+                                <option value="operations-config">Open Imports & Audit</option>
                             </select>
                         </div>
                     </div>
@@ -1097,7 +1098,7 @@
                                 <option value="" selected>Select</option>
                                 <option value="dashboard|bowls">Open Bowls Dashboard</option>
                                 <option value="revenue">Open Revenue Analytics</option>
-                                <option value="operations-config">Open Operations Config</option>
+                                <option value="operations-config">Open Imports & Audit</option>
                             </select>
                         </div>
                     </div>
@@ -1134,7 +1135,7 @@
                                 <option value="" selected>Select</option>
                                 <option value="dashboard|other">Open Other Dashboard</option>
                                 <option value="revenue">Open Revenue Analytics</option>
-                                <option value="operations-config">Open Operations Config</option>
+                                <option value="operations-config">Open Imports & Audit</option>
                             </select>
                         </div>
                     </div>

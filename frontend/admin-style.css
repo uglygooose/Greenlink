@@ -575,14 +575,15 @@ body {
 
 .row-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    align-items: center;
+    gap: 6px;
 }
 
 .row-actions .btn-view,
 .row-actions .btn-secondary {
-    padding: 6px 10px;
+    padding: 6px 12px;
     font-size: 12px;
+    white-space: nowrap;
 }
 
 .status-badge {

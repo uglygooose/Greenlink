@@ -90,6 +90,16 @@ def _as_naive_datetime(value: datetime) -> datetime:
         return value.replace(tzinfo=None)
     return value
 
+
+def _blocked_status_for_tee_time(db: Session, tee_time: models.TeeTime) -> str:
+    raw_status = str(getattr(tee_time, "status", None) or "open").strip().lower()
+    tee_dt = getattr(tee_time, "tee_time", None)
+    if raw_status == "blocked":
+        return "blocked"
+    if tee_dt and crud.is_day_closed(db, tee_dt.date()):
+        return "blocked"
+    return raw_status or "open"
+
 @router.post("/create", response_model=schemas.TeeTimeOut)
 def create_tee(
     tee: schemas.TeeTimeCreate,
@@ -201,7 +211,8 @@ def generate_tee_sheet(
     """
     try:
         target_date = req.date
-        if crud.is_day_closed(db, target_date):
+        block_reason = crud.get_day_block_reason(db, target_date)
+        if block_reason == "manual_close":
             raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
 
         tees = [str(t).strip() for t in (req.tees or []) if str(t).strip()]
@@ -224,6 +235,8 @@ def generate_tee_sheet(
             raise HTTPException(status_code=400, detail="capacity must be between 1 and 6")
 
         status = (req.status or "open").strip() or "open"
+        if block_reason == "golf_day":
+            status = "blocked"
 
         existing_rows = (
             db.query(models.TeeTime.tee_time, models.TeeTime.hole)
@@ -313,7 +326,7 @@ def tee_range(
                 "tee_time": tt.tee_time,
                 "hole": tt.hole,
                 "capacity": int(getattr(tt, "capacity", None) or 4),
-                "status": getattr(tt, "status", None) or "open",
+                "status": _blocked_status_for_tee_time(db, tt),
                 "bookings": [
                     _booking_payload(b)
                     for b in [
@@ -351,7 +364,7 @@ def all_tee(
                 "tee_time": tt.tee_time,
                 "hole": tt.hole,
                 "capacity": int(getattr(tt, "capacity", None) or 4),
-                "status": getattr(tt, "status", None) or "open",
+                "status": _blocked_status_for_tee_time(db, tt),
                 "bookings": [
                     _booking_payload(b)
                     for b in [

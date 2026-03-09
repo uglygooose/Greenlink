@@ -145,18 +145,41 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
         _upsert_meta(le.id, normalized_payment_method)
     return le
 
-def is_day_closed(db: Session, target_date):
+def is_golf_day_blocked(db: Session, target_date) -> bool:
     if not target_date:
         return False
     club_id = getattr(db, "info", {}).get("club_id") or None
     if not club_id:
-        # Legacy/local scripts that don't scope a club shouldn't hard-block.
         return False
-    return db.query(models.DayClose).filter(
+    return db.query(models.GolfDayBooking).filter(
+        models.GolfDayBooking.club_id == int(club_id),
+        models.GolfDayBooking.event_date.isnot(None),
+        func.coalesce(models.GolfDayBooking.payment_status, "pending") != "cancelled",
+        models.GolfDayBooking.event_date <= target_date,
+        func.coalesce(models.GolfDayBooking.event_end_date, models.GolfDayBooking.event_date) >= target_date,
+    ).first() is not None
+
+
+def get_day_block_reason(db: Session, target_date) -> str | None:
+    if not target_date:
+        return None
+    club_id = getattr(db, "info", {}).get("club_id") or None
+    if not club_id:
+        # Legacy/local scripts that don't scope a club shouldn't hard-block.
+        return None
+    if db.query(models.DayClose).filter(
         models.DayClose.club_id == int(club_id),
         models.DayClose.close_date == target_date,
         models.DayClose.status == "closed"
-    ).first() is not None
+    ).first() is not None:
+        return "manual_close"
+    if is_golf_day_blocked(db, target_date):
+        return "golf_day"
+    return None
+
+
+def is_day_closed(db: Session, target_date):
+    return get_day_block_reason(db, target_date) is not None
 
 def create_user(db: Session, user: schemas.UserCreate, club_id: int | None = None):
     normalized_email = str(user.email).strip().lower()
@@ -299,8 +322,11 @@ def authenticate_user(db: Session, email: str, password: str):
 # tee-time / booking crud
 def create_tee_time(db: Session, tee_time_iso, hole=None, capacity=4, status="open"):
     club_id = _require_club_id(db)
-    if is_day_closed(db, tee_time_iso.date()):
+    block_reason = get_day_block_reason(db, tee_time_iso.date())
+    if block_reason == "manual_close":
         raise HTTPException(status_code=403, detail="Tee sheet is closed for this date")
+    if block_reason == "golf_day":
+        status = "blocked"
 
     existing = db.query(models.TeeTime).filter(
         models.TeeTime.club_id == club_id,

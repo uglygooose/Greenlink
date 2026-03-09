@@ -323,6 +323,7 @@ def _ingest_account_customers(
     header_idx, header = header_info
     inserted = 0
     updated = 0
+    touched_refs: set[str] = set()
     for row in rows[header_idx + 1 :]:
         name = _clean_text(_extract_cells(row, header, "customer_name", "name"), max_len=200)
         if not name:
@@ -345,11 +346,13 @@ def _ingest_account_customers(
             source_file=source_file,
             import_reference=f"{source_file}:{code or name}",
         )
+        if getattr(_row, "import_reference", None):
+            touched_refs.add(str(_row.import_reference))
         if created:
             inserted += 1
         else:
             updated += 1
-    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated}
+    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "_touched_refs": sorted(touched_refs)}
 
 
 def _find_member_row(
@@ -611,6 +614,7 @@ def _ingest_members(
     pending_by_identity: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
     pending_by_import_reference: dict[str, dict[str, Any]] = {}
     insert_payloads: list[dict[str, Any]] = []
+    touched_refs: set[str] = set()
 
     for row in rows[header_idx + 1 :]:
         first = _clean_text(_extract_cells(row, header, "first_name", "first name"), max_len=120)
@@ -746,6 +750,8 @@ def _ingest_members(
                 existing.player_category = classify_membership_group(primary_operation or membership)
                 updated += 1
         if import_reference:
+            touched_refs.add(import_reference)
+        if import_reference:
             if isinstance(existing, dict):
                 pending_by_import_reference[import_reference] = existing
             else:
@@ -770,7 +776,13 @@ def _ingest_members(
         for start in range(0, len(insert_payloads), chunk_size):
             db.bulk_insert_mappings(models.Member, insert_payloads[start : start + chunk_size])
             db.flush()
-    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "people_linked": 0}
+    return {
+        "rows": max(0, len(rows) - header_idx - 1),
+        "inserted": inserted,
+        "updated": updated,
+        "people_linked": 0,
+        "_touched_refs": sorted(touched_refs),
+    }
 
 
 def _upsert_staff_role_profile(
@@ -844,6 +856,7 @@ def _ingest_staff_roles(
     inserted = 0
     updated = 0
     linked_users = 0
+    touched_refs: set[str] = set()
     for row in rows[header_idx + 1 :]:
         staff_name = _clean_text(_extract_cells(row, header, "staff_name", "name"), max_len=160)
         role_label = _clean_text(_extract_cells(row, header, "role"), max_len=120)
@@ -867,7 +880,14 @@ def _ingest_staff_roles(
             updated += 1
         if getattr(saved, "linked_user_id", None):
             linked_users += 1
-    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "linked_users": linked_users}
+        touched_refs.add(f"{staff_name.lower()}|{role_label.lower()}")
+    return {
+        "rows": max(0, len(rows) - header_idx - 1),
+        "inserted": inserted,
+        "updated": updated,
+        "linked_users": linked_users,
+        "_touched_refs": sorted(touched_refs),
+    }
 
 
 def _find_golf_day_header(rows: list[list[Any]]) -> tuple[int, dict[str, int]] | None:
@@ -972,6 +992,7 @@ def _ingest_golf_day_bookings(
     header_idx, header = header_info
     inserted = 0
     updated = 0
+    touched_refs: set[str] = set()
 
     for row in rows[header_idx + 1 :]:
         event_name = _clean_text(_extract_cells(row, header, "booking_name", "name"), max_len=220)
@@ -1072,8 +1093,112 @@ def _ingest_golf_day_bookings(
             existing.notes = notes
             existing.updated_at = datetime.utcnow()
             updated += 1
+        if import_reference:
+            touched_refs.add(import_reference)
 
-    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated}
+    return {"rows": max(0, len(rows) - header_idx - 1), "inserted": inserted, "updated": updated, "_touched_refs": sorted(touched_refs)}
+
+
+def _purge_force_reload_base(db: Session, *, club_id: int) -> dict[str, int]:
+    golf_day_deleted = int(
+        db.query(models.GolfDayBooking)
+        .filter(models.GolfDayBooking.club_id == int(club_id))
+        .delete(synchronize_session=False)
+        or 0
+    )
+    staff_deleted = int(
+        db.query(models.StaffRoleProfile)
+        .filter(models.StaffRoleProfile.club_id == int(club_id))
+        .delete(synchronize_session=False)
+        or 0
+    )
+    db.flush()
+    return {
+        "golf_day_deleted": golf_day_deleted,
+        "staff_roles_deleted": staff_deleted,
+    }
+
+
+def _cleanup_forced_member_reload(
+    db: Session,
+    *,
+    club_id: int,
+    touched_refs: set[str],
+) -> dict[str, int]:
+    rows = db.query(models.Member).filter(models.Member.club_id == int(club_id)).all()
+    stale = [row for row in rows if str(getattr(row, "import_reference", "") or "").strip() not in touched_refs]
+    if not stale:
+        return {"deleted": 0, "archived": 0}
+
+    stale_ids = [int(row.id) for row in stale if getattr(row, "id", None)]
+    booking_counts: dict[int, int] = {}
+    if stale_ids:
+        booking_counts = {
+            int(member_id): int(count or 0)
+            for member_id, count in (
+                db.query(models.Booking.member_id, func.count(models.Booking.id))
+                .filter(models.Booking.member_id.in_(stale_ids))
+                .group_by(models.Booking.member_id)
+                .all()
+            )
+        }
+
+    deleted = 0
+    archived = 0
+    for row in stale:
+        if int(booking_counts.get(int(row.id), 0) or 0) > 0:
+            row.active = 0
+            row.membership_status = "inactive"
+            row.member_lifecycle_status = "inactive"
+            row.record_status = row.record_status or "archived_after_force_reload"
+            row.updated_at = datetime.utcnow()
+            archived += 1
+        else:
+            db.delete(row)
+            deleted += 1
+    db.flush()
+    return {"deleted": deleted, "archived": archived}
+
+
+def _cleanup_forced_account_reload(
+    db: Session,
+    *,
+    club_id: int,
+    touched_refs: set[str],
+) -> dict[str, int]:
+    rows = db.query(models.AccountCustomer).filter(models.AccountCustomer.club_id == int(club_id)).all()
+    stale = [row for row in rows if str(getattr(row, "import_reference", "") or "").strip() not in touched_refs]
+    if not stale:
+        return {"deleted": 0, "archived": 0}
+
+    stale_ids = [int(row.id) for row in stale if getattr(row, "id", None)]
+    booking_counts: dict[int, int] = {}
+    if stale_ids:
+        booking_counts = {
+            int(account_id): int(count or 0)
+            for account_id, count in (
+                db.query(models.Booking.account_customer_id, func.count(models.Booking.id))
+                .filter(models.Booking.account_customer_id.in_(stale_ids))
+                .group_by(models.Booking.account_customer_id)
+                .all()
+            )
+        }
+
+    deleted = 0
+    archived = 0
+    for row in stale:
+        if int(booking_counts.get(int(row.id), 0) or 0) > 0:
+            row.active = 0
+            existing_note = str(getattr(row, "notes", "") or "").strip()
+            suffix = "Archived after Umhlali force reload."
+            row.notes = f"{existing_note} {suffix}".strip()
+            row.updated_at = datetime.utcnow()
+            archived += 1
+        else:
+            db.delete(row)
+            deleted += 1
+    db.flush()
+    return {"deleted": deleted, "archived": archived}
 
 
 def seed_umhlali_operational_inputs(
@@ -1087,6 +1212,7 @@ def seed_umhlali_operational_inputs(
         "setup_dir": None,
         "missing_files": [],
         "errors": [],
+        "force_cleanup": {},
         "members": {},
         "accounts": {},
         "golf_day": {},
@@ -1127,6 +1253,15 @@ def seed_umhlali_operational_inputs(
             return out
 
     sources_loaded = 0
+    touched_refs: dict[str, set[str]] = {
+        "members": set(),
+        "accounts": set(),
+        "golf_day": set(),
+        "staff_roles": set(),
+    }
+
+    if force:
+        out["force_cleanup"] = _purge_force_reload_base(db, club_id=int(club_id))
 
     def _load_source(
         *,
@@ -1149,6 +1284,12 @@ def seed_umhlali_operational_inputs(
                     file_name=path.path.name,
                 )
                 stats = loader(db, club_id=int(club_id), path=path)
+                raw_refs = stats.pop("_touched_refs", [])
+                touched_refs[output_key] = {
+                    str(value).strip()
+                    for value in raw_refs
+                    if str(value or "").strip()
+                }
                 batch.rows_total = int(stats.get("rows", 0))
                 batch.rows_inserted = int(stats.get("inserted", 0))
                 batch.rows_updated = int(stats.get("updated", 0))
@@ -1167,6 +1308,13 @@ def seed_umhlali_operational_inputs(
         loader=_ingest_members,
     )
     _load_source(
+        output_key="accounts",
+        source_name="umhlali_account_customers_xlsx",
+        missing_label="Account Customers.xlsx",
+        path=setup.account_customers,
+        loader=_ingest_account_customers,
+    )
+    _load_source(
         output_key="staff_roles",
         source_name="umhlali_staff_roles_xlsx",
         missing_label="Staff User List.xlsx",
@@ -1180,13 +1328,19 @@ def seed_umhlali_operational_inputs(
         path=setup.golf_day_bookings,
         loader=_ingest_golf_day_bookings,
     )
-    _load_source(
-        output_key="accounts",
-        source_name="umhlali_account_customers_xlsx",
-        missing_label="Account Customers.xlsx",
-        path=setup.account_customers,
-        loader=_ingest_account_customers,
-    )
+
+    if force and touched_refs["members"]:
+        out["force_cleanup"]["members"] = _cleanup_forced_member_reload(
+            db,
+            club_id=int(club_id),
+            touched_refs=touched_refs["members"],
+        )
+    if force and touched_refs["accounts"]:
+        out["force_cleanup"]["accounts"] = _cleanup_forced_account_reload(
+            db,
+            club_id=int(club_id),
+            touched_refs=touched_refs["accounts"],
+        )
 
     dedup_stats = dedupe_umhlali_members(db, club_id=int(club_id))
     if int(dedup_stats.get("merged_rows", 0) or 0) > 0:
