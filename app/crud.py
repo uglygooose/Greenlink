@@ -525,26 +525,36 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         except Exception:
             player_category_val = "adult"
 
-    # Snapshot the pricing audience ("member", "visitor", "non_affiliated") so reporting and
-    # reconciliation remain stable even if the user's profile changes later.
+    # Snapshot the pricing audience on the booking so reporting stays stable if the member changes later.
     try:
-        from app.pricing import normalize_player_type
+        from app.pricing import (
+            normalize_player_type,
+            resolve_booking_pricing_profile,
+        )
     except Exception:
         def normalize_player_type(v):  # type: ignore[misc]
             return (str(v).strip().lower() if v is not None else None) or None
 
-    player_type_snapshot = normalize_player_type(getattr(booking_in, "player_type", None))
-    if not player_type_snapshot:
-        if resolved_member_id or getattr(booking_in, "member_id", None):
-            player_type_snapshot = "member"
-        elif resolved_user and getattr(resolved_user, "account_type", None):
-            player_type_snapshot = normalize_player_type(getattr(resolved_user, "account_type", None))
-        elif handicap_sa_id or home_club:
-            # Having an HNA SA Player ID or a home club implies affiliation (discounted visitor rate).
-            player_type_snapshot = "visitor"
-        else:
-            # Default: non-affiliated visitor rate.
-            player_type_snapshot = "non_affiliated"
+        def resolve_booking_pricing_profile(**kwargs):  # type: ignore[misc]
+            explicit = normalize_player_type(kwargs.get("explicit_player_type"))
+            if explicit:
+                return type("Profile", (), {"player_type": explicit, "age": kwargs.get("age"), "pricing_tags": (), "pricing_mode": "membership_default", "pricing_source": "explicit"})()
+            return type("Profile", (), {"player_type": "member" if kwargs.get("has_member_link") else "visitor", "age": kwargs.get("age"), "pricing_tags": (), "pricing_mode": "membership_default", "pricing_source": "fallback"})()
+
+    pricing_profile = resolve_booking_pricing_profile(
+        tee_time=tee_time.tee_time,
+        explicit_player_type=getattr(booking_in, "player_type", None),
+        member=member,
+        membership_category=getattr(member, "membership_category_raw", None) or getattr(member, "membership_category", None),
+        user_account_type=getattr(resolved_user, "account_type", None),
+        player_category=player_category_val,
+        birth_date=getattr(booking_in, "birth_date", None),
+        age=getattr(booking_in, "age", None),
+        has_member_link=bool(resolved_member_id or getattr(booking_in, "member_id", None)),
+        handicap_sa_id=handicap_sa_id,
+        home_club=home_club,
+    )
+    player_type_snapshot = normalize_player_type(getattr(pricing_profile, "player_type", None))
 
     # Fee resolution
     fee_category_id = getattr(booking_in, "fee_category_id", None)
@@ -565,16 +575,12 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             from app.fee_models import FeeType, FeeCategory
             from app.pricing import PricingContext, compute_age, normalize_gender, normalize_player_type, select_best_fee_category
 
-            player_type = normalize_player_type(getattr(booking_in, "player_type", None))
             gender = normalize_gender(getattr(booking_in, "gender", None))
             holes = int(getattr(booking_in, "holes", None) or holes or 18)
-
-            # Infer player type when possible
-            if not player_type:
-                player_type = player_type_snapshot
+            player_type = player_type_snapshot
 
             # Infer age from birth_date or known user profile
-            age = getattr(booking_in, "age", None)
+            age = getattr(pricing_profile, "age", None)
             if age is None:
                 birth_date = getattr(booking_in, "birth_date", None)
                 if birth_date:
@@ -591,6 +597,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                 gender=gender,
                 holes=holes,
                 age=age,
+                pricing_tags=getattr(pricing_profile, "pricing_tags", ()) or (),
             )
 
             resolved_fee_cat = select_best_fee_category(db, ctx)

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 from app.fee_models import FeeCategory, FeeType
 
@@ -32,11 +32,6 @@ def normalize_player_type(value: Optional[str]) -> Optional[str]:
     value = _normalize_str(value)
     if not value:
         return None
-    # Canonical values in the DB (FeeCategory.audience) are currently:
-    # - "member" (club member)
-    # - "visitor" (affiliated visitor)
-    # - "non_affiliated" (non-affiliated visitor)
-    # Keep these stable, and accept broader UI-friendly aliases.
     if value in {"member", "m", "club_member", "club member", "home_member", "home member", "host_member", "host member"}:
         return "member"
     if value in {"visitor", "v", "guest", "affiliated", "affiliated_visitor", "affiliated visitor"}:
@@ -50,15 +45,114 @@ def normalize_player_type(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def normalize_member_pricing_mode(value: Optional[str]) -> str:
+    raw = _normalize_str(value) or "membership_default"
+    aliases = {
+        "default": "membership_default",
+        "membership": "membership_default",
+        "membership_default": "membership_default",
+        "visitor": "visitor_override",
+        "visitor_override": "visitor_override",
+        "charge_visitor": "visitor_override",
+        "non_affiliated": "non_affiliated_override",
+        "non_affiliated_override": "non_affiliated_override",
+        "non-affiliated_override": "non_affiliated_override",
+        "reciprocity": "reciprocity_override",
+        "reciprocity_override": "reciprocity_override",
+    }
+    return aliases.get(raw, "membership_default")
+
+
+def pricing_mode_to_player_type(mode: Optional[str]) -> Optional[str]:
+    normalized = normalize_member_pricing_mode(mode)
+    mapping = {
+        "membership_default": None,
+        "visitor_override": "visitor",
+        "non_affiliated_override": "non_affiliated",
+        "reciprocity_override": "reciprocity",
+    }
+    return mapping.get(normalized)
+
+
+def default_player_type_for_membership(membership_name: Optional[str]) -> Optional[str]:
+    raw = _normalize_str(membership_name)
+    if not raw:
+        return None
+
+    visitor_terms = (
+        "visitor",
+        "guest",
+        "home owner",
+        "homeowner",
+        "social",
+        "non golf",
+        "non-golf",
+        "house",
+        "spouse",
+        "local",
+        "out of natal",
+        "pmg",
+    )
+    member_terms = (
+        "member",
+        "golf",
+        "weekday",
+        "academy",
+        "junior",
+        "student",
+        "scholar",
+        "supplementary",
+        "supp ",
+        "life",
+        "veteran",
+        "full",
+    )
+
+    if "reciprocity" in raw:
+        return "reciprocity"
+    if any(term in raw for term in visitor_terms):
+        return "visitor"
+    if any(term in raw for term in member_terms):
+        return "member"
+    return None
+
+
+def pricing_tags_from_values(*values: Any) -> tuple[str, ...]:
+    tags: set[str] = set()
+    for value in values:
+        raw = _normalize_str(str(value or ""))
+        if not raw:
+            continue
+        if "pob" in raw or "weekday" in raw:
+            tags.add("weekday_member")
+        if "student" in raw:
+            tags.add("student")
+        if "scholar" in raw:
+            tags.add("scholar")
+        if "junior" in raw or "academy" in raw:
+            tags.add("junior")
+        if "pensioner" in raw or "veteran" in raw or "60yr" in raw or "60 yr" in raw:
+            tags.add("pensioner")
+        if "pmg" in raw:
+            tags.add("pmg")
+        if "caddie" in raw or "caddy" in raw:
+            tags.add("caddie")
+    return tuple(sorted(tags))
+
+
+def inferred_age_from_tags(tags: Iterable[str]) -> Optional[int]:
+    normalized = {str(tag or "").strip().lower() for tag in tags if str(tag or "").strip()}
+    if "pensioner" in normalized:
+        return 60
+    return None
+
+
 def day_kind_for_datetime(dt: datetime) -> str:
-    # Python weekday(): Monday=0 ... Sunday=6
     return "weekend" if dt.weekday() >= 5 else "weekday"
 
 
 def compute_age(on_date: date, birth_date: date) -> int:
-    return on_date.year - birth_date.year - (
-        (on_date.month, on_date.day) < (birth_date.month, birth_date.day)
-    )
+    return on_date.year - birth_date.year - ((on_date.month, on_date.day) < (birth_date.month, birth_date.day))
 
 
 @dataclass(frozen=True)
@@ -69,6 +163,7 @@ class PricingContext:
     gender: Optional[str] = None
     holes: int = 18
     age: Optional[int] = None
+    pricing_tags: tuple[str, ...] = ()
 
     @property
     def day_kind(self) -> str:
@@ -134,27 +229,50 @@ def _specificity_score(fee: FeeCategory) -> int:
     return score
 
 
+def _special_tag_keywords() -> dict[str, tuple[str, ...]]:
+    return {
+        "weekday_member": ("pob",),
+        "student": ("student",),
+        "scholar": ("scholar",),
+        "junior": ("junior", "academy"),
+        "pensioner": ("pensioner", "veteran"),
+        "pmg": ("pmg",),
+        "caddie": ("caddie", "caddy"),
+    }
+
+
+def _fee_requires_special_tag(description: str, ctx_tags: set[str]) -> bool:
+    for tag, keywords in _special_tag_keywords().items():
+        if any(keyword in description for keyword in keywords) and tag not in ctx_tags:
+            return True
+    return False
+
+
 def select_best_fee_from_list(
     fees: Iterable[FeeCategory],
     ctx: PricingContext,
 ) -> Optional[FeeCategory]:
     best: Optional[FeeCategory] = None
     best_score: Optional[int] = None
+    ctx_tags = {str(tag or "").strip().lower() for tag in (ctx.pricing_tags or ()) if str(tag or "").strip()}
 
     for fee in fees:
         if not _matches(ctx, fee):
             continue
 
-        # Priority dominates; specificity breaks ties.
+        desc = (fee.description or "").strip().lower()
+        if _fee_requires_special_tag(desc, ctx_tags):
+            continue
+
         priority = int(getattr(fee, "priority", 0) or 0)
         score = priority * 100 + _specificity_score(fee)
 
-        # Heuristic: when cart fees don't have audience tags populated yet,
-        # infer member vs visitor from wording.
+        for tag, keywords in _special_tag_keywords().items():
+            if tag in ctx_tags and any(keyword in desc for keyword in keywords):
+                score += 100
+
         if ctx.player_type:
-            desc = (fee.description or "").strip().lower()
             if fee.audience is None:
-                # Golf fees: clubs often include "Member", "Affiliated", "Non-affiliated" in the description.
                 if ctx.fee_type == FeeType.GOLF:
                     is_member = "member" in desc
                     is_non_aff = ("non-affiliated" in desc) or ("non affiliated" in desc) or ("nonaffiliated" in desc)
@@ -170,7 +288,6 @@ def select_best_fee_from_list(
                         score += 6 if is_non_aff else 0
                         score -= 4 if is_aff else 0
 
-                # Cart fees: older tables sometimes encode member vs visitor via "hire" wording.
                 if ctx.fee_type == FeeType.CART:
                     has_hire = "hire" in desc
                     if ctx.player_type == "visitor":
@@ -182,8 +299,6 @@ def select_best_fee_from_list(
             best = fee
             best_score = score
         elif score == best_score and best is not None:
-            # If two fees are otherwise identical (same name), assume higher price is weekend,
-            # and lower price is weekday.
             if _normalize_str(fee.description) == _normalize_str(best.description):
                 try:
                     fee_price = float(getattr(fee, "price", 0) or 0)
@@ -209,3 +324,118 @@ def select_best_fee_category(db: Session, ctx: PricingContext) -> Optional[FeeCa
     if club_id:
         query = query.filter(or_(FeeCategory.club_id == int(club_id), FeeCategory.club_id.is_(None)))
     return select_best_fee_from_list(query.all(), ctx)
+
+
+@dataclass(frozen=True)
+class BookingPricingProfile:
+    player_type: Optional[str]
+    age: Optional[int]
+    pricing_mode: str
+    pricing_source: str
+    pricing_tags: tuple[str, ...] = ()
+
+
+def resolve_booking_pricing_profile(
+    *,
+    tee_time: datetime,
+    explicit_player_type: Optional[str] = None,
+    member: Any = None,
+    membership_category: Optional[str] = None,
+    user_account_type: Optional[str] = None,
+    player_category: Optional[str] = None,
+    birth_date: Optional[date] = None,
+    age: Optional[int] = None,
+    has_member_link: bool = False,
+    handicap_sa_id: Optional[str] = None,
+    home_club: Optional[str] = None,
+) -> BookingPricingProfile:
+    pricing_tags = pricing_tags_from_values(membership_category, player_category)
+
+    resolved_age = age
+    if resolved_age is None and birth_date is not None:
+        resolved_age = compute_age(tee_time.date(), birth_date)
+    if resolved_age is None:
+        resolved_age = inferred_age_from_tags(pricing_tags)
+
+    player_type = normalize_player_type(explicit_player_type)
+    pricing_mode = "membership_default"
+    if player_type:
+        return BookingPricingProfile(
+            player_type=player_type,
+            age=resolved_age,
+            pricing_mode=pricing_mode,
+            pricing_source="explicit",
+            pricing_tags=pricing_tags,
+        )
+
+    if member is not None:
+        pricing_mode = normalize_member_pricing_mode(getattr(member, "pricing_mode", None))
+        override_player_type = pricing_mode_to_player_type(pricing_mode)
+        if override_player_type:
+            return BookingPricingProfile(
+                player_type=override_player_type,
+                age=resolved_age,
+                pricing_mode=pricing_mode,
+                pricing_source="member_override",
+                pricing_tags=pricing_tags,
+            )
+
+        membership_text = (
+            membership_category
+            or getattr(member, "membership_category_raw", None)
+            or getattr(member, "membership_category", None)
+        )
+        membership_player_type = default_player_type_for_membership(membership_text)
+        if membership_player_type:
+            return BookingPricingProfile(
+                player_type=membership_player_type,
+                age=resolved_age,
+                pricing_mode=pricing_mode,
+                pricing_source="membership_default",
+                pricing_tags=pricing_tags_from_values(membership_text, player_category),
+            )
+        if has_member_link or getattr(member, "id", None):
+            return BookingPricingProfile(
+                player_type="member",
+                age=resolved_age,
+                pricing_mode=pricing_mode,
+                pricing_source="membership_default",
+                pricing_tags=pricing_tags,
+            )
+
+    user_player_type = normalize_player_type(user_account_type)
+    if user_player_type:
+        return BookingPricingProfile(
+            player_type=user_player_type,
+            age=resolved_age,
+            pricing_mode=pricing_mode,
+            pricing_source="account_type",
+            pricing_tags=pricing_tags,
+        )
+
+    membership_player_type = default_player_type_for_membership(membership_category)
+    if membership_player_type:
+        return BookingPricingProfile(
+            player_type=membership_player_type,
+            age=resolved_age,
+            pricing_mode=pricing_mode,
+            pricing_source="membership_label",
+            pricing_tags=pricing_tags_from_values(membership_category, player_category),
+        )
+
+    if handicap_sa_id or home_club:
+        return BookingPricingProfile(
+            player_type="visitor",
+            age=resolved_age,
+            pricing_mode=pricing_mode,
+            pricing_source="affiliated_fallback",
+            pricing_tags=pricing_tags,
+        )
+
+    return BookingPricingProfile(
+        player_type="non_affiliated",
+        age=resolved_age,
+        pricing_mode=pricing_mode,
+        pricing_source="default_fallback",
+        pricing_tags=pricing_tags,
+    )

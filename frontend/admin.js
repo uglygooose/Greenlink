@@ -11,8 +11,8 @@ let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
 let bookingPeriod = "day";
-let bookingDateBasis = "created";
-let bookingSort = "created_desc";
+let bookingDateBasis = "tee_time";
+let bookingSort = "tee_asc";
 let ledgerPeriod = "day";
 let ledgerExportFilter = "all";
 let revenuePeriod = "day"; // day | wtd | mtd | ytd
@@ -25,6 +25,12 @@ let currentBookingDetail = null;
 let cachedPastelLayout = null;
 let cachedPastelMappings = null;
 let accountingSetupListenersInitialized = false;
+const MEMBER_PRICING_LABELS = {
+    membership_default: "Default by membership type",
+    visitor_override: "Visitor rate override",
+    non_affiliated_override: "Non-affiliated visitor override",
+    reciprocity_override: "Reciprocity override",
+};
 let teeBookingState = {
     teeTimeId: null,
     teeTimeIso: null,
@@ -871,12 +877,12 @@ function currentPeoplePageTitle() {
 
 function currentPeoplePageSubtitle() {
     if (isOperationalPeopleContext()) {
-        return `${operationLabel(peopleAreaFilter)} members only. Filters below refine this view inside the selected operation.`;
+        return `${operationLabel(peopleAreaFilter)} members only.`;
     }
-    if (peopleView === "staff") return "Shared staff directory for club operations and admin support.";
-    if (peopleView === "account_contacts") return "Debtor and account contact directory across the club.";
-    if (peopleView === "guests") return "Guest activity and contact visibility for front-desk staff.";
-    return "Cross-club registry across members, staff, guests, and account contacts.";
+    if (peopleView === "staff") return "Shared staff directory.";
+    if (peopleView === "account_contacts") return "Debtor and billing contacts.";
+    if (peopleView === "guests") return "Guest activity and contact history.";
+    return "Members, staff, guests, and account contacts.";
 }
 
 function applyPeoplePreset({ view = null, operation = null, quickFilter = null, status = null, contextMode = null } = {}) {
@@ -912,10 +918,6 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
     const quickFilterSelect = document.getElementById("people-quick-filter");
     if (quickFilterSelect instanceof HTMLSelectElement) {
         quickFilterSelect.value = peopleQuickFilter;
-    }
-    const title = document.getElementById("people-title");
-    if (title) {
-        title.textContent = currentPeoplePageTitle();
     }
     const subtitle = document.getElementById("people-subtitle");
     if (subtitle) {
@@ -1289,10 +1291,6 @@ function showPage(pageName) {
     if (pageName === "pub-ops") loadOperationWorkbench("pub");
     if (pageName === "bowls-ops") loadOperationWorkbench("bowls");
     if (pageName === "other-ops") loadOperationWorkbench("other");
-    if (pageName === "operation-center") {
-        const title = document.getElementById("operation-center-title");
-        if (title) title.textContent = `${operationLabel(currentOperationContext)} Dashboard`;
-    }
 }
 
 function setupManagementPageControls() {
@@ -2872,10 +2870,10 @@ function setupBookingFilters() {
         dateInput.value = new Date().toISOString().split("T")[0];
     }
     if (dateBasisSelect instanceof HTMLSelectElement) {
-        bookingDateBasis = String(dateBasisSelect.value || "created").toLowerCase();
+        bookingDateBasis = String(dateBasisSelect.value || "tee_time").toLowerCase();
     }
     if (sortSelect instanceof HTMLSelectElement) {
-        bookingSort = String(sortSelect.value || "created_desc").toLowerCase();
+        bookingSort = String(sortSelect.value || "tee_asc").toLowerCase();
     }
 
     statusSelect?.addEventListener("change", () => {
@@ -2889,13 +2887,13 @@ function setupBookingFilters() {
     });
 
     dateBasisSelect?.addEventListener("change", () => {
-        bookingDateBasis = String(dateBasisSelect.value || "created").toLowerCase();
+        bookingDateBasis = String(dateBasisSelect.value || "tee_time").toLowerCase();
         currentPage = 1;
         loadBookings();
     });
 
     sortSelect?.addEventListener("change", () => {
-        bookingSort = String(sortSelect.value || "created_desc").toLowerCase();
+        bookingSort = String(sortSelect.value || "tee_asc").toLowerCase();
         currentPage = 1;
         loadBookings();
     });
@@ -2970,8 +2968,8 @@ async function loadBookings() {
 
     try {
         let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10`;
-        url += `&date_basis=${encodeURIComponent(bookingDateBasis || "created")}`;
-        url += `&sort=${encodeURIComponent(bookingSort || "created_desc")}`;
+        url += `&date_basis=${encodeURIComponent(bookingDateBasis || "tee_time")}`;
+        url += `&sort=${encodeURIComponent(bookingSort || "tee_asc")}`;
         if (status) url += `&status=${status}`;
 
         const range = buildBookingRange(dateStr, bookingPeriod);
@@ -3269,7 +3267,6 @@ async function viewBookingDetail(bookingId) {
 // Players
 function setupPeopleFilters() {
     const buttons = document.querySelectorAll("#players .people-btn");
-    const title = document.getElementById("people-title");
     const searchInput = document.getElementById("people-search");
     const guestFilter = document.getElementById("guest-type-filter");
     const areaFilter = document.getElementById("people-area-filter");
@@ -7778,6 +7775,16 @@ async function viewMemberDetail(memberId) {
                     </div>
                 </div>
             `,
+            `
+                <div class="modal-section">
+                    <div class="modal-label">Pricing Rule</div>
+                    <div class="modal-value">
+                        <div>${escapeHtml(String(m.pricing_label || MEMBER_PRICING_LABELS[String(m.pricing_mode || "membership_default")] || MEMBER_PRICING_LABELS.membership_default))}</div>
+                        ${m.pricing_note ? `<div>${escapeHtml(String(m.pricing_note))}</div>` : ""}
+                        ${m.pricing_override_updated_at ? `<div>Updated ${formatDateTimeDMY(m.pricing_override_updated_at)}${m.pricing_override_updated_by_name ? ` by ${escapeHtml(String(m.pricing_override_updated_by_name))}` : ""}</div>` : ""}
+                    </div>
+                </div>
+            `,
             sportAccess.length ? `
                 <div class="modal-section">
                     <div class="modal-label">Sport Access</div>
@@ -7865,6 +7872,8 @@ async function openMemberEditModal(memberId) {
         country_of_residence: "",
         membership_category: "",
         membership_status: "active",
+        pricing_mode: "membership_default",
+        pricing_note: "",
         active: true
     };
 
@@ -7934,6 +7943,19 @@ async function openMemberEditModal(memberId) {
             </select>
         </div>
         <div class="modal-section">
+            <label>Pricing rule</label>
+            <select id="member-pricing-mode" style="width: 100%; padding: 8px; margin-top: 8px;">
+                <option value="membership_default" ${String(m.pricing_mode || "membership_default").toLowerCase() === "membership_default" ? "selected" : ""}>Default by membership type</option>
+                <option value="visitor_override" ${String(m.pricing_mode || "").toLowerCase() === "visitor_override" ? "selected" : ""}>Visitor rate override</option>
+                <option value="non_affiliated_override" ${String(m.pricing_mode || "").toLowerCase() === "non_affiliated_override" ? "selected" : ""}>Non-affiliated visitor override</option>
+                <option value="reciprocity_override" ${String(m.pricing_mode || "").toLowerCase() === "reciprocity_override" ? "selected" : ""}>Reciprocity override</option>
+            </select>
+        </div>
+        <div class="modal-section">
+            <label>Pricing note</label>
+            <textarea id="member-pricing-note" rows="3" style="width: 100%; padding: 8px; margin-top: 8px;" placeholder="Optional staff note, e.g. Membership arrears - charge visitor rate">${escapeHtml(m.pricing_note || "")}</textarea>
+        </div>
+        <div class="modal-section">
             <label style="display:flex; gap:10px; align-items:center;">
                 <input type="checkbox" id="member-active" ${m.active ? "checked" : ""}>
                 Active
@@ -7962,6 +7984,8 @@ async function saveMember(memberId) {
     const country = (document.getElementById("member-country")?.value || "").trim();
     const membershipCategory = (document.getElementById("member-membership-category")?.value || "").trim();
     const membershipStatus = (document.getElementById("member-membership-status")?.value || "active").trim();
+    const pricingMode = (document.getElementById("member-pricing-mode")?.value || "membership_default").trim();
+    const pricingNote = (document.getElementById("member-pricing-note")?.value || "").trim();
     const active = Boolean(document.getElementById("member-active")?.checked);
 
     if (!firstName || !lastName) {
@@ -7980,6 +8004,8 @@ async function saveMember(memberId) {
         country_of_residence: country || null,
         membership_category: membershipCategory || null,
         membership_status: membershipStatus || null,
+        pricing_mode: pricingMode || "membership_default",
+        pricing_note: pricingNote || null,
         active
     };
 

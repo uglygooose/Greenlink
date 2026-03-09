@@ -383,7 +383,6 @@
 
                 <section id="operations-config" class="page">
                     <div class="page-header">
-                        <h2>Imports & Audit</h2>
                         <div class="filters">
                             <label for="ops-import-stream">Operation</label>
                             <select id="ops-import-stream">
@@ -507,29 +506,15 @@
                 <!-- Bookings Page -->
                 <section id="bookings" class="page">
                     <div class="page-header">
-                        <h2>All Bookings</h2>
-                        <div class="filters">
+                        <div class="filters booking-filters">
                             <div class="tee-toggle booking-period-toggle" aria-label="Booking period">
                                 <button class="tee-btn booking-period-btn active" type="button" data-period="day">Day</button>
                                 <button class="tee-btn booking-period-btn" type="button" data-period="week">Week</button>
                                 <button class="tee-btn booking-period-btn" type="button" data-period="month">Month</button>
                                 <button class="tee-btn booking-period-btn" type="button" data-period="ytd">YTD</button>
                             </div>
-                            <label for="bookings-date">Date</label>
-                            <input type="date" id="bookings-date" />
-                            <label for="bookings-date-basis">Date Basis</label>
-                            <select id="bookings-date-basis">
-                                <option value="created" selected>Created Date</option>
-                                <option value="tee_time">Tee Time Date</option>
-                            </select>
-                            <label for="bookings-sort">Sort</label>
-                            <select id="bookings-sort">
-                                <option value="created_desc" selected>Newest Created First</option>
-                                <option value="created_asc">Oldest Created First</option>
-                                <option value="tee_asc">Earliest Tee First</option>
-                                <option value="tee_desc">Latest Tee First</option>
-                            </select>
-                            <select id="filter-status">
+                            <input type="date" id="bookings-date" aria-label="Bookings date" title="Bookings date" />
+                            <select id="filter-status" aria-label="Booking status">
                                 <option value="">All Status</option>
                                 <option value="booked">Booked</option>
                                 <option value="checked_in">Checked In</option>
@@ -537,7 +522,21 @@
                                 <option value="no_show">No-show</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
+                            <select id="bookings-sort" aria-label="Sort bookings">
+                                <option value="tee_asc">Earliest Tee First</option>
+                                <option value="tee_desc">Latest Tee First</option>
+                                <option value="created_desc">Newest Created First</option>
+                                <option value="created_asc">Oldest Created First</option>
+                            </select>
                             <button class="btn-secondary" id="bookings-open-tee-sheet-btn" type="button">Open Tee Sheet</button>
+                            <details class="filters-more">
+                                <summary>More</summary>
+                                <label for="bookings-date-basis">Date Basis</label>
+                                <select id="bookings-date-basis">
+                                    <option value="tee_time" selected>Tee Time Date</option>
+                                    <option value="created">Created Date</option>
+                                </select>
+                            </details>
                         </div>
                     </div>
                     <div class="table-container">
@@ -574,7 +573,6 @@
                 <section id="players" class="page">
                     <div class="page-header">
                         <div>
-                            <h2 id="people-title">People</h2>
                             <p class="action-note" id="people-subtitle">Cross-club registry across members, staff, guests, and account contacts.</p>
                         </div>
                         <div class="filters">
@@ -651,7 +649,6 @@
 
                 <section id="account-customers-page" class="page">
                     <div class="page-header">
-                        <h2>Account Customers</h2>
                         <div class="filters">
                             <input type="text" id="account-customers-search" placeholder="Search customer / account code..." />
                             <label for="account-customers-operation">Operation</label>
@@ -696,7 +693,6 @@
 
                 <section id="golf-days-page" class="page">
                     <div class="page-header">
-                        <h2>Golf Day Bookings</h2>
                         <div class="filters">
                             <input type="text" id="golf-days-search" placeholder="Search event / invoice / customer..." />
                             <label for="golf-days-status">Payment Status</label>
@@ -738,7 +734,6 @@
                 <section id="operation-center" class="page">
                     <div class="page-header">
                         <div>
-                            <h2 id="operation-center-title">Operation Center</h2>
                             <p class="action-note" id="operation-center-note">Operation-specific members, workflow readiness, and finance visibility.</p>
                         </div>
                         <div class="filters">
@@ -779,7 +774,6 @@
                 <!-- Revenue Page -->
                 <section id="revenue" class="page">
                     <div class="page-header">
-                        <h2>Revenue & Reconciliation</h2>
                         <div class="filters">
                             <div class="tee-toggle revenue-period-toggle" aria-label="Revenue period">
                                 <button class="tee-btn revenue-period-btn active" type="button" data-period="day">Day</button>
@@ -880,7 +874,6 @@
 
                 <section id="pro-shop" class="page">
                     <div class="page-header">
-                        <h2>Pro Shop Sales</h2>
                         <div class="filters">
                             <input type="text" id="pro-shop-search" placeholder="Search SKU / product..." />
                             <label for="pro-shop-category-filter">Category</label>
@@ -1047,7 +1040,6 @@
 
                 <section id="pub-ops" class="page">
                     <div class="page-header">
-                        <h2>Pub Operations</h2>
                         <div class="filters">
                             <label for="pub-ops-period">Window</label>
                             <select id="pub-ops-period">
@@ -1084,7 +1076,6 @@
 
                 <section id="bowls-ops" class="page">
                     <div class="page-header">
-                        <h2>Bowls Operations</h2>
                         <div class="filters">
                             <label for="bowls-ops-period">Window</label>
                             <select id="bowls-ops-period">
@@ -1121,7 +1112,6 @@
 
                 <section id="other-ops" class="page">
                     <div class="page-header">
-                        <h2>Other Operations</h2>
                         <div class="filters">
                             <label for="other-ops-period">Window</label>
                             <select id="other-ops-period">
@@ -1159,7 +1149,6 @@
                 <!-- Tee Times Page -->
                 <section id="tee-times" class="page">
                     <div class="page-header tee-sheet-header">
-                        <h2>Daily Tee Sheet</h2>
                         <div class="filters tee-sheet-filters">
                             <div class="manage-dropdown">
                                 <button class="btn-secondary manage-btn" id="tee-manage-btn" type="button" aria-haspopup="true" aria-expanded="false">
@@ -1168,7 +1157,7 @@
                                 <div class="manage-menu" id="tee-manage-menu" role="menu" aria-label="Manage Tee Sheet">
                                     <button type="button" class="manage-item" data-action="generate">Generate Tee Times</button>
                                     <button type="button" class="manage-item" data-action="bulk-book">Bulk Book / Golf Day...</button>
-                                    <button type="button" class="manage-item" data-action="import-bookings">Import Mirror Bookings CSV...</button>
+                                    <button type="button" class="manage-item" data-action="import-bookings">Import Tee Sheet CSV...</button>
                                     <button type="button" class="manage-item" data-action="booking-window">Booking Window...</button>
                                     <button type="button" class="manage-item" data-action="weather-reconfirm">Weather Reconfirm...</button>
                                     <button type="button" class="manage-item" data-action="tee-profile">Tee Schedule...</button>
@@ -1234,7 +1223,6 @@
                 <!-- Ledger Page -->
                 <section id="ledger" class="page">
                     <div class="page-header">
-                        <h2>Ledger (All Transactions)</h2>
                         <div class="filters">
                             <div class="tee-toggle ledger-period-toggle" aria-label="Ledger period">
                                 <button class="tee-btn ledger-period-btn active" type="button" data-period="day">Day</button>
@@ -1288,7 +1276,6 @@
                 <!-- Cashbook Page -->
                 <section id="cashbook" class="page">
                     <div class="page-header">
-                        <h2>Cashbook Export</h2>
                         <div class="filters">
                             <input type="date" id="cashbook-date" />
                             <button class="btn-primary" onclick="loadCashbookSummary()">Load Summary</button>                        </div>
@@ -1518,7 +1505,6 @@
                 <!-- Super Admin Page -->
                 <section id="super-admin" class="page">
                     <div class="page-header">
-                        <h2>Super Admin</h2>
                     </div>
 
                     <div class="dashboard-card">
@@ -1929,15 +1915,16 @@
     <div id="import-bookings-modal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
-            <h2>Import Mirror Bookings (CSV)</h2>
-            <p class="muted-text">Imports tee sheet bookings from upstream exports for the 30-day parallel run (mirror-only).</p>
+            <h2>Import Tee Sheet / Mirror Bookings</h2>
+            <p class="muted-text">Imports tee sheet or mirror CSVs into bookings without duplicating existing imported rows.</p>
 
             <div class="bulk-book-grid">
                 <label for="import-bookings-provider">Provider</label>
                 <select id="import-bookings-provider">
+                    <option value="tee_sheet">Tee Sheet CSV</option>
                     <option value="golfscape">Golfscape</option>
                     <option value="hna">HNA</option>
-                    <option value="other" selected>Other</option>
+                    <option value="other">Other</option>
                 </select>
 
                 <label for="import-bookings-file">CSV File</label>

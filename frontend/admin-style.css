@@ -477,6 +477,10 @@ body {
     font-size: 24px;
 }
 
+.page-header .action-note {
+    margin: 0;
+}
+
 .filters {
     display: flex;
     align-items: center;
@@ -509,6 +513,42 @@ body {
 
 .filters select {
     cursor: pointer;
+}
+
+.filters-more {
+    position: relative;
+}
+
+.filters-more summary {
+    list-style: none;
+    cursor: pointer;
+    height: 38px;
+    padding: 8px 12px;
+    border: 1px solid #bdc3c7;
+    border-radius: 8px;
+    background: white;
+    min-width: 92px;
+    display: flex;
+    align-items: center;
+    color: #374151;
+    font-size: 14px;
+}
+
+.filters-more[open] {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 8px;
+    border: 1px solid #d6dbe1;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.filters-more[open] summary {
+    margin-bottom: 8px;
+}
+
+.filters-more label {
+    display: block;
+    margin-bottom: 6px;
 }
 
 .operation-kpi-grid {

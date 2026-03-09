@@ -42,6 +42,13 @@ from app.people import (
     parse_membership_date,
     parse_yes_no_flag,
 )
+from app.pricing import (
+    PricingContext,
+    normalize_gender,
+    resolve_booking_pricing_profile,
+    select_best_fee_category,
+)
+from app.fee_models import FeeType
 from app.services import imports_service
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
@@ -128,6 +135,21 @@ def _open_csv_bytes(content: bytes) -> csv.DictReader:
 
 def _norm_stream(value: Any) -> str | None:
     return imports_service.normalize_revenue_stream(value)
+
+
+def _normalize_import_provider(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "tee-sheet": "tee_sheet",
+        "teesheet": "tee_sheet",
+        "tee_sheet": "tee_sheet",
+        "umhlali_tee_sheet": "tee_sheet",
+    }
+    return aliases.get(raw, raw)
+
+
+def _normalized_name_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
 
 _ALLOWED_REVENUE_STREAMS = {"golf", "pro_shop", "pub", "bowls", "other"}
 
@@ -1059,7 +1081,7 @@ async def import_bookings_csv(
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    provider_norm = (provider or "").strip().lower()
+    provider_norm = _normalize_import_provider(provider)
     if not provider_norm:
         raise HTTPException(status_code=400, detail="provider is required")
 
@@ -1084,42 +1106,78 @@ async def import_bookings_csv(
     touched_tee_ids: set[int] = set()
 
     try:
-        reader = _open_csv_bytes(content)
-        for idx, raw_row in enumerate(reader):
+        members = (
+            db.query(Member)
+            .filter(Member.club_id == club_id, Member.active == 1)
+            .all()
+        )
+        members_by_number = {
+            str(getattr(row, "member_number", "") or "").strip().lower(): row
+            for row in members
+            if str(getattr(row, "member_number", "") or "").strip()
+        }
+        members_by_email = {
+            str(getattr(row, "email", "") or "").strip().lower(): row
+            for row in members
+            if str(getattr(row, "email", "") or "").strip()
+        }
+        members_by_name: dict[str, list[Member]] = {}
+        for row in members:
+            key = _normalized_name_key(f"{getattr(row, 'first_name', '')} {getattr(row, 'last_name', '')}")
+            if key:
+                members_by_name.setdefault(key, []).append(row)
+
+        account_customers = (
+            db.query(AccountCustomer)
+            .filter(AccountCustomer.club_id == club_id)
+            .all()
+        )
+        account_customer_by_code = {
+            str(getattr(row, "account_code", "") or "").strip().lower(): row
+            for row in account_customers
+            if str(getattr(row, "account_code", "") or "").strip()
+        }
+
+        tee_sheet_meta: dict[str, Any] | None = None
+        upstream_rows: list[dict[str, Any]] = []
+        if provider_norm == "tee_sheet":
+            tee_sheet_meta = imports_service.parse_tee_sheet_csv(content)
+            upstream_rows = list(tee_sheet_meta.get("rows") or [])
+            if tee_sheet_meta.get("play_date"):
+                notes.append(f"Tee sheet date: {tee_sheet_meta['play_date'].isoformat()}")
+            if tee_sheet_meta.get("course_name"):
+                notes.append(f"Course: {tee_sheet_meta['course_name']}")
+        else:
+            reader = _open_csv_bytes(content)
+            upstream_rows = [_row_keys(raw_row) for raw_row in reader]
+
+        for idx, row in enumerate(upstream_rows):
             total += 1
-            row = _row_keys(raw_row)
 
-            tee_val = str(row.get("tee") or row.get("hole") or row.get("start_tee") or "").strip()
-            tee_val = tee_val or None
-
-            tee_time = _parse_datetime(row.get("tee_time") or row.get("start_time") or row.get("datetime") or "")
+            tee_val = str(row.get("tee") or row.get("hole") or row.get("start_tee") or "").strip() or None
+            tee_time = row.get("tee_time") if provider_norm == "tee_sheet" else _parse_datetime(row.get("tee_time") or row.get("start_time") or row.get("datetime") or "")
             if tee_time is None:
                 d = _parse_date(row.get("date") or row.get("booking_date") or row.get("tee_date"))
                 t = str(row.get("time") or row.get("start") or row.get("tee") or "").strip()
-                # time might be in tee column; only use if it looks like HH:MM
-                if d and re.match(r"^\\d{1,2}:\\d{2}$", t):
+                if d and re.match(r"^\d{1,2}:\d{2}$", t):
                     tee_time = _parse_datetime(f"{d.isoformat()} {t}")
             if tee_time is None:
                 failed += 1
-                if len(notes) < 5:
-                    notes.append(f"Row {idx+2}: missing/invalid tee_time")
+                if len(notes) < 8:
+                    notes.append(f"Row {idx + 2}: missing or invalid tee time")
                 continue
 
             booking_id = str(row.get("booking_id") or row.get("reservation_id") or row.get("id") or "").strip() or None
-            player_name = str(row.get("player_name") or row.get("name") or row.get("player") or "").strip()
-            if not player_name:
-                # Keep tee sheet usable even if upstream export is incomplete.
-                player_name = "External booking"
-
+            player_name = str(row.get("player_name") or row.get("name") or row.get("player") or "").strip() or "External booking"
             player_email = str(row.get("player_email") or row.get("email") or "").strip().lower() or None
             member_number = str(row.get("member_number") or row.get("member_no") or "").strip() or None
+            membership_label = str(row.get("membership_label") or row.get("membership_category") or "").strip() or None
 
             external_line_id = str(row.get("line_id") or row.get("player_id") or row.get("external_row_id") or "").strip() or None
             if external_line_id and booking_id:
                 external_row_id = f"{booking_id}:{external_line_id}"
             else:
-                # Deterministic fallback: provider + booking_id + tee_time + name
-                basis = f"{provider_norm}|{booking_id or ''}|{tee_time.isoformat()}|{player_name}|{player_email or ''}"
+                basis = f"{provider_norm}|{booking_id or ''}|{tee_time.isoformat()}|{tee_val or ''}|{player_name}|{player_email or ''}"
                 external_row_id = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:28]
 
             status_raw = str(row.get("status") or "").strip().lower()
@@ -1137,9 +1195,7 @@ async def import_bookings_csv(
             holes = int(_parse_amount(row.get("holes") or row.get("no_of_holes") or 18) or 18)
             holes = 9 if holes == 9 else 18
             prepaid = str(row.get("prepaid") or "").strip().lower() in {"1", "true", "yes", "y"}
-            price = _parse_amount(row.get("price") or row.get("amount") or row.get("fee"))
-            if price is None:
-                price = 0.0
+            explicit_price = _parse_amount(row.get("price") or row.get("amount") or row.get("fee"))
 
             # Ensure tee_time row exists.
             tt = (
@@ -1165,24 +1221,16 @@ async def import_bookings_csv(
 
             touched_tee_ids.add(int(tt.id))
 
-            # Resolve member link (optional).
-            member_id = None
+            matched_member = None
             if member_number:
-                m = (
-                    db.query(Member)
-                    .filter(Member.club_id == club_id, Member.member_number == member_number, Member.active == 1)
-                    .first()
-                )
-                if m:
-                    member_id = m.id
-            if member_id is None and player_email:
-                m = (
-                    db.query(Member)
-                    .filter(Member.club_id == club_id, func.lower(Member.email) == player_email, Member.active == 1)
-                    .first()
-                )
-                if m:
-                    member_id = m.id
+                matched_member = members_by_number.get(member_number.lower())
+            if matched_member is None and player_email:
+                matched_member = members_by_email.get(player_email.lower())
+            if matched_member is None:
+                name_matches = members_by_name.get(_normalized_name_key(player_name), [])
+                if len(name_matches) == 1:
+                    matched_member = name_matches[0]
+            member_id = int(getattr(matched_member, "id", 0) or 0) or None
 
             account_code = str(
                 row.get("account_code")
@@ -1193,16 +1241,49 @@ async def import_bookings_csv(
             ).strip() or None
             account_customer_id = None
             if account_code:
-                acct = (
-                    db.query(AccountCustomer)
-                    .filter(
-                        AccountCustomer.club_id == club_id,
-                        func.lower(AccountCustomer.account_code) == account_code.lower(),
-                    )
-                    .first()
-                )
+                acct = account_customer_by_code.get(account_code.lower())
                 if acct:
                     account_customer_id = int(acct.id)
+
+            pricing_profile = resolve_booking_pricing_profile(
+                tee_time=tt.tee_time,
+                explicit_player_type=str(row.get("player_type") or "").strip() or None,
+                member=matched_member,
+                membership_category=membership_label or getattr(matched_member, "membership_category_raw", None) or getattr(matched_member, "membership_category", None),
+                user_account_type=None,
+                player_category=getattr(matched_member, "player_category", None),
+                age=None,
+                has_member_link=bool(member_id),
+                handicap_sa_id=str(row.get("handicap_sa_id") or "").strip() or getattr(matched_member, "handicap_sa_id", None),
+                home_club=str(row.get("home_club") or "").strip() or getattr(matched_member, "home_club", None),
+            )
+            fee_category_id = None
+            price = explicit_price
+            if price is None:
+                fee_category = select_best_fee_category(
+                    db,
+                    PricingContext(
+                        fee_type=FeeType.GOLF,
+                        tee_time=tt.tee_time,
+                        player_type=pricing_profile.player_type,
+                        gender=normalize_gender(getattr(matched_member, "gender", None)),
+                        holes=holes,
+                        age=pricing_profile.age,
+                        pricing_tags=pricing_profile.pricing_tags,
+                    ),
+                )
+                if fee_category is not None:
+                    fee_category_id = int(getattr(fee_category, "id", 0) or 0) or None
+                    price = float(getattr(fee_category, "price", 0.0) or 0.0)
+                else:
+                    price = 0.0
+                    if len(notes) < 8:
+                        notes.append(f"Row {idx + 2}: no fee matched for {player_name}")
+
+            base_notes = str(row.get("notes") or row.get("comment") or "").strip()
+            if membership_label:
+                membership_note = f"Imported tee sheet category: {membership_label}"
+                base_notes = f"{base_notes}\n{membership_note}".strip() if base_notes else membership_note
 
             existing = (
                 db.query(Booking)
@@ -1225,12 +1306,15 @@ async def import_bookings_csv(
                 existing.external_row_id = external_row_id
                 existing.club_card = account_code
                 existing.account_customer_id = account_customer_id
+                existing.player_type = pricing_profile.player_type
+                existing.fee_category_id = fee_category_id
                 existing.price = float(price)
                 existing.status = status
                 existing.holes = holes
                 existing.prepaid = prepaid
                 existing.mirrored_at = datetime.utcnow()
                 existing.import_batch_id = batch.id
+                existing.notes = base_notes or None
                 updated += 1
             else:
                 db.add(
@@ -1248,6 +1332,8 @@ async def import_bookings_csv(
                         club_card=account_code,
                         account_customer_id=account_customer_id,
                         party_size=1,
+                        fee_category_id=fee_category_id,
+                        player_type=pricing_profile.player_type,
                         price=float(price),
                         status=status,
                         holes=holes,
@@ -1255,7 +1341,7 @@ async def import_bookings_csv(
                         mirrored_at=datetime.utcnow(),
                         capacity_conflict=False,
                         import_batch_id=batch.id,
-                        notes=str(row.get("notes") or row.get("comment") or "").strip() or None,
+                        notes=base_notes or None,
                         created_at=datetime.utcnow(),
                     )
                 )
@@ -1304,6 +1390,7 @@ async def import_bookings_csv(
                 "rows_updated": int(updated),
                 "rows_failed": int(failed),
                 "tee_times_touched": len(touched_tee_ids),
+                "play_date": tee_sheet_meta.get("play_date").isoformat() if tee_sheet_meta and tee_sheet_meta.get("play_date") else None,
             },
         )
         db.commit()

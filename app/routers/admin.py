@@ -54,6 +54,7 @@ from app.people import (
     sync_user_person,
 )
 from app.password_policy import assert_password_policy
+from app.pricing import normalize_member_pricing_mode, pricing_mode_to_player_type
 from app.services.account_customers_service import (
     build_account_customers_query,
     ensure_unique_account_code,
@@ -91,6 +92,13 @@ router = APIRouter(
 ADMIN_DASHBOARD_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=64)
 ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
 
+MEMBER_PRICING_MODE_LABELS = {
+    "membership_default": "Default by membership type",
+    "visitor_override": "Visitor rate override",
+    "non_affiliated_override": "Non-affiliated visitor override",
+    "reciprocity_override": "Reciprocity override",
+}
+
 
 def _request_id(request: Request | None) -> str | None:
     if request is None:
@@ -107,6 +115,24 @@ def _invalidate_admin_caches(club_id: int | None = None) -> None:
     ADMIN_DASHBOARD_CACHE.clear()
     ADMIN_ALERTS_CACHE.clear()
     log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
+
+
+def _member_pricing_payload(member: Member, db: Session | None = None) -> dict[str, Any]:
+    pricing_mode = normalize_member_pricing_mode(getattr(member, "pricing_mode", None))
+    updated_by_id = int(getattr(member, "pricing_override_updated_by_user_id", 0) or 0) or None
+    updated_by_name = None
+    if db is not None and updated_by_id:
+        user = db.query(User).filter(User.id == updated_by_id).first()
+        updated_by_name = str(getattr(user, "name", "") or "").strip() or str(getattr(user, "email", "") or "").strip() or None
+    return {
+        "pricing_mode": pricing_mode,
+        "pricing_label": MEMBER_PRICING_MODE_LABELS.get(pricing_mode, MEMBER_PRICING_MODE_LABELS["membership_default"]),
+        "pricing_override_player_type": pricing_mode_to_player_type(pricing_mode),
+        "pricing_note": getattr(member, "pricing_note", None),
+        "pricing_override_updated_at": getattr(member, "pricing_override_updated_at", None).isoformat() if getattr(member, "pricing_override_updated_at", None) else None,
+        "pricing_override_updated_by_user_id": updated_by_id,
+        "pricing_override_updated_by_name": updated_by_name,
+    }
 
 
 def _audit_event(
@@ -3275,6 +3301,7 @@ async def get_all_bookings(
                 "club_card": getattr(b, "club_card", None),
                 "price": float(b.price),
                 "status": b.status,
+                "player_type": getattr(b, "player_type", None),
                 "tee_time": b.tee_time.tee_time.isoformat() if b.tee_time else None,
                 "created_at": b.created_at.isoformat(),
                 "has_round": bool(b.round),
@@ -3382,6 +3409,7 @@ async def get_booking_detail(
         "fee_category": fee_category,
         "price": float(booking.price),
         "status": booking.status,
+        "player_type": getattr(booking, "player_type", None),
         "tee_time": booking.tee_time.tee_time.isoformat() if booking.tee_time else None,
         "created_at": booking.created_at.isoformat(),
         "round": round_info,
@@ -4380,6 +4408,11 @@ async def get_members(
                 "membership_group": classify_membership_group(getattr(m, "membership_category", None)),
                 "membership_status": getattr(m, "membership_status", None),
                 "member_lifecycle_status": getattr(m, "member_lifecycle_status", None),
+                "pricing_mode": normalize_member_pricing_mode(getattr(m, "pricing_mode", None)),
+                "pricing_label": MEMBER_PRICING_MODE_LABELS.get(
+                    normalize_member_pricing_mode(getattr(m, "pricing_mode", None)),
+                    MEMBER_PRICING_MODE_LABELS["membership_default"],
+                ),
                 "record_status": getattr(m, "record_status", None),
                 "person_type": getattr(m, "person_type", None) or "Member",
                 "membership_date": getattr(m, "membership_date", None).isoformat() if getattr(m, "membership_date", None) else None,
@@ -4421,6 +4454,8 @@ class MemberUpsertPayload(BaseModel):
     primary_operation: str | None = None
     membership_status: str | None = None
     member_lifecycle_status: str | None = None
+    pricing_mode: str | None = None
+    pricing_note: str | None = None
     record_status: str | None = None
     person_type: str | None = None
     membership_date: date | None = None
@@ -4465,6 +4500,8 @@ async def create_member(
     membership_status = normalize_membership_status(
         payload.member_lifecycle_status or payload.membership_status or ("active" if bool(payload.active) else "inactive")
     )
+    pricing_mode = normalize_member_pricing_mode(payload.pricing_mode)
+    pricing_note = (payload.pricing_note or "").strip() or None
     record_status = (payload.record_status or membership_status or "").strip() or membership_status
     person_type = (payload.person_type or "Member").strip() or "Member"
 
@@ -4483,6 +4520,10 @@ async def create_member(
         primary_operation=primary_operation,
         membership_status=membership_status,
         member_lifecycle_status=membership_status,
+        pricing_mode=pricing_mode,
+        pricing_note=pricing_note,
+        pricing_override_updated_at=datetime.utcnow() if pricing_mode != "membership_default" or pricing_note else None,
+        pricing_override_updated_by_user_id=(int(getattr(admin, "id", 0) or 0) or None) if pricing_mode != "membership_default" or pricing_note else None,
         record_status=record_status,
         person_type=person_type,
         membership_date=payload.membership_date,
@@ -4544,6 +4585,13 @@ async def update_member(
     row.primary_operation = normalize_primary_operation(payload.primary_operation, row.membership_category_raw or row.membership_category)
     row.membership_status = normalize_membership_status(payload.member_lifecycle_status or payload.membership_status or row.membership_status)
     row.member_lifecycle_status = row.membership_status
+    new_pricing_mode = normalize_member_pricing_mode(payload.pricing_mode or row.pricing_mode)
+    new_pricing_note = (payload.pricing_note or "").strip() if payload.pricing_note is not None else (row.pricing_note or "")
+    if new_pricing_mode != normalize_member_pricing_mode(row.pricing_mode) or new_pricing_note != str(row.pricing_note or ""):
+        row.pricing_mode = new_pricing_mode
+        row.pricing_note = new_pricing_note or None
+        row.pricing_override_updated_at = datetime.utcnow()
+        row.pricing_override_updated_by_user_id = int(getattr(admin, "id", 0) or 0) or None
     row.record_status = (payload.record_status or "").strip() or row.record_status or row.membership_status
     row.person_type = (payload.person_type or "").strip() or row.person_type
     row.membership_date = payload.membership_date
@@ -4651,6 +4699,7 @@ async def get_member_detail(
             "membership_group": classify_membership_group(getattr(member, "membership_category", None)),
             "membership_status": getattr(member, "membership_status", None),
             "member_lifecycle_status": getattr(member, "member_lifecycle_status", None),
+            **_member_pricing_payload(member, db),
             "record_status": getattr(member, "record_status", None),
             "person_type": getattr(member, "person_type", None) or "Member",
             "membership_date": getattr(member, "membership_date", None).isoformat() if getattr(member, "membership_date", None) else None,
