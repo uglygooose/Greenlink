@@ -323,7 +323,7 @@
                     <div class="dashboard-card full-width dashboard-golf-only">
                         <h3>Targets vs Actual (Paid)</h3>
                         <div class="kpi-subtitle">
-                            Paid bookings = checked-in + completed. Targets are derived from annual targets.
+                            Target actuals use paid ledger entries on a cash-basis timeline. Booking status panels below still show tee-sheet operating states.
                         </div>
                         <div class="table-container kpi-table-wrap">
                             <table class="data-table kpi-table">
@@ -569,6 +569,10 @@
                                 <option value="no_show">No-show</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
+                            <select id="bookings-integrity-filter" aria-label="Booking integrity focus">
+                                <option value="all">All Bookings</option>
+                                <option value="missing_paid_ledger">Missing Paid Ledger</option>
+                            </select>
                             <select id="bookings-sort" aria-label="Sort bookings">
                                 <option value="tee_asc">Earliest Tee First</option>
                                 <option value="tee_desc">Latest Tee First</option>
@@ -681,6 +685,7 @@
                         <div class="summary-stat"><span>Inactive / Hold</span><strong id="people-summary-inactive">0</strong></div>
                         <div class="summary-stat"><span>Flagged</span><strong id="people-summary-flagged">0</strong></div>
                     </div>
+                    <p class="action-note" id="bookings-integrity-note" style="display:none; margin: 0 0 10px 0;"></p>
                     <div class="table-container">
                         <table class="data-table">
                             <thead>

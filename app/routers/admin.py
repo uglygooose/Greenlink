@@ -3471,6 +3471,7 @@ async def get_all_bookings(
     skip: int = 0,
     limit: int = 50,
     status: str = None,
+    integrity: Optional[str] = None,
     q: Optional[str] = None,
     sort: Optional[str] = None,  # created_desc | created_asc | tee_asc | tee_desc
     start: Optional[datetime] = None,
@@ -3482,14 +3483,41 @@ async def get_all_bookings(
     staff: User = Depends(verify_staff)
 ):
     """Get all bookings with filters"""
-    
+
+    integrity_mode = str(integrity or "").strip().lower()
+    if integrity_mode not in {"", "missing_paid_ledger"}:
+        raise HTTPException(status_code=400, detail="Invalid integrity filter")
+
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
+    ledger_counts_sq = (
+        db.query(
+            LedgerEntry.booking_id.label("booking_id"),
+            func.count(LedgerEntry.id).label("payment_count"),
+        )
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+        )
+        .group_by(LedgerEntry.booking_id)
+        .subquery()
+    )
+
     query = (
         db.query(Booking)
         .options(selectinload(Booking.tee_time), selectinload(Booking.round))
         .outerjoin(TeeTime, Booking.tee_time_id == TeeTime.id)
     )
-    
-    if status:
+
+    if integrity_mode == "missing_paid_ledger":
+        query = (
+            query.outerjoin(ledger_counts_sq, ledger_counts_sq.c.booking_id == Booking.id)
+            .filter(
+                Booking.status.in_(paid_statuses),
+                func.coalesce(ledger_counts_sq.c.payment_count, 0) == 0,
+            )
+        )
+    elif status:
         query = query.filter(Booking.status == status)
     if q:
         needle = str(q).strip().lower()
@@ -3573,9 +3601,26 @@ async def get_all_bookings(
             booking_id: resolved.price
             for booking_id, resolved in pricing_result.resolved_by_booking_id.items()
         }
-    
+
+    ledger_entry_counts: dict[int, int] = {}
+    booking_ids = [int(getattr(b, "id", 0) or 0) for b in bookings if getattr(b, "id", None)]
+    if booking_ids:
+        ledger_entry_counts = {
+            int(row.booking_id): int(row.entry_count or 0)
+            for row in (
+                db.query(
+                    LedgerEntry.booking_id.label("booking_id"),
+                    func.count(LedgerEntry.id).label("entry_count"),
+                )
+                .filter(LedgerEntry.booking_id.in_(booking_ids))
+                .group_by(LedgerEntry.booking_id)
+                .all()
+            )
+        }
+
     return {
         "total": total,
+        "integrity_filter": integrity_mode or None,
         "bookings": [
             {
                 "id": b.id,
@@ -3600,6 +3645,7 @@ async def get_all_bookings(
                 "cart": bool(b.cart) if b.cart is not None else None,
                 "push_cart": bool(getattr(b, "push_cart", None)) if getattr(b, "push_cart", None) is not None else None,
                 "caddy": bool(getattr(b, "caddy", None)) if getattr(b, "caddy", None) is not None else None,
+                "ledger_entry_count": int(ledger_entry_counts.get(int(getattr(b, "id", 0) or 0), 0)),
             }
             for b in bookings
         ]

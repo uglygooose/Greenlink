@@ -13,6 +13,7 @@ let selectedHolesView = "18";
 let bookingPeriod = "day";
 let bookingDateBasis = "tee_time";
 let bookingSort = "tee_asc";
+let bookingIntegrityFilter = "all";
 let ledgerPeriod = "day";
 let ledgerExportFilter = "all";
 let revenuePeriod = "day"; // day | wtd | mtd | ytd
@@ -94,6 +95,8 @@ const PRIMARY_OPERATIONS = Object.freeze([
 const PRIMARY_OPERATION_KEYS = Object.freeze(PRIMARY_OPERATIONS.map(op => op.key));
 const DASHBOARD_STREAM_KEYS = Object.freeze(["all", ...PRIMARY_OPERATION_KEYS]);
 const REVENUE_FOCUS_KEYS = Object.freeze(["all", "golf_paid", "other_imported", "pro_shop"]);
+const BOOKING_PERIOD_KEYS = Object.freeze(["day", "week", "month", "ytd"]);
+const BOOKING_INTEGRITY_KEYS = Object.freeze(["all", "missing_paid_ledger"]);
 const DEFAULT_IMPORT_STREAM = "golf";
 const ROLE_PAGE_SCOPE = Object.freeze({
     super_admin: ["super-admin", "operations-config"],
@@ -615,11 +618,24 @@ function normalizeAdminRouteOperation(operation) {
     return ADMIN_ROUTE_OPERATION_KEYS.includes(value) ? value : "all";
 }
 
+function normalizeBookingRoutePeriod(period) {
+    const value = String(period || "").trim().toLowerCase();
+    return BOOKING_PERIOD_KEYS.includes(value) ? value : "day";
+}
+
+function normalizeBookingIntegrityFilter(value) {
+    const key = String(value || "").trim().toLowerCase();
+    return BOOKING_INTEGRITY_KEYS.includes(key) ? key : "all";
+}
+
 function normalizeAdminRoute(pageName, routeOptions = {}) {
     const page = String(pageName || "").trim();
     const route = { page };
     if (page === "dashboard") {
         route.stream = normalizeDashboardStreamKey(routeOptions.stream || dashboardStreamPreset || dashboardStreamView || "all", "all");
+    } else if (page === "bookings") {
+        route.period = normalizeBookingRoutePeriod(routeOptions.period || bookingPeriod || "day");
+        route.integrity = normalizeBookingIntegrityFilter(routeOptions.integrity || bookingIntegrityFilter || "all");
     } else if (page === "players") {
         route.view = normalizePeopleRouteView(routeOptions.view || peopleView || "members");
         route.operation = normalizeAdminRouteOperation(routeOptions.operation || peopleAreaFilter || "all");
@@ -636,6 +652,11 @@ function buildAdminRouteHash(pageName, routeOptions = {}) {
     const params = new URLSearchParams();
     if (route.page === "dashboard") {
         params.set("stream", route.stream || "all");
+    } else if (route.page === "bookings") {
+        params.set("period", route.period || "day");
+        if (route.integrity && route.integrity !== "all") {
+            params.set("integrity", route.integrity);
+        }
     } else if (route.page === "players") {
         params.set("view", route.view || "members");
         params.set("operation", route.operation || "all");
@@ -657,6 +678,8 @@ function parseAdminRouteHash(rawHash = window.location.hash) {
     const params = new URLSearchParams(rawQuery);
     return normalizeAdminRoute(page, {
         stream: params.get("stream"),
+        period: params.get("period"),
+        integrity: params.get("integrity"),
         view: params.get("view"),
         operation: params.get("operation"),
         context: params.get("context"),
@@ -1335,6 +1358,10 @@ function applyRoutePresets(pageName, routeOptions = {}) {
         const nextStream = normalizeDashboardStreamKey(route.stream || "all", "all");
         dashboardMenuContext = nextStream === "all" ? "main" : "operation";
         setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
+    } else if (route.page === "bookings") {
+        bookingPeriod = normalizeBookingRoutePeriod(route.period || bookingPeriod || "day");
+        bookingIntegrityFilter = normalizeBookingIntegrityFilter(route.integrity || bookingIntegrityFilter || "all");
+        applyBookingFilterUiState();
     } else if (route.page === "players") {
         applyPeoplePreset({
             view: route.view || peopleView,
@@ -1711,7 +1738,12 @@ function setupAiAssistantActions() {
         if (!(button instanceof HTMLButtonElement)) return;
         const page = String(button.dataset.aiNav || "").trim();
         if (!page) return;
-        navigateToAdminPage(page);
+        const routeOptions = {};
+        const period = String(button.dataset.aiPeriod || "").trim();
+        const integrity = String(button.dataset.aiIntegrity || "").trim();
+        if (period) routeOptions.period = period;
+        if (integrity) routeOptions.integrity = integrity;
+        navigateToAdminPage(page, routeOptions);
     });
 }
 
@@ -2148,8 +2180,8 @@ function buildDashboardOperationCards(data, streamKey, selectedPeriod) {
 
     if (stream === "golf") {
         return [
-            { label: `${periodLabel} Golf Revenue`, value: revenue, format: "currency" },
-            { label: `${periodLabel} Paid Rounds`, value: benchmark.rounds_actual, format: "number" },
+            { label: `${periodLabel} Golf Revenue (Cash)`, value: revenue, format: "currency" },
+            { label: `${periodLabel} Paid Rounds (Ledger)`, value: benchmark.rounds_actual, format: "number" },
             { label: `${periodLabel} Revenue Target`, value: targetRevenueAttainment, format: "percent" },
             { label: `${periodLabel} Rounds Target`, value: targetRoundsAttainment, format: "percent" },
         ];
@@ -2287,11 +2319,12 @@ function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
     if (stream === "golf") {
         const counts = resolveBookingStatusCounts(data, periodMeta.key);
         const paidRoundsFromStatus = safeNumber(counts.checked_in) + safeNumber(counts.completed);
+        const paidRoundsFromLedger = safeNumber(benchmark.rounds_actual);
         titleEl.textContent = `${periodLabel} Booking Status`;
         bookingStatusEl.style.display = "";
         focusEl.style.display = "none";
         noteEl.style.display = "";
-        noteEl.textContent = `${periodLabel} paid rounds = Checked In + Completed (${formatInteger(paidRoundsFromStatus)}).`;
+        noteEl.textContent = `${periodLabel} operational paid-status bookings = Checked In + Completed (${formatInteger(paidRoundsFromStatus)}). KPI cards and targets use cash-basis paid ledger entries (${formatInteger(paidRoundsFromLedger)}).`;
         return;
     }
 
@@ -2405,7 +2438,7 @@ function applyDashboardStreamView(data) {
         } else if (fromSidebarPreset) {
             noteEl.textContent = `Loaded ${label} dashboard preset on ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
         } else if (selected.key === "golf") {
-            noteEl.textContent = `Golf view uses occupancy, paid rounds, and no-show control. ${trendText}.`;
+            noteEl.textContent = `Golf view uses cash-basis paid revenue and ledger-paid rounds for KPI actuals, while booking-status panels show operational tee-sheet states. ${trendText}.`;
         } else if (selected.key === "pro_shop") {
             noteEl.textContent = `Pro shop view uses POS sales, basket value, and stock-risk metrics. ${trendText}.`;
         } else {
@@ -2601,10 +2634,14 @@ function renderAiAssistantPanel(slot, panel) {
     if (actionPage) {
         actionBtn.style.display = "";
         actionBtn.dataset.aiNav = actionPage;
+        actionBtn.dataset.aiPeriod = String(panel.actionPeriod || "").trim();
+        actionBtn.dataset.aiIntegrity = String(panel.actionIntegrity || "").trim();
         actionBtn.textContent = actionLabel;
     } else {
         actionBtn.style.display = "none";
         actionBtn.dataset.aiNav = "";
+        actionBtn.dataset.aiPeriod = "";
+        actionBtn.dataset.aiIntegrity = "";
     }
     return true;
 }
@@ -2667,8 +2704,10 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
             title: "Revenue Integrity",
             status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(status)}</span>Health score ${formatInteger(score)}/100`,
             items,
-            actionPage: "ledger",
-            actionLabel: "Open Ledger",
+            actionPage: "bookings",
+            actionPeriod: "ytd",
+            actionIntegrity: "missing_paid_ledger",
+            actionLabel: "Review Gaps",
         };
     };
 
@@ -3222,6 +3261,7 @@ function buildBookingRange(dateStr, period) {
 
 function setupBookingFilters() {
     const statusSelect = document.getElementById("filter-status");
+    const integritySelect = document.getElementById("bookings-integrity-filter");
     const dateInput = document.getElementById("bookings-date");
     const dateBasisSelect = document.getElementById("bookings-date-basis");
     const sortSelect = document.getElementById("bookings-sort");
@@ -3236,9 +3276,27 @@ function setupBookingFilters() {
     if (sortSelect instanceof HTMLSelectElement) {
         bookingSort = String(sortSelect.value || "tee_asc").toLowerCase();
     }
+    if (integritySelect instanceof HTMLSelectElement) {
+        bookingIntegrityFilter = normalizeBookingIntegrityFilter(integritySelect.value || bookingIntegrityFilter || "all");
+    }
+
+    applyBookingFilterUiState();
 
     statusSelect?.addEventListener("change", () => {
         currentPage = 1;
+        if (bookingIntegrityFilter !== "all") {
+            bookingIntegrityFilter = "all";
+            applyBookingFilterUiState();
+            syncAdminRouteLocation("bookings", normalizeAdminRoute("bookings"), { replace: true });
+        }
+        loadBookings();
+    });
+
+    integritySelect?.addEventListener("change", () => {
+        bookingIntegrityFilter = normalizeBookingIntegrityFilter(integritySelect.value || "all");
+        currentPage = 1;
+        applyBookingFilterUiState();
+        syncAdminRouteLocation("bookings", normalizeAdminRoute("bookings"), { replace: true });
         loadBookings();
     });
 
@@ -3263,11 +3321,41 @@ function setupBookingFilters() {
         btn.addEventListener("click", () => {
             periodButtons.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
-            bookingPeriod = btn.dataset.period || "day";
+            bookingPeriod = normalizeBookingRoutePeriod(btn.dataset.period || "day");
             currentPage = 1;
+            syncAdminRouteLocation("bookings", normalizeAdminRoute("bookings"), { replace: true });
             loadBookings();
         });
     });
+}
+
+function applyBookingFilterUiState() {
+    const integrity = normalizeBookingIntegrityFilter(bookingIntegrityFilter);
+    const integritySelect = document.getElementById("bookings-integrity-filter");
+    const statusSelect = document.getElementById("filter-status");
+    const noteEl = document.getElementById("bookings-integrity-note");
+
+    if (integritySelect instanceof HTMLSelectElement) {
+        integritySelect.value = integrity;
+    }
+    if (statusSelect instanceof HTMLSelectElement) {
+        statusSelect.disabled = integrity !== "all";
+        if (integrity !== "all") {
+            statusSelect.value = "";
+        }
+    }
+    document.querySelectorAll(".booking-period-btn").forEach(btn => {
+        btn.classList.toggle("active", String(btn.dataset.period || "day") === normalizeBookingRoutePeriod(bookingPeriod));
+    });
+    if (noteEl) {
+        if (integrity === "missing_paid_ledger") {
+            noteEl.style.display = "";
+            noteEl.textContent = "Showing checked-in/completed bookings with no linked ledger payment. Open a booking and save the payment method to repair the missing payment entry.";
+        } else {
+            noteEl.style.display = "none";
+            noteEl.textContent = "";
+        }
+    }
 }
 
 function setupLedgerFilters() {
@@ -3326,12 +3414,17 @@ async function loadBookings() {
     const token = localStorage.getItem("token");
     const status = document.getElementById("filter-status")?.value;
     const dateStr = document.getElementById("bookings-date")?.value;
+    const integrity = normalizeBookingIntegrityFilter(bookingIntegrityFilter);
 
     try {
         let url = `${API_BASE}/api/admin/bookings?skip=${(currentPage - 1) * 10}&limit=10`;
         url += `&date_basis=${encodeURIComponent(bookingDateBasis || "tee_time")}`;
         url += `&sort=${encodeURIComponent(bookingSort || "tee_asc")}`;
-        if (status) url += `&status=${status}`;
+        if (integrity !== "all") {
+            url += `&integrity=${encodeURIComponent(integrity)}`;
+        } else if (status) {
+            url += `&status=${status}`;
+        }
 
         const range = buildBookingRange(dateStr, bookingPeriod);
         if (range) {
@@ -3356,7 +3449,7 @@ async function loadBookings() {
                 <td>${b.prepaid === true ? "Yes" : (b.prepaid === false ? "No" : "-")}</td>
                 <td>${renderReqPills(b)}</td>
                 <td>${formatCurrencyZAR(b.price)}</td>
-                <td><span class="status-badge ${statusToClass(b.status)}">${statusToLabel(b.status)}</span></td>
+                <td><span class="status-badge ${statusToClass(b.status)}">${statusToLabel(b.status)}</span>${Number(b.ledger_entry_count || 0) === 0 && (b.status === "checked_in" || b.status === "completed") ? '<div class="muted" style="margin-top:4px; color:#b04a00;">Missing ledger</div>' : ""}</td>
                 <td>${b.tee_time ? formatTimeDateDMY(b.tee_time) : "-"}</td>
                 <td>${b.has_round ? (b.round_completed ? "Closed" : "Open") : "Not started"}</td>
                 <td>${formatDateDMY(b.created_at)}</td>
@@ -3531,7 +3624,7 @@ async function viewBookingDetail(bookingId) {
                             <select id="booking-payment-method" style="min-width: 120px;">
                                 ${paymentMethodOptions}
                             </select>
-                            ${ledgerEntries.length ? `<button class="btn-secondary btn-small" type="button" onclick="saveBookingPaymentMethod(${bookingId})">Save</button>` : ""}
+                            ${isPaid ? `<button class="btn-secondary btn-small" type="button" onclick="saveBookingPaymentMethod(${bookingId})">${ledgerEntries.length ? "Save" : "Repair Entry"}</button>` : ""}
                         </span>
                     </div>
                     <div class="detail-row">
@@ -3557,7 +3650,7 @@ async function viewBookingDetail(bookingId) {
                     ` : `
                         <div class="detail-row">
                             <span class="detail-label">Status</span>
-                            <span class="detail-value">${isPaid ? "Missing entry" : "Unpaid"}</span>
+                            <span class="detail-value">${isPaid ? "Missing entry - save payment method to repair" : "Unpaid"}</span>
                         </div>
                     `}
                 </div>

@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app import crud
 from app.models import Booking, LedgerEntry, LedgerEntryMeta
 from app.services.payment_methods import normalize_booking_payment_method
 
@@ -15,6 +16,29 @@ def get_booking_or_404(db: Session, booking_id: int) -> Booking:
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
+
+
+def _get_latest_booking_ledger_entry(db: Session, booking_id: int) -> LedgerEntry | None:
+    return (
+        db.query(LedgerEntry)
+        .filter(LedgerEntry.booking_id == int(booking_id))
+        .order_by(desc(LedgerEntry.id))
+        .first()
+    )
+
+
+def _recover_paid_booking_ledger_entry(
+    db: Session,
+    *,
+    booking_id: int,
+    payment_method: str | None,
+) -> LedgerEntry | None:
+    booking = get_booking_or_404(db, booking_id)
+    paid_statuses = {"checked_in", "completed"}
+    status = str(getattr(getattr(booking, "status", None), "value", booking.status) or "").strip().lower()
+    if status not in paid_statuses:
+        return None
+    return crud.ensure_paid_ledger_entry(db, booking, payment_method=payment_method)
 
 
 def set_booking_payment_method_meta(
@@ -28,12 +52,13 @@ def set_booking_payment_method_meta(
         allow_empty=False,
         field_name="payment method",
     )
-    ledger_entry = (
-        db.query(LedgerEntry)
-        .filter(LedgerEntry.booking_id == int(booking_id))
-        .order_by(desc(LedgerEntry.id))
-        .first()
-    )
+    ledger_entry = _get_latest_booking_ledger_entry(db, booking_id)
+    if not ledger_entry:
+        ledger_entry = _recover_paid_booking_ledger_entry(
+            db,
+            booking_id=int(booking_id),
+            payment_method=method,
+        )
     if not ledger_entry:
         raise HTTPException(status_code=400, detail="Booking has no payment record yet")
 
@@ -62,12 +87,13 @@ def set_booking_payment_method_if_exists(
         allow_empty=False,
         field_name="payment method",
     )
-    ledger_entry = (
-        db.query(LedgerEntry)
-        .filter(LedgerEntry.booking_id == int(booking_id))
-        .order_by(desc(LedgerEntry.id))
-        .first()
-    )
+    ledger_entry = _get_latest_booking_ledger_entry(db, booking_id)
+    if not ledger_entry:
+        ledger_entry = _recover_paid_booking_ledger_entry(
+            db,
+            booking_id=int(booking_id),
+            payment_method=method,
+        )
     if not ledger_entry:
         return False, None, None
 
