@@ -326,7 +326,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         setupLedgerFilters();
         setupRevenueFilters();
         setupRevenueImport();
-        loadBookingWindowSettings();
         startDashboardAutoRefresh();
     } else {
         await applyStaffMode(role);
@@ -5251,7 +5250,6 @@ function setupTargetModelSettings() {
     saveBtn.addEventListener("click", () => saveTargetModelSettings());
     const currentYear = new Date().getFullYear();
     if (yearInput && !yearInput.value) yearInput.value = String(currentYear);
-    loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
 }
 
 function emptyPricingMatrixRow() {
@@ -5617,7 +5615,6 @@ function setupPricingMatrixSettings() {
             deletePricingMatrixRow(target);
         }
     });
-    loadPricingMatrix({ silent: true });
 }
 
 async function loadOpsImportSettings(options = {}) {
@@ -5696,7 +5693,6 @@ function setupRevenueImport() {
     opsSaveBtn?.addEventListener("click", () => saveOpsImportSettings());
 
     updateRevenueUploadFlowHint();
-    loadOpsImportSettings({ stream: getOpsSettingsStream(), silent: true });
 
     if (!btn) return;
 

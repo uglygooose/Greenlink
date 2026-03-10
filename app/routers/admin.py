@@ -93,6 +93,7 @@ router = APIRouter(
 
 ADMIN_DASHBOARD_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=64)
 ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
+ADMIN_DASHBOARD_PRICING_REPAIR_CACHE = TTLCache[str, tuple[int, ...]](ttl_seconds=300, max_entries=64)
 
 MEMBER_PRICING_MODE_LABELS = {
     "membership_default": "Default by membership type",
@@ -111,10 +112,12 @@ def _request_id(request: Request | None) -> str | None:
 def _invalidate_admin_caches(club_id: int | None = None) -> None:
     if club_id is not None and int(club_id) > 0:
         ADMIN_DASHBOARD_CACHE.delete(f"dashboard:{int(club_id)}")
+        ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.delete(f"dashboard_pricing_repair:{int(club_id)}")
         ADMIN_ALERTS_CACHE.clear()
         log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=int(club_id))
         return
     ADMIN_DASHBOARD_CACHE.clear()
+    ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.clear()
     ADMIN_ALERTS_CACHE.clear()
     log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
 
@@ -210,6 +213,7 @@ def _repair_booking_pricing_window(
     *,
     start_dt: datetime,
     end_dt_exclusive: datetime | None,
+    max_rows: int | None = None,
 ) -> tuple[int, ...]:
     try:
         query = (
@@ -239,9 +243,12 @@ def _repair_booking_pricing_window(
                 TeeTime.tee_time >= start_dt,
                 or_(Booking.price.is_(None), Booking.price <= 0),
             )
+            .order_by(desc(TeeTime.tee_time), desc(Booking.id))
         )
         if end_dt_exclusive is not None:
             query = query.filter(TeeTime.tee_time < end_dt_exclusive)
+        if max_rows is not None and int(max_rows) > 0:
+            query = query.limit(int(max_rows))
         rows = query.all()
         if not rows:
             return ()
@@ -250,6 +257,28 @@ def _repair_booking_pricing_window(
     except Exception:
         _safe_rollback(db)
         return ()
+
+
+def _maybe_repair_dashboard_pricing(
+    db: Session,
+    club_id: int,
+    *,
+    today_anchor: date,
+) -> tuple[int, ...]:
+    cache_key = f"dashboard_pricing_repair:{int(club_id)}"
+    cached = ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    updated_ids = _repair_booking_pricing_window(
+        db,
+        club_id,
+        start_dt=datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time()),
+        end_dt_exclusive=datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time()),
+        max_rows=250,
+    )
+    ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.set(cache_key, updated_ids)
+    return updated_ids
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -1500,12 +1529,7 @@ async def get_dashboard_stats(
 
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
     today_anchor = datetime.utcnow().date()
-    _repair_booking_pricing_window(
-        db,
-        club_id,
-        start_dt=datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time()),
-        end_dt_exclusive=datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time()),
-    )
+    _maybe_repair_dashboard_pricing(db, club_id, today_anchor=today_anchor)
 
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
