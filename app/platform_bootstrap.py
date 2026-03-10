@@ -947,6 +947,14 @@ def _umhlali_gl_reference_resolved(db) -> bool:
     return row is not None
 
 
+def _strip_umhlali_gl_missing_warning(messages: list[str] | None) -> list[str]:
+    return [
+        msg
+        for msg in list(messages or [])
+        if str(msg or "").strip() != UMHLALI_GL_REFERENCE_MISSING_WARNING
+    ]
+
+
 def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     active_clubs = _active_club_rows(db)
     setup_readiness = _club_setup_readiness_rows(db)
@@ -957,10 +965,12 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
     status = str((bootstrap or {}).get("status") or runtime.get("status") or "ready")
     warnings = list((bootstrap or {}).get("warnings") or runtime.get("warnings") or [])
     errors = list((bootstrap or {}).get("errors") or runtime.get("errors") or [])
+    bootstrap_payload = dict(bootstrap or {})
     if warnings:
         try:
             if _umhlali_gl_reference_resolved(db):
-                warnings = [msg for msg in warnings if str(msg or "").strip() != UMHLALI_GL_REFERENCE_MISSING_WARNING]
+                warnings = _strip_umhlali_gl_missing_warning(warnings)
+                bootstrap_payload["warnings"] = _strip_umhlali_gl_missing_warning(bootstrap_payload.get("warnings"))
                 if status == "needs_attention":
                     status = _status_from_diagnostics(errors, warnings)
         except Exception:
@@ -980,7 +990,7 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
         "requires_club_selection": len(active_clubs) > 1,
         "setup_readiness": setup_readiness,
         "schema": schema or {},
-        "bootstrap": bootstrap or {},
+        "bootstrap": bootstrap_payload,
     }
 
 

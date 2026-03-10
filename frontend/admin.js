@@ -2686,6 +2686,8 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
         const status = String(revenue?.status || "warning").toLowerCase();
         const score = safeNumber(revenue?.health_score);
         const alerts = Array.isArray(revenue?.alerts) ? revenue.alerts : [];
+        const metrics = (revenue && typeof revenue.metrics === "object") ? revenue.metrics : {};
+        const unpaidAttendedCount = safeNumber(metrics?.unpaid_attended_count);
         const periodRows = Array.isArray(revenue?.period_alignment) ? revenue.period_alignment : [];
         const periodRow = periodRows.find(r => String(r?.period_key || "").toLowerCase() === String(period.key || "").toLowerCase()) || null;
         const items = alerts.slice(0, 2).map(a => ({
@@ -2704,10 +2706,10 @@ function renderAiAssistant(data, streamKey = "all", selectedPeriod = null) {
             title: "Revenue Integrity",
             status: `<span class="ai-pill ${aiSeverityClass(status)}">${escapeHtml(status)}</span>Health score ${formatInteger(score)}/100`,
             items,
-            actionPage: "bookings",
-            actionPeriod: "ytd",
-            actionIntegrity: "missing_paid_ledger",
-            actionLabel: "Review Gaps",
+            actionPage: unpaidAttendedCount > 0 ? "bookings" : "ledger",
+            actionPeriod: unpaidAttendedCount > 0 ? "ytd" : "",
+            actionIntegrity: unpaidAttendedCount > 0 ? "missing_paid_ledger" : "",
+            actionLabel: unpaidAttendedCount > 0 ? "Review Gaps" : "Open Ledger",
         };
     };
 
@@ -3436,7 +3438,14 @@ async function loadBookings() {
         });
 
         const table = document.getElementById("bookings-table");
-        table.innerHTML = data.bookings.map(b => `
+        const rows = Array.isArray(data?.bookings) ? data.bookings : [];
+        if (!rows.length) {
+            const emptyReason = integrity === "missing_paid_ledger"
+                ? "No checked-in/completed bookings are currently missing ledger payments for this date window."
+                : "No bookings found for the selected filters.";
+            table.innerHTML = `<tr><td colspan="16" style="text-align:center; color:#7f8c8d; padding: 18px;">${escapeHtml(emptyReason)}</td></tr>`;
+        } else {
+            table.innerHTML = rows.map(b => `
             <tr>
                 <td>#${b.id}</td>
                 <td>${escapeHtml(b.player_name)}</td>
@@ -3456,6 +3465,7 @@ async function loadBookings() {
                 <td><button class="btn-view" onclick="viewBookingDetail(${b.id})">View</button></td>
             </tr>
         `).join("");
+        }
 
         // Pagination
         const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / 10));
