@@ -31,7 +31,7 @@ _PRO_SHOP_EXPORTS_SETTING_KEY = "cashbook_pro_shop_exports"
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role not in {UserRole.super_admin, UserRole.admin}:
+    if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 

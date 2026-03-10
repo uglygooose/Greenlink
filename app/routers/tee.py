@@ -21,7 +21,7 @@ from app.tenancy import get_active_club_id
 router = APIRouter(prefix="/tsheet", tags=["tsheet"])
 
 def _verify_staff(current_user: models.User = Depends(get_current_user)) -> models.User:
-    if getattr(current_user, "role", None) not in {models.UserRole.super_admin, models.UserRole.admin, models.UserRole.club_staff}:
+    if getattr(current_user, "role", None) not in {models.UserRole.admin, models.UserRole.club_staff}:
         raise HTTPException(status_code=403, detail="Staff access required")
     return current_user
 

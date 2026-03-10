@@ -20,7 +20,7 @@ def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
 
 def require_admin_like(current_user: User = Depends(get_current_user)) -> User:
     """
-    Treat super_admin as an admin for permission checks.
+    Setup/config scope: allow club admins and super admins.
     """
     if getattr(current_user, "role", None) not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -29,9 +29,9 @@ def require_admin_like(current_user: User = Depends(get_current_user)) -> User:
 
 def require_staff_like(current_user: User = Depends(get_current_user)) -> User:
     """
-    Treat super_admin as staff for operational endpoints.
+    Club operations scope: allow club admins and club staff, but not super admins.
     """
-    if getattr(current_user, "role", None) not in {UserRole.super_admin, UserRole.admin, UserRole.club_staff}:
+    if getattr(current_user, "role", None) not in {UserRole.admin, UserRole.club_staff}:
         raise HTTPException(status_code=403, detail="Staff access required")
     return current_user
 

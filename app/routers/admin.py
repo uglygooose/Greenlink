@@ -252,7 +252,14 @@ def _repair_booking_pricing_window(
 
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Verify current user is admin"""
+    """Club admin access for day-to-day club operations."""
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+def verify_setup_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Allow super admins on onboarding/setup endpoints without exposing club ops."""
     if current_user.role not in {UserRole.super_admin, UserRole.admin}:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
@@ -260,11 +267,11 @@ def verify_admin(current_user: User = Depends(get_current_user)) -> User:
 
 def verify_staff(current_user: User = Depends(get_current_user)) -> User:
     """
-    Pro shop staff access (admin + club_staff).
+    Club operations staff access (admin + club_staff).
 
     Used for operational endpoints needed during the 30-day parallel (mirror) test.
     """
-    if current_user.role not in {UserRole.super_admin, UserRole.admin, UserRole.club_staff}:
+    if current_user.role not in {UserRole.admin, UserRole.club_staff}:
         raise HTTPException(status_code=403, detail="Staff access required")
     return current_user
 
@@ -562,7 +569,7 @@ class BookingWindowSettings(BaseModel):
 @router.get("/booking-window", response_model=BookingWindowSettings)
 def get_booking_window_settings(
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     return BookingWindowSettings(
@@ -577,7 +584,7 @@ def get_booking_window_settings(
 def update_booking_window_settings(
     payload: BookingWindowSettings,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     # Guard rails
@@ -607,7 +614,7 @@ class TeeSheetProfilePayload(BaseModel):
 @router.get("/tee-sheet-profile")
 def get_tee_sheet_profile(
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     profile = load_tee_sheet_profile(db, club_id=club_id)
@@ -623,7 +630,7 @@ def get_tee_sheet_profile(
 def update_tee_sheet_profile(
     payload: TeeSheetProfilePayload,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     if not isinstance(payload.profile, dict):
@@ -648,7 +655,7 @@ class ClubProfileSettings(BaseModel):
 @router.get("/club-profile")
 def get_club_profile_settings(
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     # Admin-visible view of the current club config, sourced from club_settings/env/defaults.
@@ -659,7 +666,7 @@ def get_club_profile_settings(
 def update_club_profile_settings(
     payload: ClubProfileSettings,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
     club_id: int = Depends(get_active_club_id),
 ):
     """
