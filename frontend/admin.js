@@ -80,19 +80,12 @@ let proShopSalesWindowDays = 30;
 let accountCustomersCache = [];
 let accountCustomersPageRows = [];
 let golfDayBookingsPageRows = [];
-let currentOperationContext = "golf";
-let currentOperationFocus = "overview";
 let peopleLoadController = null;
 let peopleLoadRequestKey = "";
 let peopleLoadPromise = null;
 let teeSheetLoadController = null;
 let teeSheetLoadRequestKey = "";
 let teeSheetLoadPromise = null;
-const operationPageState = {
-    pub: "week",
-    bowls: "week",
-    other: "week",
-};
 const IMPORT_OPERATIONS = Object.freeze([
     { key: "golf", label: "Golf" },
     { key: "pro_shop", label: "Pro Shop" },
@@ -319,7 +312,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeSlotManageModal();
     setupPeopleFilters();
     setupManagementPageControls();
-    setupOperationWorkbenchControls();
     setupPageShortcuts();
     setupUmhlaliOperationalSync();
     setupTargetModelSettings();
@@ -650,9 +642,6 @@ function normalizeAdminRoute(pageName, routeOptions = {}) {
     } else if (page === "players") {
         route.view = normalizePeopleRouteView(routeOptions.view || peopleView || "members");
         route.operation = normalizeAdminRouteOperation(routeOptions.operation || peopleAreaFilter || "all");
-    } else if (page === "operation-center") {
-        route.context = normalizeAdminRouteOperation(routeOptions.context || currentOperationContext || "golf");
-        route.focus = String(routeOptions.focus || currentOperationFocus || "overview").trim().toLowerCase() || "overview";
     }
     return route;
 }
@@ -671,9 +660,6 @@ function buildAdminRouteHash(pageName, routeOptions = {}) {
     } else if (route.page === "players") {
         params.set("view", route.view || "members");
         params.set("operation", route.operation || "all");
-    } else if (route.page === "operation-center") {
-        params.set("context", route.context || "golf");
-        params.set("focus", route.focus || "overview");
     }
     const query = params.toString();
     return `#${route.page}${query ? `?${query}` : ""}`;
@@ -729,11 +715,6 @@ function findNavItemForRoute(pageName, routeOptions = {}) {
             const operation = normalizeAdminRouteOperation(item.dataset.peopleOperation || "all");
             if (view === route.view) score += 20;
             if (operation === route.operation) score += 10;
-        } else if (route.page === "operation-center") {
-            const context = normalizeAdminRouteOperation(item.dataset.operationContext || "golf");
-            const focus = String(item.dataset.operationFocus || "overview").trim().toLowerCase();
-            if (context === route.context) score += 20;
-            if (focus === route.focus) score += 10;
         } else {
             score = 10;
         }
@@ -1408,11 +1389,6 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
     syncPeoplePageChrome();
 }
 
-function setOperationCenterContext(operation, focus = "overview") {
-    currentOperationContext = String(operation || "golf").toLowerCase();
-    currentOperationFocus = String(focus || "overview").toLowerCase();
-}
-
 function applyRoutePresets(pageName, routeOptions = {}) {
     const route = normalizeAdminRoute(pageName, routeOptions);
     if (route.page === "dashboard") {
@@ -1431,8 +1407,6 @@ function applyRoutePresets(pageName, routeOptions = {}) {
                 ? "operation"
                 : "general",
         });
-    } else if (route.page === "operation-center") {
-        setOperationCenterContext(route.context || "golf", route.focus || "overview");
     }
     return route;
 }
@@ -1453,9 +1427,6 @@ function loadAdminPageData(pageName) {
             break;
         case "golf-days-page":
             loadGolfDayBookingsPage();
-            break;
-        case "operation-center":
-            loadOperationCenter();
             break;
         case "revenue":
             loadRevenue();
@@ -1481,15 +1452,6 @@ function loadAdminPageData(pageName) {
             initSuperAdminContext();
             superRefreshStaff();
             superRefreshPlatformReadiness();
-            break;
-        case "pub-ops":
-            loadOperationWorkbench("pub");
-            break;
-        case "bowls-ops":
-            loadOperationWorkbench("bowls");
-            break;
-        case "other-ops":
-            loadOperationWorkbench("other");
             break;
         default:
             break;
@@ -1535,16 +1497,12 @@ function setupNavigation() {
             const streamPreset = String(item.dataset.dashboardStream || "").toLowerCase();
             const peoplePresetView = String(item.dataset.peopleView || "").toLowerCase();
             const peoplePresetOperation = String(item.dataset.peopleOperation || "").toLowerCase();
-            const operationContext = String(item.dataset.operationContext || "").toLowerCase();
-            const operationFocus = String(item.dataset.operationFocus || "overview").toLowerCase();
             if (!page) return;
             if (!isPageAllowedForRole(page) || PLACEHOLDER_OPERATION_PAGES.includes(page)) return;
             navigateToAdminPage(page, {
                 stream: streamPreset || "all",
                 view: peoplePresetView || peopleView,
                 operation: peoplePresetOperation || peopleAreaFilter,
-                context: operationContext || currentOperationContext,
-                focus: operationFocus || currentOperationFocus,
             });
         });
     });
@@ -1567,10 +1525,6 @@ function applyQuickNavigationValue(raw) {
     }
     if (pageName === "players") {
         navigateToAdminPage(pageName, { view: arg1 || "members", operation: arg2 || "all" });
-        return true;
-    }
-    if (pageName === "operation-center") {
-        navigateToAdminPage(pageName, { context: arg1 || "golf", focus: arg2 || "overview" });
         return true;
     }
     navigateToAdminPage(pageName);
@@ -1731,16 +1685,12 @@ function showPage(pageName) {
         players: currentPeoplePageTitle(),
         "account-customers-page": "Account Customers",
         "golf-days-page": "Golf Day Bookings",
-        "operation-center": `${operationLabel(currentOperationContext)} Dashboard`,
         "pro-shop": "Pro Shop Sales",
         revenue: "Revenue & Reconciliation",
         "tee-times": "Tee Sheet",
         ledger: "Payment Audit",
         cashbook: "Export & Day Close",
         "super-admin": "Platform Admin",
-        "pub-ops": "Pub Operations",
-        "bowls-ops": "Bowls Operations",
-        "other-ops": "Other Operations",
     };
     document.getElementById("page-title").textContent = titles[nextPage] || nextPage;
 
@@ -1754,9 +1704,6 @@ function showPage(pageName) {
         }
     }
 
-    if (nextPage === "pub-ops") loadOperationWorkbench("pub");
-    if (nextPage === "bowls-ops") loadOperationWorkbench("bowls");
-    if (nextPage === "other-ops") loadOperationWorkbench("other");
 }
 
 function setupManagementPageControls() {
@@ -1767,11 +1714,6 @@ function setupManagementPageControls() {
     document.getElementById("golf-days-refresh-btn")?.addEventListener("click", () => loadGolfDayBookingsPage());
     document.getElementById("golf-days-search")?.addEventListener("input", () => loadGolfDayBookingsPage());
     document.getElementById("golf-days-status")?.addEventListener("change", () => loadGolfDayBookingsPage());
-    document.getElementById("operation-center-open-people-btn")?.addEventListener("click", () => {
-        applyPeoplePreset({ view: "members", operation: currentOperationContext, status: "active", contextMode: "operation" });
-        navigateToAdminPage("players");
-    });
-    document.getElementById("operation-center-open-finance-btn")?.addEventListener("click", () => navigateToAdminPage("revenue"));
 }
 
 function navigateToAdminPage(pageName, routeOptions = {}, navigationOptions = {}) {
@@ -2526,130 +2468,6 @@ function applyDashboardStreamView(data) {
     }
 }
 
-function setupOperationWorkbenchControls() {
-    const configs = [
-        { stream: "pub", periodId: "pub-ops-period", actionId: "pub-ops-action" },
-        { stream: "bowls", periodId: "bowls-ops-period", actionId: "bowls-ops-action" },
-        { stream: "other", periodId: "other-ops-period", actionId: "other-ops-action" },
-    ];
-
-    configs.forEach(({ stream, periodId, actionId }) => {
-        const periodSelect = document.getElementById(periodId);
-        const actionSelect = document.getElementById(actionId);
-
-        if (periodSelect instanceof HTMLSelectElement) {
-            const current = operationPageState[stream] || "week";
-            periodSelect.value = current;
-            periodSelect.addEventListener("change", () => {
-                operationPageState[stream] = String(periodSelect.value || "week").toLowerCase();
-                loadOperationWorkbench(stream);
-            });
-        }
-
-        if (actionSelect instanceof HTMLSelectElement) {
-            actionSelect.addEventListener("change", () => {
-                const value = String(actionSelect.value || "").trim();
-                if (!value) return;
-                applyQuickNavigationValue(value);
-                actionSelect.value = "";
-            });
-        }
-    });
-}
-
-function formatWorkbenchHighlight(item) {
-    const current = (item && Object.prototype.hasOwnProperty.call(item, "current"))
-        ? formatDashboardMetric({ value: item.current, format: item?.format || "number" })
-        : (item && Object.prototype.hasOwnProperty.call(item, "value"))
-            ? formatDashboardMetric({ value: item.value, format: item?.format || "number" })
-            : "-";
-    const context = item?.context ? ` | ${String(item.context)}` : "";
-    return `${current}${context}`;
-}
-
-function renderOperationWorkbenchRows(elementId, rows = []) {
-    const root = document.getElementById(elementId);
-    if (!(root instanceof HTMLElement)) return;
-    if (!rows.length) {
-        root.innerHTML = `
-            <div class="today-stat">
-                <span>No data available</span>
-                <span class="stat-number">-</span>
-            </div>
-        `;
-        return;
-    }
-    root.innerHTML = rows.map((row) => `
-        <div class="today-stat">
-            <span>${escapeHtml(String(row.label || "Item"))}</span>
-            <span class="stat-number">${escapeHtml(String(row.value || "-"))}</span>
-        </div>
-    `).join("");
-}
-
-async function loadOperationWorkbench(streamKey) {
-    const stream = String(streamKey || "").toLowerCase();
-    if (!["pub", "bowls", "other"].includes(stream)) return;
-
-    if (!dashboardDataCache) {
-        try {
-            const data = await fetchJson(`${API_BASE}/api/admin/dashboard`);
-            dashboardDataCache = data;
-        } catch (error) {
-            console.error(`Failed to load ${stream} workbench:`, error);
-            return;
-        }
-    }
-
-    const data = dashboardDataCache || {};
-    const periodKey = operationPageState[stream] || "week";
-    const selected = resolveDashboardStreamMetrics(data, stream);
-    const selectedPeriod = resolveDashboardSelectedPeriod(selected, periodKey);
-    const benchmark = resolveDashboardTargetBenchmark(data, selectedPeriod.key);
-    const targetContribution = benchmark.revenue_target > 0 ? (safeNumber(selectedPeriod.revenue) / benchmark.revenue_target) : null;
-    const prefix = `${stream}-ops`;
-
-    const revenueEl = document.getElementById(`${prefix}-revenue`);
-    const txEl = document.getElementById(`${prefix}-transactions`);
-    const avgTicketEl = document.getElementById(`${prefix}-avg-ticket`);
-    const targetEl = document.getElementById(`${prefix}-target`);
-    const noteEl = document.getElementById(`${prefix}-note`);
-
-    if (revenueEl) revenueEl.textContent = formatCurrencyZAR(selectedPeriod.revenue);
-    if (txEl) txEl.textContent = formatInteger(selectedPeriod.transactions);
-    if (avgTicketEl) avgTicketEl.textContent = formatCurrencyZAR(selectedPeriod.avg_ticket);
-    if (targetEl) targetEl.textContent = targetContribution == null ? "-" : formatPct(targetContribution);
-    if (noteEl) {
-        noteEl.textContent = `${selectedPeriod.label} operational snapshot for ${selected.label}. Use this page for stream-level execution and run imports from Finance / Admin.`;
-    }
-
-    const streamInsight = data?.operation_insights?.[stream] || {};
-    const highlights = Array.isArray(streamInsight?.highlights) ? streamInsight.highlights : [];
-    const focusRows = [
-        { label: `${selectedPeriod.label} Revenue`, value: formatCurrencyZAR(selectedPeriod.revenue) },
-        { label: `${selectedPeriod.label} Transactions`, value: formatInteger(selectedPeriod.transactions) },
-        { label: `Avg Ticket (${selectedPeriod.label})`, value: formatCurrencyZAR(selectedPeriod.avg_ticket) },
-        ...highlights.slice(0, 2).map(item => ({ label: String(item?.name || "Highlight"), value: formatWorkbenchHighlight(item) })),
-    ];
-    renderOperationWorkbenchRows(`${prefix}-focus`, focusRows);
-
-    const streamRows = Array.isArray(data?.ai_assistant?.import_copilot?.streams) ? data.ai_assistant.import_copilot.streams : [];
-    const importRow = streamRows.find(row => String(row?.stream || "").toLowerCase() === stream) || null;
-    const importRows = importRow
-        ? [
-            { label: "Import Health", value: String(importRow.health || "warning").toUpperCase() },
-            { label: "Rows (30d)", value: formatInteger(importRow.rows_total_30d) },
-            { label: "Fail Rate (30d)", value: formatPct(safeNumber(importRow.failure_rate_30d)) },
-            { label: "Last Import", value: importRow.last_import_at ? formatDateTimeDMY(importRow.last_import_at) : "No import yet" },
-            { label: "Next Action", value: String(importRow.recommendation || "Review operation mapping in Imports & Audit") },
-        ]
-        : [
-            { label: "Import Health", value: "NO PROFILE" },
-            { label: "Next Action", value: "Open Imports & Audit and save the import profile for this stream." },
-        ];
-    renderOperationWorkbenchRows(`${prefix}-import`, importRows);
-}
-
 function aiSeverityClass(value) {
     const severity = String(value || "").toLowerCase();
     if (severity === "healthy" || severity === "good" || severity === "ok" || severity === "low") return "good";
@@ -3086,9 +2904,6 @@ function applyDashboardPayload(data, options = {}) {
     document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
     dashboardDataCache = data;
     applyDashboardStreamView(data);
-    if (currentActivePage === "pub-ops") loadOperationWorkbench("pub");
-    if (currentActivePage === "bowls-ops") loadOperationWorkbench("bowls");
-    if (currentActivePage === "other-ops") loadOperationWorkbench("other");
 
     // Import freshness (parallel mirror run)
     const lastBookingsEl = document.getElementById("last-bookings-import");
@@ -4469,49 +4284,6 @@ async function loadGolfDayBookingsPage() {
     } catch (error) {
         console.error("Failed to load golf day bookings page:", error);
         body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load golf day bookings.</td></tr>`;
-    }
-}
-
-async function loadOperationCenter() {
-    const token = localStorage.getItem("token");
-    const op = String(currentOperationContext || "tennis").toLowerCase();
-    const body = document.getElementById("operation-center-members-body");
-    const readiness = document.getElementById("operation-center-readiness");
-    const note = document.getElementById("operation-center-note");
-    if (!body || !readiness) return;
-    try {
-        const data = await fetchJson(`${API_BASE}/api/admin/members?limit=12&area=${encodeURIComponent(op)}&membership_status=all&sort=recent_activity`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        const rows = Array.isArray(data?.members) ? data.members : [];
-        const activeCount = rows.filter((row) => String(row.member_lifecycle_status || row.membership_status || "").toLowerCase() === "active").length;
-        const heldCount = rows.filter((row) => ["hold", "inactive", "resigned", "deceased", "defaulter"].includes(String(row.member_lifecycle_status || row.membership_status || "").toLowerCase())).length;
-        document.getElementById("operation-center-members").textContent = formatInteger(activeCount);
-        document.getElementById("operation-center-held").textContent = formatInteger(heldCount);
-        document.getElementById("operation-center-last-seen").textContent = rows.find((row) => row.last_seen)?.last_seen ? formatDateTimeDMY(rows.find((row) => row.last_seen).last_seen) : "-";
-        document.getElementById("operation-center-workflow").textContent = currentOperationFocus === "bookings" ? "Placeholder" : "Members live";
-        if (note) {
-            note.textContent = currentOperationFocus === "bookings"
-                ? `${operationLabel(op)} booking workflow is not yet implemented in this repo. Staff can manage the member base here while finance and imports stay in Finance / Admin.`
-                : `${operationLabel(op)} uses the shared registry, already scoped to this operation for faster daily work.`;
-        }
-        body.innerHTML = rows.slice(0, 8).map((row) => `
-            <tr>
-                <td>${escapeHtml(String(row.name || "-"))}</td>
-                <td>${escapeHtml(String(row.membership_category_raw || row.membership_category || "-"))}</td>
-                <td>${escapeHtml(String(row.member_lifecycle_status || row.membership_status || "-"))}</td>
-                <td>${row.last_seen ? formatDateTimeDMY(row.last_seen) : "-"}</td>
-            </tr>
-        `).join("") || `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">No members found for this operation.</td></tr>`;
-        readiness.innerHTML = `
-            <div class="today-stat"><span>Members view</span><span class="stat-number">Live from People</span></div>
-            <div class="today-stat"><span>Booking workflow</span><span class="stat-number">${currentOperationFocus === "bookings" ? "Placeholder only" : "Member list ready"}</span></div>
-            <div class="today-stat"><span>Finance linkage</span><span class="stat-number">Finance / Admin</span></div>
-        `;
-    } catch (error) {
-        console.error("Failed to load operation center:", error);
-        body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; padding: 18px;">Failed to load operation members.</td></tr>`;
-        readiness.innerHTML = `<div class="today-stat"><span>Operation status</span><span class="stat-number">Unavailable</span></div>`;
     }
 }
 
