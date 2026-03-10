@@ -24,6 +24,7 @@ let proShopCashbookAlreadyExported = false;
 let currentBookingDetail = null;
 let cachedPastelLayout = null;
 let cachedPastelMappings = null;
+let cachedGlAccountReference = null;
 let accountingSetupListenersInitialized = false;
 const MEMBER_PRICING_LABELS = {
     membership_default: "Default by membership type",
@@ -10500,6 +10501,37 @@ async function loadCashbookJournalPreview() {
     }
 }
 
+function applyGlAccountReference(reference) {
+    cachedGlAccountReference = reference && typeof reference === "object" ? reference : null;
+    const datalist = document.getElementById("gl-account-options");
+    const noteEl = document.getElementById("acct-gl-reference-note");
+    const accounts = Array.isArray(cachedGlAccountReference?.accounts) ? cachedGlAccountReference.accounts : [];
+
+    if (datalist) {
+        if (!accounts.length) {
+            datalist.innerHTML = "";
+        } else {
+            datalist.innerHTML = accounts
+                .map((row) => {
+                    const account = String(row?.account || "").trim();
+                    const description = String(row?.description || "").trim();
+                    if (!account || !description) return "";
+                    return `<option value="${escapeHtml(account)}">${escapeHtml(`${account} - ${description}`)}</option>`;
+                })
+                .join("");
+        }
+    }
+
+    if (!noteEl) return;
+    if (!accounts.length) {
+        noteEl.textContent = "No GL account reference loaded for this club yet. Save export mappings using the client account codes already known.";
+        return;
+    }
+    const sourceFile = String(cachedGlAccountReference?.source_file || "").trim();
+    const count = Number(cachedGlAccountReference?.count || accounts.length || 0);
+    noteEl.textContent = `${formatInteger(count)} GL accounts loaded${sourceFile ? ` from ${sourceFile}` : ""}. Finance mapping fields now suggest codes from this club reference list.`;
+}
+
 async function loadAccountingSettings() {
     const token = localStorage.getItem("token");
     try {
@@ -10513,6 +10545,7 @@ async function loadAccountingSettings() {
         const vatRate = document.getElementById("acct-vat-rate");
         const taxType = document.getElementById("acct-tax-type");
         const cashbook = document.getElementById("acct-cashbook");
+        applyGlAccountReference(data?.gl_reference);
         if (greenFees) greenFees.value = data.green_fees_gl || "";
         if (contraGl) contraGl.value = data.cashbook_contra_gl || "";
         if (vatRate) vatRate.value = (data.vat_rate * 100).toFixed(2);

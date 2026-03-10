@@ -27,6 +27,7 @@ DEFAULT_SETUP_DIRS = (
     r"c:\Users\athom\OneDrive\Pictures\Greenlink\Umhlali Setup",
     r".\umhlali_setup",
 )
+GL_ACCOUNTS_FILE_TOKENS = ("glaccounts", "gl accounts", "chart of accounts")
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,7 @@ def _workbook_has_sheets(path: Path, required: set[str]) -> bool:
         return False
 
 
-def _find_setup_files() -> SetupFiles | None:
+def _candidate_workbook_paths() -> list[Path]:
     candidates: list[Path] = []
 
     import os
@@ -126,6 +127,11 @@ def _find_setup_files() -> SetupFiles | None:
         except Exception:
             continue
 
+    return workbook_paths
+
+
+def _find_setup_files() -> SetupFiles | None:
+    workbook_paths = _candidate_workbook_paths()
     if not workbook_paths:
         return None
 
@@ -172,6 +178,40 @@ def _find_setup_files() -> SetupFiles | None:
 
 def find_umhlali_setup_files() -> SetupFiles | None:
     return _find_setup_files()
+
+
+def find_umhlali_gl_accounts_file() -> Path | None:
+    for path in _candidate_workbook_paths():
+        lower_name = str(path.name or "").strip().lower()
+        if any(token in lower_name for token in GL_ACCOUNTS_FILE_TOKENS):
+            return path
+    return None
+
+
+def extract_gl_accounts_reference(path: Path) -> list[dict[str, str]]:
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    except Exception:
+        return []
+
+    if not wb.sheetnames:
+        return []
+
+    ws = wb[wb.sheetnames[0]]
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for row in ws.iter_rows(values_only=True):
+        account = _clean_text(row[1] if len(row) > 1 else None, max_len=40)
+        description = _clean_text(row[2] if len(row) > 2 else None, max_len=200)
+        if not account or not description:
+            continue
+        key = account.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"account": account, "description": description})
+    return out
 
 
 def _sheet_rows(source: SheetRef) -> list[list[Any]]:

@@ -141,6 +141,40 @@ def _get_club_setting(db: Session, key: str) -> Optional[str]:
     return str(row.value)
 
 
+def _get_gl_account_reference(db: Session) -> dict:
+    raw = _get_club_setting(db, "gl_account_reference")
+    if not raw:
+        return {"configured": False, "count": 0, "source_file": None, "accounts": []}
+    try:
+        parsed = json.loads(raw) or {}
+    except Exception:
+        return {"configured": True, "count": 0, "source_file": None, "accounts": []}
+
+    accounts_raw = parsed.get("accounts") if isinstance(parsed, dict) else []
+    accounts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if isinstance(accounts_raw, list):
+        for row in accounts_raw:
+            if not isinstance(row, dict):
+                continue
+            account = str(row.get("account") or "").strip()
+            description = str(row.get("description") or "").strip()
+            if not account or not description:
+                continue
+            key = account.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            accounts.append({"account": account, "description": description})
+
+    return {
+        "configured": bool(accounts),
+        "count": len(accounts),
+        "source_file": str(parsed.get("source_file") or "").strip() or None,
+        "accounts": accounts,
+    }
+
+
 def _infer_date_format(sample: str) -> Optional[str]:
     raw = (sample or "").strip()
     if not raw:
@@ -2067,13 +2101,15 @@ def get_accounting_settings_api(
     admin: User = Depends(verify_admin)
 ):
     settings = get_accounting_settings(db)
+    gl_reference = _get_gl_account_reference(db)
     return {
         "green_fees_gl": settings.green_fees_gl,
         "cashbook_contra_gl": settings.cashbook_contra_gl,
         "vat_rate": settings.vat_rate,
         "tax_type": settings.tax_type,
         "cashbook_name": settings.cashbook_name,
-        "updated_at": settings.updated_at.isoformat() if settings.updated_at else None
+        "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
+        "gl_reference": gl_reference,
     }
 
 

@@ -30,7 +30,12 @@ from app.observability import log_event
 from app.people import sync_user_person
 from app.runtime_env import is_local_like, is_production_like
 from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
-from app.umhlali_operational_seed import find_umhlali_setup_files, seed_umhlali_operational_inputs
+from app.umhlali_operational_seed import (
+    extract_gl_accounts_reference,
+    find_umhlali_gl_accounts_file,
+    find_umhlali_setup_files,
+    seed_umhlali_operational_inputs,
+)
 from app.weather_alerts import DEFAULT_FORECAST_TIMEZONE, KNOWN_COURSE_COORDS
 
 UMHLALI_CLUB_NAME = "Umhlali Country Club"
@@ -325,6 +330,27 @@ def _upsert_club_setting(db, club_id: int, key: str, value: str) -> None:
         row.updated_at = _utcnow()
         return
     db.add(ClubSetting(club_id=int(club_id), key=key, value=value, updated_at=_utcnow()))
+
+
+def _sync_umhlali_gl_reference(db, diagnostics: dict[str, Any], club_id: int) -> None:
+    path = find_umhlali_gl_accounts_file()
+    if path is None:
+        diagnostics["warnings"].append("Umhlali GL accounts workbook not found for finance setup reference.")
+        return
+
+    rows = extract_gl_accounts_reference(path)
+    if not rows:
+        diagnostics["warnings"].append(f"Umhlali GL accounts workbook could not be parsed: {path.name}.")
+        return
+
+    payload = {
+        "source_file": path.name,
+        "loaded_at": _utcnow().isoformat(),
+        "count": len(rows),
+        "accounts": rows,
+    }
+    _upsert_club_setting(db, int(club_id), "gl_account_reference", _json_dumps(payload))
+    diagnostics["notes"].append(f"Loaded Umhlali GL account reference ({len(rows)} accounts) from {path.name}.")
 
 
 def _canonical_umhlali_name() -> str:
@@ -632,6 +658,7 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
     if not accounting:
         db.add(AccountingSetting(club_id=int(club_id)))
     db.flush()
+    _sync_umhlali_gl_reference(db, diagnostics, int(club_id))
 
     pricing_seed = apply_reference_pricing_template(
         db,
