@@ -93,7 +93,6 @@ router = APIRouter(
 
 ADMIN_DASHBOARD_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=64)
 ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
-ADMIN_DASHBOARD_PRICING_REPAIR_CACHE = TTLCache[str, tuple[int, ...]](ttl_seconds=300, max_entries=64)
 
 MEMBER_PRICING_MODE_LABELS = {
     "membership_default": "Default by membership type",
@@ -112,12 +111,10 @@ def _request_id(request: Request | None) -> str | None:
 def _invalidate_admin_caches(club_id: int | None = None) -> None:
     if club_id is not None and int(club_id) > 0:
         ADMIN_DASHBOARD_CACHE.delete(f"dashboard:{int(club_id)}")
-        ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.delete(f"dashboard_pricing_repair:{int(club_id)}")
         ADMIN_ALERTS_CACHE.clear()
         log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=int(club_id))
         return
     ADMIN_DASHBOARD_CACHE.clear()
-    ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.clear()
     ADMIN_ALERTS_CACHE.clear()
     log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
 
@@ -257,29 +254,6 @@ def _repair_booking_pricing_window(
     except Exception:
         _safe_rollback(db)
         return ()
-
-
-def _maybe_repair_dashboard_pricing(
-    db: Session,
-    club_id: int,
-    *,
-    today_anchor: date,
-) -> tuple[int, ...]:
-    cache_key = f"dashboard_pricing_repair:{int(club_id)}"
-    cached = ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    updated_ids = _repair_booking_pricing_window(
-        db,
-        club_id,
-        start_dt=datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time()),
-        end_dt_exclusive=datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time()),
-        max_rows=250,
-    )
-    ADMIN_DASHBOARD_PRICING_REPAIR_CACHE.set(cache_key, updated_ids)
-    return updated_ids
-
 
 def verify_admin(current_user: User = Depends(get_current_user)) -> User:
     """Club admin access for day-to-day club operations."""
@@ -1529,7 +1503,8 @@ async def get_dashboard_stats(
 
     paid_statuses = [BookingStatus.checked_in, BookingStatus.completed]
     today_anchor = datetime.utcnow().date()
-    _maybe_repair_dashboard_pricing(db, club_id, today_anchor=today_anchor)
+    year_start_dt = datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time())
+    next_year_start_dt = datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time())
 
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
@@ -1681,6 +1656,25 @@ async def get_dashboard_stats(
     except Exception:
         _safe_rollback(db)
         imports = {}
+
+    unresolved_pricing_count = 0
+    try:
+        unresolved_pricing_count = int(
+            db.query(func.count(Booking.id))
+            .join(TeeTime, Booking.tee_time_id == TeeTime.id)
+            .filter(
+                Booking.club_id == club_id,
+                TeeTime.club_id == club_id,
+                TeeTime.tee_time >= year_start_dt,
+                TeeTime.tee_time < next_year_start_dt,
+                or_(Booking.price.is_(None), Booking.price <= 0),
+            )
+            .scalar()
+            or 0
+        )
+    except Exception:
+        _safe_rollback(db)
+        unresolved_pricing_count = 0
 
     def _stream_amounts_and_transactions(start_d: date, end_d: date) -> dict[str, dict[str, float | int]]:
         out: dict[str, dict[str, float | int]] = {}
@@ -2809,6 +2803,19 @@ async def get_dashboard_stats(
                 }
             )
 
+        if unresolved_pricing_count > 0:
+            alerts.append(
+                {
+                    "scope": "pricing_gap",
+                    "severity": "medium" if unresolved_pricing_count >= 25 else "low",
+                    "title": "Bookings with unresolved pricing",
+                    "detail": (
+                        f"{unresolved_pricing_count} booking(s) in the current dashboard year still have no resolved price."
+                    ),
+                    "context": "Dashboard is read-only and no longer repairs booking pricing in-request.",
+                }
+            )
+
         severity_penalty = {"high": 24, "medium": 12, "low": 5}
         health_score = 100
         for alert in alerts:
@@ -2828,6 +2835,8 @@ async def get_dashboard_stats(
             recommendations.append("Align booking statuses with posted payments before closeout.")
         if any(str(r.get("severity")) in {"high", "medium"} for r in alignment_rows):
             recommendations.append("Review prepayment timing so dashboard periods compare like-for-like.")
+        if unresolved_pricing_count > 0:
+            recommendations.append("Review unresolved booking pricing through explicit pricing/booking maintenance flows.")
         if not recommendations:
             recommendations.append("Revenue integrity checks are stable for the current data window.")
 
@@ -2844,6 +2853,7 @@ async def get_dashboard_stats(
                 "paid_without_attendance_amount": float(paid_without_attendance_amount),
                 "future_prepaid_count": future_paid_count,
                 "future_prepaid_amount": float(future_paid_amount),
+                "unresolved_pricing_count": unresolved_pricing_count,
             },
             "recommendations": recommendations,
         }
