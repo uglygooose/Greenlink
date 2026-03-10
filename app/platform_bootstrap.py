@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 
 from app.auth import get_password_hash
@@ -16,7 +16,9 @@ from app.models import (
     AccountingSetting,
     Club,
     ClubSetting,
+    ImportBatch,
     KpiTarget,
+    Member,
     PlatformState,
     SchemaVersion,
     User,
@@ -588,6 +590,123 @@ def _active_club_rows(db) -> list[dict[str, Any]]:
     return payload
 
 
+def _club_setup_readiness_rows(db) -> list[dict[str, Any]]:
+    from app.fee_models import FeeCategory
+
+    active_clubs = db.query(Club).filter(Club.active == 1).order_by(Club.name.asc(), Club.id.asc()).all()
+    if not active_clubs:
+        return []
+
+    booking_window_keys = {
+        "booking_window_member_days",
+        "booking_window_affiliated_days",
+        "booking_window_non_affiliated_days",
+    }
+    readiness_rows: list[dict[str, Any]] = []
+
+    for club in active_clubs:
+        club_id = int(getattr(club, "id", 0) or 0)
+        if club_id <= 0:
+            continue
+
+        admin_count = (
+            db.query(func.count(User.id))
+            .filter(User.club_id == club_id, User.role.in_([UserRole.admin, UserRole.club_staff]))
+            .scalar()
+            or 0
+        )
+        member_count = (
+            db.query(func.count(Member.id))
+            .filter(Member.club_id == club_id, Member.active == 1)
+            .scalar()
+            or 0
+        )
+        fee_count = (
+            db.query(func.count(FeeCategory.id))
+            .filter(
+                FeeCategory.active == 1,
+                or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)),
+            )
+            .scalar()
+            or 0
+        )
+        import_counts = {
+            "members": int(
+                db.query(func.count(ImportBatch.id))
+                .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "members")
+                .scalar()
+                or 0
+            ),
+            "bookings": int(
+                db.query(func.count(ImportBatch.id))
+                .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "bookings")
+                .scalar()
+                or 0
+            ),
+            "revenue": int(
+                db.query(func.count(ImportBatch.id))
+                .filter(ImportBatch.club_id == club_id, ImportBatch.kind == "revenue")
+                .scalar()
+                or 0
+            ),
+        }
+        setting_keys = {
+            str(row.key or "").strip()
+            for row in db.query(ClubSetting).filter(ClubSetting.club_id == club_id).all()
+        }
+        accounting = db.query(AccountingSetting).filter(AccountingSetting.club_id == club_id).first()
+        finance_ready = bool(
+            accounting
+            and str(getattr(accounting, "green_fees_gl", "") or "").strip()
+            and str(getattr(accounting, "cashbook_contra_gl", "") or "").strip()
+        )
+
+        checks = [
+            ("access", int(admin_count) > 0, "Assign club admin or staff access"),
+            ("members", int(member_count) > 0, "Import members or create core member records"),
+            ("pricing", int(fee_count) > 0, "Load fee categories / pricing rules"),
+            (
+                "operations",
+                bool("tee_sheet_profile" in setting_keys or (setting_keys & booking_window_keys)),
+                "Set booking window or tee-sheet profile",
+            ),
+            ("finance", finance_ready, "Complete finance export mappings"),
+        ]
+        complete_count = sum(1 for _name, ready, _hint in checks if ready)
+        missing = [hint for _name, ready, hint in checks if not ready]
+        if complete_count == len(checks):
+            status = "ready"
+        elif complete_count >= 3:
+            status = "needs_attention"
+        else:
+            status = "setup_required"
+
+        readiness_rows.append(
+            {
+                "club_id": club_id,
+                "club_name": str(getattr(club, "name", "") or "").strip() or f"Club {club_id}",
+                "club_slug": str(getattr(club, "slug", "") or "").strip() or None,
+                "status": status,
+                "score": round((complete_count / len(checks)) * 100),
+                "checks": {
+                    name: bool(ready)
+                    for name, ready, _hint in checks
+                },
+                "counts": {
+                    "admins_staff": int(admin_count),
+                    "members": int(member_count),
+                    "fees": int(fee_count),
+                    "member_imports": int(import_counts["members"]),
+                    "booking_imports": int(import_counts["bookings"]),
+                    "revenue_imports": int(import_counts["revenue"]),
+                },
+                "missing": missing[:3],
+            }
+        )
+
+    return readiness_rows
+
+
 def _status_from_diagnostics(errors: list[str], warnings: list[str]) -> str:
     if errors:
         return "failed"
@@ -598,6 +717,7 @@ def _status_from_diagnostics(errors: list[str], warnings: list[str]) -> str:
 
 def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     active_clubs = _active_club_rows(db)
+    setup_readiness = _club_setup_readiness_rows(db)
     runtime = runtime or {}
     bootstrap = runtime.get("platform") if isinstance(runtime, dict) else None
     schema = runtime.get("schema") if isinstance(runtime, dict) else None
@@ -617,6 +737,7 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
         "active_clubs": active_clubs,
         "active_club_count": len(active_clubs),
         "requires_club_selection": len(active_clubs) > 1,
+        "setup_readiness": setup_readiness,
         "schema": schema or {},
         "bootstrap": bootstrap or {},
     }

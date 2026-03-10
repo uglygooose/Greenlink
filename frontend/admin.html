@@ -20,7 +20,7 @@
             </div>
             <nav class="nav-menu">
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">General</summary>
+                    <summary class="nav-group-toggle">Club Overview</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard</a>
                         <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="all">People</a>
@@ -51,41 +51,20 @@
                 </details>
 
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Tennis</summary>
+                    <summary class="nav-group-toggle">Finance & Setup</summary>
                     <div class="nav-group-items">
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="tennis" data-operation-focus="overview">Dashboard</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="tennis">Members</a>
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="tennis" data-operation-focus="bookings">Court Bookings</a>
+                        <a href="#revenue" class="nav-item" data-page="revenue">Revenue & Reconciliation</a>
+                        <a href="#ledger" class="nav-item" data-page="ledger">Payment Audit</a>
+                        <a href="#cashbook" class="nav-item" data-page="cashbook">Export & Day Close</a>
+                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
+                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Setup</a>
                     </div>
                 </details>
 
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Bowls</summary>
+                <details class="nav-group" id="nav-platform-group" style="display:none">
+                    <summary class="nav-group-toggle">Platform</summary>
                     <div class="nav-group-items">
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="bowls" data-operation-focus="overview">Dashboard</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="bowls">Members</a>
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="bowls" data-operation-focus="bookings">Rinks / Draws</a>
-                    </div>
-                </details>
-
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Squash</summary>
-                    <div class="nav-group-items">
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="squash" data-operation-focus="overview">Dashboard</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="squash">Members</a>
-                        <a href="#operation-center" class="nav-item" data-page="operation-center" data-operation-context="squash" data-operation-focus="bookings">Court Bookings</a>
-                    </div>
-                </details>
-
-                <details class="nav-group">
-                    <summary class="nav-group-toggle">Finance / Admin</summary>
-                    <div class="nav-group-items">
-                        <a href="#revenue" class="nav-item" data-page="revenue">Reconciliation</a>
-                        <a href="#ledger" class="nav-item" data-page="ledger">Ledger</a>
-                        <a href="#cashbook" class="nav-item" data-page="cashbook">Cashbook</a>
-                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Debtors / Account Customers</a>
-                        <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Audit</a>
-                        <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Super Admin</a>
+                        <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Clubs & Access</a>
                     </div>
                 </details>
 
@@ -101,7 +80,7 @@
                 <div class="user-info">
                     <select id="quick-nav" class="club-switcher quick-nav" aria-label="Quick navigation">
                         <option value="">Quick Nav</option>
-                        <optgroup label="General">
+                        <optgroup label="Club Overview">
                             <option value="dashboard|all">Dashboard</option>
                             <option value="players|members|all">People</option>
                             <option value="players|staff|general">Staff</option>
@@ -115,32 +94,20 @@
                             <option value="bookings">Bookings</option>
                             <option value="golf-days-page">Golf Day Operations</option>
                         </optgroup>
-                        <optgroup label="Tennis">
-                            <option value="operation-center|tennis|overview">Dashboard</option>
-                            <option value="players|members|tennis">Members</option>
-                            <option value="operation-center|tennis|bookings">Court Bookings</option>
-                        </optgroup>
-                        <optgroup label="Bowls">
-                            <option value="operation-center|bowls|overview">Dashboard</option>
-                            <option value="players|members|bowls">Members</option>
-                            <option value="operation-center|bowls|bookings">Rinks / Draws</option>
-                        </optgroup>
-                        <optgroup label="Squash">
-                            <option value="operation-center|squash|overview">Dashboard</option>
-                            <option value="players|members|squash">Members</option>
-                            <option value="operation-center|squash|bookings">Court Bookings</option>
-                        </optgroup>
                         <optgroup label="Pro Shop">
                             <option value="dashboard|pro_shop">Dashboard</option>
                             <option value="pro-shop">Sales & Stock</option>
                             <option value="account-customers-page">Customers</option>
                         </optgroup>
-                        <optgroup label="Finance / Admin">
-                            <option value="revenue">Reconciliation</option>
-                            <option value="ledger">Ledger</option>
-                            <option value="cashbook">Cashbook</option>
-                            <option value="account-customers-page">Debtors / Account Customers</option>
-                            <option value="operations-config">Imports & Audit</option>
+                        <optgroup label="Finance & Setup">
+                            <option value="revenue">Revenue & Reconciliation</option>
+                            <option value="ledger">Payment Audit</option>
+                            <option value="cashbook">Export & Day Close</option>
+                            <option value="account-customers-page">Account Customers</option>
+                            <option value="operations-config">Imports & Setup</option>
+                        </optgroup>
+                        <optgroup label="Platform" id="quick-nav-platform-group" style="display:none">
+                            <option value="super-admin">Clubs & Access</option>
                         </optgroup>
                     </select>
                     <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
@@ -384,7 +351,7 @@
                 <section id="operations-config" class="page">
                     <div class="page-header">
                         <div class="filters">
-                            <label for="ops-import-stream">Operation</label>
+                            <label for="ops-import-stream">Revenue Stream</label>
                             <select id="ops-import-stream">
                                 <option value="golf" selected>Golf</option>
                                 <option value="pro_shop">Pro Shop</option>
@@ -393,14 +360,14 @@
                                 <option value="other">Other</option>
                             </select>
                             <button class="btn-secondary" id="ops-load-settings-btn" type="button">Reload Settings</button>
-                            <button class="btn-secondary" id="ops-open-revenue-btn" type="button">Open Revenue Analytics</button>
+                            <button class="btn-secondary" id="ops-open-revenue-btn" type="button">Open Reconciliation</button>
                             <button class="btn-secondary" id="ops-open-people-btn" type="button">Open People</button>
                         </div>
                     </div>
 
                     <div class="dashboard-card">
                         <h3>Revenue Import Profile</h3>
-                        <div class="acct-subtitle">Configure once per operation, then import daily/weekly CSVs without remapping fields each time.</div>
+                        <div class="acct-subtitle">Configure once per revenue stream, then reuse the mapping for clean operational reporting and reconciliation.</div>
                         <div class="accounting-grid" style="margin-top:12px;">
                             <label for="ops-date-field">Date column</label>
                             <input type="text" id="ops-date-field" placeholder="e.g. transaction_date" />
@@ -469,28 +436,28 @@
                     </div>
 
                     <div class="dashboard-card" style="margin-top: 16px;">
-                        <h3>Import Revenue CSV</h3>
+                        <h3>Import Revenue File</h3>
                         <div class="filters" style="flex-wrap: wrap; gap: 10px;">
-                            <span class="action-note" id="ops-import-stream-label">Selected operation: Golf</span>
+                            <span class="action-note" id="ops-import-stream-label">Selected stream: Golf</span>
                             <input type="file" id="ops-revenue-import-file" accept=".csv" />
                             <button class="btn-primary" id="ops-revenue-import-btn" type="button">Import</button>
                             <span class="action-note" id="ops-revenue-import-status"></span>
                         </div>
-                        <div class="action-note" id="ops-revenue-upload-flow-note">Select operation above, then import one CSV per operation for clean reconciliation.</div>
+                        <div class="action-note" id="ops-revenue-upload-flow-note">Select a stream above, then import one CSV per stream for clean reconciliation.</div>
                     </div>
 
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Import Workflow</h3>
                         <ol class="flow-steps">
-                            <li>Select operation and confirm the import profile fields above.</li>
-                            <li>Import the CSV in this page (one operation at a time).</li>
+                            <li>Select a revenue stream and confirm the import profile fields above.</li>
+                            <li>Import the CSV in this page (one stream at a time).</li>
                             <li>GreenLink reuses saved settings so daily/weekly imports map consistently.</li>
-                            <li>Review inserted/updated counts and validate totals in <code>Revenue Analytics</code>.</li>
+                            <li>Review inserted/updated counts and validate totals in <code>Revenue & Reconciliation</code>.</li>
                         </ol>
                     </div>
 
                     <div class="dashboard-card" style="margin-top: 16px;">
-                        <h3>Umhlali Launch Data Sync</h3>
+                        <h3>Launch Data Sync</h3>
                         <div class="acct-subtitle">Loads members, account customers, golf-day bookings, and staff role context from the Umhlali operating spreadsheets.</div>
                         <div class="filters" style="flex-wrap: wrap; gap: 10px; margin-top: 10px;">
                             <button class="btn-primary" id="ops-umhlali-sync-btn" type="button">Run Umhlali Sync</button>
@@ -790,14 +757,14 @@
                                 <option value="other_imported">Imported Non-Booking (All)</option>
                                 <option value="pro_shop">Pro Shop Imported</option>
                             </select>
-                            <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Imports & Audit</button>
+                            <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Imports & Setup</button>
                         </div>
                     </div>
 
                     <div class="dashboard-card revenue-upload-flow">
                         <h3>Revenue Data Flow</h3>
                         <ol class="flow-steps">
-                            <li>Use <code>Finance / Admin → Imports & Audit</code> to import non-booking revenue per operation.</li>
+                            <li>Use <code>Finance & Setup → Imports & Setup</code> to import non-booking revenue by stream.</li>
                             <li>Golf paid revenue is captured from bookings and ledger entries automatically.</li>
                             <li>Use this page to validate trends, collection rate, and stream mix.</li>
                         </ol>
@@ -1503,6 +1470,42 @@
                 <!-- Super Admin Page -->
                 <section id="super-admin" class="page">
                     <div class="page-header">
+                        <div>
+                            <p class="action-note">Platform scope only: clubs, access, onboarding, and setup readiness.</p>
+                        </div>
+                        <div class="filters">
+                            <button class="btn-secondary" type="button" onclick="navigateToAdminPage('operations-config')">Open Imports & Setup</button>
+                            <button class="btn-secondary" type="button" onclick="superRefreshPlatformReadiness()">Refresh Readiness</button>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card full-width">
+                        <h3>Club Setup Readiness</h3>
+                        <div class="cashbook-summary">
+                            <div class="summary-stat"><span>Active Clubs</span><strong id="super-readiness-clubs">0</strong></div>
+                            <div class="summary-stat"><span>Ready</span><strong id="super-readiness-ready">0</strong></div>
+                            <div class="summary-stat"><span>Needs Attention</span><strong id="super-readiness-attention">0</strong></div>
+                            <div class="summary-stat"><span>Setup Required</span><strong id="super-readiness-setup">0</strong></div>
+                        </div>
+                        <div class="action-note" id="super-readiness-note">Loading setup readiness...</div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Club</th>
+                                        <th>Status</th>
+                                        <th>Setup Score</th>
+                                        <th>Access</th>
+                                        <th>Members</th>
+                                        <th>Pricing</th>
+                                        <th>Operations</th>
+                                        <th>Finance Export</th>
+                                        <th>Next Focus</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="super-readiness-table"></tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div class="dashboard-card">
@@ -1548,7 +1551,7 @@
                     </div>
 
                     <div class="dashboard-card full-width">
-                        <h3>Existing Club Staff</h3>
+                        <h3>Club Admin / Staff Directory</h3>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
@@ -1557,7 +1560,7 @@
                                         <th>Name</th>
                                         <th>Email</th>
                                         <th>Role</th>
-                                        <th>Club ID</th>
+                                        <th>Club</th>
                                     </tr>
                                 </thead>
                                 <tbody id="super-staff-table"></tbody>

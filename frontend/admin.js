@@ -64,7 +64,7 @@ let proShopSalesWindowDays = 30;
 let accountCustomersCache = [];
 let accountCustomersPageRows = [];
 let golfDayBookingsPageRows = [];
-let currentOperationContext = "tennis";
+let currentOperationContext = "golf";
 let currentOperationFocus = "overview";
 let peopleLoadController = null;
 let peopleLoadRequestKey = "";
@@ -93,6 +93,36 @@ const PRIMARY_OPERATION_KEYS = Object.freeze(PRIMARY_OPERATIONS.map(op => op.key
 const DASHBOARD_STREAM_KEYS = Object.freeze(["all", ...PRIMARY_OPERATION_KEYS]);
 const REVENUE_FOCUS_KEYS = Object.freeze(["all", "golf_paid", "other_imported", "pro_shop"]);
 const DEFAULT_IMPORT_STREAM = "golf";
+const ROLE_PAGE_SCOPE = Object.freeze({
+    super_admin: ["super-admin", "operations-config"],
+    admin: [
+        "dashboard",
+        "bookings",
+        "players",
+        "account-customers-page",
+        "golf-days-page",
+        "pro-shop",
+        "revenue",
+        "tee-times",
+        "ledger",
+        "cashbook",
+        "operations-config",
+    ],
+    club_staff: [
+        "bookings",
+        "players",
+        "account-customers-page",
+        "golf-days-page",
+        "pro-shop",
+        "revenue",
+        "tee-times",
+        "ledger",
+        "cashbook",
+    ],
+});
+const PLACEHOLDER_OPERATION_PAGES = Object.freeze(["operation-center", "pub-ops", "bowls-ops", "other-ops"]);
+const PEOPLE_ROUTE_VIEWS = Object.freeze(["members", "staff", "guests", "account_contacts"]);
+const ADMIN_ROUTE_OPERATION_KEYS = Object.freeze(["all", "general", "golf", "tennis", "bowls", "squash", "pro_shop"]);
 let teeSheetProfile = null;
 let teeSheetTeeTimeMap = new Map();
 let teeSlotManageState = {
@@ -249,6 +279,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const role = await checkAuth();
     if (!role) return;
 
+    syncAdminNavHrefs();
     setupNavigation();
     setupGlobalQuickControls();
     setupDashboardStreamFilters();
@@ -260,6 +291,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     updateTime();
     setInterval(updateTime, 1000);
+    applyRoleScope(role);
     refreshNavGroupVisibility();
 
     // Operational pages (admin + club_staff)
@@ -276,16 +308,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadTeeProfileSettings({ silent: true });
     await loadAccountCustomersCache({ silent: true });
 
-    if (role === "admin" || role === "super_admin") {
+    window.addEventListener("hashchange", () => {
+        applyAdminRouteFromLocation();
+    });
+
+    if (role === "super_admin") {
+        setupRevenueImport();
+        await superRefreshPlatformReadiness();
+    } else if (role === "admin") {
         setupLedgerFilters();
         setupRevenueFilters();
         setupRevenueImport();
         loadBookingWindowSettings();
         startDashboardAutoRefresh();
-        loadDashboard();
     } else {
-        applyStaffMode(role);
+        await applyStaffMode(role);
+        return;
     }
+
+    applyAdminRouteFromLocation({ replaceHistory: true });
 });
 
 // Date formatting (DD/MM/YY across admin UI)
@@ -542,7 +583,286 @@ function refreshNavGroupVisibility() {
     });
 }
 
-function applyStaffMode(role) {
+function allowedPagesForRole(role) {
+    const key = String(role || "").trim().toLowerCase();
+    return new Set(ROLE_PAGE_SCOPE[key] || []);
+}
+
+function isPageAllowedForRole(page, role = currentUserRole) {
+    const target = String(page || "").trim();
+    if (!target) return false;
+    return allowedPagesForRole(role).has(target);
+}
+
+function hideEmptyQuickNavGroups() {
+    document.querySelectorAll("#quick-nav optgroup").forEach(group => {
+        const options = Array.from(group.querySelectorAll("option")).filter(option => String(option.value || "").trim());
+        group.style.display = options.length ? "" : "none";
+    });
+}
+
+function normalizePeopleRouteView(view) {
+    const value = String(view || "").trim().toLowerCase();
+    return PEOPLE_ROUTE_VIEWS.includes(value) ? value : "members";
+}
+
+function normalizeAdminRouteOperation(operation) {
+    const value = String(operation || "").trim().toLowerCase();
+    return ADMIN_ROUTE_OPERATION_KEYS.includes(value) ? value : "all";
+}
+
+function normalizeAdminRoute(pageName, routeOptions = {}) {
+    const page = String(pageName || "").trim();
+    const route = { page };
+    if (page === "dashboard") {
+        route.stream = normalizeDashboardStreamKey(routeOptions.stream || dashboardStreamPreset || dashboardStreamView || "all", "all");
+    } else if (page === "players") {
+        route.view = normalizePeopleRouteView(routeOptions.view || peopleView || "members");
+        route.operation = normalizeAdminRouteOperation(routeOptions.operation || peopleAreaFilter || "all");
+    } else if (page === "operation-center") {
+        route.context = normalizeAdminRouteOperation(routeOptions.context || currentOperationContext || "golf");
+        route.focus = String(routeOptions.focus || currentOperationFocus || "overview").trim().toLowerCase() || "overview";
+    }
+    return route;
+}
+
+function buildAdminRouteHash(pageName, routeOptions = {}) {
+    const route = normalizeAdminRoute(pageName, routeOptions);
+    if (!route.page) return "";
+    const params = new URLSearchParams();
+    if (route.page === "dashboard") {
+        params.set("stream", route.stream || "all");
+    } else if (route.page === "players") {
+        params.set("view", route.view || "members");
+        params.set("operation", route.operation || "all");
+    } else if (route.page === "operation-center") {
+        params.set("context", route.context || "golf");
+        params.set("focus", route.focus || "overview");
+    }
+    const query = params.toString();
+    return `#${route.page}${query ? `?${query}` : ""}`;
+}
+
+function parseAdminRouteHash(rawHash = window.location.hash) {
+    const hash = String(rawHash || "").trim();
+    if (!hash.startsWith("#") || hash.length <= 1) return null;
+    const payload = hash.slice(1);
+    const [rawPage, rawQuery = ""] = payload.split("?");
+    const page = decodeURIComponent(String(rawPage || "").trim());
+    if (!page) return null;
+    const params = new URLSearchParams(rawQuery);
+    return normalizeAdminRoute(page, {
+        stream: params.get("stream"),
+        view: params.get("view"),
+        operation: params.get("operation"),
+        context: params.get("context"),
+        focus: params.get("focus"),
+    });
+}
+
+function syncAdminNavHrefs() {
+    document.querySelectorAll(".nav-item[data-page]").forEach(item => {
+        const page = String(item.getAttribute("data-page") || "").trim();
+        if (!page) return;
+        item.setAttribute("href", buildAdminRouteHash(page, {
+            stream: item.dataset.dashboardStream,
+            view: item.dataset.peopleView,
+            operation: item.dataset.peopleOperation,
+            context: item.dataset.operationContext,
+            focus: item.dataset.operationFocus,
+        }));
+    });
+}
+
+function findNavItemForRoute(pageName, routeOptions = {}) {
+    const route = normalizeAdminRoute(pageName, routeOptions);
+    const candidates = Array.from(document.querySelectorAll(`.nav-item[data-page="${route.page}"]`));
+    if (!candidates.length) return null;
+    let best = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    candidates.forEach(item => {
+        if (!(item instanceof HTMLElement) || item.style.display === "none") return;
+        let score = 0;
+        if (route.page === "dashboard") {
+            const stream = normalizeDashboardStreamKey(item.dataset.dashboardStream || "all", "all");
+            score = stream === route.stream ? 20 : 0;
+        } else if (route.page === "players") {
+            const view = normalizePeopleRouteView(item.dataset.peopleView || "members");
+            const operation = normalizeAdminRouteOperation(item.dataset.peopleOperation || "all");
+            if (view === route.view) score += 20;
+            if (operation === route.operation) score += 10;
+        } else if (route.page === "operation-center") {
+            const context = normalizeAdminRouteOperation(item.dataset.operationContext || "golf");
+            const focus = String(item.dataset.operationFocus || "overview").trim().toLowerCase();
+            if (context === route.context) score += 20;
+            if (focus === route.focus) score += 10;
+        } else {
+            score = 10;
+        }
+        if (score > bestScore) {
+            best = item;
+            bestScore = score;
+        }
+    });
+    return best;
+}
+
+function setActiveNavItemForRoute(pageName, routeOptions = {}) {
+    document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
+    const navItem = findNavItemForRoute(pageName, routeOptions);
+    if (navItem instanceof HTMLElement) {
+        navItem.classList.add("active");
+    }
+}
+
+function fallbackPageForRole(role = currentUserRole) {
+    const normalizedRole = String(role || "").trim().toLowerCase();
+    if (normalizedRole === "super_admin") return "super-admin";
+    if (normalizedRole === "club_staff") return "tee-times";
+    return "dashboard";
+}
+
+function applyRoleScope(role) {
+    const normalizedRole = String(role || "").trim().toLowerCase();
+    const allowedPages = allowedPagesForRole(normalizedRole);
+    const platformGroup = document.getElementById("nav-platform-group");
+    const superNav = document.getElementById("nav-super-admin");
+    const quickNav = document.getElementById("quick-nav");
+    const clubSwitcher = document.getElementById("club-switcher");
+    const peopleBtnStaff = document.querySelector('#players .people-btn[data-view="staff"]');
+    const peopleBtnGuests = document.querySelector('#players .people-btn[data-view="guests"]');
+
+    if (platformGroup) {
+        platformGroup.style.display = normalizedRole === "super_admin" ? "" : "none";
+    }
+    if (superNav) {
+        superNav.style.display = normalizedRole === "super_admin" ? "" : "none";
+    }
+    if (clubSwitcher) {
+        clubSwitcher.style.display = normalizedRole === "super_admin" ? "inline-block" : "none";
+    }
+
+    document.querySelectorAll(".nav-item[data-page]").forEach(item => {
+        const page = String(item.getAttribute("data-page") || "").trim();
+        item.style.display = allowedPages.has(page) ? "" : "none";
+    });
+
+    document.querySelectorAll(".page").forEach(pageEl => {
+        const pageId = String(pageEl.id || "").trim();
+        pageEl.style.display = allowedPages.has(pageId) ? "" : "none";
+    });
+    PLACEHOLDER_OPERATION_PAGES.forEach(pageId => {
+        const pageEl = document.getElementById(pageId);
+        if (pageEl) pageEl.style.display = "none";
+    });
+
+    if (quickNav instanceof HTMLSelectElement) {
+        Array.from(quickNav.querySelectorAll("option")).forEach(option => {
+            const raw = String(option.value || "").trim();
+            if (!raw) return;
+            const page = raw.split("|")[0];
+            if (!allowedPages.has(page)) {
+                option.remove();
+            }
+        });
+        hideEmptyQuickNavGroups();
+    }
+
+    const opsOpenRevenueBtn = document.getElementById("ops-open-revenue-btn");
+    const opsOpenPeopleBtn = document.getElementById("ops-open-people-btn");
+    if (opsOpenRevenueBtn) {
+        opsOpenRevenueBtn.style.display = normalizedRole === "super_admin" ? "none" : "";
+    }
+    if (opsOpenPeopleBtn) {
+        opsOpenPeopleBtn.style.display = normalizedRole === "super_admin" ? "none" : "";
+    }
+
+    if (peopleBtnStaff) {
+        peopleBtnStaff.style.display = normalizedRole === "club_staff" ? "none" : "";
+    }
+    if (peopleBtnGuests) {
+        peopleBtnGuests.style.display = normalizedRole === "super_admin" ? "none" : "";
+    }
+
+    refreshNavGroupVisibility();
+}
+
+function resolveClubName(clubId) {
+    const targetId = String(clubId ?? "").trim();
+    if (!targetId) return "";
+    const platformClubs = Array.isArray(platformStateCache?.active_clubs) ? platformStateCache.active_clubs : [];
+    const row = superAdminClubsCache.find(club => String(club?.id) === targetId)
+        || platformClubs.find(club => String(club?.id) === targetId);
+    return String(row?.name || "").trim();
+}
+
+function readinessStatusLabel(status) {
+    const value = String(status || "").trim().toLowerCase();
+    if (value === "ready") return "Ready";
+    if (value === "needs_attention") return "Needs attention";
+    return "Setup required";
+}
+
+function readinessCheckCell(ready) {
+    return ready ? "Yes" : "No";
+}
+
+function renderSuperAdminReadiness(platform = platformStateCache) {
+    const totalEl = document.getElementById("super-readiness-clubs");
+    const readyEl = document.getElementById("super-readiness-ready");
+    const attentionEl = document.getElementById("super-readiness-attention");
+    const setupEl = document.getElementById("super-readiness-setup");
+    const noteEl = document.getElementById("super-readiness-note");
+    const tableEl = document.getElementById("super-readiness-table");
+    if (!tableEl) return;
+
+    const rows = Array.isArray(platform?.setup_readiness) ? platform.setup_readiness : [];
+    const total = rows.length;
+    const ready = rows.filter(row => String(row?.status || "") === "ready").length;
+    const attention = rows.filter(row => String(row?.status || "") === "needs_attention").length;
+    const setupRequired = rows.filter(row => String(row?.status || "") === "setup_required").length;
+
+    if (totalEl) totalEl.textContent = String(total);
+    if (readyEl) readyEl.textContent = String(ready);
+    if (attentionEl) attentionEl.textContent = String(attention);
+    if (setupEl) setupEl.textContent = String(setupRequired);
+
+    if (!rows.length) {
+        if (noteEl) noteEl.textContent = "No active clubs found yet. Create a club to start onboarding.";
+        tableEl.innerHTML = `<tr><td colspan="9">No club setup readiness data yet.</td></tr>`;
+        return;
+    }
+
+    const nextAttention = rows.find(row => String(row?.status || "") !== "ready");
+    if (noteEl) {
+        noteEl.textContent = nextAttention
+            ? `${resolveClubName(nextAttention.club_id) || nextAttention.club_slug || `Club ${nextAttention.club_id}`}: ${Array.isArray(nextAttention.missing) && nextAttention.missing.length ? nextAttention.missing.join(", ") : "review setup"}`
+            : "All active clubs meet the current setup baseline.";
+    }
+
+    tableEl.innerHTML = rows.map(row => {
+        const clubLabel = resolveClubName(row?.club_id) || String(row?.club_slug || `Club ${row?.club_id || ""}`).trim();
+        const missing = Array.isArray(row?.missing) && row.missing.length ? row.missing.join(", ") : "-";
+        return `<tr>
+            <td>${escapeHtml(clubLabel)}</td>
+            <td>${readinessStatusLabel(row?.status)}</td>
+            <td>${Math.max(0, Math.min(100, Number(row?.score || 0)))}%</td>
+            <td>${readinessCheckCell(Boolean(row?.checks?.access))}</td>
+            <td>${readinessCheckCell(Boolean(row?.checks?.members))}</td>
+            <td>${readinessCheckCell(Boolean(row?.checks?.pricing))}</td>
+            <td>${readinessCheckCell(Boolean(row?.checks?.operations))}</td>
+            <td>${readinessCheckCell(Boolean(row?.checks?.finance))}</td>
+            <td>${escapeHtml(missing)}</td>
+        </tr>`;
+    }).join("");
+}
+
+async function superRefreshPlatformReadiness() {
+    await loadPlatformStatus();
+    renderSuperAdminReadiness(platformStateCache);
+}
+
+async function applyStaffMode(role) {
     if (role !== "club_staff") return;
 
     // Limit sidebar to operational pages for pro shop staff.
@@ -556,7 +876,6 @@ function applyStaffMode(role) {
         "cashbook",
         "ledger",
         "revenue",
-        "operation-center",
     ]);
     document.querySelectorAll(".nav-item[data-page]").forEach(item => {
         const page = item.getAttribute("data-page");
@@ -570,18 +889,14 @@ function applyStaffMode(role) {
         el.style.display = "none";
     });
 
-    const goToDefaultPage = (pageName) => {
-        const fallback = allowed.has(pageName) ? pageName : "tee-times";
-        const nav = document.querySelector(`.nav-item[data-page="${fallback}"]`);
-        if (nav) {
-            document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
-            nav.classList.add("active");
+    const goToInitialPage = (pageName) => {
+        const route = parseAdminRouteHash(window.location.hash);
+        if (route && allowed.has(route.page) && !PLACEHOLDER_OPERATION_PAGES.includes(route.page)) {
+            navigateToAdminPage(route.page, route, { updateHistory: false });
+            return;
         }
-        showPage(fallback);
-        if (fallback === "bookings") loadBookings();
-        else if (fallback === "players") loadPlayers();
-        else if (fallback === "pro-shop") initProShopPage();
-        else loadTeeTimes();
+        const fallback = allowed.has(pageName) ? pageName : "tee-times";
+        navigateToAdminPage(fallback, {}, { updateHistory: true, replaceHistory: true });
     };
 
     // Hide admin-only import actions for staff (admin can still use them).
@@ -602,19 +917,18 @@ function applyStaffMode(role) {
     }
 
     const token = localStorage.getItem("token");
-    fetchJson(`${API_BASE}/api/admin/staff-role-context`, {
-        headers: { Authorization: `Bearer ${token}` },
-    })
-        .then((ctx) => {
-            const roleLabel = String(ctx?.role_label || "").trim();
-            if (roleLabel) {
-                setClubContextChip(`${roleLabel} workflow`);
-            }
-            goToDefaultPage(String(ctx?.default_page || "tee-times"));
-        })
-        .catch(() => {
-            goToDefaultPage("tee-times");
+    try {
+        const ctx = await fetchJson(`${API_BASE}/api/admin/staff-role-context`, {
+            headers: { Authorization: `Bearer ${token}` },
         });
+        const roleLabel = String(ctx?.role_label || "").trim();
+        if (roleLabel) {
+            setClubContextChip(`${roleLabel} workflow`);
+        }
+        goToInitialPage(String(ctx?.default_page || "tee-times"));
+    } catch {
+        goToInitialPage("tee-times");
+    }
 
     refreshNavGroupVisibility();
 }
@@ -698,10 +1012,10 @@ async function loadPlatformStatus() {
     let message = "";
     if (currentUserRole === "super_admin") {
         message = clubName
-            ? `Active club context: ${clubName}. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`
-            : `Super admin access is active. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`;
+            ? `Platform management scope is active. Current club context: ${clubName}. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`
+            : `Platform management scope is active. ${activeCount} active club${activeCount === 1 ? "" : "s"} on the platform.`;
         if (activeCount > 1) {
-            message += " Use the club selector to switch dashboards and operational scope.";
+            message += " Use the club selector to review onboarding and setup readiness by club.";
         }
     } else if (clubName) {
         message = `Operating inside ${clubName}. Bookings, tee sheet, people, and finance stay scoped to this club.`;
@@ -719,12 +1033,15 @@ async function loadPlatformStatus() {
     }
 
     setPlatformBanner(status, title, message);
+    if (currentUserRole === "super_admin") {
+        renderSuperAdminReadiness(platformStateCache);
+    }
 }
 
 async function initSuperAdminContext() {
     const nav = document.getElementById("nav-super-admin");
     if (nav) nav.style.display = "";
-    refreshNavGroupVisibility();
+    applyRoleScope(currentUserRole || "super_admin");
 
     const clubSwitcher = document.getElementById("club-switcher");
     const staffClub = document.getElementById("super-staff-club");
@@ -740,7 +1057,16 @@ async function initSuperAdminContext() {
 
     const activeClubs = superAdminClubsCache.filter(c => (c && (c.active === 1 || c.active === true)));
     if (!activeClubs.length) {
-        alert("No active clubs found. Create a club first.");
+        if (clubSwitcher) {
+            clubSwitcher.innerHTML = "";
+            clubSwitcher.style.display = "none";
+        }
+        if (staffClub) {
+            staffClub.innerHTML = '<option value="">Create a club first</option>';
+            staffClub.value = "";
+        }
+        setClubContextChip("Platform");
+        renderSuperAdminReadiness(platformStateCache);
         return;
     }
 
@@ -769,6 +1095,7 @@ async function initSuperAdminContext() {
         staffClub.innerHTML = optionHtml;
         staffClub.value = String(activeClubId);
     }
+    renderSuperAdminReadiness(platformStateCache);
 }
 
 async function superCreateClub() {
@@ -791,6 +1118,7 @@ async function superCreateClub() {
         if (status) status.textContent = "Club created";
         await initSuperAdminContext();
         await superRefreshStaff();
+        await superRefreshPlatformReadiness();
     } catch (e) {
         console.error("Create club failed:", e);
         if (status) status.textContent = e?.message || "Create club failed";
@@ -826,6 +1154,7 @@ async function superCreateStaff() {
         });
         if (status) status.textContent = "User created/updated";
         await superRefreshStaff();
+        await superRefreshPlatformReadiness();
     } catch (e) {
         console.error("Create staff failed:", e);
         if (status) status.textContent = e?.message || "Create user failed";
@@ -846,7 +1175,7 @@ async function superRefreshStaff() {
                 <td>${(u.name || "").replaceAll("<", "&lt;")}</td>
                 <td>${(u.email || "").replaceAll("<", "&lt;")}</td>
                 <td>${u.role}</td>
-                <td>${u.club_id ?? ""}</td>
+                <td>${escapeHtml(resolveClubName(u.club_id) || (u.club_id ?? ""))}</td>
             </tr>`
         )).join("");
     } catch (e) {
@@ -992,8 +1321,111 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
 }
 
 function setOperationCenterContext(operation, focus = "overview") {
-    currentOperationContext = String(operation || "tennis").toLowerCase();
+    currentOperationContext = String(operation || "golf").toLowerCase();
     currentOperationFocus = String(focus || "overview").toLowerCase();
+}
+
+function applyRoutePresets(pageName, routeOptions = {}) {
+    const route = normalizeAdminRoute(pageName, routeOptions);
+    if (route.page === "dashboard") {
+        const nextStream = normalizeDashboardStreamKey(route.stream || "all", "all");
+        dashboardMenuContext = nextStream === "all" ? "main" : "operation";
+        setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
+    } else if (route.page === "players") {
+        applyPeoplePreset({
+            view: route.view || peopleView,
+            operation: route.operation || peopleAreaFilter,
+            contextMode: (route.view || "members") === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(String(route.operation || "all").toLowerCase())
+                ? "operation"
+                : "general",
+        });
+    } else if (route.page === "operation-center") {
+        setOperationCenterContext(route.context || "golf", route.focus || "overview");
+    }
+    return route;
+}
+
+function loadAdminPageData(pageName) {
+    switch (pageName) {
+        case "dashboard":
+            loadDashboard();
+            break;
+        case "bookings":
+            loadBookings();
+            break;
+        case "players":
+            loadPlayers();
+            break;
+        case "account-customers-page":
+            loadAccountCustomersPage();
+            break;
+        case "golf-days-page":
+            loadGolfDayBookingsPage();
+            break;
+        case "operation-center":
+            loadOperationCenter();
+            break;
+        case "revenue":
+            loadRevenue();
+            break;
+        case "operations-config":
+            loadOpsImportSettings();
+            break;
+        case "pro-shop":
+            initProShopPage();
+            break;
+        case "tee-times":
+            loadTeeTimes();
+            break;
+        case "ledger":
+            loadLedger();
+            break;
+        case "cashbook":
+            initCashbook();
+            break;
+        case "super-admin":
+            initSuperAdminContext();
+            superRefreshStaff();
+            superRefreshPlatformReadiness();
+            break;
+        case "pub-ops":
+            loadOperationWorkbench("pub");
+            break;
+        case "bowls-ops":
+            loadOperationWorkbench("bowls");
+            break;
+        case "other-ops":
+            loadOperationWorkbench("other");
+            break;
+        default:
+            break;
+    }
+}
+
+function syncAdminRouteLocation(pageName, routeOptions = {}, { replace = false } = {}) {
+    const hash = buildAdminRouteHash(pageName, routeOptions);
+    if (!hash) return;
+    const nextUrl = `${window.location.pathname}${window.location.search}${hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl === currentUrl) return;
+    if (replace) {
+        window.history.replaceState(null, "", nextUrl);
+    } else {
+        window.history.pushState(null, "", nextUrl);
+    }
+}
+
+function applyAdminRouteFromLocation({ replaceHistory = false } = {}) {
+    const route = parseAdminRouteHash(window.location.hash);
+    if (!route || !route.page) {
+        navigateToAdminPage(fallbackPageForRole(), {}, { updateHistory: true, replaceHistory: true });
+        return;
+    }
+    if (!isPageAllowedForRole(route.page) || PLACEHOLDER_OPERATION_PAGES.includes(route.page)) {
+        navigateToAdminPage(fallbackPageForRole(), {}, { updateHistory: true, replaceHistory: true });
+        return;
+    }
+    navigateToAdminPage(route.page, route, { updateHistory: false, replaceHistory });
 }
 
 function setupNavigation() {
@@ -1012,84 +1444,14 @@ function setupNavigation() {
             const operationContext = String(item.dataset.operationContext || "").toLowerCase();
             const operationFocus = String(item.dataset.operationFocus || "overview").toLowerCase();
             if (!page) return;
-
-            if (page === "dashboard") {
-                const nextStream = normalizeDashboardStreamKey(streamPreset || "all", "all");
-                dashboardMenuContext = nextStream === "all" ? "main" : "operation";
-                setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
-            }
-            if (page === "players") {
-                applyPeoplePreset({
-                    view: peoplePresetView || peopleView,
-                    operation: peoplePresetOperation || peopleAreaFilter,
-                    contextMode: peoplePresetView === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(peoplePresetOperation)
-                        ? "operation"
-                        : "general",
-                });
-            }
-            if (page === "operation-center") {
-                setOperationCenterContext(operationContext || currentOperationContext, operationFocus || currentOperationFocus);
-            }
-
-            // Update active nav
-            document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
-            item.classList.add("active");
-
-            // Show page
-            showPage(page);
-
-            // Load page data
-            switch (page) {
-                case "dashboard":
-                    loadDashboard();
-                    break;
-                case "bookings":
-                    loadBookings();
-                    break;
-                case "players":
-                    loadPlayers();
-                    break;
-                case "account-customers-page":
-                    loadAccountCustomersPage();
-                    break;
-                case "golf-days-page":
-                    loadGolfDayBookingsPage();
-                    break;
-                case "operation-center":
-                    loadOperationCenter();
-                    break;
-                case "revenue":
-                    loadRevenue();
-                    break;
-                case "operations-config":
-                    loadOpsImportSettings();
-                    break;
-                case "pro-shop":
-                    initProShopPage();
-                    break;
-                case "tee-times":
-                    loadTeeTimes();
-                    break;
-                case "ledger":
-                    loadLedger();
-                    break;
-                case "cashbook":
-                    initCashbook();
-                    break;
-                case "super-admin":
-                    initSuperAdminContext();
-                    superRefreshStaff();
-                    break;
-                case "pub-ops":
-                    loadOperationWorkbench("pub");
-                    break;
-                case "bowls-ops":
-                    loadOperationWorkbench("bowls");
-                    break;
-                case "other-ops":
-                    loadOperationWorkbench("other");
-                    break;
-            }
+            if (!isPageAllowedForRole(page) || PLACEHOLDER_OPERATION_PAGES.includes(page)) return;
+            navigateToAdminPage(page, {
+                stream: streamPreset || "all",
+                view: peoplePresetView || peopleView,
+                operation: peoplePresetOperation || peopleAreaFilter,
+                context: operationContext || currentOperationContext,
+                focus: operationFocus || currentOperationFocus,
+            });
         });
     });
 }
@@ -1104,34 +1466,17 @@ function applyQuickNavigationValue(raw) {
     const value = String(raw || "").trim();
     if (!value) return false;
     const [pageName, arg1, arg2] = value.split("|");
+    if (!isPageAllowedForRole(pageName) || PLACEHOLDER_OPERATION_PAGES.includes(pageName)) return false;
     if (pageName === "dashboard") {
-        const nextStream = normalizeDashboardStreamKey(arg1 || "all", "all");
-        dashboardMenuContext = nextStream === "all" ? "main" : "operation";
-        setDashboardStreamViewState(nextStream, { persist: true, source: "sidebar" });
-        const nav = document.querySelector(`.nav-item[data-page="dashboard"][data-dashboard-stream="${nextStream}"]`) || document.querySelector('.nav-item[data-page="dashboard"]');
-        if (nav instanceof HTMLElement) {
-            nav.click();
-            return true;
-        }
-        showPage("dashboard");
-        loadDashboard();
+        navigateToAdminPage(pageName, { stream: arg1 || "all" });
         return true;
     }
     if (pageName === "players") {
-        const operation = arg2 || "all";
-        applyPeoplePreset({
-            view: arg1 || "members",
-            operation,
-            contextMode: (arg1 || "members") === "members" && ["golf", "tennis", "bowls", "squash", "pro_shop"].includes(String(operation).toLowerCase())
-                ? "operation"
-                : "general",
-        });
-        navigateToAdminPage(pageName);
+        navigateToAdminPage(pageName, { view: arg1 || "members", operation: arg2 || "all" });
         return true;
     }
     if (pageName === "operation-center") {
-        setOperationCenterContext(arg1 || "tennis", arg2 || "overview");
-        navigateToAdminPage(pageName);
+        navigateToAdminPage(pageName, { context: arg1 || "golf", focus: arg2 || "overview" });
         return true;
     }
     navigateToAdminPage(pageName);
@@ -1273,32 +1618,39 @@ function setupPageShortcuts() {
 }
 
 function showPage(pageName) {
+    const requestedPage = String(pageName || "").trim();
+    const nextPage = isPageAllowedForRole(requestedPage) && !PLACEHOLDER_OPERATION_PAGES.includes(requestedPage)
+        ? requestedPage
+        : fallbackPageForRole();
+    const pageEl = document.getElementById(nextPage);
+    if (!pageEl) return;
+
     document.querySelectorAll(".page").forEach(page => page.classList.remove("active"));
-    document.getElementById(pageName).classList.add("active");
-    currentActivePage = pageName;
+    pageEl.classList.add("active");
+    currentActivePage = nextPage;
 
     // Update title
     const titles = {
         dashboard: "Dashboard",
-        "operations-config": "Imports & Audit",
+        "operations-config": currentUserRole === "super_admin" ? "Onboarding & Imports" : "Imports & Setup",
         bookings: "Bookings",
         players: currentPeoplePageTitle(),
         "account-customers-page": "Account Customers",
         "golf-days-page": "Golf Day Bookings",
         "operation-center": `${operationLabel(currentOperationContext)} Dashboard`,
         "pro-shop": "Pro Shop Sales",
-        revenue: "Reconciliation",
+        revenue: "Revenue & Reconciliation",
         "tee-times": "Tee Sheet",
-        ledger: "Ledger",
-        cashbook: "Cashbook",
-        "super-admin": "Super Admin",
+        ledger: "Payment Audit",
+        cashbook: "Export & Day Close",
+        "super-admin": "Platform Admin",
         "pub-ops": "Pub Operations",
         "bowls-ops": "Bowls Operations",
         "other-ops": "Other Operations",
     };
-    document.getElementById("page-title").textContent = titles[pageName] || pageName;
+    document.getElementById("page-title").textContent = titles[nextPage] || nextPage;
 
-    if (pageName === "dashboard" && dashboardDataCache) {
+    if (nextPage === "dashboard" && dashboardDataCache) {
         applyDashboardEntryVisibility();
         applyDashboardStreamButtonState();
         applyDashboardPeriodButtonState();
@@ -1308,9 +1660,9 @@ function showPage(pageName) {
         }
     }
 
-    if (pageName === "pub-ops") loadOperationWorkbench("pub");
-    if (pageName === "bowls-ops") loadOperationWorkbench("bowls");
-    if (pageName === "other-ops") loadOperationWorkbench("other");
+    if (nextPage === "pub-ops") loadOperationWorkbench("pub");
+    if (nextPage === "bowls-ops") loadOperationWorkbench("bowls");
+    if (nextPage === "other-ops") loadOperationWorkbench("other");
 }
 
 function setupManagementPageControls() {
@@ -1328,68 +1680,18 @@ function setupManagementPageControls() {
     document.getElementById("operation-center-open-finance-btn")?.addEventListener("click", () => navigateToAdminPage("revenue"));
 }
 
-function navigateToAdminPage(pageName) {
-    const target = String(pageName || "").trim();
+function navigateToAdminPage(pageName, routeOptions = {}, navigationOptions = {}) {
+    const requested = String(pageName || "").trim();
+    const target = isPageAllowedForRole(requested) && !PLACEHOLDER_OPERATION_PAGES.includes(requested)
+        ? requested
+        : fallbackPageForRole();
     if (!target) return;
-    const navItem = document.querySelector(`.nav-item[data-page="${target}"]`);
-    if (navItem instanceof HTMLElement && target !== "players" && target !== "operation-center") {
-        navItem.click();
-        return;
-    }
-    if (navItem instanceof HTMLElement) {
-        document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
-        navItem.classList.add("active");
-    }
-
+    const route = applyRoutePresets(target, routeOptions);
+    setActiveNavItemForRoute(target, route);
     showPage(target);
-    switch (target) {
-        case "dashboard":
-            loadDashboard();
-            break;
-        case "bookings":
-            loadBookings();
-            break;
-        case "players":
-            loadPlayers();
-            break;
-        case "account-customers-page":
-            loadAccountCustomersPage();
-            break;
-        case "golf-days-page":
-            loadGolfDayBookingsPage();
-            break;
-        case "operation-center":
-            loadOperationCenter();
-            break;
-        case "revenue":
-            loadRevenue();
-            break;
-        case "operations-config":
-            loadOpsImportSettings();
-            break;
-        case "pro-shop":
-            initProShopPage();
-            break;
-        case "tee-times":
-            loadTeeTimes();
-            break;
-        case "ledger":
-            loadLedger();
-            break;
-        case "cashbook":
-            initCashbook();
-            break;
-        case "pub-ops":
-            loadOperationWorkbench("pub");
-            break;
-        case "bowls-ops":
-            loadOperationWorkbench("bowls");
-            break;
-        case "other-ops":
-            loadOperationWorkbench("other");
-            break;
-        default:
-            break;
+    loadAdminPageData(target);
+    if (navigationOptions.updateHistory !== false) {
+        syncAdminRouteLocation(target, route, { replace: navigationOptions.replaceHistory === true });
     }
 }
 
