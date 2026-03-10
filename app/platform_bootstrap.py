@@ -957,10 +957,15 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
     status = str((bootstrap or {}).get("status") or runtime.get("status") or "ready")
     warnings = list((bootstrap or {}).get("warnings") or runtime.get("warnings") or [])
     errors = list((bootstrap or {}).get("errors") or runtime.get("errors") or [])
-    if warnings and _umhlali_gl_reference_resolved(db):
-        warnings = [msg for msg in warnings if str(msg or "").strip() != UMHLALI_GL_REFERENCE_MISSING_WARNING]
-        if status == "needs_attention":
-            status = _status_from_diagnostics(errors, warnings)
+    if warnings:
+        try:
+            if _umhlali_gl_reference_resolved(db):
+                warnings = [msg for msg in warnings if str(msg or "").strip() != UMHLALI_GL_REFERENCE_MISSING_WARNING]
+                if status == "needs_attention":
+                    status = _status_from_diagnostics(errors, warnings)
+        except Exception:
+            # Keep platform-state non-fatal if the warning-cleanup probe fails.
+            pass
     umhlali_present = db.query(Club.id).filter(func.lower(Club.slug) == _canonical_umhlali_slug()).first() is not None
 
     return {
