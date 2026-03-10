@@ -4038,7 +4038,7 @@ async def batch_update_bookings(
     payload: BookingBatchUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    staff: User = Depends(verify_staff),
+    admin: User = Depends(verify_admin),
 ):
     booking_ids = normalize_booking_ids(payload.booking_ids if isinstance(payload.booking_ids, list) else [])
 
@@ -4093,7 +4093,7 @@ async def batch_update_bookings(
         if booking.tee_time and booking.tee_time.tee_time:
             assert_day_open(db, booking.tee_time.tee_time.date())
         if requested_status == BookingStatus.cancelled:
-            _enforce_group_cancel_window(db, booking, staff)
+            _enforce_group_cancel_window(db, booking, admin)
 
     updated_ids: list[int] = []
     ledger_updated = 0
@@ -4129,7 +4129,7 @@ async def batch_update_bookings(
     _audit_event(
         db,
         request,
-        staff,
+        admin,
         action="booking.batch_updated",
         entity_type="booking",
         payload={

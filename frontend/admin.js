@@ -6,7 +6,7 @@ let currentUserProfile = null;
 let currentPage = 1;
 let currentPlayersPage = 1;
 let currentLedgerPage = 1;
-let peopleView = "members"; // members | guests | staff | account_contacts
+let peopleView = "members"; // members | guests | staff
 let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
@@ -136,11 +136,17 @@ const PEOPLE_ROUTE_VIEWS = Object.freeze(["members", "staff", "guests", "account
 const ADMIN_ROUTE_OPERATION_KEYS = Object.freeze(["all", "general", "golf", "tennis", "bowls", "squash", "pro_shop"]);
 let teeSheetProfile = null;
 let teeSheetTeeTimeMap = new Map();
+let teeSheetBulkSelectedBookingIds = new Set();
+let teeSheetBulkSelectionScopeKey = "";
 let teeSlotManageState = {
+    mode: "slot",
     teeTimeId: null,
     teeTimeIso: null,
     teeLabel: "1",
     bookings: [],
+    heading: "Manage Tee Slot",
+    intro: "Process multiple players in one step (status, payment method, and debtor account).",
+    refreshLabel: "Refresh Slot",
 };
 let weatherReconfirmRows = [];
 let teeWeatherRiskMap = new Map();
@@ -310,6 +316,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupTeeManageMenu();
     setupTeeBookingModal();
     setupTeeSlotManageModal();
+    setupTeeSheetBulkActions();
     setupPeopleFilters();
     setupManagementPageControls();
     setupPageShortcuts();
@@ -641,6 +648,9 @@ function normalizeAdminRoute(pageName, routeOptions = {}) {
         route.integrity = normalizeBookingIntegrityFilter(routeOptions.integrity || bookingIntegrityFilter || "all");
     } else if (page === "players") {
         route.view = normalizePeopleRouteView(routeOptions.view || peopleView || "members");
+        if (route.view === "account_contacts") {
+            return { page: "account-customers-page" };
+        }
         route.operation = normalizeAdminRouteOperation(routeOptions.operation || peopleAreaFilter || "all");
     }
     return route;
@@ -854,6 +864,7 @@ function applyRoleScope(role) {
     }
 
     refreshNavGroupVisibility();
+    updateTeeSheetBulkSelectionSummary();
 }
 
 function resolveClubName(clubId) {
@@ -1000,6 +1011,7 @@ async function applyStaffMode(role) {
     }
 
     refreshNavGroupVisibility();
+    updateTeeSheetBulkSelectionSummary();
 }
 
 function setClubContextChip(text) {
@@ -1280,7 +1292,6 @@ function toggleFilterControl(control, visible) {
 function currentPeoplePageTitle() {
     if (peopleView === "guests") return "Guests";
     if (peopleView === "staff") return "Staff";
-    if (peopleView === "account_contacts") return "Account Contacts";
     if (isOperationalPeopleContext()) return `${operationLabel(peopleAreaFilter)} Members`;
     return "People";
 }
@@ -1290,9 +1301,8 @@ function currentPeoplePageSubtitle() {
         return `${operationLabel(peopleAreaFilter)} members only.`;
     }
     if (peopleView === "staff") return "Shared staff directory.";
-    if (peopleView === "account_contacts") return "Debtor and billing contacts.";
     if (peopleView === "guests") return "Guest activity and contact history.";
-    return "Members, staff, guests, and account contacts.";
+    return "Members, staff, and guests. Billing and debtor contacts live under Account Customers.";
 }
 
 function syncPeoplePageChrome() {
@@ -1356,7 +1366,7 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
         toggleFilterControl(statusFilter, peopleView !== "guests");
     }
     if (quickFilterSelect instanceof HTMLSelectElement) {
-        toggleFilterControl(quickFilterSelect, !operationalContext && peopleView !== "guests" && peopleView !== "staff" && peopleView !== "account_contacts");
+        toggleFilterControl(quickFilterSelect, !operationalContext && peopleView !== "guests" && peopleView !== "staff");
     }
     const sortSelect = document.getElementById("people-sort");
     if (sortSelect instanceof HTMLSelectElement) {
@@ -1378,9 +1388,6 @@ function applyPeoplePreset({ view = null, operation = null, quickFilter = null, 
             addBtn.style.display = "";
         } else if (peopleView === "staff") {
             addBtn.textContent = "Add Staff";
-            addBtn.style.display = "";
-        } else if (peopleView === "account_contacts") {
-            addBtn.textContent = "Open Account Customers";
             addBtn.style.display = "";
         } else {
             addBtn.style.display = "none";
@@ -1679,7 +1686,7 @@ function showPage(pageName) {
 
     // Update title
     const titles = {
-        dashboard: "Dashboard",
+        dashboard: "Club Overview",
         "operations-config": currentUserRole === "super_admin" ? "Onboarding & Imports" : "Imports & Setup",
         bookings: "Bookings",
         players: currentPeoplePageTitle(),
@@ -2084,24 +2091,79 @@ function resolveDashboardTargetBenchmark(data, periodKey) {
     };
 }
 
-function buildAllOperationsMixHighlights(data, periodKey, periodLabel) {
-    const rows = primaryOperationRows().map(entry => {
-        const period = data?.revenue_streams?.[entry.key]?.periods?.[periodKey];
-        const revenue = safeNumber(period?.revenue);
-        const transactions = safeNumber(period?.transactions);
-        return {
-            ...entry,
-            revenue,
-            transactions,
-        };
-    });
-    const totalRevenue = rows.reduce((sum, row) => sum + safeNumber(row.revenue), 0);
-    return rows.map(row => ({
-        name: `${row.label} Revenue Mix (${periodLabel})`,
-        current: totalRevenue > 0 ? (safeNumber(row.revenue) / totalRevenue) : 0,
-        format: "percent",
-        context: `${formatInteger(row.transactions)} transactions | ${formatCurrencyZAR(row.revenue)}`,
-    }));
+function resolveRevenueIntegrityMetrics(data) {
+    const revenue = (data && typeof data === "object" && data.ai_assistant && typeof data.ai_assistant.revenue_integrity === "object")
+        ? data.ai_assistant.revenue_integrity
+        : {};
+    const metrics = (revenue && typeof revenue.metrics === "object") ? revenue.metrics : {};
+    return {
+        healthScore: safeNumber(revenue?.health_score),
+        unpaidAttendedCount: safeNumber(metrics?.unpaid_attended_count),
+        paidWithoutAttendanceCount: safeNumber(metrics?.paid_without_attendance_count),
+        unresolvedPricingCount: safeNumber(metrics?.unresolved_pricing_count),
+    };
+}
+
+function buildClubOverviewHighlights(data, periodMeta) {
+    const golfPeriod = resolveDashboardSelectedPeriod(resolveDashboardStreamMetrics(data, "golf"), periodMeta.key);
+    const proShopPeriod = resolveDashboardSelectedPeriod(resolveDashboardStreamMetrics(data, "pro_shop"), periodMeta.key);
+    const bookingCounts = resolveBookingStatusCounts(data, periodMeta.key);
+    const paidStatusBookings = safeNumber(bookingCounts.checked_in) + safeNumber(bookingCounts.completed);
+    const golfOccupancy = insightCardValue(data, "golf", "occupancy");
+    const integrity = resolveRevenueIntegrityMetrics(data);
+    const financeIssues = integrity.unpaidAttendedCount + integrity.paidWithoutAttendanceCount + integrity.unresolvedPricingCount;
+    const memberFreshness = Number(data?.ai_assistant?.import_copilot?.freshness?.members?.days_since);
+    const proShopInventory = data?.operation_insights?.pro_shop?.inventory || {};
+    const rows = [
+        {
+            name: "Golf",
+            current: safeNumber(golfPeriod.revenue),
+            format: "currency",
+            context: `${periodMeta.label} cash ${formatCurrencyZAR(golfPeriod.revenue)} | ${formatInteger(paidStatusBookings)} paid-status bookings | ${golfOccupancy == null ? "occupancy baseline unavailable" : `today occupancy ${formatPct(golfOccupancy)}`}`,
+        },
+        {
+            name: "Members",
+            current: safeNumber(data?.total_members ?? data?.total_players),
+            format: "number",
+            context: Number.isFinite(memberFreshness)
+                ? `Member directory live | last member import ${formatInteger(memberFreshness)} day(s) ago`
+                : "Member directory live | import freshness not captured yet",
+        },
+        {
+            name: "Finance / Reconciliation",
+            current: financeIssues,
+            format: "number",
+            context: `Health ${formatInteger(integrity.healthScore)}/100 | ${formatInteger(integrity.unpaidAttendedCount)} unpaid attended | ${formatInteger(safeNumber(data?.account_customers_active))} active account customers`,
+        },
+    ];
+
+    if (
+        safeNumber(proShopInventory?.active_products) > 0
+        || safeNumber(proShopPeriod.revenue) > 0
+        || safeNumber(proShopPeriod.transactions) > 0
+    ) {
+        rows.push({
+            name: "Pro Shop",
+            current: safeNumber(proShopPeriod.revenue),
+            format: "currency",
+            context: `${periodMeta.label} sales ${formatCurrencyZAR(proShopPeriod.revenue)} | ${formatInteger(proShopInventory?.low_stock_items)} low-stock | stock value ${formatCurrencyZAR(proShopInventory?.stock_value)}`,
+        });
+    }
+
+    if (
+        safeNumber(data?.golf_day_open_count) > 0
+        || safeNumber(data?.golf_day_outstanding_balance) > 0
+        || safeNumber(data?.golf_day_pipeline_total) > 0
+    ) {
+        rows.push({
+            name: "Golf Days / Events",
+            current: safeNumber(data?.golf_day_open_count),
+            format: "number",
+            context: `${formatInteger(data?.golf_day_open_count)} open | ${formatCurrencyZAR(data?.golf_day_outstanding_balance)} outstanding | pipeline ${formatCurrencyZAR(data?.golf_day_pipeline_total)}`,
+        });
+    }
+
+    return rows;
 }
 
 function renderDashboardHighlights(data, streamKey, selectedPeriod) {
@@ -2122,16 +2184,16 @@ function renderDashboardHighlights(data, streamKey, selectedPeriod) {
     const stream = String(streamKey || "all").toLowerCase();
     const isAllStream = stream === "all";
 
-    titleEl.textContent = `${label} Highlights (${periodMeta.label})`;
+    titleEl.textContent = isAllStream ? "Operational Breakdown by Area" : `${label} Highlights (${periodMeta.label})`;
     noteEl.textContent = isAllStream
-        ? `Revenue mix by operation for the selected ${periodMeta.label.toLowerCase()} window.`
+        ? `Club-admin view across live golf, members, finance, pro shop, and golf-day signals for the selected ${periodMeta.label.toLowerCase()} window.`
         : (row?.note ? String(row.note) : "No additional highlights available yet.");
-    if (metricColEl) metricColEl.textContent = "Metric";
-    if (currentColEl) currentColEl.textContent = isAllStream ? `${periodMeta.label} Current` : "Current";
-    if (contextColEl) contextColEl.textContent = "Context";
+    if (metricColEl) metricColEl.textContent = isAllStream ? "Area" : "Metric";
+    if (currentColEl) currentColEl.textContent = isAllStream ? "Current State" : "Current";
+    if (contextColEl) contextColEl.textContent = isAllStream ? "Action / Context" : "Context";
 
     const highlights = isAllStream
-        ? buildAllOperationsMixHighlights(data, periodMeta.key, periodMeta.label)
+        ? buildClubOverviewHighlights(data, periodMeta)
         : (Array.isArray(row?.highlights) ? row.highlights : []);
     if (!highlights.length) {
         body.innerHTML = `
@@ -2181,6 +2243,8 @@ function buildDashboardOperationCards(data, streamKey, selectedPeriod) {
     const targetRevenueAttainment = benchmark.revenue_attainment;
     const targetRoundsAttainment = benchmark.rounds_attainment;
     const targetContribution = benchmark.revenue_target > 0 ? (revenue / benchmark.revenue_target) : null;
+    const integrity = resolveRevenueIntegrityMetrics(data);
+    const financeIssues = integrity.unpaidAttendedCount + integrity.paidWithoutAttendanceCount + integrity.unresolvedPricingCount;
 
     if (stream === "golf") {
         return [
@@ -2228,10 +2292,10 @@ function buildDashboardOperationCards(data, streamKey, selectedPeriod) {
     }
 
     return [
-        { label: `${periodLabel} Revenue`, value: revenue, format: "currency" },
-        { label: `${periodLabel} Transactions`, value: transactions, format: "number" },
-        { label: `${periodLabel} Revenue Target`, value: targetRevenueAttainment, format: "percent" },
-        { label: `${periodLabel} Rounds Target`, value: targetRoundsAttainment, format: "percent" },
+        { label: "Today's Bookings", value: safeNumber(data?.today_bookings), format: "number" },
+        { label: "Total Members", value: safeNumber(data?.total_members ?? data?.total_players), format: "number" },
+        { label: `${periodLabel} Cash Activity`, value: revenue, format: "currency" },
+        { label: "Finance Exceptions", value: financeIssues, format: "number" },
     ];
 }
 
@@ -2319,6 +2383,7 @@ function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
         ? data.operation_insights
         : {};
     const streamInsight = (insights && typeof insights[stream] === "object") ? insights[stream] : {};
+    const integrity = resolveRevenueIntegrityMetrics(data);
 
     if (stream === "golf") {
         const counts = resolveBookingStatusCounts(data, periodMeta.key);
@@ -2341,20 +2406,21 @@ function renderDashboardSecondaryCard(data, streamKey, selectedPeriod) {
     let note = `${periodLabel} operational metrics for this stream.`;
 
     if (stream === "all") {
-        title = `${periodLabel} Operations Mix`;
-        note = "Revenue mix by operation for the selected performance window.";
-        const amounts = primaryOperationRows().map(entry => ({
-            ...entry,
-            amount: safeNumber(data?.revenue_streams?.[entry.key]?.periods?.[periodMeta.key]?.revenue),
-        }));
-        const total = amounts.reduce((sum, entry) => sum + safeNumber(entry.amount), 0);
-        for (const entry of amounts) {
-            const share = total > 0 ? (safeNumber(entry.amount) / total) : 0;
-            rows.push({
-                label: entry.label,
-                value: `${formatCurrencyZAR(entry.amount)} (${formatPct(share)})`,
-            });
-        }
+        const noShow = data?.ai_assistant?.no_show || {};
+        const importSummary = data?.ai_assistant?.import_copilot?.summary || {};
+        const financeIssues = integrity.unpaidAttendedCount + integrity.paidWithoutAttendanceCount + integrity.unresolvedPricingCount;
+        title = "Action Snapshot";
+        note = "Club-admin focus across finance integrity, no-show risk, golf-day exposure, and import readiness.";
+        rows.push(
+            { label: "Finance Gaps", value: formatInteger(financeIssues) },
+            { label: "Revenue Integrity", value: `${formatInteger(integrity.healthScore)}/100` },
+            { label: "No-show Risk (72h)", value: formatInteger(noShow?.high_risk_next_72h) },
+            { label: "Open Golf Days", value: `${formatInteger(data?.golf_day_open_count)} open | ${formatCurrencyZAR(data?.golf_day_outstanding_balance)} outstanding` },
+            {
+                label: "Import Readiness",
+                value: `${formatInteger(importSummary?.configured_streams)}/${formatInteger(importSummary?.total_streams)} streams configured`,
+            },
+        );
     } else if (stream === "pro_shop") {
         title = "Inventory & POS Health";
         note = "Pro shop operations should balance sales throughput with stock risk.";
@@ -2438,7 +2504,7 @@ function applyDashboardStreamView(data) {
         const fromSidebarPreset = dashboardStreamPreset !== "custom" && dashboardStreamPreset !== "all" && dashboardStreamPreset === selected.key;
         const trendText = formatTrendDelta(selectedPeriod.vs_prior, selectedPeriod.singular);
         if (selected.key === "all") {
-            noteEl.textContent = `Showing combined operations view on ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
+            noteEl.textContent = `Club Overview combines golf, members, finance, pro shop, and golf-day signals on the ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
         } else if (fromSidebarPreset) {
             noteEl.textContent = `Loaded ${label} dashboard preset on ${selectedPeriod.label.toLowerCase()} window. ${trendText}.`;
         } else if (selected.key === "golf") {
@@ -2455,15 +2521,10 @@ function applyDashboardStreamView(data) {
     renderAiAssistant(data, selected.key, selectedPeriod);
     renderDashboardHighlights(data, selected.key, selectedPeriod);
 
-    const freshnessCard = document.getElementById("dashboard-freshness-card");
-    if (freshnessCard) {
-        freshnessCard.style.display = selected.key === "all" ? "" : "none";
-    }
-
     if (currentActivePage === "dashboard") {
         const titleEl = document.getElementById("page-title");
         if (titleEl) {
-            titleEl.textContent = selected.key === "all" ? "Dashboard" : `${label} Dashboard`;
+            titleEl.textContent = selected.key === "all" ? "Club Overview" : `${label} Dashboard`;
         }
     }
 }
@@ -2895,28 +2956,12 @@ async function loadOperationalAlerts(options = {}) {
 }
 
 function applyDashboardPayload(data, options = {}) {
-    const isCached = Boolean(options?.cached);
-    const cachedAt = options?.cachedAt ? formatDateTimeDMY(options.cachedAt) : null;
-
     document.getElementById("total-bookings").textContent = formatInteger(data.total_bookings);
     document.getElementById("total-members").textContent = formatInteger(data.total_members ?? data.total_players);
     document.getElementById("completed-rounds").textContent = formatInteger(data.completed_rounds);
     document.getElementById("today-bookings").textContent = formatInteger(data.today_bookings);
     dashboardDataCache = data;
     applyDashboardStreamView(data);
-
-    // Import freshness (parallel mirror run)
-    const lastBookingsEl = document.getElementById("last-bookings-import");
-    const lastRevenueEl = document.getElementById("last-revenue-import");
-    const hintEl = document.getElementById("import-log-hint");
-    const lastBookings = data?.imports?.bookings || null;
-    const lastRevenue = data?.imports?.revenue || null;
-    if (lastBookingsEl) lastBookingsEl.textContent = lastBookings ? formatDateTimeDMY(lastBookings) : "—";
-    if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
-    if (hintEl) {
-        const cacheSuffix = isCached && cachedAt ? ` Showing cached dashboard from ${cachedAt}.` : "";
-        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, Finance & Setup > Imports & Setup for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
-    }
 
     renderTargetsTable(data.targets);
     renderDashboardTargetContext(data.targets);
@@ -3030,81 +3075,6 @@ function renderDashboardTargetContext(targets) {
         `Mix: ${Number.isFinite(memberRoundShare) ? formatNumber(memberRoundShare * 100, 0, 2) : "—"}% member rounds, ` +
         `${Number.isFinite(memberRevenueShare) ? formatNumber(memberRevenueShare * 100, 0, 2) : "—"}% member revenue, ` +
         `member 18-hole fee ${Number.isFinite(memberFee) ? formatCurrencyZAR(memberFee) : "—"}.`;
-}
-
-async function loadRevenueChart() {
-    const token = localStorage.getItem("token");
-
-    try {
-        const data = await fetchJson(`${API_BASE}/api/admin/revenue?days=30`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
-        const dailyRequired = data?.daily_revenue_required;
-        const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
-        const targetContext = data?.target_context || {};
-        const annualRevenueTarget = targetContext?.revenue_target;
-        const chartNoteEl = document.getElementById("dashboard-revenue-chart-note");
-
-        const ctx = document.getElementById("revenueChart");
-        if (window.revenueChartInstance && typeof window.revenueChartInstance.destroy === "function") {
-            window.revenueChartInstance.destroy();
-        }
-
-        const targetDataset = dailyRequiredValue == null ? null : {
-            label: `Target Run-Rate (${formatTargetSourceLabel(targetContext?.revenue_source)})`,
-            data: series.labels.map(() => dailyRequiredValue),
-            borderColor: "#e53935",
-            backgroundColor: "rgba(229, 57, 53, 0.08)",
-            borderDash: [6, 6],
-            pointRadius: 0,
-            tension: 0
-        };
-
-        window.revenueChartInstance = new Chart(ctx, {
-            type: "line",
-            data: {
-                labels: series.labels.map(d => formatYMDToDMY(d)),
-                datasets: [
-                    {
-                        label: "Booked Revenue (R)",
-                        data: series.booked,
-                        borderColor: "#064f32",
-                        backgroundColor: "rgba(6, 79, 50, 0.1)",
-                        tension: 0.4
-                    },
-                    {
-                        label: "Paid Revenue (R)",
-                        data: series.paid,
-                        borderColor: "#1e88e5",
-                        backgroundColor: "rgba(30, 136, 229, 0.1)",
-                        tension: 0.4
-                    },
-                    ...(targetDataset ? [targetDataset] : [])
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: { display: true }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { callback: val => "R" + formatNumber(val, 0, 0) }
-                    }
-                }
-            }
-        });
-        if (chartNoteEl) {
-            chartNoteEl.textContent = annualRevenueTarget == null
-                ? "No annual revenue target is active for the trend chart yet."
-                : `Target line uses ${formatCurrencyZAR(dailyRequiredValue)} per day from the active annual revenue target of ${formatCurrencyZAR(annualRevenueTarget)} (${formatTargetSourceLabel(targetContext?.revenue_source)}).`;
-        }
-    } catch (error) {
-        console.error("Failed to load revenue chart:", error);
-    }
 }
 
 // Bookings
@@ -3707,7 +3677,7 @@ function setupPeopleFilters() {
 
     const applyPeopleSortOptions = () => {
         if (!(sortSelect instanceof HTMLSelectElement)) return;
-        const optionsForView = (peopleView === "staff" || peopleView === "account_contacts")
+        const optionsForView = (peopleView === "staff")
             ? [
                 { value: "name_asc", label: "Name A-Z" },
                 { value: "name_desc", label: "Name Z-A" },
@@ -3828,8 +3798,6 @@ function setupPeopleFilters() {
             openMemberEditModal(null);
         } else if (peopleView === "staff") {
             openStaffEditModal(null);
-        } else if (peopleView === "account_contacts") {
-            navigateToAdminPage("account-customers-page");
         }
     });
 
@@ -3915,8 +3883,6 @@ async function loadPlayers() {
             }
         } else if (peopleView === "staff") {
             url = `${API_BASE}/api/admin/staff?skip=0&limit=250`;
-        } else if (peopleView === "account_contacts") {
-            url = `${API_BASE}/api/admin/account-customers`;
         }
         const joiner = url.includes("?") ? "&" : "?";
         if (search) url += `${joiner}q=${encodeURIComponent(search)}`;
@@ -4073,60 +4039,6 @@ async function loadPlayers() {
                 `;
             }
             renderPagination("players-pagination", currentPlayersPage, Math.ceil(staff.length / 10) || 1, (page) => {
-                currentPlayersPage = page;
-                loadPlayers();
-            });
-            return;
-        } else if (peopleView === "account_contacts") {
-            let contacts = Array.isArray(data.account_customers) ? data.account_customers : [];
-            if (peopleAreaFilter && peopleAreaFilter !== "all") {
-                contacts = contacts.filter((row) => {
-                    const op = String(row.operation_area || "").toLowerCase();
-                    if (peopleAreaFilter === "general") return !op || op.includes("general") || op.includes("debtor");
-                    return op.includes(peopleAreaFilter.replace("_", " "));
-                });
-            }
-            if (peopleStatusFilter && peopleStatusFilter !== "all") {
-                contacts = contacts.filter((row) => peopleStatusFilter === "active" ? Boolean(row.active) : !row.active);
-            }
-            accountCustomersPageRows = contacts;
-            renderPeopleSummary({
-                total: contacts.length,
-                active: contacts.filter((row) => row.active).length,
-                inactive: contacts.filter((row) => !row.active).length,
-                flagged: contacts.filter((row) => Boolean(row.account_code)).length,
-            });
-            tableHead.innerHTML = `
-                <th>Full Name</th>
-                <th>Primary Operation</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Contact</th>
-                <th>Financial Flag</th>
-                <th>Action</th>
-            `;
-            const start = (currentPlayersPage - 1) * 10;
-            const pageRows = contacts.slice(start, start + 10);
-            tableBody.innerHTML = pageRows.map(row => `
-                <tr>
-                    <td>${escapeHtml(String(row.name || "-"))}</td>
-                    <td>${escapeHtml(String(row.operation_area || "General / Debtors"))}</td>
-                    <td>${escapeHtml(String(row.customer_type || "Account Customer"))}</td>
-                    <td>${row.active ? "Active" : "Inactive"}</td>
-                    <td>${escapeHtml(String(row.billing_contact || "-"))}</td>
-                    <td>${row.account_code ? `<span class="acct-pill">${escapeHtml(String(row.account_code))}</span>` : "-"}</td>
-                    <td class="row-actions"><button class="btn-view" onclick="openAccountCustomerDetail(${Number(row.id)})">View</button></td>
-                </tr>
-            `).join("");
-
-            if (!pageRows.length) {
-                tableBody.innerHTML = `
-                    <tr>
-                        <td colspan="6" style="text-align:center; color:#7f8c8d; padding: 18px;">No account contacts found.</td>
-                    </tr>
-                `;
-            }
-            renderPagination("players-pagination", currentPlayersPage, Math.ceil(contacts.length / 10) || 1, (page) => {
                 currentPlayersPage = page;
                 loadPlayers();
             });
@@ -6453,6 +6365,7 @@ function setupTeeSheetFilters() {
 
     dateInput.addEventListener("change", () => {
         setSelectedTeeSheetDate(dateInput.value);
+        clearTeeSheetBulkSelection({ resetScope: true });
         loadTeeTimes();
     });
 
@@ -6461,6 +6374,7 @@ function setupTeeSheetFilters() {
             holesButtons.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
             selectedHolesView = btn.dataset.holes || "18";
+            clearTeeSheetBulkSelection({ resetScope: true });
             loadTeeTimes();
         });
     });
@@ -6480,6 +6394,7 @@ function setupTeeSheetFilters() {
 
     todayBtn?.addEventListener("click", () => {
         setSelectedTeeSheetDate(localTodayYMD(), { updateInput: true });
+        clearTeeSheetBulkSelection({ resetScope: true });
         loadTeeTimes();
     });
 
@@ -6597,6 +6512,134 @@ function teeSlotStatusNeedsPayment(status) {
     return value === "checked_in" || value === "completed";
 }
 
+function canUseTeeSheetBulkActions() {
+    return String(currentUserRole || "").trim().toLowerCase() === "admin";
+}
+
+function currentTeeSheetSelectionScopeKey() {
+    return `${currentTeeSheetDate()}|${String(selectedTee || "all")}|${String(selectedHolesView || "18")}`;
+}
+
+function currentTeeSheetBookingLookup() {
+    const lookup = new Map();
+    teeSheetTeeTimeMap.forEach((slot) => {
+        const bookings = Array.isArray(slot?.bookings) ? slot.bookings : [];
+        bookings.forEach((booking) => {
+            const bookingId = Number.parseInt(String(booking?.id || ""), 10);
+            if (Number.isFinite(bookingId) && bookingId > 0) {
+                lookup.set(String(bookingId), booking);
+            }
+        });
+    });
+    return lookup;
+}
+
+function visibleTeeSheetBookingIds() {
+    return Array.from(document.querySelectorAll("#admin-tee-sheet-body tr[data-tee-time-iso]"))
+        .filter((row) => row instanceof HTMLElement && row.style.display !== "none")
+        .flatMap((row) => Array.from(row.querySelectorAll(".slot-card[data-booking-id]")))
+        .map((card) => Number.parseInt(String(card.getAttribute("data-booking-id") || ""), 10))
+        .filter((bookingId) => Number.isFinite(bookingId) && bookingId > 0);
+}
+
+function clearTeeSheetBulkSelection(options = {}) {
+    teeSheetBulkSelectedBookingIds = new Set();
+    if (options.resetScope === true) {
+        teeSheetBulkSelectionScopeKey = "";
+    }
+    syncTeeSheetBulkCheckboxes();
+    updateTeeSheetBulkSelectionSummary();
+}
+
+function syncTeeSheetBulkCheckboxes() {
+    document.querySelectorAll("#admin-tee-sheet-body input[data-tee-bulk-booking-id]").forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        const bookingId = Number.parseInt(String(input.getAttribute("data-tee-bulk-booking-id") || ""), 10);
+        input.checked = Number.isFinite(bookingId) && teeSheetBulkSelectedBookingIds.has(String(bookingId));
+    });
+}
+
+function pruneTeeSheetBulkSelectionToVisible() {
+    if (!canUseTeeSheetBulkActions()) {
+        clearTeeSheetBulkSelection({ resetScope: true });
+        return;
+    }
+    const visibleIds = new Set(visibleTeeSheetBookingIds().map((bookingId) => String(bookingId)));
+    let changed = false;
+    Array.from(teeSheetBulkSelectedBookingIds).forEach((bookingId) => {
+        if (!visibleIds.has(String(bookingId))) {
+            teeSheetBulkSelectedBookingIds.delete(String(bookingId));
+            changed = true;
+        }
+    });
+    if (changed) {
+        syncTeeSheetBulkCheckboxes();
+    }
+}
+
+function toggleTeeSheetBulkBooking(bookingId, checked) {
+    if (!canUseTeeSheetBulkActions()) return;
+    const normalizedId = Number.parseInt(String(bookingId || ""), 10);
+    if (!Number.isFinite(normalizedId) || normalizedId <= 0) return;
+    if (checked) {
+        teeSheetBulkSelectedBookingIds.add(String(normalizedId));
+    } else {
+        teeSheetBulkSelectedBookingIds.delete(String(normalizedId));
+    }
+    updateTeeSheetBulkSelectionSummary();
+}
+
+function selectAllVisibleTeeSheetBookings() {
+    if (!canUseTeeSheetBulkActions()) return;
+    visibleTeeSheetBookingIds().forEach((bookingId) => {
+        teeSheetBulkSelectedBookingIds.add(String(bookingId));
+    });
+    syncTeeSheetBulkCheckboxes();
+    updateTeeSheetBulkSelectionSummary();
+}
+
+function selectedTeeSheetBookings() {
+    const lookup = currentTeeSheetBookingLookup();
+    return Array.from(teeSheetBulkSelectedBookingIds)
+        .map((bookingId) => lookup.get(String(bookingId)))
+        .filter(Boolean);
+}
+
+function updateTeeSheetBulkSelectionSummary() {
+    const bar = document.getElementById("tee-sheet-bulk-bar");
+    const countEl = document.getElementById("tee-sheet-bulk-count");
+    const totalEl = document.getElementById("tee-sheet-bulk-total");
+    const noteEl = document.getElementById("tee-sheet-bulk-note");
+    const selectAllBtn = document.getElementById("tee-sheet-bulk-select-all");
+    const clearBtn = document.getElementById("tee-sheet-bulk-clear");
+    const manageBtn = document.getElementById("tee-sheet-bulk-manage");
+
+    if (!(bar instanceof HTMLElement)) return;
+
+    if (!canUseTeeSheetBulkActions()) {
+        bar.style.display = "none";
+        return;
+    }
+
+    pruneTeeSheetBulkSelectionToVisible();
+    const visibleIds = visibleTeeSheetBookingIds();
+    const selectedBookings = selectedTeeSheetBookings();
+    const selectedCount = selectedBookings.length;
+    const selectedTotal = selectedBookings.reduce((sum, booking) => sum + safeNumber(booking?.price), 0);
+
+    bar.style.display = visibleIds.length ? "" : "none";
+    if (countEl) countEl.textContent = formatInteger(selectedCount);
+    if (totalEl) totalEl.textContent = formatCurrencyZAR(selectedTotal);
+    if (noteEl) {
+        noteEl.textContent = selectedCount
+            ? `${formatInteger(selectedCount)} selected from the visible tee sheet.`
+            : "Select bookings from the current tee sheet to apply a bulk action.";
+    }
+    if (selectAllBtn instanceof HTMLButtonElement) selectAllBtn.disabled = visibleIds.length === 0;
+    if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = selectedCount === 0;
+    if (manageBtn instanceof HTMLButtonElement) manageBtn.disabled = selectedCount === 0;
+}
+
 function closeTeeSlotManageModal() {
     document.getElementById("tee-slot-modal")?.classList.remove("show");
 }
@@ -6680,29 +6723,29 @@ function renderTeeSlotPlayerList(bookings = []) {
     updateTeeSlotSelectionSummary();
 }
 
-function openTeeSlotManageModal(teeTimeId) {
+function openTeeSlotManageModalForState(state) {
     const modal = document.getElementById("tee-slot-modal");
     if (!(modal instanceof HTMLElement)) return;
-
-    const slot = teeSheetTeeTimeMap.get(String(teeTimeId));
-    if (!slot) {
-        toastError("Slot data is stale. Refresh the tee sheet and try again.");
-        return;
-    }
-
-    const bookings = Array.isArray(slot.bookings) ? slot.bookings.filter(Boolean) : [];
+    const nextState = state && typeof state === "object" ? state : null;
+    const bookings = Array.isArray(nextState?.bookings) ? nextState.bookings.filter(Boolean) : [];
     if (!bookings.length) {
-        toastInfo("No players booked in this slot yet.");
+        toastInfo("No bookings selected for bulk action.");
         return;
     }
 
     teeSlotManageState = {
-        teeTimeId: Number.parseInt(String(slot.id || teeTimeId || ""), 10) || null,
-        teeTimeIso: String(slot.tee_time || ""),
-        teeLabel: String(slot.hole || "1"),
+        mode: String(nextState?.mode || "slot"),
+        teeTimeId: Number.parseInt(String(nextState?.teeTimeId || ""), 10) || null,
+        teeTimeIso: String(nextState?.teeTimeIso || ""),
+        teeLabel: String(nextState?.teeLabel || "1"),
         bookings: bookings.map((booking) => ({ ...booking })),
+        heading: String(nextState?.heading || "Manage Tee Slot"),
+        intro: String(nextState?.intro || "Process multiple players in one step (status, payment method, and debtor account)."),
+        refreshLabel: String(nextState?.refreshLabel || "Refresh Slot"),
     };
 
+    const headingEl = document.getElementById("tee-slot-modal-title");
+    const introEl = document.getElementById("tee-slot-modal-intro");
     const timeEl = document.getElementById("tee-slot-time");
     const teeEl = document.getElementById("tee-slot-tee");
     const bookedEl = document.getElementById("tee-slot-booked-count");
@@ -6710,11 +6753,23 @@ function openTeeSlotManageModal(teeTimeId) {
     const paymentEl = document.getElementById("tee-slot-payment-method");
     const accountEl = document.getElementById("tee-slot-account-code");
     const textEl = document.getElementById("tee-slot-status-text");
+    const refreshBtn = document.getElementById("tee-slot-refresh-detail");
 
-    if (timeEl) timeEl.textContent = teeSlotManageState.teeTimeIso ? formatDateTimeDMY(teeSlotManageState.teeTimeIso) : "-";
+    if (headingEl) headingEl.textContent = teeSlotManageState.heading;
+    if (introEl) introEl.textContent = teeSlotManageState.intro;
+    if (timeEl) {
+        timeEl.textContent = teeSlotManageState.teeTimeIso
+            ? (teeSlotManageState.mode === "selection"
+                ? formatDateDMY(teeSlotManageState.teeTimeIso)
+                : formatDateTimeDMY(teeSlotManageState.teeTimeIso))
+            : "-";
+    }
     if (teeEl) teeEl.textContent = teeSlotManageState.teeLabel || "1";
     if (bookedEl) bookedEl.textContent = formatInteger(bookings.length);
     if (textEl) textEl.textContent = "";
+    if (refreshBtn instanceof HTMLButtonElement) {
+        refreshBtn.textContent = teeSlotManageState.refreshLabel || "Refresh Slot";
+    }
 
     const allAlreadyChecked = bookings.every((booking) => {
         const status = String(booking?.status || "").toLowerCase();
@@ -6745,6 +6800,54 @@ function openTeeSlotManageModal(teeTimeId) {
         loadAccountCustomersCache({ silent: true });
     }
     modal.classList.add("show");
+}
+
+function openTeeSlotManageModal(teeTimeId) {
+    if (!canUseTeeSheetBulkActions()) return;
+    const slot = teeSheetTeeTimeMap.get(String(teeTimeId));
+    if (!slot) {
+        toastError("Slot data is stale. Refresh the tee sheet and try again.");
+        return;
+    }
+
+    const bookings = Array.isArray(slot.bookings) ? slot.bookings.filter(Boolean) : [];
+    if (!bookings.length) {
+        toastInfo("No players booked in this slot yet.");
+        return;
+    }
+
+    openTeeSlotManageModalForState({
+        mode: "slot",
+        teeTimeId: Number.parseInt(String(slot.id || teeTimeId || ""), 10) || null,
+        teeTimeIso: String(slot.tee_time || ""),
+        teeLabel: String(slot.hole || "1"),
+        bookings,
+        heading: "Manage Tee Slot",
+        intro: "Process multiple players in one step (status, payment method, and debtor account).",
+        refreshLabel: "Refresh Slot",
+    });
+}
+
+function openSelectedTeeSheetBulkManageModal() {
+    if (!canUseTeeSheetBulkActions()) return;
+    const bookings = selectedTeeSheetBookings();
+    if (!bookings.length) {
+        toastInfo("Select at least one booking from the tee sheet.");
+        return;
+    }
+    const teeLabel = String(selectedTee || "all") === "all"
+        ? "All visible tees"
+        : `Tee ${normalizeTeeLabel(selectedTee || "1") || "1"}`;
+    openTeeSlotManageModalForState({
+        mode: "selection",
+        teeTimeId: null,
+        teeTimeIso: `${currentTeeSheetDate()}T00:00:00`,
+        teeLabel,
+        bookings,
+        heading: "Bulk Tee-Sheet Action",
+        intro: "Apply one explicit action to the selected bookings on the current tee sheet.",
+        refreshLabel: "Refresh Selection",
+    });
 }
 
 async function applyTeeSlotBatchUpdate() {
@@ -6795,8 +6898,11 @@ async function applyTeeSlotBatchUpdate() {
         });
 
         closeTeeSlotManageModal();
+        clearTeeSheetBulkSelection();
         await loadTeeTimes({ preserveScroll: true });
-        loadBookings();
+        if (currentActivePage === "bookings") {
+            loadBookings();
+        }
         refreshDashboardIfVisible({ silent: true, useCache: false });
 
         const updated = Number(result?.updated || selectedIds.length);
@@ -6843,7 +6949,11 @@ function setupTeeSlotManageModal() {
         if (refreshBtn instanceof HTMLButtonElement) refreshBtn.disabled = true;
         try {
             await loadTeeTimes({ preserveScroll: true });
-            if (teeSlotManageState.teeTimeId) openTeeSlotManageModal(teeSlotManageState.teeTimeId);
+            if (teeSlotManageState.mode === "selection") {
+                openSelectedTeeSheetBulkManageModal();
+            } else if (teeSlotManageState.teeTimeId) {
+                openTeeSlotManageModal(teeSlotManageState.teeTimeId);
+            }
         } finally {
             if (refreshBtn instanceof HTMLButtonElement) refreshBtn.disabled = false;
         }
@@ -6879,6 +6989,22 @@ function setupTeeSlotManageModal() {
         closeTeeSlotManageModal();
         viewBookingDetail(bookingId);
     });
+}
+
+function setupTeeSheetBulkActions() {
+    const selectAllBtn = document.getElementById("tee-sheet-bulk-select-all");
+    const clearBtn = document.getElementById("tee-sheet-bulk-clear");
+    const manageBtn = document.getElementById("tee-sheet-bulk-manage");
+    selectAllBtn?.addEventListener("click", () => {
+        selectAllVisibleTeeSheetBookings();
+    });
+    clearBtn?.addEventListener("click", () => {
+        clearTeeSheetBulkSelection();
+    });
+    manageBtn?.addEventListener("click", () => {
+        openSelectedTeeSheetBulkManageModal();
+    });
+    updateTeeSheetBulkSelectionSummary();
 }
 
 function openBulkBookModal() {
@@ -7263,6 +7389,8 @@ function applyTeeSheetSearchFilter() {
             statusEl.textContent = `${matchCount} match${matchCount === 1 ? "" : "es"} for "${searchInput?.value || ""}"`;
         }
     }
+
+    updateTeeSheetBulkSelectionSummary();
 }
 
 function filterTeeTimesByHoles(dayTeeTimes, dateStr) {
@@ -7416,6 +7544,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
     teeSheetTeeTimeMap = new Map();
 
     if (dayTeeTimes.length === 0) {
+        clearTeeSheetBulkSelection();
         const message = emptyMessage || "No tee times available for this day.";
         tbody.innerHTML = `
             <tr class="empty-row">
@@ -7430,6 +7559,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
     const groupByTime = String(selectedTee) === "all";
     let prevTimeKey = null;
     const allowDetails = currentUserRole === "admin" || currentUserRole === "club_staff" || currentUserRole === "super_admin";
+    const allowBulkActions = canUseTeeSheetBulkActions();
 
     const html = [];
     for (const tt of dayTeeTimes) {
@@ -7463,12 +7593,12 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 class="tee-row-manage-btn"
                 onclick="openTeeSlotManageModal(${Number(tt.id)})"
                 title="Manage this booking slot"
-                ${(bookedCount > 0 && !syntheticSlot) ? "" : "style=\"display:none;\""}
+                ${(allowBulkActions && bookedCount > 0 && !syntheticSlot) ? "" : "style=\"display:none;\""}
             >
                 Manage Slot
                 <span>${formatInteger(bookedCount)} player${bookedCount === 1 ? "" : "s"}</span>
             </button>
-            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>${syntheticSlot ? "Preview" : (blockedByGolfDay ? "Booked Out" : "Open")}</span>
+            <span class="tee-row-manage-muted" ${(allowBulkActions && bookedCount > 0 && !syntheticSlot) ? "style=\"display:none;\"" : ""}>${syntheticSlot ? "Preview" : (blockedByGolfDay ? "Booked Out" : (bookedCount > 0 ? `${formatInteger(bookedCount)} booked` : "Open"))}</span>
         `;
 
         const cells = [];
@@ -7496,6 +7626,18 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                     "booked";
                 const statusLabel = statusToLabel(status);
                 const search = `${booking.player_name || ""} ${booking.player_email || ""}`.trim();
+                const isSelected = teeSheetBulkSelectedBookingIds.has(String(booking.id));
+                const bulkToggle = allowBulkActions ? `
+                    <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px;" onclick="event.stopPropagation();" title="Select for bulk action">
+                        <input
+                            type="checkbox"
+                            data-tee-bulk-booking-id="${safeBookingId}"
+                            ${isSelected ? "checked" : ""}
+                            onchange="toggleTeeSheetBulkBooking(${safeBookingId}, this.checked)"
+                        >
+                        <span>Bulk</span>
+                    </label>
+                ` : "";
                 cells.push(`
                     <td>
                         <div class="slot-card ${statusClass}"
@@ -7507,6 +7649,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                             <div class="slot-top">
                                 <span class="slot-status">${escapeHtml(statusLabel)}</span>
                                 <span class="slot-price">${formatCompactBookingPrice(booking)}</span>
+                                ${bulkToggle}
                             </div>
                             <div class="slot-name">${escapeHtml(booking.player_name)}</div>
                             <div class="slot-meta">${booking.player_email ? escapeHtml(booking.player_email) : ""}</div>
@@ -7564,6 +7707,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
     }
 
     tbody.innerHTML = html.join("");
+    updateTeeSheetBulkSelectionSummary();
 }
 
 let teeDragBookingId = null;
@@ -8018,6 +8162,11 @@ async function loadTeeTimes(options = {}) {
         holes: selectedHolesView,
         preserveScroll,
     });
+    const selectionScopeKey = currentTeeSheetSelectionScopeKey();
+    if (teeSheetBulkSelectionScopeKey !== selectionScopeKey) {
+        clearTeeSheetBulkSelection();
+        teeSheetBulkSelectionScopeKey = selectionScopeKey;
+    }
     if (teeSheetLoadPromise && teeSheetLoadRequestKey === requestKey) {
         return teeSheetLoadPromise;
     }
@@ -8206,6 +8355,7 @@ async function loadTeeTimes(options = {}) {
         `;
         updateTeeSheetSummary([], dateStr);
         setTeeWeatherStatus("");
+        updateTeeSheetBulkSelectionSummary();
     } finally {
         if (teeSheetLoadController === controller) {
             teeSheetLoadController = null;

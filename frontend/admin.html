@@ -20,13 +20,11 @@
             </div>
             <nav class="nav-menu">
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Club Overview</summary>
+                    <summary class="nav-group-toggle">Club Admin</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Dashboard</a>
+                        <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Club Overview</a>
                         <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="all">People</a>
                         <a href="#players" class="nav-item" data-page="players" data-people-view="staff" data-people-operation="general">Staff</a>
-                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
-                        <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Bookings</a>
                     </div>
                 </details>
 
@@ -76,16 +74,14 @@
         <main class="main-content">
             <!-- Top Bar -->
             <div class="top-bar">
-                <h1 id="page-title">Dashboard</h1>
+                <h1 id="page-title">Club Overview</h1>
                 <div class="user-info">
                     <select id="quick-nav" class="club-switcher quick-nav" aria-label="Quick navigation">
                         <option value="">Quick Nav</option>
-                        <optgroup label="Club Overview">
-                            <option value="dashboard|all">Dashboard</option>
+                        <optgroup label="Club Admin">
+                            <option value="dashboard|all">Club Overview</option>
                             <option value="players|members|all">People</option>
                             <option value="players|staff|general">Staff</option>
-                            <option value="account-customers-page">Account Customers</option>
-                            <option value="golf-days-page">Golf Day Bookings</option>
                         </optgroup>
                         <optgroup label="Golf">
                             <option value="dashboard|golf">Dashboard</option>
@@ -232,24 +228,6 @@
                             <div class="action-note" id="dashboard-operation-focus-note" style="display:none;"></div>
                         </div>
 
-                        <div class="dashboard-card" id="dashboard-freshness-card">
-                            <h3>Data Freshness</h3>
-                            <div class="today-stats">
-                                <div class="today-stat">
-                                    <span>Last Bookings Import</span>
-                                    <span class="stat-number" id="last-bookings-import">&mdash;</span>
-                                </div>
-                                <div class="today-stat">
-                                    <span>Last Revenue Import</span>
-                                    <span class="stat-number" id="last-revenue-import">&mdash;</span>
-                                </div>
-                            </div>
-                            <div class="action-note" id="import-log-hint"></div>
-                            <div style="margin-top: 10px;">
-                                <button class="btn-secondary" type="button" onclick="openImportLog()">View Import Log</button>
-                            </div>
-                        </div>
-
                         <div class="dashboard-card" id="dashboard-alerts-card">
                             <div class="dashboard-performance-header">
                                 <h3>Operational Alerts</h3>
@@ -343,11 +321,6 @@
                         <div class="action-note" id="dashboard-target-model-note"></div>
                     </div>
 
-                    <div class="dashboard-card full-width dashboard-golf-only">
-                        <h3>Monthly Revenue Trend</h3>
-                        <canvas id="revenueChart"></canvas>
-                        <div class="action-note" id="dashboard-revenue-chart-note"></div>
-                    </div>
                 </section>
 
                 <section id="operations-config" class="page">
@@ -624,14 +597,13 @@
                 <section id="players" class="page">
                     <div class="page-header">
                         <div>
-                            <p class="action-note" id="people-subtitle">Cross-club registry across members, staff, guests, and account contacts.</p>
+                            <p class="action-note" id="people-subtitle">Shared registry across members, staff, and guests. Billing and debtor contacts live under Account Customers.</p>
                         </div>
                         <div class="filters">
                             <div class="tee-toggle people-toggle" role="group" aria-label="People view">
                                 <button class="tee-btn people-btn active" type="button" data-view="members">Members</button>
                                 <button class="tee-btn people-btn" type="button" data-view="guests">Guests</button>
                                 <button class="tee-btn people-btn" type="button" data-view="staff">Staff</button>
-                                <button class="tee-btn people-btn" type="button" data-view="account_contacts">Account Contacts</button>
                             </div>
                             <select id="guest-type-filter" style="display:none">
                                 <option value="all" selected>All guests</option>
@@ -1089,6 +1061,18 @@
                         </div>
                     </div>
                      <div id="tee-sheet-search-status" class="search-status" aria-live="polite"></div>
+                     <div id="tee-sheet-bulk-bar" class="tee-slot-toolbar" style="display:none; margin: 0 0 12px 0;">
+                        <div class="tee-slot-selection-actions">
+                            <button class="btn-secondary btn-small" type="button" id="tee-sheet-bulk-select-all">Select All Visible</button>
+                            <button class="btn-secondary btn-small" type="button" id="tee-sheet-bulk-clear">Clear</button>
+                            <button class="btn-primary btn-small" type="button" id="tee-sheet-bulk-manage">Bulk Action</button>
+                        </div>
+                        <div class="tee-slot-help" style="margin:0; min-width: 280px;">
+                            <strong><span id="tee-sheet-bulk-count">0</span> selected</strong>
+                            <span style="margin-left:10px;" id="tee-sheet-bulk-total">R0.00</span>
+                            <div id="tee-sheet-bulk-note">Select bookings from the current tee sheet to apply a bulk action.</div>
+                        </div>
+                     </div>
                      <div class="tee-sheet-table-wrap">
                         <div class="tee-sheet-head">
                             <div class="tee-sheet-toolbar">
@@ -1586,8 +1570,8 @@
     <div id="tee-slot-modal" class="modal">
         <div class="modal-content tee-slot-content">
             <span class="close" onclick="closeTeeSlotManageModal()">&times;</span>
-            <h2>Manage Tee Slot</h2>
-            <p class="muted-text tee-booking-intro">Process multiple players in one step (status, payment method, and debtor account).</p>
+            <h2 id="tee-slot-modal-title">Manage Tee Slot</h2>
+            <p class="muted-text tee-booking-intro" id="tee-slot-modal-intro">Process multiple players in one step (status, payment method, and debtor account).</p>
             <div class="tee-slot-meta">
                 <div>
                     <span class="modal-label">Tee Time</span>
@@ -1598,7 +1582,7 @@
                     <div class="modal-value" id="tee-slot-tee">-</div>
                 </div>
                 <div>
-                    <span class="modal-label">Booked Players</span>
+                    <span class="modal-label">Bookings in Scope</span>
                     <div class="modal-value" id="tee-slot-booked-count">0</div>
                 </div>
                 <div>
@@ -1617,7 +1601,6 @@
                     <select id="tee-slot-action-status">
                         <option value="checked_in" selected>Check In (Paid)</option>
                         <option value="completed">Mark Completed</option>
-                        <option value="booked">Set to Booked</option>
                         <option value="no_show">Mark No-show</option>
                         <option value="cancelled">Cancel</option>
                         <option value="">No status change</option>
