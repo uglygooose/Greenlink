@@ -1511,6 +1511,13 @@ async def get_dashboard_stats(
     today_anchor = datetime.utcnow().date()
     year_start_dt = datetime.combine(date(today_anchor.year, 1, 1), datetime.min.time())
     next_year_start_dt = datetime.combine(date(today_anchor.year + 1, 1, 1), datetime.min.time())
+    today_start_dt = datetime.combine(today_anchor, Time.min)
+    tomorrow_start_dt = today_start_dt + timedelta(days=1)
+
+    def _date_bounds(start_d: date, end_d: date) -> tuple[datetime, datetime]:
+        start_dt = datetime.combine(start_d, Time.min)
+        end_dt = datetime.combine(end_d + timedelta(days=1), Time.min)
+        return start_dt, end_dt
 
     # Total bookings
     total_bookings = db.query(func.count(Booking.id)).filter(Booking.club_id == club_id).scalar() or 0
@@ -1530,10 +1537,13 @@ async def get_dashboard_stats(
             q = db.query(Booking.status, func.count(Booking.id)).filter(Booking.club_id == club_id)
             if start_d is not None or end_d is not None:
                 q = q.join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.club_id == club_id)
-                if start_d is not None:
-                    q = q.filter(func.date(TeeTime.tee_time) >= start_d)
-                if end_d is not None:
-                    q = q.filter(func.date(TeeTime.tee_time) <= end_d)
+                if start_d is not None and end_d is not None:
+                    range_start_dt, range_end_dt = _date_bounds(start_d, end_d)
+                    q = q.filter(TeeTime.tee_time >= range_start_dt, TeeTime.tee_time < range_end_dt)
+                elif start_d is not None:
+                    q = q.filter(TeeTime.tee_time >= datetime.combine(start_d, Time.min))
+                elif end_d is not None:
+                    q = q.filter(TeeTime.tee_time < datetime.combine(end_d + timedelta(days=1), Time.min))
 
             for status, count in q.group_by(Booking.status).all():
                 if isinstance(status, BookingStatus):
@@ -1603,7 +1613,7 @@ async def get_dashboard_stats(
     today_bookings = (
         db.query(func.count(Booking.id))
         .join(TeeTime, Booking.tee_time_id == TeeTime.id)
-        .filter(TeeTime.club_id == club_id, func.date(TeeTime.tee_time) == today)
+        .filter(TeeTime.club_id == club_id, TeeTime.tee_time >= today_start_dt, TeeTime.tee_time < tomorrow_start_dt)
         .scalar()
         or 0
     )
@@ -1712,14 +1722,15 @@ async def get_dashboard_stats(
         return out
 
     def _golf_paid_amounts_and_rounds(start_d: date, end_d: date) -> tuple[float, int]:
+        start_dt, end_dt = _date_bounds(start_d, end_d)
         try:
             paid_revenue = (
                 db.query(func.sum(LedgerEntry.amount))
                 .filter(
                     LedgerEntry.club_id == club_id,
                     LedgerEntry.booking_id.isnot(None),
-                    func.date(LedgerEntry.created_at) >= start_d,
-                    func.date(LedgerEntry.created_at) <= end_d,
+                    LedgerEntry.created_at >= start_dt,
+                    LedgerEntry.created_at < end_dt,
                 )
                 .scalar()
                 or 0.0
@@ -1729,8 +1740,8 @@ async def get_dashboard_stats(
                 .filter(
                     LedgerEntry.club_id == club_id,
                     LedgerEntry.booking_id.isnot(None),
-                    func.date(LedgerEntry.created_at) >= start_d,
-                    func.date(LedgerEntry.created_at) <= end_d,
+                    LedgerEntry.created_at >= start_dt,
+                    LedgerEntry.created_at < end_dt,
                 )
                 .scalar()
                 or 0
@@ -1780,7 +1791,8 @@ async def get_dashboard_stats(
             .filter(
                 TeeTime.club_id == club_id,
                 Booking.club_id == club_id,
-                func.date(TeeTime.tee_time) == today,
+                TeeTime.tee_time >= today_start_dt,
+                TeeTime.tee_time < tomorrow_start_dt,
                 Booking.status.in_(paid_statuses),
             )
             .scalar()
@@ -1792,7 +1804,8 @@ async def get_dashboard_stats(
             .filter(
                 TeeTime.club_id == club_id,
                 Booking.club_id == club_id,
-                func.date(TeeTime.tee_time) == today,
+                TeeTime.tee_time >= today_start_dt,
+                TeeTime.tee_time < tomorrow_start_dt,
                 Booking.status == BookingStatus.no_show,
             )
             .scalar()
@@ -1800,7 +1813,7 @@ async def get_dashboard_stats(
         )
         golf_today_slot_capacity = (
             db.query(func.sum(TeeTime.capacity))
-            .filter(TeeTime.club_id == club_id, func.date(TeeTime.tee_time) == today)
+            .filter(TeeTime.club_id == club_id, TeeTime.tee_time >= today_start_dt, TeeTime.tee_time < tomorrow_start_dt)
             .scalar()
             or 0
         )
@@ -1810,7 +1823,8 @@ async def get_dashboard_stats(
             .filter(
                 TeeTime.club_id == club_id,
                 Booking.club_id == club_id,
-                func.date(TeeTime.tee_time) == today,
+                TeeTime.tee_time >= today_start_dt,
+                TeeTime.tee_time < tomorrow_start_dt,
                 Booking.status.in_([BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed]),
             )
             .scalar()
@@ -2679,6 +2693,7 @@ async def get_dashboard_stats(
 
         integrity_window_days = 30
         integrity_start = today - timedelta(days=integrity_window_days - 1)
+        integrity_start_dt = datetime.combine(integrity_start, Time.min)
         ledger_counts_sq = (
             db.query(
                 LedgerEntry.booking_id.label("booking_id"),
@@ -2704,7 +2719,7 @@ async def get_dashboard_stats(
                 Booking.club_id == club_id,
                 TeeTime.club_id == club_id,
                 Booking.status.in_(paid_statuses),
-                func.date(TeeTime.tee_time) >= integrity_start,
+                TeeTime.tee_time >= integrity_start_dt,
                 func.coalesce(ledger_counts_sq.c.payment_count, 0) == 0,
             )
             .first()
@@ -2721,7 +2736,7 @@ async def get_dashboard_stats(
             .filter(
                 LedgerEntry.club_id == club_id,
                 Booking.club_id == club_id,
-                func.date(LedgerEntry.created_at) >= integrity_start,
+                LedgerEntry.created_at >= integrity_start_dt,
                 ~Booking.status.in_(paid_statuses),
             )
             .first()
@@ -2740,7 +2755,7 @@ async def get_dashboard_stats(
                 LedgerEntry.club_id == club_id,
                 Booking.club_id == club_id,
                 TeeTime.club_id == club_id,
-                func.date(LedgerEntry.created_at) >= integrity_start,
+                LedgerEntry.created_at >= integrity_start_dt,
                 TeeTime.tee_time > (now_utc + timedelta(days=1)),
                 Booking.status.in_([BookingStatus.booked, BookingStatus.checked_in, BookingStatus.completed]),
             )
@@ -3056,12 +3071,14 @@ async def get_dashboard_stats(
     annual_revenue_target = target_model.get("revenue_target")
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
+        start_dt, end_dt = _date_bounds(start_d, end_d)
         revenue = (
             db.query(func.sum(LedgerEntry.amount))
             .filter(
                 LedgerEntry.booking_id.isnot(None),
-                func.date(LedgerEntry.created_at) >= start_d,
-                func.date(LedgerEntry.created_at) <= end_d,
+                LedgerEntry.club_id == club_id,
+                LedgerEntry.created_at >= start_dt,
+                LedgerEntry.created_at < end_dt,
             )
             .scalar()
             or 0.0
@@ -3070,8 +3087,9 @@ async def get_dashboard_stats(
             db.query(func.count(LedgerEntry.id))
             .filter(
                 LedgerEntry.booking_id.isnot(None),
-                func.date(LedgerEntry.created_at) >= start_d,
-                func.date(LedgerEntry.created_at) <= end_d,
+                LedgerEntry.club_id == club_id,
+                LedgerEntry.created_at >= start_dt,
+                LedgerEntry.created_at < end_dt,
             )
             .scalar()
             or 0
