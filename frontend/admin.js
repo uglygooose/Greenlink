@@ -3999,7 +3999,14 @@ function renderPeopleSummary({ total = 0, active = 0, inactive = 0, flagged = 0 
 
 function isAbortLikeError(error) {
     const name = String(error?.name || "").trim();
-    return name === "AbortError" || name === "CanceledError";
+    const causeName = String(error?.cause?.name || "").trim();
+    const message = String(error?.message || "").toLowerCase();
+    return (
+        name === "AbortError"
+        || name === "CanceledError"
+        || (name === "TimeoutError" && causeName === "AbortError")
+        || message.includes("signal is aborted")
+    );
 }
 
 function memberAppliedPricingLabel(member) {
@@ -4061,8 +4068,9 @@ async function loadPlayers() {
         } else if (peopleView === "account_contacts") {
             url = `${API_BASE}/api/admin/account-customers`;
         }
-        if (search) url += `&q=${encodeURIComponent(search)}`;
-        if (peopleSort) url += `&sort=${encodeURIComponent(peopleSort)}`;
+        const joiner = url.includes("?") ? "&" : "?";
+        if (search) url += `${joiner}q=${encodeURIComponent(search)}`;
+        if (peopleSort) url += `${url.includes("?") ? "&" : "?"}sort=${encodeURIComponent(peopleSort)}`;
 
         const data = await fetchJson(url, {
             headers: { Authorization: `Bearer ${token}` },
