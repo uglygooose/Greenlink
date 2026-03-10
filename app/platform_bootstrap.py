@@ -51,6 +51,7 @@ UMHLALI_SUGGESTED_HOME_CLUBS = [
 ]
 UMHLALI_PEAK_SEASON_START = date(2025, 12, 15)
 UMHLALI_PEAK_SEASON_END = date(2026, 1, 11)
+UMHLALI_GL_REFERENCE_MISSING_WARNING = "Umhlali GL accounts workbook not found for finance setup reference."
 TENANT_BACKFILL_TABLES = (
     "users",
     "people",
@@ -335,7 +336,7 @@ def _upsert_club_setting(db, club_id: int, key: str, value: str) -> None:
 def _sync_umhlali_gl_reference(db, diagnostics: dict[str, Any], club_id: int) -> None:
     path = find_umhlali_gl_accounts_file()
     if path is None:
-        diagnostics["warnings"].append("Umhlali GL accounts workbook not found for finance setup reference.")
+        diagnostics["warnings"].append(UMHLALI_GL_REFERENCE_MISSING_WARNING)
         return
 
     rows = extract_gl_accounts_reference(path)
@@ -929,6 +930,23 @@ def _status_from_diagnostics(errors: list[str], warnings: list[str]) -> str:
     return "ready"
 
 
+def _umhlali_gl_reference_resolved(db) -> bool:
+    if find_umhlali_gl_accounts_file() is not None:
+        return True
+    club = _find_umhlali_club(db)
+    if club is None or not getattr(club, "id", None):
+        return False
+    row = (
+        db.query(ClubSetting.id)
+        .filter(
+            ClubSetting.club_id == int(club.id),
+            ClubSetting.key == "gl_account_reference",
+        )
+        .first()
+    )
+    return row is not None
+
+
 def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     active_clubs = _active_club_rows(db)
     setup_readiness = _club_setup_readiness_rows(db)
@@ -939,6 +957,10 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
     status = str((bootstrap or {}).get("status") or runtime.get("status") or "ready")
     warnings = list((bootstrap or {}).get("warnings") or runtime.get("warnings") or [])
     errors = list((bootstrap or {}).get("errors") or runtime.get("errors") or [])
+    if warnings and _umhlali_gl_reference_resolved(db):
+        warnings = [msg for msg in warnings if str(msg or "").strip() != UMHLALI_GL_REFERENCE_MISSING_WARNING]
+        if status == "needs_attention":
+            status = _status_from_diagnostics(errors, warnings)
     umhlali_present = db.query(Club.id).filter(func.lower(Club.slug) == _canonical_umhlali_slug()).first() is not None
 
     return {

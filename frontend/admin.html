@@ -834,8 +834,8 @@
                             <select id="revenue-stream-focus">
                                 <option value="all" selected>All Streams</option>
                                 <option value="golf_paid">Golf Paid Only</option>
-                                <option value="other_imported">Imported Non-Booking (All)</option>
-                                <option value="pro_shop">Pro Shop Imported</option>
+                                <option value="other_imported">Imported Non-Booking (Non-POS)</option>
+                                <option value="pro_shop">Imported Pro Shop (Non-POS)</option>
                             </select>
                             <button class="btn-secondary" id="revenue-open-imports-btn" type="button">Open Imports & Setup</button>
                         </div>
@@ -846,7 +846,7 @@
                         <ol class="flow-steps">
                             <li>Use <code>Finance & Setup → Imports & Setup</code> to import non-booking revenue by stream.</li>
                             <li>Golf paid revenue is captured from bookings and ledger entries automatically.</li>
-                            <li>Use this page to validate trends, collection rate, and stream mix.</li>
+                            <li>Native pro-shop POS sales are tracked separately from imported pro-shop adjustments so operational views do not double count them.</li>
                         </ol>
                     </div>
 

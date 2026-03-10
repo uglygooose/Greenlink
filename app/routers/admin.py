@@ -12,7 +12,7 @@ import requests
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, load_only, selectinload
-from sqlalchemy import String, asc, cast, desc, func, or_, case
+from sqlalchemy import String, and_, asc, cast, desc, func, or_, case
 from datetime import date, datetime, timedelta, time as Time
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -452,6 +452,16 @@ def _normalize_revenue_stream(raw: str | None) -> str:
     if source in {"", "other", "misc", "unknown"}:
         return "other"
     return source
+
+
+def _pro_shop_revenue_source_clause():
+    source_col = func.lower(func.coalesce(RevenueTransaction.source, ""))
+    return source_col.in_(["proshop", "pro_shop", "golf_shop", "golfshop", "shop", "retail", "merch", "merchandise"])
+
+
+def _native_pro_shop_revenue_clause():
+    external_id_col = func.lower(func.coalesce(RevenueTransaction.external_id, ""))
+    return and_(_pro_shop_revenue_source_clause(), external_id_col.like("proshop-sale-%"))
 
 
 def _normalize_membership_area(raw: str | None) -> str:
@@ -1547,12 +1557,15 @@ async def get_dashboard_stats(
         or 0.0
     )
 
-    # Total other revenue (mirrored via daily CSV imports).
-    # Keep non-blocking so older DBs without the table can still load the dashboard.
+    # Total imported non-golf revenue excluding pro shop operational sales mirrored from POS.
+    # Pro shop operational totals come from ProShopSale directly.
     try:
         other_total_revenue = (
             db.query(func.sum(RevenueTransaction.amount))
-            .filter(RevenueTransaction.club_id == club_id)
+            .filter(
+                RevenueTransaction.club_id == club_id,
+                ~_pro_shop_revenue_source_clause(),
+            )
             .scalar()
             or 0.0
         )
@@ -1598,7 +1611,10 @@ async def get_dashboard_stats(
                     RevenueTransaction.source,
                     func.sum(RevenueTransaction.amount).label("amount"),
                 )
-                .filter(RevenueTransaction.club_id == club_id)
+                .filter(
+                    RevenueTransaction.club_id == club_id,
+                    ~_pro_shop_revenue_source_clause(),
+                )
             )
             if start_d is not None:
                 q = q.filter(RevenueTransaction.transaction_date >= start_d)
@@ -1617,9 +1633,17 @@ async def get_dashboard_stats(
     other_total_by_stream = _other_revenue_by_stream()
 
     imported_golf_total = float(other_total_by_stream.get("golf", 0.0))
-    imported_pro_shop_total = float(other_total_by_stream.get("pro_shop", 0.0))
     golf_total_revenue = float(total_revenue) + imported_golf_total
-    pro_shop_total_revenue = imported_pro_shop_total
+    try:
+        pro_shop_total_revenue = (
+            db.query(func.sum(ProShopSale.total))
+            .filter(ProShopSale.club_id == club_id)
+            .scalar()
+            or 0.0
+        )
+    except Exception:
+        _safe_rollback(db)
+        pro_shop_total_revenue = 0.0
 
     # Import freshness (best-effort; OK if tables not present on older DBs)
     imports = {}
@@ -1645,6 +1669,7 @@ async def get_dashboard_stats(
                 )
                 .filter(
                     RevenueTransaction.club_id == club_id,
+                    ~_pro_shop_revenue_source_clause(),
                     RevenueTransaction.transaction_date >= start_d,
                     RevenueTransaction.transaction_date <= end_d,
                 )
@@ -1687,6 +1712,35 @@ async def get_dashboard_stats(
                 or 0
             )
             return float(paid_revenue), int(paid_rounds)
+        except Exception:
+            _safe_rollback(db)
+            return 0.0, 0
+
+    def _pro_shop_sales_amounts_and_transactions(start_d: date, end_d: date) -> tuple[float, int]:
+        start_dt = datetime.combine(start_d, Time.min)
+        end_dt = datetime.combine(end_d + timedelta(days=1), Time.min)
+        try:
+            gross = (
+                db.query(func.sum(ProShopSale.total))
+                .filter(
+                    ProShopSale.club_id == club_id,
+                    ProShopSale.sold_at >= start_dt,
+                    ProShopSale.sold_at < end_dt,
+                )
+                .scalar()
+                or 0.0
+            )
+            txns = (
+                db.query(func.count(ProShopSale.id))
+                .filter(
+                    ProShopSale.club_id == club_id,
+                    ProShopSale.sold_at >= start_dt,
+                    ProShopSale.sold_at < end_dt,
+                )
+                .scalar()
+                or 0
+            )
+            return float(gross), int(txns)
         except Exception:
             _safe_rollback(db)
             return 0.0, 0
@@ -1992,6 +2046,23 @@ async def get_dashboard_stats(
         prior_ytd_start,
         prior_ytd_end,
     )
+    pro_shop_day_revenue, pro_shop_day_txns = _pro_shop_sales_amounts_and_transactions(today, today)
+    pro_shop_prior_day_revenue, pro_shop_prior_day_txns = _pro_shop_sales_amounts_and_transactions(yesterday, yesterday)
+    pro_shop_week_revenue_native, pro_shop_week_txns_native = _pro_shop_sales_amounts_and_transactions(today - timedelta(days=6), today)
+    pro_shop_prior_week_revenue, pro_shop_prior_week_txns = _pro_shop_sales_amounts_and_transactions(
+        today - timedelta(days=13),
+        today - timedelta(days=7),
+    )
+    pro_shop_month_revenue_native, pro_shop_month_txns_native = _pro_shop_sales_amounts_and_transactions(month_start, today)
+    pro_shop_prior_month_revenue, pro_shop_prior_month_txns = _pro_shop_sales_amounts_and_transactions(
+        prior_month_start,
+        prior_month_end,
+    )
+    pro_shop_ytd_revenue_native, pro_shop_ytd_txns_native = _pro_shop_sales_amounts_and_transactions(ytd_start, today)
+    pro_shop_prior_ytd_revenue, pro_shop_prior_ytd_txns = _pro_shop_sales_amounts_and_transactions(
+        prior_ytd_start,
+        prior_ytd_end,
+    )
 
     golf_periods = {
         "day": _period_rollup(
@@ -2018,24 +2089,24 @@ async def get_dashboard_stats(
 
     pro_shop_periods = {
         "day": _period_rollup(
-            _stream_amount(day_stream_stats, "pro_shop"),
-            _stream_txns(day_stream_stats, "pro_shop"),
-            _stream_amount(prior_day_stream_stats, "pro_shop"),
+            pro_shop_day_revenue,
+            pro_shop_day_txns,
+            pro_shop_prior_day_revenue,
         ),
         "week": _period_rollup(
-            _stream_amount(week_stream_stats, "pro_shop"),
-            _stream_txns(week_stream_stats, "pro_shop"),
-            _stream_amount(prior_week_stream_stats, "pro_shop"),
+            pro_shop_week_revenue_native,
+            pro_shop_week_txns_native,
+            pro_shop_prior_week_revenue,
         ),
         "month": _period_rollup(
-            _stream_amount(month_stream_stats, "pro_shop"),
-            _stream_txns(month_stream_stats, "pro_shop"),
-            _stream_amount(prior_month_stream_stats, "pro_shop"),
+            pro_shop_month_revenue_native,
+            pro_shop_month_txns_native,
+            pro_shop_prior_month_revenue,
         ),
         "ytd": _period_rollup(
-            _stream_amount(ytd_stream_stats, "pro_shop"),
-            _stream_txns(ytd_stream_stats, "pro_shop"),
-            _stream_amount(prior_ytd_stream_stats, "pro_shop"),
+            pro_shop_ytd_revenue_native,
+            pro_shop_ytd_txns_native,
+            pro_shop_prior_ytd_revenue,
         ),
     }
 
@@ -2247,7 +2318,7 @@ async def get_dashboard_stats(
                 {"label": "Avg Ticket (7d)", "value": float(combined_avg_ticket_7d), "format": "currency"},
                 {"label": "7d vs Prior 7d", "value": combined_week_vs_prior, "format": "percent"},
             ],
-            "note": "Executive view across golf, pro shop, and imported operations. Switch streams above for operational detail.",
+            "note": "Executive view across golf, native pro shop POS sales, and imported non-pro-shop revenue. Switch streams above for operational detail.",
             "highlights": all_highlights,
         },
         "golf": {
@@ -3034,6 +3105,11 @@ async def get_dashboard_stats(
         "week_revenue": float(combined_week_revenue),
         "revenue_streams": revenue_streams,
         "operation_insights": operation_insights,
+        "revenue_boundary": {
+            "golf_reporting_source": "ledger_entries_plus_imported_golf_adjustments",
+            "pro_shop_reporting_source": "native_pro_shop_sales_only",
+            "imported_pro_shop_handling": "excluded_from_dashboard_stream_rollups",
+        },
         "imports": imports,
         "bookings_by_status": bookings_by_status,
         "bookings_by_status_periods": bookings_by_status_periods,
@@ -6000,6 +6076,7 @@ async def get_revenue_analytics(
             func.count(RevenueTransaction.id).label("transactions"),
         ).filter(
             RevenueTransaction.club_id == club_id,
+            ~_native_pro_shop_revenue_clause(),
             RevenueTransaction.transaction_date >= start_date.date(),
         )
 
@@ -6042,6 +6119,7 @@ async def get_revenue_analytics(
             func.count(RevenueTransaction.id).label("transactions"),
         ).filter(
             RevenueTransaction.club_id == club_id,
+            ~_native_pro_shop_revenue_clause(),
             RevenueTransaction.transaction_date >= start_date.date(),
         )
 
@@ -6084,6 +6162,12 @@ async def get_revenue_analytics(
         "target_revenue": derived_target,
         "annual_revenue_target": annual_revenue_target,
         "target_context": target_model,
+        "revenue_boundary": {
+            "golf_paid_source": "ledger_entries",
+            "imported_non_booking_source": "revenue_transactions_excluding_native_pro_shop_pos",
+            "pro_shop_native_reporting_source": "pro_shop_sales",
+            "pro_shop_imported_reporting_source": "revenue_transactions_import_only",
+        },
         "daily_revenue_required": daily_required,
         "daily_revenue": [
             {

@@ -1975,6 +1975,7 @@ function resolveDashboardStreamMetrics(data, streamKey) {
 function formatDashboardMetric(metric) {
     const format = String(metric?.format || "number").toLowerCase();
     const raw = metric?.value;
+    if (raw == null || raw === "") return "-";
     const value = Number(raw);
     if (!Number.isFinite(value)) return "-";
     if (format === "currency") return formatCurrencyZAR(value);
@@ -4568,8 +4569,8 @@ async function loadRevenue() {
         revenueStreamFocus = focus;
 
         const focusImportedLabel = focus === "pro_shop"
-            ? "Pro Shop Imported"
-            : "Imported Non-Booking";
+            ? "Imported Pro Shop (Non-POS)"
+            : "Imported Non-Booking (Non-POS)";
         const selectedImported = importedByStream[focus] || { amount: 0, transactions: 0 };
         const focusedActual = focus === "golf_paid"
             ? actualPaid
@@ -4608,7 +4609,7 @@ async function loadRevenue() {
         const actualLabelEl = document.getElementById("revenue-actual-label");
 
         if (golfLabelEl) golfLabelEl.textContent = focus === "golf_paid" ? "Golf (Paid Focus)" : "Golf (Paid)";
-        if (otherLabelEl) otherLabelEl.textContent = focus === "all" ? "Non-Booking (Imported)" : focusImportedLabel;
+        if (otherLabelEl) otherLabelEl.textContent = focus === "all" ? "Non-Booking (Imported, Non-POS)" : focusImportedLabel;
         if (actualLabelEl) {
             actualLabelEl.textContent = focus === "all"
                 ? "Combined"
@@ -4630,11 +4631,11 @@ async function loadRevenue() {
                 flowEl.textContent =
                     `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
                     `Paid golf collected: ${formatCurrencyZAR(actualPaid)} (${focusedCollectionRate == null ? "-" : formatPct(focusedCollectionRate)}). ` +
-                    `Imported Golf/Pro Shop adjustments: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
+                    `Imported non-POS adjustments: ${formatCurrencyZAR(actualOther)}. ${targetSummary}`;
             } else if (focus === "golf_paid") {
                 flowEl.textContent = `Golf-paid focus: ${formatCurrencyZAR(actualPaid)} collected from booked demand ${formatCurrencyZAR(bookedTotal)}. ${targetSummary}`;
             } else if (focus === "other_imported") {
-                flowEl.textContent = `Imported non-booking focus: ${formatCurrencyZAR(actualOther)} across all imported streams. ${targetSummary}`;
+                flowEl.textContent = `Imported non-booking focus: ${formatCurrencyZAR(actualOther)} across imported non-POS streams. ${targetSummary}`;
             } else {
                 flowEl.textContent = `${focusImportedLabel} focus: ${formatCurrencyZAR(selectedImported.amount)} across ${formatInteger(selectedImported.transactions)} transaction(s). ${targetSummary}`;
             }
