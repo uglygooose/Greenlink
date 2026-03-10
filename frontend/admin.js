@@ -8231,7 +8231,7 @@ async function loadTeeTimes(options = {}) {
         const nextDay = new Date(y, (m || 1) - 1, (d || 1) + 1);
         const endDateStr = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, "0")}-${String(nextDay.getDate()).padStart(2, "0")}`;
         const end = `${endDateStr}T00:00:00`;
-        const response = await fetch(`/tsheet/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {
+        const response = await fetch(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
             timeoutMs: 30000,

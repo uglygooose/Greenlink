@@ -313,14 +313,55 @@ def tee_range(
     current_user: models.User = Depends(get_current_user),
     club_id: int = Depends(get_active_club_id),
 ):
+    return _tee_range_payload(
+        start=start,
+        end=end,
+        db=db,
+        club_id=club_id,
+        current_user=current_user,
+        enforce_booking_window=True,
+    )
+
+
+@router.get("/staff-range", response_model=List[schemas.TeeTimeWithBookings])
+def tee_staff_range(
+    start: datetime = Query(..., description="Inclusive range start (ISO datetime)"),
+    end: datetime = Query(..., description="Exclusive range end (ISO datetime)"),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(_verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    return _tee_range_payload(
+        start=start,
+        end=end,
+        db=db,
+        club_id=club_id,
+        current_user=None,
+        enforce_booking_window=False,
+    )
+
+
+def _tee_range_payload(
+    *,
+    start: datetime,
+    end: datetime,
+    db: Session,
+    club_id: int,
+    current_user: models.User | None,
+    enforce_booking_window: bool,
+):
     try:
         start = _as_naive_datetime(start)
         end = _as_naive_datetime(end)
         if end <= start:
             raise HTTPException(status_code=400, detail="Invalid range: end must be after start")
 
-        # Enforce booking window for non-admins by clamping the range.
-        if getattr(current_user, "role", None) not in {models.UserRole.super_admin, models.UserRole.admin, models.UserRole.club_staff}:
+        # Enforce booking window only on the shared/public view route.
+        if enforce_booking_window and getattr(current_user, "role", None) not in {
+            models.UserRole.super_admin,
+            models.UserRole.admin,
+            models.UserRole.club_staff,
+        }:
             _, _, max_date = get_booking_window_for_user(db, current_user)
             if start.date() > max_date:
                 return []
