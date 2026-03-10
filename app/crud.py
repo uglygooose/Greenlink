@@ -564,7 +564,7 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
 
     # Fee resolution
     fee_category_id = getattr(booking_in, "fee_category_id", None)
-    price = booking_in.price if getattr(booking_in, "price", None) is not None else 350.0
+    price = booking_in.price if getattr(booking_in, "price", None) is not None else 0.0
     resolved_fee_cat = None
 
     # If fee_category_id is provided, get price from fee table

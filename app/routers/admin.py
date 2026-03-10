@@ -6371,14 +6371,6 @@ class PlayerPriceUpdate(BaseModel):
     fee_category_id: Optional[int] = None  # Fee category to apply
     custom_price: Optional[float] = None   # Or set custom price directly
 
-class AvailableFeeResponse(BaseModel):
-    """Available fee category"""
-    id: int
-    code: int
-    description: str
-    price: float
-    fee_type: str
-
 
 class PricingMatrixRowInput(BaseModel):
     code: Optional[int] = None
@@ -6641,7 +6633,7 @@ async def update_player_price(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
-    """Update a player's fee/price"""
+    """Legacy bulk override. Prefer the club pricing matrix for ongoing pricing changes."""
 
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     
@@ -6721,7 +6713,7 @@ async def get_player_price_info(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
-    """Get price info for a specific player (admin only)"""
+    """Legacy pricing summary kept for compatibility with older tooling."""
 
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     
@@ -6781,7 +6773,7 @@ async def update_booking_price(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
-    """Update price for a specific booking (admin only)"""
+    """One-off booking override. Prefer canonical pricing where possible."""
 
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     

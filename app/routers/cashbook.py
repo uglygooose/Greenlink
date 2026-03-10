@@ -909,7 +909,7 @@ def create_payment_record(
     fee_category = booking.fee_category_id
     
     # Get fee details if available
-    amount = booking.price if booking.price else 350.0
+    amount = float(booking.price or 0.0)
     
     # Create reference from booking ID and player
     reference = f"BK{booking.id:05d}"  # 5 chars max for reference

@@ -3508,7 +3508,7 @@ async function viewBookingDetail(bookingId) {
                     </div>
 	                    ${allowAdminOnly ? `
 	                    <div style="margin-top: 10px;">
-	                        <button class="btn-edit" onclick="openEditBookingPriceModal(${bookingId})">Edit Price</button>
+	                        <button class="btn-edit" onclick="openEditBookingPriceModal(${bookingId})">Override Price</button>
 	                    </div>
 	                    ` : ""}
                     <div class="detail-row" style="margin-top: 12px;">
@@ -4310,11 +4310,6 @@ async function viewPlayerDetail(playerId) {
         const player = await fetchJson(`${API_BASE}/api/admin/players/${playerId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        
-        // Get price info
-        const priceInfo = await fetchJson(`${API_BASE}/api/admin/players/${playerId}/price-info`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
 
         const html = `
             <div class="modal-section">
@@ -4346,9 +4341,8 @@ async function viewPlayerDetail(playerId) {
                 <div class="modal-value">${(player.gender || "—") + " / " + (player.player_category || "—")}</div>
             </div>
             <div class="modal-section">
-                <div class="modal-label">Current Price</div>
-                <div class="modal-value">R${priceInfo.current_price ? priceInfo.current_price.toFixed(2) : "N/A"}</div>
-                ${currentUserRole === "admin" ? `<button class="btn-edit" onclick="openEditPriceModal(${playerId}, '${player.name}')">Edit Price</button>` : ""}
+                <div class="modal-label">Pricing Source</div>
+                <div class="modal-value">Bookings derive price from the club pricing matrix and booking context.</div>
             </div>
             <div class="modal-section">
                 <div class="modal-label">Total Spent</div>
@@ -4392,92 +4386,6 @@ async function viewPlayerDetail(playerId) {
     }
 }
 
-// Edit Player Price Modal
-async function openEditPriceModal(playerId, playerName) {
-    const token = localStorage.getItem("token");
-
-    try {
-        // Get available fee categories
-        const response = await fetch(`${API_BASE}/api/admin/fee-categories`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-
-        const categories = await response.json();
-
-        const html = `
-            <div class="modal-section">
-                <h2>Edit Price for ${playerName}</h2>
-            </div>
-            <div class="modal-section">
-                <label>Select Fee Type:</label>
-                <select id="fee-category-select" style="width: 100%; padding: 8px; margin: 10px 0;">
-                    <option value="">-- Custom Price --</option>
-                    ${categories.map(cat => `
-                        <option value="${cat.id}">
-                            ${cat.description} (R${cat.price.toFixed(2)})
-                        </option>
-                    `).join("")}
-                </select>
-            </div>
-            <div class="modal-section">
-                <label>Or Enter Custom Price (R):</label>
-                <input type="number" id="custom-price-input" placeholder="Enter custom price" step="0.01" min="0" style="width: 100%; padding: 8px; margin: 10px 0;">
-            </div>
-            <div class="modal-section" style="display: flex; gap: 10px;">
-                <button class="btn-save" onclick="savePlayerPrice(${playerId})">Save Price</button>
-                <button class="btn-cancel" onclick="closePriceModal()">Cancel</button>
-            </div>
-        `;
-
-        document.getElementById("player-modal-body").innerHTML = html;
-    } catch (error) {
-        console.error("Failed to load fee categories:", error);
-        alert("Failed to load fee categories");
-    }
-}
-
-async function savePlayerPrice(playerId) {
-    const token = localStorage.getItem("token");
-    const feeSelect = document.getElementById("fee-category-select");
-    const customPrice = document.getElementById("custom-price-input");
-
-    let payload = {};
-
-    if (feeSelect.value) {
-        payload.fee_category_id = parseInt(feeSelect.value);
-    } else if (customPrice.value) {
-        payload.custom_price = parseFloat(customPrice.value);
-    } else {
-        alert("Please select a fee type or enter a custom price");
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/api/admin/players/${playerId}/price`, {
-            method: "PUT",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            alert("Error: " + result.detail);
-            return;
-        }
-
-        alert(result.message);
-        document.getElementById("player-modal").classList.remove("show");
-        loadPlayers(); // Refresh players list
-    } catch (error) {
-        console.error("Failed to save price:", error);
-        alert("Failed to save price");
-    }
-}
-
 function closePriceModal() {
     document.getElementById("player-modal").classList.remove("show");
 }
@@ -4497,10 +4405,10 @@ async function openEditBookingPriceModal(bookingId) {
         const html = `
             <div class="modal-section">
                 <button class="btn-secondary btn-small" type="button" onclick="viewBookingDetail(${bookingId})">Back</button>
-                <h2 style="margin-top: 12px;">Edit Booking Price</h2>
+                <h2 style="margin-top: 12px;">Override Booking Price</h2>
             </div>
             <div class="modal-section">
-                <label>Auto Pricing (fewest clicks)</label>
+                <label>Apply Canonical Pricing</label>
                 <div class="action-row">
                     <select id="booking-auto-player-type" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #d0d7de;">
                         <option value="member" ${defaultPlayerType === "member" ? "selected" : ""}>Member</option>
@@ -4529,7 +4437,7 @@ async function openEditBookingPriceModal(bookingId) {
                 </select>
             </div>
             <div class="modal-section">
-                <label>Or Enter Custom Price (R):</label>
+                <label>Or enter a one-off manual price (R)</label>
                 <input type="number" id="booking-custom-price-input" placeholder="Enter custom price" step="0.01" min="0" style="width: 100%; padding: 8px; margin: 10px 0;">
             </div>
             <div class="modal-section" style="display: flex; gap: 10px;">
@@ -4546,7 +4454,6 @@ async function openEditBookingPriceModal(bookingId) {
 }
 
 async function applyAutoBookingPrice(bookingId) {
-    const token = localStorage.getItem("token");
     const playerType = document.getElementById("booking-auto-player-type")?.value || "visitor";
     const senior = Boolean(document.getElementById("booking-auto-senior")?.checked);
     const playerCategory = String(document.getElementById("booking-auto-player-category")?.value || "").trim().toLowerCase();
@@ -4558,27 +4465,18 @@ async function applyAutoBookingPrice(bookingId) {
     }
 
     try {
-        const res = await fetch("/fees/suggest/golf", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                tee_time_id: teeTimeId,
-                player_type: playerType,
-                holes: 18,
-                player_category: playerCategory || (senior ? "pensioner" : null),
-                age: senior || playerCategory === "pensioner" ? 60 : null
-            })
+        const suggested = await suggestAdminFee("golf", {
+            tee_time_id: teeTimeId,
+            player_type: playerType,
+            holes: 18,
+            player_category: playerCategory || (senior ? "pensioner" : null),
+            age: senior || playerCategory === "pensioner" ? 60 : null
         });
 
-        if (!res.ok) {
+        if (!suggested) {
             alert("No matching fee found. Pick a fee manually.");
             return;
         }
-
-        const suggested = await res.json();
         await saveBookingPrice(bookingId, { fee_category_id: suggested.id });
     } catch (e) {
         console.error("Auto price failed:", e);
@@ -8417,6 +8315,26 @@ async function loadGolfFees() {
     return golfFeesCache;
 }
 
+async function suggestAdminFee(feeType, payload) {
+    const token = localStorage.getItem("token");
+    const normalizedType = String(feeType || "").trim().toLowerCase();
+    const allowedTypes = new Set(["golf", "cart", "push-cart", "caddy"]);
+    if (!allowedTypes.has(normalizedType)) {
+        throw new Error(`Unsupported fee type: ${feeType}`);
+    }
+
+    const response = await fetch(`/fees/suggest/${normalizedType}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload || {}),
+    });
+    if (!response.ok) return null;
+    return response.json();
+}
+
 async function viewMemberDetail(memberId) {
     const token = localStorage.getItem("token");
 
@@ -8840,7 +8758,6 @@ function feeOptionsHtml() {
 }
 
 async function suggestFeeForRow(row) {
-    const token = localStorage.getItem("token");
     const feeSelect = row.querySelector('select[data-field="fee"]');
     const typeSelect = row.querySelector('select[data-field="player_type"]');
     const seniorCheckbox = row.querySelector('input[data-field="senior"]');
@@ -8853,22 +8770,15 @@ async function suggestFeeForRow(row) {
     const playerCategory = String(categorySelect?.value || "").trim().toLowerCase();
 
     try {
-        const res = await fetch("/fees/suggest/golf", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                tee_time_id: teeBookingState.teeTimeId,
-                player_type: playerType,
-                holes: teeBookingState.holes || 18,
-                player_category: playerCategory || (senior ? "pensioner" : null),
-                age: senior || playerCategory === "pensioner" ? 60 : null
-            })
+        const suggested = await suggestAdminFee("golf", {
+            tee_time_id: teeBookingState.teeTimeId,
+            player_type: playerType,
+            holes: teeBookingState.holes || 18,
+            player_category: playerCategory || (senior ? "pensioner" : null),
+            age: senior || playerCategory === "pensioner" ? 60 : null
         });
 
-        if (!res.ok) {
+        if (!suggested) {
             row.dataset.autoFeeId = "";
             row.dataset.autoPrice = "0";
             const label = row.querySelector("[data-row-fee-label]");
@@ -8876,8 +8786,6 @@ async function suggestFeeForRow(row) {
             updateBookingTotals();
             return;
         }
-
-        const suggested = await res.json();
         row.dataset.autoFeeId = String(suggested.id);
         row.dataset.autoPrice = String(suggested.price);
         const label = row.querySelector("[data-row-fee-label]");
@@ -8894,7 +8802,6 @@ async function suggestFeeForRow(row) {
 }
 
 async function suggestCartForRow(row) {
-    const token = localStorage.getItem("token");
     const cartChecked = Boolean(row.querySelector('input[data-field="cart"]')?.checked);
     const label = row.querySelector("[data-row-cart-label]");
 
@@ -8914,30 +8821,21 @@ async function suggestCartForRow(row) {
     const senior = Boolean(seniorCheckbox?.checked);
 
     try {
-        const res = await fetch("/fees/suggest/cart", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                tee_time_id: teeBookingState.teeTimeId,
-                player_type: playerType,
-                player_category: playerCategory || (senior ? "pensioner" : null),
-                age: senior || playerCategory === "pensioner" ? 60 : null,
-                holes: teeBookingState.holes || 18
-            })
+        const suggested = await suggestAdminFee("cart", {
+            tee_time_id: teeBookingState.teeTimeId,
+            player_type: playerType,
+            player_category: playerCategory || (senior ? "pensioner" : null),
+            age: senior || playerCategory === "pensioner" ? 60 : null,
+            holes: teeBookingState.holes || 18
         });
 
-        if (!res.ok) {
+        if (!suggested) {
             row.dataset.cartPrice = "0";
             row.dataset.cartLabel = "Cart pricing unavailable";
             if (label) label.textContent = "Cart pricing unavailable";
             updateBookingTotals();
             return;
         }
-
-        const suggested = await res.json();
         row.dataset.cartPrice = String(suggested.price || 0);
         row.dataset.cartLabel = suggested.description || "Cart";
         if (label) label.textContent = `${row.dataset.cartLabel} (R${Number(suggested.price || 0).toFixed(0)})`;
@@ -8952,7 +8850,6 @@ async function suggestCartForRow(row) {
 }
 
 async function suggestPushCartForRow(row) {
-    const token = localStorage.getItem("token");
     const checked = Boolean(row.querySelector('input[data-field="push_cart"]')?.checked);
     const label = row.querySelector("[data-row-push-cart-label]");
 
@@ -8972,30 +8869,21 @@ async function suggestPushCartForRow(row) {
     const senior = Boolean(seniorCheckbox?.checked);
 
     try {
-        const res = await fetch("/fees/suggest/push-cart", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                tee_time_id: teeBookingState.teeTimeId,
-                player_type: playerType,
-                player_category: playerCategory || (senior ? "pensioner" : null),
-                age: senior || playerCategory === "pensioner" ? 60 : null,
-                holes: teeBookingState.holes || 18
-            })
+        const suggested = await suggestAdminFee("push-cart", {
+            tee_time_id: teeBookingState.teeTimeId,
+            player_type: playerType,
+            player_category: playerCategory || (senior ? "pensioner" : null),
+            age: senior || playerCategory === "pensioner" ? 60 : null,
+            holes: teeBookingState.holes || 18
         });
 
-        if (!res.ok) {
+        if (!suggested) {
             row.dataset.pushCartPrice = "0";
             row.dataset.pushCartLabel = "Push cart pricing unavailable";
             if (label) label.textContent = "Push cart pricing unavailable";
             updateBookingTotals();
             return;
         }
-
-        const suggested = await res.json();
         row.dataset.pushCartPrice = String(suggested.price || 0);
         row.dataset.pushCartLabel = suggested.description || "Push Cart";
         if (label) label.textContent = `${row.dataset.pushCartLabel} (R${Number(suggested.price || 0).toFixed(0)})`;
@@ -9010,7 +8898,6 @@ async function suggestPushCartForRow(row) {
 }
 
 async function suggestCaddyForRow(row) {
-    const token = localStorage.getItem("token");
     const checked = Boolean(row.querySelector('input[data-field="caddy"]')?.checked);
     const label = row.querySelector("[data-row-caddy-label]");
 
@@ -9030,30 +8917,21 @@ async function suggestCaddyForRow(row) {
     const senior = Boolean(seniorCheckbox?.checked);
 
     try {
-        const res = await fetch("/fees/suggest/caddy", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                tee_time_id: teeBookingState.teeTimeId,
-                player_type: playerType,
-                player_category: playerCategory || (senior ? "pensioner" : null),
-                age: senior || playerCategory === "pensioner" ? 60 : null,
-                holes: teeBookingState.holes || 18
-            })
+        const suggested = await suggestAdminFee("caddy", {
+            tee_time_id: teeBookingState.teeTimeId,
+            player_type: playerType,
+            player_category: playerCategory || (senior ? "pensioner" : null),
+            age: senior || playerCategory === "pensioner" ? 60 : null,
+            holes: teeBookingState.holes || 18
         });
 
-        if (!res.ok) {
+        if (!suggested) {
             row.dataset.caddyPrice = "0";
             row.dataset.caddyLabel = "Caddy pricing unavailable";
             if (label) label.textContent = "Caddy pricing unavailable";
             updateBookingTotals();
             return;
         }
-
-        const suggested = await res.json();
         row.dataset.caddyPrice = String(suggested.price || 0);
         row.dataset.caddyLabel = suggested.description || "Caddy";
         if (label) label.textContent = `${row.dataset.caddyLabel} (R${Number(suggested.price || 0).toFixed(0)})`;

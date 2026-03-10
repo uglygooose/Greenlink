@@ -325,7 +325,7 @@ class Booking(Base):
     party_size = Column(Integer, default=1)
     account_customer_id = Column(Integer, ForeignKey("account_customers.id"), nullable=True, index=True)
     fee_category_id = Column(Integer, ForeignKey("fee_categories.id"), nullable=True)
-    price = Column(Float, default=350.0)  # Default green fee
+    price = Column(Float, default=0.0)  # Resolved booking value from pricing matrix or explicit override
     status = Column(Enum(BookingStatus), default=BookingStatus.booked, index=True)
     # Booking-level attributes (snapshotted at booking time for reporting)
     player_type = Column(String(30), nullable=True)  # member | visitor | non_affiliated | reciprocity
