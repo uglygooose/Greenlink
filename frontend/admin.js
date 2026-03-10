@@ -7617,6 +7617,8 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
 
             const booking = bookings[i];
             if (booking) {
+                const bookingId = Number.parseInt(String(booking?.id || ""), 10);
+                const safeBookingId = Number.isFinite(bookingId) ? bookingId : 0;
                 const status = booking.status || "booked";
                 const statusClass =
                     status === "checked_in" ? "checked-in" :
