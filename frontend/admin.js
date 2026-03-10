@@ -10,6 +10,7 @@ let peopleView = "members"; // members | guests | staff | account_contacts
 let guestTypeFilter = "all"; // all | affiliated | non_affiliated
 let selectedTee = "all";
 let selectedHolesView = "18";
+let selectedTeeSheetDate = "";
 let bookingPeriod = "day";
 let bookingDateBasis = "tee_time";
 let bookingSort = "tee_asc";
@@ -3301,6 +3302,36 @@ function dateToYMD(dateObj) {
 
 function localTodayYMD() {
     return dateToYMD(new Date());
+}
+
+function normalizeTeeSheetDateValue(raw) {
+    const value = String(raw || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function setSelectedTeeSheetDate(raw, { updateInput = false } = {}) {
+    const normalized = normalizeTeeSheetDateValue(raw) || localTodayYMD();
+    selectedTeeSheetDate = normalized;
+    if (updateInput) {
+        const input = document.getElementById("tee-sheet-date");
+        if (input && input.value !== normalized) {
+            input.value = normalized;
+        }
+    }
+    return normalized;
+}
+
+function currentTeeSheetDate() {
+    const input = document.getElementById("tee-sheet-date");
+    const normalizedInput = normalizeTeeSheetDateValue(input?.value || "");
+    if (normalizedInput) {
+        selectedTeeSheetDate = normalizedInput;
+        return normalizedInput;
+    }
+    if (normalizeTeeSheetDateValue(selectedTeeSheetDate)) {
+        return selectedTeeSheetDate;
+    }
+    return setSelectedTeeSheetDate(localTodayYMD(), { updateInput: true });
 }
 
 function ymdToDate(dateStr) {
@@ -6639,10 +6670,17 @@ function setupTeeSheetFilters() {
     if (!dateInput) return;
 
     if (!dateInput.value) {
-        dateInput.value = localTodayYMD();
+        setSelectedTeeSheetDate(localTodayYMD(), { updateInput: true });
+    } else {
+        setSelectedTeeSheetDate(dateInput.value);
     }
 
+    dateInput.addEventListener("input", () => {
+        setSelectedTeeSheetDate(dateInput.value);
+    });
+
     dateInput.addEventListener("change", () => {
+        setSelectedTeeSheetDate(dateInput.value);
         loadTeeTimes();
     });
 
@@ -6669,7 +6707,7 @@ function setupTeeSheetFilters() {
     });
 
     todayBtn?.addEventListener("click", () => {
-        dateInput.value = localTodayYMD();
+        setSelectedTeeSheetDate(localTodayYMD(), { updateInput: true });
         loadTeeTimes();
     });
 
@@ -6707,7 +6745,7 @@ async function runTeeManageAction(action, triggerButton = null) {
 
     if (action === "generate") {
         if (item?.disabled) return;
-        const dateStr = document.getElementById("tee-sheet-date")?.value || localTodayYMD();
+        const dateStr = currentTeeSheetDate();
         try {
             if (item) item.disabled = true;
             const created = await generateDaySheet(dateStr, new Set());
@@ -7075,7 +7113,7 @@ function openBulkBookModal() {
     const modal = document.getElementById("bulk-book-modal");
     if (!modal) return;
 
-    const dateStr = document.getElementById("tee-sheet-date")?.value || localTodayYMD();
+    const dateStr = currentTeeSheetDate();
     const holes = String(selectedHolesView) === "9" ? "9" : "18";
     applyTeePlanGlobals(dateStr);
     const plan = teePlanForDate(dateStr, holes === "9" ? 9 : 18);
@@ -7628,6 +7666,7 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
         const timeLabel = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
         const teeLabel = normalizeTeeLabel(tt.hole || "1") || "1";
+        const syntheticSlot = Number(tt?.id || 0) <= 0;
         const allBookings = Array.isArray(tt.bookings) ? [...tt.bookings] : [];
         const bookings = allBookings.slice(0, 4);
         const capacity = tt.capacity || 4;
@@ -7652,12 +7691,12 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                 class="tee-row-manage-btn"
                 onclick="openTeeSlotManageModal(${Number(tt.id)})"
                 title="Manage this booking slot"
-                ${bookedCount > 0 ? "" : "style=\"display:none;\""}
+                ${(bookedCount > 0 && !syntheticSlot) ? "" : "style=\"display:none;\""}
             >
                 Manage Slot
                 <span>${formatInteger(bookedCount)} player${bookedCount === 1 ? "" : "s"}</span>
             </button>
-            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>${blockedByGolfDay ? "Booked Out" : "Open"}</span>
+            <span class="tee-row-manage-muted" ${bookedCount > 0 ? "style=\"display:none;\"" : ""}>${syntheticSlot ? "Preview" : (blockedByGolfDay ? "Booked Out" : "Open")}</span>
         `;
 
         const cells = [];
@@ -7711,6 +7750,15 @@ function renderTeeSheetRows(dayTeeTimes, dateStr, emptyMessage) {
                             <div class="slot-card closed">
                                 <div class="slot-name">${blockedByGolfDay ? "Booked Out" : "Closed"}</div>
                                 <div class="slot-meta">${blockedByGolfDay ? "Golf day" : "Past time"}</div>
+                            </div>
+                        </td>
+                    `);
+                } else if (syntheticSlot) {
+                    cells.push(`
+                        <td>
+                            <div class="slot-card open" title="View-only tee-sheet preview for this date">
+                                <div class="slot-name">Open Slot</div>
+                                <div class="slot-action">Schedule Preview</div>
                             </div>
                         </td>
                     `);
@@ -8185,7 +8233,7 @@ async function loadTeeTimes(options = {}) {
     const tbody = document.getElementById("admin-tee-sheet-body");
     if (!dateInput || !tbody) return;
 
-    const dateStr = dateInput.value || localTodayYMD();
+    const dateStr = currentTeeSheetDate();
     applyTeePlanGlobals(dateStr);
     const dayPlan18 = teePlanForDate(dateStr, 18);
     const dayPlan9 = teePlanForDate(dateStr, 9);

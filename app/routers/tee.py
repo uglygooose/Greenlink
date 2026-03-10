@@ -17,6 +17,7 @@ from app import crud, models, schemas
 from app.booking_rules import get_booking_window_for_user
 from app.services.booking_pricing_service import repair_bookings_pricing
 from app.tenancy import get_active_club_id
+from app.tee_profile import load_tee_sheet_profile, tee_sheet_plan_for_date
 
 router = APIRouter(prefix="/tsheet", tags=["tsheet"])
 
@@ -119,6 +120,72 @@ def _blocked_status_for_tee_time(db: Session, tee_time: models.TeeTime) -> str:
     if tee_dt and crud.is_day_closed(db, tee_dt.date()):
         return "blocked"
     return raw_status or "open"
+
+
+def _planned_staff_day_rows(db: Session, club_id: int, target_date: Date) -> list[dict]:
+    profile = load_tee_sheet_profile(db, club_id)
+    plan18 = tee_sheet_plan_for_date(target_date, profile, holes=18)
+    plan9 = tee_sheet_plan_for_date(target_date, profile, holes=9)
+    block_reason = crud.get_day_block_reason(db, target_date)
+    status = "blocked" if block_reason in {"manual_close", "golf_day"} else "open"
+
+    windows: list[tuple[str, str]] = []
+    seen_windows: set[tuple[str, str]] = set()
+    for plan in (plan18, plan9):
+        for window in list(plan.get("windows") or []):
+            start_raw = str(window.get("start") or "").strip()
+            end_raw = str(window.get("end") or "").strip()
+            if not start_raw or not end_raw:
+                continue
+            key = (start_raw, end_raw)
+            if key in seen_windows:
+                continue
+            seen_windows.add(key)
+            windows.append(key)
+
+    tees: list[str] = []
+    seen_tees: set[str] = set()
+    for plan in (plan18, plan9):
+        for tee in list(plan.get("tees") or []):
+            normalized = _normalize_tee_label(tee)
+            if not normalized or normalized in seen_tees:
+                continue
+            seen_tees.add(normalized)
+            tees.append(normalized)
+
+    interval = int(plan18.get("interval_min") or plan9.get("interval_min") or 8)
+    interval = max(1, min(interval, 60))
+    if not windows:
+        windows = [("06:30", "13:30")]
+    if not tees:
+        tees = ["1", "10"]
+
+    synthetic_rows: list[dict] = []
+    synthetic_id = -1
+    for start_raw, end_raw in windows:
+        start_dt = datetime.combine(target_date, _parse_hhmm(start_raw))
+        end_dt = datetime.combine(target_date, _parse_hhmm(end_raw))
+        if start_dt > end_dt:
+            continue
+        current = start_dt
+        while current <= end_dt:
+            slot_dt = current.replace(second=0, microsecond=0)
+            for tee in tees:
+                synthetic_rows.append(
+                    {
+                        "id": synthetic_id,
+                        "tee_time": slot_dt,
+                        "hole": tee,
+                        "capacity": 4,
+                        "status": status,
+                        "bookings": [],
+                    }
+                )
+                synthetic_id -= 1
+            current = current + timedelta(minutes=interval)
+
+    synthetic_rows.sort(key=lambda row: (row["tee_time"], int(str(row["hole"] or "1"))))
+    return synthetic_rows
 
 @router.post("/create", response_model=schemas.TeeTimeOut)
 def create_tee(
@@ -388,6 +455,9 @@ def _tee_range_payload(
             .order_by(models.TeeTime.tee_time, models.TeeTime.id)
             .all()
         )
+        if not tee_times and not enforce_booking_window:
+            if start.time() == Time(0, 0) and end == (start + timedelta(days=1)):
+                return _planned_staff_day_rows(db, club_id, start.date())
         tee_time_ids = [int(getattr(tt, "id", 0) or 0) for tt in tee_times if int(getattr(tt, "id", 0) or 0) > 0]
         tee_dates = sorted({getattr(tt, "tee_time", None).date() for tt in tee_times if getattr(tt, "tee_time", None) is not None})
         blocked_dates: set[Date] = set()
