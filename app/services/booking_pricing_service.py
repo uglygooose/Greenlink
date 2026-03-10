@@ -250,29 +250,31 @@ def repair_bookings_pricing(
 
         changed = False
         if current_price is None or current_price <= 0 or abs(float(current_price) - float(resolved.price)) > 0.009:
-            booking.price = float(resolved.price)
             changed = True
         if resolved.fee_category_id and current_fee_category_id != resolved.fee_category_id:
-            booking.fee_category_id = int(resolved.fee_category_id)
             changed = True
         resolved_player_type = normalize_player_type(getattr(resolved.pricing_profile, "player_type", None))
         if resolved_player_type and not current_player_type:
-            booking.player_type = resolved_player_type
             changed = True
         if resolved.gender and not normalize_gender(getattr(booking, "gender", None)):
-            booking.gender = resolved.gender
             changed = True
 
         if changed:
-            if getattr(booking, "status", None) in paid_statuses:
-                crud.ensure_paid_ledger_entry(db, booking)
             updated_booking_ids.append(booking_id)
+            if persist:
+                if current_price is None or current_price <= 0 or abs(float(current_price) - float(resolved.price)) > 0.009:
+                    booking.price = float(resolved.price)
+                if resolved.fee_category_id and current_fee_category_id != resolved.fee_category_id:
+                    booking.fee_category_id = int(resolved.fee_category_id)
+                if resolved_player_type and not current_player_type:
+                    booking.player_type = resolved_player_type
+                if resolved.gender and not normalize_gender(getattr(booking, "gender", None)):
+                    booking.gender = resolved.gender
+                if getattr(booking, "status", None) in paid_statuses:
+                    crud.ensure_paid_ledger_entry(db, booking)
 
-    if updated_booking_ids:
-        if persist:
-            db.commit()
-        else:
-            db.flush()
+    if updated_booking_ids and persist:
+        db.commit()
 
     return BookingPricingRepairResult(
         resolved_by_booking_id=resolved_by_booking_id,
