@@ -66,7 +66,6 @@ from app.services.bookings_service import (
     clear_booking_ledger_entries,
     get_booking_or_404,
     normalize_booking_ids,
-    set_booking_payment_method_if_exists,
     set_booking_payment_method_meta,
 )
 from app.services.booking_pricing_service import repair_bookings_pricing
@@ -4088,6 +4087,22 @@ async def batch_update_bookings(
 
     ordered_bookings = [by_id[bid] for bid in booking_ids]
     paid_statuses = {BookingStatus.checked_in, BookingStatus.completed}
+    existing_ledger_rows = (
+        db.query(LedgerEntry)
+        .filter(LedgerEntry.booking_id.in_(booking_ids))
+        .order_by(LedgerEntry.id)
+        .all()
+    )
+    latest_ledger_by_booking_id: dict[int, LedgerEntry] = {}
+    for row in existing_ledger_rows:
+        booking_id = int(getattr(row, "booking_id", 0) or 0)
+        if booking_id > 0:
+            latest_ledger_by_booking_id[booking_id] = row
+    existing_ledger_ids = [
+        int(getattr(row, "id", 0) or 0)
+        for row in latest_ledger_by_booking_id.values()
+        if int(getattr(row, "id", 0) or 0) > 0
+    ]
 
     for booking in ordered_bookings:
         if booking.tee_time and booking.tee_time.tee_time:
@@ -4099,23 +4114,78 @@ async def batch_update_bookings(
     ledger_updated = 0
     account_updated = 0
 
-    for booking in ordered_bookings:
-        if requested_status is not None:
+    if requested_status in paid_statuses:
+        for booking in ordered_bookings:
             booking.status = requested_status
-            if booking.status in paid_statuses:
-                crud.ensure_paid_ledger_entry(db, booking, payment_method=payment_method or None)
-                ledger_updated += 1
-            else:
-                clear_booking_ledger_entries(db, booking_id=int(booking.id))
-        elif payment_method:
-            was_updated, _ledger_entry_id, _normalized = set_booking_payment_method_if_exists(
+        crud.ensure_paid_ledger_entries(
+            db,
+            ordered_bookings,
+            payment_method=payment_method or None,
+        )
+        ledger_updated = len(ordered_bookings)
+    elif requested_status is not None:
+        for booking in ordered_bookings:
+            booking.status = requested_status
+        if existing_ledger_ids:
+            db.query(LedgerEntryMeta).filter(
+                LedgerEntryMeta.ledger_entry_id.in_(existing_ledger_ids)
+            ).delete(synchronize_session=False)
+        if booking_ids:
+            db.query(LedgerEntry).filter(
+                LedgerEntry.booking_id.in_(booking_ids)
+            ).delete(synchronize_session=False)
+    elif payment_method:
+        paid_bookings = [
+            booking for booking in ordered_bookings
+            if str(getattr(getattr(booking, "status", None), "value", booking.status) or "").strip().lower()
+            in {"checked_in", "completed"}
+        ]
+        if paid_bookings:
+            crud.ensure_paid_ledger_entries(
                 db,
-                booking_id=int(booking.id),
+                paid_bookings,
                 payment_method=payment_method,
             )
-            if was_updated:
-                ledger_updated += 1
+            ledger_updated += len(paid_bookings)
 
+        meta_rows = (
+            db.query(LedgerEntryMeta)
+            .filter(LedgerEntryMeta.ledger_entry_id.in_(existing_ledger_ids))
+            .all()
+            if existing_ledger_ids else []
+        )
+        meta_by_ledger_id = {
+            int(getattr(meta, "ledger_entry_id", 0) or 0): meta
+            for meta in meta_rows
+            if int(getattr(meta, "ledger_entry_id", 0) or 0) > 0
+        }
+        paid_booking_ids = {
+            int(getattr(booking, "id", 0) or 0)
+            for booking in paid_bookings
+            if int(getattr(booking, "id", 0) or 0) > 0
+        }
+        for booking in ordered_bookings:
+            booking_id = int(getattr(booking, "id", 0) or 0)
+            if booking_id <= 0 or booking_id in paid_booking_ids:
+                continue
+            ledger_entry = latest_ledger_by_booking_id.get(booking_id)
+            if ledger_entry is None or not getattr(ledger_entry, "id", None):
+                continue
+            ledger_entry_id = int(ledger_entry.id)
+            meta = meta_by_ledger_id.get(ledger_entry_id)
+            if meta is not None:
+                meta.payment_method = payment_method
+                meta.updated_at = datetime.utcnow()
+            else:
+                meta = LedgerEntryMeta(
+                    ledger_entry_id=ledger_entry_id,
+                    payment_method=payment_method,
+                )
+                db.add(meta)
+                meta_by_ledger_id[ledger_entry_id] = meta
+            ledger_updated += 1
+
+    for booking in ordered_bookings:
         if apply_account_code:
             booking.club_card = account_code
             booking.account_customer_id = int(selected_account_customer.id) if selected_account_customer is not None else None

@@ -95,23 +95,28 @@ def _select_caddy_fee(db: Session, tee_time, player_type: str, holes: int = 18, 
     )
     return select_best_fee_category(db, ctx)
 
-def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_method: str | None = None) -> models.LedgerEntry | None:
-    """
-    Ensure a single ledger entry exists once a booking is considered paid.
-    Payment is assumed when status is checked_in/completed.
-    """
-    if not booking or not booking.id:
-        return None
-
+def _paid_ledger_description_amount(
+    db: Session,
+    booking: models.Booking,
+    *,
+    fee_description_by_id: dict[int, str] | None = None,
+) -> tuple[str, float]:
     description = f"Green fee - {booking.player_name}"
-    if getattr(booking, "fee_category_id", None):
-        try:
-            from app.fee_models import FeeCategory
-            fee_cat = db.query(FeeCategory).filter(FeeCategory.id == booking.fee_category_id).first()
-            if fee_cat and fee_cat.description:
-                description = fee_cat.description
-        except Exception:
-            pass
+    fee_category_id = getattr(booking, "fee_category_id", None)
+    if fee_category_id:
+        fee_description = None
+        normalized_fee_id = int(fee_category_id)
+        if fee_description_by_id is not None:
+            fee_description = str(fee_description_by_id.get(normalized_fee_id, "") or "").strip() or None
+        else:
+            try:
+                from app.fee_models import FeeCategory
+                fee_cat = db.query(FeeCategory).filter(FeeCategory.id == normalized_fee_id).first()
+                fee_description = str(getattr(fee_cat, "description", "") or "").strip() or None
+            except Exception:
+                fee_description = None
+        if fee_description:
+            description = fee_description
     notes = str(getattr(booking, "notes", "") or "")
     if bool(getattr(booking, "cart", False)) or "Cart:" in notes:
         description = f"{description} + Cart"
@@ -120,6 +125,17 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
     if bool(getattr(booking, "caddy", False)):
         description = f"{description} + Caddy"
     amount = float(getattr(booking, "price", None) or 0.0)
+    return description, amount
+
+def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_method: str | None = None) -> models.LedgerEntry | None:
+    """
+    Ensure a single ledger entry exists once a booking is considered paid.
+    Payment is assumed when status is checked_in/completed.
+    """
+    if not booking or not booking.id:
+        return None
+
+    description, amount = _paid_ledger_description_amount(db, booking)
     normalized_payment_method = normalize_booking_payment_method(payment_method, allow_empty=True)
 
     def _upsert_meta(ledger_entry_id: int, method: str) -> None:
@@ -150,6 +166,114 @@ def ensure_paid_ledger_entry(db: Session, booking: models.Booking, payment_metho
     if normalized_payment_method:
         _upsert_meta(le.id, normalized_payment_method)
     return le
+
+def ensure_paid_ledger_entries(
+    db: Session,
+    bookings: list[models.Booking],
+    payment_method: str | None = None,
+) -> dict[int, models.LedgerEntry]:
+    rows = [booking for booking in (bookings or []) if booking and getattr(booking, "id", None)]
+    if not rows:
+        return {}
+
+    booking_ids = [int(booking.id) for booking in rows]
+    normalized_payment_method = normalize_booking_payment_method(payment_method, allow_empty=True)
+
+    fee_description_by_id: dict[int, str] = {}
+    fee_category_ids = sorted({
+        int(getattr(booking, "fee_category_id", 0) or 0)
+        for booking in rows
+        if int(getattr(booking, "fee_category_id", 0) or 0) > 0
+    })
+    if fee_category_ids:
+        try:
+            from app.fee_models import FeeCategory
+            fee_rows = (
+                db.query(FeeCategory.id, FeeCategory.description)
+                .filter(FeeCategory.id.in_(fee_category_ids))
+                .all()
+            )
+            fee_description_by_id = {
+                int(fee_id): str(description or "").strip()
+                for fee_id, description in fee_rows
+                if fee_id is not None and str(description or "").strip()
+            }
+        except Exception:
+            fee_description_by_id = {}
+
+    existing_rows = (
+        db.query(models.LedgerEntry)
+        .filter(models.LedgerEntry.booking_id.in_(booking_ids))
+        .order_by(models.LedgerEntry.id)
+        .all()
+    )
+    latest_by_booking_id: dict[int, models.LedgerEntry] = {}
+    for row in existing_rows:
+        booking_id = int(getattr(row, "booking_id", 0) or 0)
+        if booking_id > 0:
+            latest_by_booking_id[booking_id] = row
+
+    meta_by_ledger_id: dict[int, models.LedgerEntryMeta] = {}
+    existing_ledger_ids = [int(getattr(row, "id", 0) or 0) for row in latest_by_booking_id.values() if int(getattr(row, "id", 0) or 0) > 0]
+    if existing_ledger_ids:
+        meta_rows = (
+            db.query(models.LedgerEntryMeta)
+            .filter(models.LedgerEntryMeta.ledger_entry_id.in_(existing_ledger_ids))
+            .all()
+        )
+        meta_by_ledger_id = {
+            int(getattr(meta, "ledger_entry_id", 0) or 0): meta
+            for meta in meta_rows
+            if int(getattr(meta, "ledger_entry_id", 0) or 0) > 0
+        }
+
+    new_entries: list[tuple[int, models.LedgerEntry]] = []
+    for booking in rows:
+        booking_id = int(booking.id)
+        description, amount = _paid_ledger_description_amount(
+            db,
+            booking,
+            fee_description_by_id=fee_description_by_id,
+        )
+        existing = latest_by_booking_id.get(booking_id)
+        if existing is not None:
+            existing.description = description
+            existing.amount = amount
+            continue
+        ledger_entry = models.LedgerEntry(
+            club_id=getattr(booking, "club_id", None),
+            booking_id=booking_id,
+            description=description,
+            amount=amount,
+        )
+        db.add(ledger_entry)
+        new_entries.append((booking_id, ledger_entry))
+
+    if new_entries:
+        db.flush()
+        for booking_id, ledger_entry in new_entries:
+            latest_by_booking_id[booking_id] = ledger_entry
+
+    if normalized_payment_method:
+        for booking in rows:
+            booking_id = int(booking.id)
+            ledger_entry = latest_by_booking_id.get(booking_id)
+            if ledger_entry is None or not getattr(ledger_entry, "id", None):
+                continue
+            ledger_entry_id = int(ledger_entry.id)
+            meta = meta_by_ledger_id.get(ledger_entry_id)
+            if meta is not None:
+                meta.payment_method = normalized_payment_method
+                meta.updated_at = datetime.utcnow()
+                continue
+            meta = models.LedgerEntryMeta(
+                ledger_entry_id=ledger_entry_id,
+                payment_method=normalized_payment_method,
+            )
+            db.add(meta)
+            meta_by_ledger_id[ledger_entry_id] = meta
+
+    return latest_by_booking_id
 
 def is_golf_day_blocked(db: Session, target_date) -> bool:
     if not target_date:
