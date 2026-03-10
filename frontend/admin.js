@@ -52,6 +52,18 @@ let dashboardDataCache = null;
 let dashboardStreamPreset = "all";
 let dashboardMenuContext = "main";
 let dashboardPeriodView = "day";
+let dashboardAutoRefreshTimer = null;
+let dashboardSideLoadTimer = null;
+let dashboardLoadController = null;
+let dashboardLoadPromise = null;
+let operationalAlertsLoadController = null;
+let operationalAlertsLoadPromise = null;
+let revenueLoadController = null;
+let revenueLoadPromise = null;
+let revenueLoadRequestKey = "";
+let ledgerLoadController = null;
+let ledgerLoadPromise = null;
+let ledgerLoadRequestKey = "";
 let revenueImportSettingsCache = {};
 let pricingMatrixRows = [];
 let proShopProductsCache = [];
@@ -140,7 +152,6 @@ let weatherReconfirmRows = [];
 let teeWeatherRiskMap = new Map();
 let teeWeatherRequestSeq = 0;
 let weatherPreviewDebounceTimer = null;
-let dashboardAutoRefreshTimer = null;
 let operationalAlertsCache = null;
 
 const AUTH_FETCH_TIMEOUT_MS = 15000;
@@ -746,6 +757,56 @@ function fallbackPageForRole(role = currentUserRole) {
     if (normalizedRole === "super_admin") return "super-admin";
     if (normalizedRole === "club_staff") return "tee-times";
     return "dashboard";
+}
+
+function abortPendingRequest(controller) {
+    if (!controller) return;
+    try {
+        controller.abort();
+    } catch {
+        // Ignore abort races on completed requests.
+    }
+}
+
+function cancelHeavyAdminRequests(activePage = currentActivePage) {
+    const page = String(activePage || "").trim().toLowerCase();
+    if (page !== "dashboard") {
+        abortPendingRequest(dashboardLoadController);
+        abortPendingRequest(operationalAlertsLoadController);
+        if (dashboardSideLoadTimer) {
+            window.clearTimeout(dashboardSideLoadTimer);
+            dashboardSideLoadTimer = null;
+        }
+    }
+    if (page !== "revenue") {
+        abortPendingRequest(revenueLoadController);
+    }
+    if (page !== "ledger") {
+        abortPendingRequest(ledgerLoadController);
+    }
+}
+
+function refreshDashboardIfVisible(options = {}) {
+    if (currentActivePage !== "dashboard") return Promise.resolve(null);
+    return loadDashboard(options);
+}
+
+function refreshRevenueIfVisible(options = {}) {
+    if (currentActivePage !== "revenue") return Promise.resolve(null);
+    return loadRevenue(options);
+}
+
+function scheduleDashboardOperationalAlerts() {
+    if (dashboardSideLoadTimer) {
+        window.clearTimeout(dashboardSideLoadTimer);
+    }
+    if (currentActivePage !== "dashboard") return;
+    dashboardSideLoadTimer = window.setTimeout(() => {
+        dashboardSideLoadTimer = null;
+        if (currentActivePage === "dashboard") {
+            loadOperationalAlerts({ silent: true, useCache: true });
+        }
+    }, 250);
 }
 
 function applyRoleScope(role) {
@@ -1718,6 +1779,7 @@ function navigateToAdminPage(pageName, routeOptions = {}, navigationOptions = {}
         ? requested
         : fallbackPageForRole();
     if (!target) return;
+    cancelHeavyAdminRequests(target);
     const route = applyRoutePresets(target, routeOptions);
     setActiveNavItemForRoute(target, route);
     showPage(target);
@@ -2961,23 +3023,36 @@ function renderOperationalAlerts(payload, options = {}) {
 }
 
 async function loadOperationalAlerts(options = {}) {
+    if (currentActivePage !== "dashboard" && options?.force !== true) {
+        return null;
+    }
     const token = localStorage.getItem("token");
     const silent = Boolean(options?.silent);
     const useCache = options?.useCache !== false;
     const refreshBtn = document.getElementById("dashboard-alerts-refresh-btn");
+    if (operationalAlertsLoadPromise) {
+        return operationalAlertsLoadPromise;
+    }
+    const controller = new AbortController();
+    operationalAlertsLoadController = controller;
     if (refreshBtn) refreshBtn.disabled = true;
 
+    const requestPromise = (async () => {
     try {
         if (useCache && operationalAlertsCache) {
             renderOperationalAlerts(operationalAlertsCache, { cached: true });
         }
 
         const data = await fetchJson(`${API_BASE}/api/admin/operational-alerts?lookahead_days=7`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
         });
         operationalAlertsCache = data || { alerts: [], summary: { total: 0, high: 0, medium: 0, low: 0 } };
-        renderOperationalAlerts(operationalAlertsCache, { cached: false });
+        if (!controller.signal.aborted && currentActivePage === "dashboard") {
+            renderOperationalAlerts(operationalAlertsCache, { cached: false });
+        }
     } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") return null;
         console.error("Failed to load operational alerts:", error);
         if (operationalAlertsCache) {
             renderOperationalAlerts(operationalAlertsCache, { cached: true });
@@ -2988,6 +3063,16 @@ async function loadOperationalAlerts(options = {}) {
     } finally {
         if (refreshBtn) refreshBtn.disabled = false;
     }
+    })();
+    operationalAlertsLoadPromise = requestPromise.finally(() => {
+        if (operationalAlertsLoadPromise === requestPromise) {
+            operationalAlertsLoadPromise = null;
+        }
+        if (operationalAlertsLoadController === controller) {
+            operationalAlertsLoadController = null;
+        }
+    });
+    return operationalAlertsLoadPromise;
 }
 
 function applyDashboardPayload(data, options = {}) {
@@ -3022,31 +3107,40 @@ function applyDashboardPayload(data, options = {}) {
 }
 
 async function loadDashboard(options = {}) {
+    if (currentActivePage !== "dashboard" && options?.force !== true) {
+        return null;
+    }
     const token = localStorage.getItem("token");
     const silent = Boolean(options?.silent);
     const useCache = options?.useCache !== false;
     let renderedFromCache = false;
+    if (dashboardLoadPromise) {
+        return dashboardLoadPromise;
+    }
+    const controller = new AbortController();
+    dashboardLoadController = controller;
 
     if (useCache && !dashboardDataCache) {
         const cached = readDashboardCache();
         if (cached?.data) {
             renderedFromCache = true;
             applyDashboardPayload(cached.data, { cached: true, cachedAt: cached.cachedAt });
-            loadOperationalAlerts({ silent: true, useCache: true });
         }
     }
 
+    const requestPromise = (async () => {
     try {
         const data = await fetchJson(`${API_BASE}/api/admin/dashboard`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
         });
         writeDashboardCache(data);
-        applyDashboardPayload(data, { cached: false });
-        loadOperationalAlerts({ silent: true, useCache: true });
-
-        // Revenue chart
-        loadRevenueChart();
+        if (!controller.signal.aborted && currentActivePage === "dashboard") {
+            applyDashboardPayload(data, { cached: false });
+            scheduleDashboardOperationalAlerts();
+        }
     } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") return null;
         console.error("Failed to load dashboard:", error);
         if (dashboardDataCache || renderedFromCache) {
             if (!silent) toastInfo("Live dashboard refresh failed. Showing cached data.");
@@ -3054,6 +3148,16 @@ async function loadDashboard(options = {}) {
             toastError(error?.message || "Dashboard failed to load");
         }
     }
+    })();
+    dashboardLoadPromise = requestPromise.finally(() => {
+        if (dashboardLoadPromise === requestPromise) {
+            dashboardLoadPromise = null;
+        }
+        if (dashboardLoadController === controller) {
+            dashboardLoadController = null;
+        }
+    });
+    return dashboardLoadPromise;
 }
 
 function renderTargetsTable(targets) {
@@ -4627,7 +4731,7 @@ async function saveBookingPrice(bookingId, overridePayload = null) {
         document.getElementById("booking-modal").classList.remove("show");
         loadBookings();
         loadTeeTimes({ preserveScroll: true });
-        loadDashboard();
+        refreshDashboardIfVisible({ silent: true, useCache: false });
     } catch (error) {
         console.error("Failed to save booking price:", error);
         toastError("Failed to save booking price");
@@ -4639,17 +4743,39 @@ function closeBookingPriceModal() {
 }
 
 // Revenue
-async function loadRevenue() {
+async function loadRevenue(options = {}) {
+    if (currentActivePage !== "revenue" && options?.force !== true) {
+        return null;
+    }
     const token = localStorage.getItem("token");
+    const anchorDate = document.getElementById("revenue-anchor-date")?.value || new Date().toISOString().split("T")[0];
+    const period = String(revenuePeriod || "day");
+    const requestKey = JSON.stringify({
+        anchorDate,
+        period,
+        focus: revenueStreamFocus || "all",
+    });
+    if (revenueLoadPromise && revenueLoadRequestKey === requestKey) {
+        return revenueLoadPromise;
+    }
+    if (revenueLoadController) {
+        revenueLoadController.abort();
+    }
+    const controller = new AbortController();
+    revenueLoadController = controller;
+    revenueLoadRequestKey = requestKey;
 
+    const requestPromise = (async () => {
     try {
-        const anchorDate = document.getElementById("revenue-anchor-date")?.value || new Date().toISOString().split("T")[0];
-        const period = String(revenuePeriod || "day");
         const url = `${API_BASE}/api/admin/revenue?period=${encodeURIComponent(period)}&anchor_date=${encodeURIComponent(anchorDate)}`;
 
         const data = await fetchJson(url, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
         });
+        if (controller.signal.aborted || currentActivePage !== "revenue") {
+            return null;
+        }
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
         const otherRowsRaw = Array.isArray(data.other_revenue_by_stream) ? data.other_revenue_by_stream : [];
         const scopedOtherRows = otherRowsRaw.filter(row => isPrimaryOperationStream(row?.stream));
@@ -4874,8 +5000,22 @@ async function loadRevenue() {
             }
         }
     } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") return null;
         console.error("Failed to load revenue:", error);
     }
+    })();
+    revenueLoadPromise = requestPromise.finally(() => {
+        if (revenueLoadPromise === requestPromise) {
+            revenueLoadPromise = null;
+        }
+        if (revenueLoadController === controller) {
+            revenueLoadController = null;
+        }
+        if (revenueLoadRequestKey === requestKey) {
+            revenueLoadRequestKey = "";
+        }
+    });
+    return revenueLoadPromise;
 }
 
 function setupRevenueFilters() {
@@ -5210,8 +5350,8 @@ async function saveTargetModelSettings() {
         await loadTargetModelSettings({ year, silent: true });
         if (statusEl) statusEl.textContent = "Target model saved";
         if (currentUserRole !== "super_admin") {
-            loadDashboard({ silent: true, useCache: false });
-            if (currentActivePage === "revenue") loadRevenue();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
+            refreshRevenueIfVisible();
         }
         toastSuccess("Target model saved");
     } catch (error) {
@@ -5517,8 +5657,8 @@ async function savePricingMatrix() {
         await loadPricingMatrix({ silent: true });
         await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
         if (currentUserRole !== "super_admin") {
-            loadDashboard({ silent: true, useCache: false });
-            if (currentActivePage === "revenue") loadRevenue();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
+            refreshRevenueIfVisible();
         }
         if (statusEl) statusEl.textContent = "Pricing saved";
         toastSuccess("Pricing matrix saved");
@@ -5555,8 +5695,8 @@ async function deletePricingMatrixRow(buttonEl) {
         await loadPricingMatrix({ silent: true });
         await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
         if (currentUserRole !== "super_admin") {
-            loadDashboard({ silent: true, useCache: false });
-            if (currentActivePage === "revenue") loadRevenue();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
+            refreshRevenueIfVisible();
         }
         if (statusEl) statusEl.textContent = "Pricing row removed";
         toastSuccess("Pricing row removed");
@@ -5583,8 +5723,8 @@ async function applyUmhlaliPricingReference() {
         await loadPricingMatrix({ silent: true });
         await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
         if (currentUserRole !== "super_admin") {
-            loadDashboard({ silent: true, useCache: false });
-            if (currentActivePage === "revenue") loadRevenue();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
+            refreshRevenueIfVisible();
         }
         if (statusEl) statusEl.textContent = "Umhlali pricing applied";
         toastSuccess("Umhlali reference pricing applied");
@@ -5754,8 +5894,8 @@ function setupRevenueImport() {
                 loadOpsImportSettings({ stream, silent: true });
             }
 
-            loadRevenue();
-            loadDashboard();
+            refreshRevenueIfVisible();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
         } catch (e) {
             console.error("Revenue import failed:", e);
             if (statusEl) statusEl.textContent = "";
@@ -6185,7 +6325,7 @@ async function checkoutProShopSale() {
         if (customerEl) customerEl.value = "";
         if (statusEl) statusEl.textContent = "Sale completed";
         toastSuccess("Pro shop sale captured");
-        await Promise.allSettled([loadProShopProducts(), loadProShopSales(), loadDashboard()]);
+        await Promise.allSettled([loadProShopProducts(), loadProShopSales(), refreshDashboardIfVisible({ silent: true, useCache: false })]);
     } catch (error) {
         console.error("Pro shop checkout failed:", error);
         if (statusEl) statusEl.textContent = error?.message || "Checkout failed";
@@ -6837,7 +6977,7 @@ async function applyTeeSlotBatchUpdate() {
         closeTeeSlotManageModal();
         await loadTeeTimes({ preserveScroll: true });
         loadBookings();
-        loadDashboard();
+        refreshDashboardIfVisible({ silent: true, useCache: false });
 
         const updated = Number(result?.updated || selectedIds.length);
         const actionLabel = payload.status ? ` (${statusToLabel(String(payload.status))})` : "";
@@ -8287,7 +8427,7 @@ async function adminCheckIn(bookingId) {
         document.getElementById("booking-modal").classList.remove("show");
         loadTeeTimes({ preserveScroll: true });
         loadBookings();
-        loadDashboard();
+        refreshDashboardIfVisible({ silent: true, useCache: false });
         toastSuccess("Checked in");
     } catch (e) {
         toastError("Check-in failed");
@@ -8318,7 +8458,7 @@ async function adminSetStatus(bookingId, status) {
         document.getElementById("booking-modal").classList.remove("show");
         loadTeeTimes({ preserveScroll: true });
         loadBookings();
-        loadDashboard();
+        refreshDashboardIfVisible({ silent: true, useCache: false });
         toastSuccess(`Status: ${statusToLabel(status)}`);
     } catch (e) {
         toastError("Status update failed");
@@ -8394,7 +8534,7 @@ async function adminDeleteBooking(bookingId) {
         document.getElementById("booking-modal").classList.remove("show");
         loadTeeTimes({ preserveScroll: true });
         loadBookings();
-        loadDashboard();
+        refreshDashboardIfVisible({ silent: true, useCache: false });
         toastInfo("Booking removed");
     } catch (e) {
         toastError("Delete failed");
@@ -9728,7 +9868,7 @@ async function submitTeeBooking() {
         if (created > 0) {
             loadTeeTimes({ preserveScroll: true });
             loadBookings();
-            loadDashboard();
+            refreshDashboardIfVisible({ silent: true, useCache: false });
         }
 
         if (errors.length) {
@@ -9751,10 +9891,30 @@ async function submitTeeBooking() {
 
 // Ledger
 async function loadLedger() {
+    if (currentActivePage !== "ledger") {
+        return null;
+    }
     const token = localStorage.getItem("token");
     const dateStr = document.getElementById("ledger-date")?.value;
     const q = document.getElementById("ledger-search")?.value?.trim();
+    const requestKey = JSON.stringify({
+        page: currentLedgerPage,
+        dateStr: dateStr || "",
+        period: ledgerPeriod || "day",
+        q: q || "",
+        exported: ledgerExportFilter || "all",
+    });
+    if (ledgerLoadPromise && ledgerLoadRequestKey === requestKey) {
+        return ledgerLoadPromise;
+    }
+    if (ledgerLoadController) {
+        ledgerLoadController.abort();
+    }
+    const controller = new AbortController();
+    ledgerLoadController = controller;
+    ledgerLoadRequestKey = requestKey;
 
+    const requestPromise = (async () => {
     try {
         let url = `${API_BASE}/api/admin/ledger?skip=${(currentLedgerPage - 1) * 10}&limit=10`;
         const range = buildBookingRange(dateStr, ledgerPeriod);
@@ -9765,13 +9925,16 @@ async function loadLedger() {
         if (ledgerExportFilter === "yes") url += "&exported=true";
         if (ledgerExportFilter === "no") url += "&exported=false";
 
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
         if (!response.ok) {
             const msg = await response.text();
             throw new Error(msg || `HTTP ${response.status}`);
         }
 
         const data = await response.json();
+        if (controller.signal.aborted || currentActivePage !== "ledger") {
+            return null;
+        }
 
         const totalAmountEl = document.getElementById("ledger-total-amount");
         const totalCountEl = document.getElementById("ledger-total-count");
@@ -9810,6 +9973,7 @@ async function loadLedger() {
             loadLedger();
         });
     } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") return null;
         console.error("Failed to load ledger:", error);
         const table = document.getElementById("ledger-table");
         if (table) {
@@ -9822,6 +9986,19 @@ async function loadLedger() {
             `;
         }
     }
+    })();
+    ledgerLoadPromise = requestPromise.finally(() => {
+        if (ledgerLoadPromise === requestPromise) {
+            ledgerLoadPromise = null;
+        }
+        if (ledgerLoadController === controller) {
+            ledgerLoadController = null;
+        }
+        if (ledgerLoadRequestKey === requestKey) {
+            ledgerLoadRequestKey = "";
+        }
+    });
+    return ledgerLoadPromise;
 }
 
 // Utilities

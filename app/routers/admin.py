@@ -93,6 +93,8 @@ router = APIRouter(
 
 ADMIN_DASHBOARD_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=64)
 ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
+ADMIN_REVENUE_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=20, max_entries=96)
+ADMIN_LEDGER_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=15, max_entries=128)
 
 MEMBER_PRICING_MODE_LABELS = {
     "membership_default": "Default by membership type",
@@ -112,10 +114,14 @@ def _invalidate_admin_caches(club_id: int | None = None) -> None:
     if club_id is not None and int(club_id) > 0:
         ADMIN_DASHBOARD_CACHE.delete(f"dashboard:{int(club_id)}")
         ADMIN_ALERTS_CACHE.clear()
+        ADMIN_REVENUE_CACHE.clear()
+        ADMIN_LEDGER_CACHE.clear()
         log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=int(club_id))
         return
     ADMIN_DASHBOARD_CACHE.clear()
     ADMIN_ALERTS_CACHE.clear()
+    ADMIN_REVENUE_CACHE.clear()
+    ADMIN_LEDGER_CACHE.clear()
     log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
 
 
@@ -6088,6 +6094,11 @@ async def get_revenue_analytics(
     """Get revenue analytics for last N days or a named period ending at anchor_date."""
 
     anchor = anchor_date or datetime.utcnow().date()
+    cache_key = f"revenue:{int(club_id)}:{int(days)}:{str(period or '').lower()}:{anchor.isoformat()}"
+    cached = ADMIN_REVENUE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     if period:
         start_d, end_d, elapsed_days = _period_window(period, anchor)
         start_date = datetime.combine(start_d, datetime.min.time())
@@ -6099,13 +6110,6 @@ async def get_revenue_analytics(
         end_date_exclusive = None
         elapsed_days = None
         period_days = days
-
-    _repair_booking_pricing_window(
-        db,
-        club_id,
-        start_dt=start_date,
-        end_dt_exclusive=end_date_exclusive,
-    )
     
     # Daily booked revenue (tee-time date)
     daily_revenue_query = db.query(
@@ -6177,7 +6181,11 @@ async def get_revenue_analytics(
         Booking.status,
         func.sum(Booking.price).label("amount"),
         func.count(Booking.id).label("count")
-    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(TeeTime.tee_time >= start_date)
+    ).join(TeeTime, Booking.tee_time_id == TeeTime.id).filter(
+        Booking.club_id == club_id,
+        TeeTime.club_id == club_id,
+        TeeTime.tee_time >= start_date,
+    )
 
     if end_date_exclusive is not None:
         status_revenue_query = status_revenue_query.filter(TeeTime.tee_time < end_date_exclusive)
@@ -6235,7 +6243,7 @@ async def get_revenue_analytics(
         _safe_rollback(db)
         other_by_stream = []
 	    
-    return {
+    payload = {
         "period_days": int(period_days or days),
         "period": (period or "").lower().strip() or None,
         "anchor_date": anchor.isoformat(),
@@ -6283,6 +6291,8 @@ async def get_revenue_analytics(
             for sr in status_revenue
         ]
     }
+    ADMIN_REVENUE_CACHE.set(cache_key, payload)
+    return payload
 
 
 @router.get("/tee-times")
@@ -6330,11 +6340,21 @@ async def get_ledger_entries(
     q: Optional[str] = None,
     exported: Optional[bool] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin)
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
 ):
     """Get all ledger entries (transaction history)"""
-    
-    query = db.query(LedgerEntry)
+
+    cache_key = (
+        f"ledger:{int(club_id)}:{int(skip)}:{int(limit)}:"
+        f"{start.isoformat() if start else ''}:{end.isoformat() if end else ''}:"
+        f"{str(q or '').strip().lower()}:{str(exported)}"
+    )
+    cached = ADMIN_LEDGER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    query = db.query(LedgerEntry).filter(LedgerEntry.club_id == club_id)
 
     if start and end:
         query = query.filter(LedgerEntry.created_at >= start, LedgerEntry.created_at < end)
@@ -6359,7 +6379,7 @@ async def get_ledger_entries(
 
     entries = query.order_by(desc(LedgerEntry.created_at)).offset(skip).limit(limit).all()
     
-    return {
+    payload = {
         "total": total,
         "total_amount": float(total_amount),
         "ledger_entries": [
@@ -6375,6 +6395,8 @@ async def get_ledger_entries(
             for le in entries
         ]
     }
+    ADMIN_LEDGER_CACHE.set(cache_key, payload)
+    return payload
 
 
 @router.get("/audit-logs")
