@@ -305,6 +305,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupOperationWorkbenchControls();
     setupPageShortcuts();
     setupUmhlaliOperationalSync();
+    setupTargetModelSettings();
     await loadTeeProfileSettings({ silent: true });
     await loadAccountCustomersCache({ silent: true });
 
@@ -1370,6 +1371,7 @@ function loadAdminPageData(pageName) {
             break;
         case "operations-config":
             loadOpsImportSettings();
+            loadTargetModelSettings({ silent: true });
             break;
         case "pro-shop":
             initProShopPage();
@@ -2967,10 +2969,11 @@ function applyDashboardPayload(data, options = {}) {
     if (lastRevenueEl) lastRevenueEl.textContent = lastRevenue ? formatDateTimeDMY(lastRevenue) : "—";
     if (hintEl) {
         const cacheSuffix = isCached && cachedAt ? ` Showing cached dashboard from ${cachedAt}.` : "";
-        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, Finance / Admin > Imports & Audit for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
+        hintEl.textContent = `Use Tee Sheet > Manage Tee Sheet for bookings imports, Finance & Setup > Imports & Setup for non-booking revenue imports, and Pro Shop Sales for direct checkout.${cacheSuffix}`;
     }
 
     renderTargetsTable(data.targets);
+    renderDashboardTargetContext(data.targets);
 }
 
 async function loadDashboard(options = {}) {
@@ -3041,6 +3044,29 @@ function renderTargetsTable(targets) {
     }).join("");
 }
 
+function renderDashboardTargetContext(targets) {
+    const noteEl = document.getElementById("dashboard-target-model-note");
+    if (!noteEl) return;
+    const annual = targets?.annual || {};
+    const assumptions = annual?.assumptions || {};
+    const roundsTarget = annual?.rounds;
+    const revenueTarget = annual?.revenue;
+    const memberRoundShare = Number(assumptions?.member_round_share);
+    const memberRevenueShare = Number(assumptions?.member_revenue_share);
+    const memberFee = Number(assumptions?.member_fee_18);
+    const sourceLabel = formatTargetSourceLabel(annual?.revenue_source);
+    if (roundsTarget == null && revenueTarget == null) {
+        noteEl.textContent = "Target model is not configured yet.";
+        return;
+    }
+    noteEl.textContent =
+        `Annual rounds target ${roundsTarget == null ? "—" : formatInteger(roundsTarget)}. ` +
+        `Annual revenue target ${revenueTarget == null ? "—" : formatCurrencyZAR(revenueTarget)} (${sourceLabel}). ` +
+        `Mix: ${Number.isFinite(memberRoundShare) ? formatNumber(memberRoundShare * 100, 0, 2) : "—"}% member rounds, ` +
+        `${Number.isFinite(memberRevenueShare) ? formatNumber(memberRevenueShare * 100, 0, 2) : "—"}% member revenue, ` +
+        `member 18-hole fee ${Number.isFinite(memberFee) ? formatCurrencyZAR(memberFee) : "—"}.`;
+}
+
 async function loadRevenueChart() {
     const token = localStorage.getItem("token");
 
@@ -3051,6 +3077,9 @@ async function loadRevenueChart() {
         const series = mergeRevenueSeries(data.daily_revenue, data.daily_paid_revenue, data.daily_other_revenue);
         const dailyRequired = data?.daily_revenue_required;
         const dailyRequiredValue = dailyRequired == null ? null : safeNumber(dailyRequired);
+        const targetContext = data?.target_context || {};
+        const annualRevenueTarget = targetContext?.revenue_target;
+        const chartNoteEl = document.getElementById("dashboard-revenue-chart-note");
 
         const ctx = document.getElementById("revenueChart");
         if (window.revenueChartInstance && typeof window.revenueChartInstance.destroy === "function") {
@@ -3058,7 +3087,7 @@ async function loadRevenueChart() {
         }
 
         const targetDataset = dailyRequiredValue == null ? null : {
-            label: "Target (Required / Day)",
+            label: `Target Run-Rate (${formatTargetSourceLabel(targetContext?.revenue_source)})`,
             data: series.labels.map(() => dailyRequiredValue),
             borderColor: "#e53935",
             backgroundColor: "rgba(229, 57, 53, 0.08)",
@@ -3103,6 +3132,11 @@ async function loadRevenueChart() {
                 }
             }
         });
+        if (chartNoteEl) {
+            chartNoteEl.textContent = annualRevenueTarget == null
+                ? "No annual revenue target is active for the trend chart yet."
+                : `Target line uses ${formatCurrencyZAR(dailyRequiredValue)} per day from the active annual revenue target of ${formatCurrencyZAR(annualRevenueTarget)} (${formatTargetSourceLabel(targetContext?.revenue_source)}).`;
+        }
     } catch (error) {
         console.error("Failed to load revenue chart:", error);
     }
@@ -4645,6 +4679,8 @@ async function loadRevenue() {
                     : null)
                 : null);
         const targetRevenue = data.target_revenue;
+        const targetContext = data?.target_context || {};
+        const targetSourceLabel = formatTargetSourceLabel(targetContext?.revenue_source);
         const pct = targetRevenue ? (focusedActual / safeNumber(targetRevenue)) : null;
         const gapToTarget = targetRevenue == null ? null : (focusedActual - safeNumber(targetRevenue));
 
@@ -4678,8 +4714,8 @@ async function loadRevenue() {
             const targetSummary = targetRevenue == null
                 ? "No target has been configured for this period."
                 : (gapToTarget >= 0
-                    ? `You are ahead of target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`
-                    : `You are below target by ${formatCurrencyZAR(Math.abs(gapToTarget))}.`);
+                    ? `You are ahead of target by ${formatCurrencyZAR(Math.abs(gapToTarget))} against the ${targetSourceLabel} target.`
+                    : `You are below target by ${formatCurrencyZAR(Math.abs(gapToTarget))} against the ${targetSourceLabel} target.`);
             if (focus === "all") {
                 flowEl.textContent =
                     `Booked: ${formatCurrencyZAR(bookedTotal)}. ` +
@@ -5014,6 +5050,194 @@ function renderOpsImportSettingsHint(stream, settings, configured) {
         return;
     }
     hintEl.textContent = `${label}: profile saved. Future daily/weekly imports will apply this mapping automatically.${overrideNote}`;
+}
+
+function formatTargetSourceLabel(source) {
+    const value = String(source || "").trim().toLowerCase();
+    if (value === "manual_override") return "manual override";
+    if (value === "derived_from_mix") return "derived from rounds + pricing mix";
+    return "not configured";
+}
+
+function getTargetSettingsYear() {
+    const yearInput = document.getElementById("target-settings-year");
+    const currentYear = new Date().getFullYear();
+    const raw = Number.parseInt(String(yearInput?.value || currentYear), 10);
+    return Number.isFinite(raw) && raw >= 2000 && raw <= 2100 ? raw : currentYear;
+}
+
+function toggleTargetRevenueOverrideInput() {
+    const modeSelect = document.getElementById("target-revenue-mode");
+    const revenueInput = document.getElementById("target-revenue-annual");
+    if (!(revenueInput instanceof HTMLInputElement)) return;
+    const manual = String(modeSelect?.value || "derived").toLowerCase() === "manual";
+    revenueInput.disabled = !manual;
+    revenueInput.style.opacity = manual ? "1" : "0.65";
+}
+
+function renderTargetSettingsHint(data) {
+    const hintEl = document.getElementById("target-settings-hint");
+    if (!hintEl) return;
+    const roundsTarget = Number(data?.rounds_target);
+    const revenueTarget = data?.revenue_target;
+    const derivedRevenue = data?.revenue_derived;
+    const overrideRevenue = data?.revenue_override;
+    const sourceLabel = formatTargetSourceLabel(data?.revenue_source);
+    const assumptions = data?.assumptions || {};
+    const memberRoundSharePct = Number(assumptions.member_round_share) * 100;
+    const memberRevenueSharePct = Number(assumptions.member_revenue_share) * 100;
+    const memberFee = Number(assumptions.member_fee_18);
+    const parts = [
+        `${data?.year || getTargetSettingsYear()}: rounds target ${Number.isFinite(roundsTarget) ? formatInteger(roundsTarget) : "—"}.`,
+        `Active annual revenue target ${revenueTarget == null ? "—" : formatCurrencyZAR(revenueTarget)} (${sourceLabel}).`,
+        `Mix assumes ${Number.isFinite(memberRoundSharePct) ? formatNumber(memberRoundSharePct, 0, 2) : "—"}% member rounds, ${Number.isFinite(memberRevenueSharePct) ? formatNumber(memberRevenueSharePct, 0, 2) : "—"}% member revenue, member 18-hole fee ${Number.isFinite(memberFee) ? formatCurrencyZAR(memberFee) : "—"}.`,
+    ];
+    if (overrideRevenue != null && derivedRevenue != null && Math.abs(Number(overrideRevenue) - Number(derivedRevenue)) > 0.01) {
+        parts.push(`Derived revenue preview is ${formatCurrencyZAR(derivedRevenue)} while the stored override is ${formatCurrencyZAR(overrideRevenue)}.`);
+    }
+    hintEl.textContent = parts.join(" ");
+}
+
+function populateTargetModelForm(data) {
+    const yearInput = document.getElementById("target-settings-year");
+    const roundsInput = document.getElementById("target-rounds-annual");
+    const modeSelect = document.getElementById("target-revenue-mode");
+    const revenueInput = document.getElementById("target-revenue-annual");
+    const memberRoundShareInput = document.getElementById("target-member-round-share");
+    const memberRevenueShareInput = document.getElementById("target-member-revenue-share");
+    const memberFeeInput = document.getElementById("target-member-fee-18");
+    const derivedRevenueInput = document.getElementById("target-revenue-derived");
+    const assumptions = data?.assumptions || {};
+
+    if (yearInput) yearInput.value = String(data?.year || getTargetSettingsYear());
+    if (roundsInput) roundsInput.value = data?.rounds_target == null ? "" : String(Math.round(Number(data.rounds_target)));
+    if (modeSelect) modeSelect.value = String(data?.revenue_mode || "derived").toLowerCase() === "manual" ? "manual" : "derived";
+    if (revenueInput) revenueInput.value = data?.revenue_override == null ? "" : String(Number(data.revenue_override).toFixed(2));
+    if (memberRoundShareInput) memberRoundShareInput.value = assumptions.member_round_share == null ? "50.00" : formatNumber(Number(assumptions.member_round_share) * 100, 0, 2);
+    if (memberRevenueShareInput) memberRevenueShareInput.value = assumptions.member_revenue_share == null ? "33.00" : formatNumber(Number(assumptions.member_revenue_share) * 100, 0, 2);
+    if (memberFeeInput) memberFeeInput.value = assumptions.member_fee_18 == null ? "—" : formatCurrencyZAR(Number(assumptions.member_fee_18));
+    if (derivedRevenueInput) derivedRevenueInput.value = data?.revenue_derived == null ? "—" : formatCurrencyZAR(Number(data.revenue_derived));
+
+    toggleTargetRevenueOverrideInput();
+    renderTargetSettingsHint(data);
+}
+
+async function loadTargetModelSettings(options = {}) {
+    const statusEl = document.getElementById("target-settings-status");
+    const year = options?.year || getTargetSettingsYear();
+    try {
+        if (statusEl && !options?.silent) statusEl.textContent = "Loading target model...";
+        const data = await fetchJson(`${API_BASE}/api/admin/targets?year=${encodeURIComponent(year)}`);
+        populateTargetModelForm(data);
+        if (statusEl && !options?.silent) statusEl.textContent = "Target model loaded";
+    } catch (error) {
+        console.error("Failed to load target settings:", error);
+        if (statusEl) statusEl.textContent = error?.message || "";
+    }
+}
+
+async function saveTargetModelSettings() {
+    const statusEl = document.getElementById("target-settings-status");
+    const year = getTargetSettingsYear();
+    const roundsTarget = Number.parseFloat(String(document.getElementById("target-rounds-annual")?.value || ""));
+    const revenueMode = String(document.getElementById("target-revenue-mode")?.value || "derived").toLowerCase();
+    const revenueOverride = Number.parseFloat(String(document.getElementById("target-revenue-annual")?.value || ""));
+    const memberRoundSharePct = Number.parseFloat(String(document.getElementById("target-member-round-share")?.value || ""));
+    const memberRevenueSharePct = Number.parseFloat(String(document.getElementById("target-member-revenue-share")?.value || ""));
+
+    if (!Number.isFinite(roundsTarget) || roundsTarget < 0) {
+        if (statusEl) statusEl.textContent = "Annual rounds target must be 0 or more";
+        return;
+    }
+    if (!Number.isFinite(memberRoundSharePct) || memberRoundSharePct <= 0 || memberRoundSharePct >= 100) {
+        if (statusEl) statusEl.textContent = "Member rounds share must be between 0 and 100";
+        return;
+    }
+    if (!Number.isFinite(memberRevenueSharePct) || memberRevenueSharePct <= 0 || memberRevenueSharePct >= 100) {
+        if (statusEl) statusEl.textContent = "Member revenue share must be between 0 and 100";
+        return;
+    }
+    if (revenueMode === "manual" && (!Number.isFinite(revenueOverride) || revenueOverride < 0)) {
+        if (statusEl) statusEl.textContent = "Manual revenue override must be 0 or more";
+        return;
+    }
+
+    try {
+        if (statusEl) statusEl.textContent = "Saving target model...";
+        await fetchJson(`${API_BASE}/api/admin/targets/assumptions`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                year,
+                member_round_share: memberRoundSharePct / 100,
+                member_revenue_share: memberRevenueSharePct / 100,
+                revenue_mode: revenueMode,
+            }),
+        });
+        await fetchJson(`${API_BASE}/api/admin/targets`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                year,
+                metric: "rounds",
+                annual_target: roundsTarget,
+            }),
+        });
+        if (revenueMode === "manual") {
+            await fetchJson(`${API_BASE}/api/admin/targets`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    year,
+                    metric: "revenue",
+                    annual_target: revenueOverride,
+                }),
+            });
+        }
+        await loadTargetModelSettings({ year, silent: true });
+        if (statusEl) statusEl.textContent = "Target model saved";
+        if (currentUserRole !== "super_admin") {
+            loadDashboard({ silent: true, useCache: false });
+            if (currentActivePage === "revenue") loadRevenue();
+        }
+        toastSuccess("Target model saved");
+    } catch (error) {
+        console.error("Failed to save target settings:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Save failed";
+        toastError(error?.message || "Failed to save target model");
+    }
+}
+
+function setupTargetModelSettings() {
+    if (!["admin", "super_admin"].includes(String(currentUserRole || "").toLowerCase())) return;
+    const yearInput = document.getElementById("target-settings-year");
+    const modeSelect = document.getElementById("target-revenue-mode");
+    const saveBtn = document.getElementById("target-settings-save-btn");
+    if (!(saveBtn instanceof HTMLButtonElement)) return;
+
+    yearInput?.addEventListener("change", () => {
+        loadTargetModelSettings({ year: getTargetSettingsYear() });
+    });
+    modeSelect?.addEventListener("change", () => {
+        toggleTargetRevenueOverrideInput();
+        renderTargetSettingsHint({
+            year: getTargetSettingsYear(),
+            revenue_mode: modeSelect.value,
+            revenue_source: modeSelect.value === "manual" ? "manual_override" : "derived_from_mix",
+            rounds_target: Number.parseFloat(String(document.getElementById("target-rounds-annual")?.value || "")),
+            revenue_override: Number.parseFloat(String(document.getElementById("target-revenue-annual")?.value || "")),
+            revenue_derived: null,
+            assumptions: {
+                member_round_share: Number.parseFloat(String(document.getElementById("target-member-round-share")?.value || "")) / 100,
+                member_revenue_share: Number.parseFloat(String(document.getElementById("target-member-revenue-share")?.value || "")) / 100,
+                member_fee_18: null,
+            },
+        });
+    });
+    saveBtn.addEventListener("click", () => saveTargetModelSettings());
+    const currentYear = new Date().getFullYear();
+    if (yearInput && !yearInput.value) yearInput.value = String(currentYear);
+    loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
 }
 
 async function loadOpsImportSettings(options = {}) {

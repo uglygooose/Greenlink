@@ -340,11 +340,13 @@
                                 <tbody id="kpi-targets-body"></tbody>
                             </table>
                         </div>
+                        <div class="action-note" id="dashboard-target-model-note"></div>
                     </div>
 
                     <div class="dashboard-card full-width dashboard-golf-only">
                         <h3>Monthly Revenue Trend</h3>
                         <canvas id="revenueChart"></canvas>
+                        <div class="action-note" id="dashboard-revenue-chart-note"></div>
                     </div>
                 </section>
 
@@ -433,6 +435,44 @@
                             <span class="accounting-note" id="ops-settings-status"></span>
                         </div>
                         <div class="action-note" id="ops-settings-hint"></div>
+                    </div>
+
+                    <div class="dashboard-card" style="margin-top: 16px;">
+                        <h3>Targets & Pricing Model</h3>
+                        <div class="acct-subtitle">Annual rounds targets feed target-to-date revenue using the active pricing mix model.</div>
+                        <div class="accounting-grid" style="margin-top:12px;">
+                            <label for="target-settings-year">Target year</label>
+                            <input type="number" id="target-settings-year" min="2000" max="2100" />
+
+                            <label for="target-rounds-annual">Annual rounds target</label>
+                            <input type="number" id="target-rounds-annual" min="0" step="1" />
+
+                            <label for="target-revenue-mode">Revenue target mode</label>
+                            <select id="target-revenue-mode">
+                                <option value="derived">Derived from rounds + pricing mix</option>
+                                <option value="manual">Manual revenue override</option>
+                            </select>
+
+                            <label for="target-revenue-annual">Annual revenue override</label>
+                            <input type="number" id="target-revenue-annual" min="0" step="0.01" />
+
+                            <label for="target-member-round-share">Member rounds share (%)</label>
+                            <input type="number" id="target-member-round-share" min="1" max="99" step="0.01" />
+
+                            <label for="target-member-revenue-share">Member revenue share (%)</label>
+                            <input type="number" id="target-member-revenue-share" min="1" max="99" step="0.01" />
+
+                            <label for="target-member-fee-18">Member 18-hole fee</label>
+                            <input type="text" id="target-member-fee-18" readonly />
+
+                            <label for="target-revenue-derived">Derived annual revenue</label>
+                            <input type="text" id="target-revenue-derived" readonly />
+                        </div>
+                        <div class="accounting-actions">
+                            <button class="btn-primary" id="target-settings-save-btn" type="button">Save Target Model</button>
+                            <span class="accounting-note" id="target-settings-status"></span>
+                        </div>
+                        <div class="action-note" id="target-settings-hint"></div>
                     </div>
 
                     <div class="dashboard-card" style="margin-top: 16px;">

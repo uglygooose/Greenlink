@@ -402,6 +402,22 @@ def _float_setting(db: Session, key: str, default: float) -> float:
         return float(default)
 
 
+def _string_setting(db: Session, key: str, default: str) -> str:
+    """Read a string club setting from DB; fall back to default on any error."""
+    try:
+        club_id = db.info.get("club_id")
+        if not club_id:
+            return str(default)
+        row = db.query(ClubSetting).filter(ClubSetting.club_id == int(club_id), ClubSetting.key == key).first()
+        if not row:
+            return str(default)
+        raw = str(row.value or "").strip()
+        return raw or str(default)
+    except Exception:
+        _safe_rollback(db)
+        return str(default)
+
+
 def _int_setting(db: Session, key: str, default: int) -> int:
     try:
         return int(_float_setting(db, key, float(default)))
@@ -557,6 +573,48 @@ def _derive_annual_revenue_target_from_mix(db: Session, year: int, annual_rounds
     member_fee = float(_member_green_fee_18(db))
     member_rounds = float(annual_rounds_target) * float(member_round_share)
     return (member_rounds * member_fee) / float(member_revenue_share)
+
+
+def _target_model_payload(db: Session, year: int) -> dict[str, Any]:
+    annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
+    annual_revenue_override = _annual_target(db, year, "revenue", default=None)
+    revenue_mode = _string_setting(db, "target_revenue_mode", "derived").strip().lower()
+    if revenue_mode not in {"derived", "manual"}:
+        revenue_mode = "derived"
+
+    derived_revenue_target = _derive_annual_revenue_target_from_mix(
+        db,
+        year,
+        float(annual_rounds_target) if annual_rounds_target is not None else None,
+    )
+
+    if revenue_mode == "manual" and annual_revenue_override is not None:
+        active_revenue_target = float(annual_revenue_override)
+        revenue_source = "manual_override"
+    else:
+        active_revenue_target = (
+            float(derived_revenue_target)
+            if derived_revenue_target is not None
+            else (float(annual_revenue_override) if annual_revenue_override is not None else None)
+        )
+        revenue_source = "derived_from_mix" if derived_revenue_target is not None else (
+            "manual_override" if annual_revenue_override is not None else "unconfigured"
+        )
+
+    return {
+        "year": int(year),
+        "rounds_target": float(annual_rounds_target) if annual_rounds_target is not None else None,
+        "revenue_target": active_revenue_target,
+        "revenue_mode": revenue_mode,
+        "revenue_source": revenue_source,
+        "revenue_override": float(annual_revenue_override) if annual_revenue_override is not None else None,
+        "revenue_derived": float(derived_revenue_target) if derived_revenue_target is not None else None,
+        "assumptions": {
+            "member_round_share": float(_float_setting(db, "target_member_round_share", 0.50)),
+            "member_revenue_share": float(_float_setting(db, "target_member_revenue_share", 0.33)),
+            "member_fee_18": float(_member_green_fee_18(db)),
+        },
+    }
 
 
 class BookingWindowSettings(BaseModel):
@@ -2881,10 +2939,9 @@ async def get_dashboard_stats(
     # Default targets (can be overridden via kpi_targets table):
     # - Rounds: 35,000/year (client target)
     # - Revenue: derived from rounds target * member 18-hole rate unless explicitly set
-    annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
-    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
-    if annual_revenue_target is None and annual_rounds_target is not None:
-        annual_revenue_target = _derive_annual_revenue_target_from_mix(db, year, float(annual_rounds_target))
+    target_model = _target_model_payload(db, year)
+    annual_rounds_target = target_model.get("rounds_target")
+    annual_revenue_target = target_model.get("revenue_target")
 
     def _paid_window_actuals(start_d: date, end_d: date) -> tuple[float, int]:
         revenue = (
@@ -2988,17 +3045,17 @@ async def get_dashboard_stats(
         },
         "targets": {
             "year": year,
-        "annual": {
-            "revenue": annual_revenue_target,
-            "rounds": annual_rounds_target,
-            "assumptions": {
-                "member_round_share": _float_setting(db, "target_member_round_share", 0.50),
-                "member_revenue_share": _float_setting(db, "target_member_revenue_share", 0.33),
-                "member_fee_18": float(_member_green_fee_18(db)),
+            "annual": {
+                "revenue": annual_revenue_target,
+                "rounds": annual_rounds_target,
+                "revenue_mode": target_model.get("revenue_mode"),
+                "revenue_source": target_model.get("revenue_source"),
+                "revenue_override": target_model.get("revenue_override"),
+                "revenue_derived": target_model.get("revenue_derived"),
+                "assumptions": target_model.get("assumptions") or {},
             },
+            "periods": kpis,
         },
-        "periods": kpis,
-    },
     }
     ADMIN_DASHBOARD_CACHE.set(cache_key, payload)
     return payload
@@ -3210,12 +3267,31 @@ class KpiTargetUpsert(BaseModel):
     annual_target: float
 
 
+class TargetAssumptionsPayload(BaseModel):
+    year: int
+    member_round_share: float
+    member_revenue_share: float
+    revenue_mode: str = "derived"
+
+
+@router.get("/targets")
+async def get_target_settings(
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_setup_admin),
+):
+    target_year = int(year or datetime.utcnow().year)
+    if target_year < 2000 or target_year > 2100:
+        raise HTTPException(status_code=400, detail="invalid year")
+    return _target_model_payload(db, target_year)
+
+
 @router.put("/targets")
 async def upsert_kpi_target(
     payload: KpiTargetUpsert,
     request: Request,
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_admin),
+    admin: User = Depends(verify_setup_admin),
 ):
     metric = (payload.metric or "").strip().lower()
     if metric not in {"revenue", "rounds"}:
@@ -3266,6 +3342,51 @@ async def upsert_kpi_target(
     _invalidate_admin_caches(club_id)
 
     return {"status": "ok", "year": row.year, "metric": row.metric, "annual_target": float(row.annual_target)}
+
+
+@router.put("/targets/assumptions")
+async def update_target_assumptions(
+    payload: TargetAssumptionsPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_setup_admin),
+):
+    target_year = int(payload.year or datetime.utcnow().year)
+    if target_year < 2000 or target_year > 2100:
+        raise HTTPException(status_code=400, detail="invalid year")
+
+    member_round_share = float(payload.member_round_share)
+    member_revenue_share = float(payload.member_revenue_share)
+    revenue_mode = str(payload.revenue_mode or "derived").strip().lower()
+
+    if member_round_share <= 0 or member_round_share >= 1:
+        raise HTTPException(status_code=400, detail="member_round_share must be between 0 and 1")
+    if member_revenue_share <= 0 or member_revenue_share >= 1:
+        raise HTTPException(status_code=400, detail="member_revenue_share must be between 0 and 1")
+    if revenue_mode not in {"derived", "manual"}:
+        raise HTTPException(status_code=400, detail="revenue_mode must be 'derived' or 'manual'")
+
+    _upsert_setting(db, "target_member_round_share", round(member_round_share, 6))
+    _upsert_setting(db, "target_member_revenue_share", round(member_revenue_share, 6))
+    _upsert_setting(db, "target_revenue_mode", revenue_mode)
+
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="kpi_target.assumptions_updated",
+        entity_type="kpi_target",
+        entity_id=f"{target_year}:assumptions",
+        payload={
+            "year": target_year,
+            "member_round_share": member_round_share,
+            "member_revenue_share": member_revenue_share,
+            "revenue_mode": revenue_mode,
+        },
+    )
+    db.commit()
+    _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0) or None)
+    return _target_model_payload(db, target_year)
 
 
 @router.get("/bookings")
@@ -5906,10 +6027,8 @@ async def get_revenue_analytics(
     status_revenue = status_revenue_query.group_by(Booking.status).all()
 
     year = int(anchor.year)
-    annual_revenue_target = _annual_target(db, year, "revenue", default=None)
-    annual_rounds_target = _annual_target(db, year, "rounds", default=35000.0)
-    if annual_revenue_target is None and annual_rounds_target is not None:
-        annual_revenue_target = _derive_annual_revenue_target_from_mix(db, year, float(annual_rounds_target))
+    target_model = _target_model_payload(db, year)
+    annual_revenue_target = target_model.get("revenue_target")
 
     derived_target = _derive_target(annual_revenue_target, year, elapsed_days) if elapsed_days is not None else None
     daily_required = (float(annual_revenue_target) / float(_days_in_year(year))) if annual_revenue_target is not None else None
@@ -5963,6 +6082,7 @@ async def get_revenue_analytics(
         "anchor_date": anchor.isoformat(),
         "target_revenue": derived_target,
         "annual_revenue_target": annual_revenue_target,
+        "target_context": target_model,
         "daily_revenue_required": daily_required,
         "daily_revenue": [
             {
