@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import date, datetime, time as Time
 from typing import Any
 
 from sqlalchemy import func, or_, text
@@ -12,6 +12,7 @@ from app.auth import get_password_hash
 from app.club_assignments import ensure_user_primary_club, sync_user_club_assignment
 from app.club_config import invalidate_club_config_cache
 from app.database import DB_SOURCE, SessionLocal
+from app.fee_models import FeeCategory, FeeType
 from app.models import (
     AccountingSetting,
     Club,
@@ -43,6 +44,8 @@ UMHLALI_SUGGESTED_HOME_CLUBS = [
     "Prince's Grant Golf Estate",
     "Ballito Country Club",
 ]
+UMHLALI_PEAK_SEASON_START = date(2025, 12, 15)
+UMHLALI_PEAK_SEASON_END = date(2026, 1, 11)
 TENANT_BACKFILL_TABLES = (
     "users",
     "people",
@@ -97,6 +100,181 @@ def _utcnow() -> datetime:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, default=str, separators=(",", ":"))
+
+
+def _umhlali_pricing_reference_rows() -> list[dict[str, Any]]:
+    def row(
+        code: int,
+        description: str,
+        price: float,
+        fee_type: FeeType,
+        *,
+        audience: str | None = None,
+        holes: int | None = None,
+        day_kind: str | None = None,
+        weekday: int | None = None,
+        min_age: int | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        start_time: Time | None = None,
+        end_time: Time | None = None,
+        priority: int = 0,
+    ) -> dict[str, Any]:
+        return {
+            "code": int(code),
+            "description": str(description),
+            "price": float(price),
+            "fee_type": fee_type,
+            "audience": audience,
+            "holes": holes,
+            "day_kind": day_kind,
+            "weekday": weekday,
+            "min_age": min_age,
+            "start_date": start_date,
+            "end_date": end_date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "priority": int(priority),
+            "active": 1,
+        }
+
+    before_8 = Time(hour=7, minute=59)
+    peak_start = UMHLALI_PEAK_SEASON_START
+    peak_end = UMHLALI_PEAK_SEASON_END
+
+    return [
+        row(1001, "Members 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, priority=10),
+        row(1002, "Members 18 Holes", 340.0, FeeType.GOLF, audience="member", holes=18, priority=10),
+        row(1003, "Member Scholars 9 Holes", 100.0, FeeType.GOLF, audience="member", holes=9, priority=20),
+        row(1004, "Member Scholars 18 Holes", 140.0, FeeType.GOLF, audience="member", holes=18, priority=20),
+        row(1005, "Member Students 9 Holes", 150.0, FeeType.GOLF, audience="member", holes=9, priority=20),
+        row(1006, "Member Students 18 Holes", 230.0, FeeType.GOLF, audience="member", holes=18, priority=20),
+        row(1007, "Member Pensioners Monday 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, weekday=0, min_age=60, priority=30),
+        row(1008, "Member Pensioners Monday 18 Holes", 290.0, FeeType.GOLF, audience="member", holes=18, weekday=0, min_age=60, priority=30),
+        row(1009, "Member Pensioners Tue-Fri Before 08:00 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1010, "Member Pensioners Wed-Fri Before 08:00 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1011, "Member Pensioners Thu-Fri Before 08:00 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1012, "Member Pensioners Fri Before 08:00 9 Holes", 220.0, FeeType.GOLF, audience="member", holes=9, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1013, "Member Pensioners Tue-Fri Before 08:00 18 Holes", 290.0, FeeType.GOLF, audience="member", holes=18, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1014, "Member Pensioners Wed-Fri Before 08:00 18 Holes", 290.0, FeeType.GOLF, audience="member", holes=18, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1015, "Member Pensioners Thu-Fri Before 08:00 18 Holes", 290.0, FeeType.GOLF, audience="member", holes=18, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1016, "Member Pensioners Fri Before 08:00 18 Holes", 290.0, FeeType.GOLF, audience="member", holes=18, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1101, "Visitor Affiliated Weekday 9 Holes", 370.0, FeeType.GOLF, audience="visitor", holes=9, day_kind="weekday", priority=10),
+        row(1102, "Visitor Affiliated Weekday 18 Holes", 575.0, FeeType.GOLF, audience="visitor", holes=18, day_kind="weekday", priority=10),
+        row(1103, "Visitor Non-Affiliated Weekday 18 Holes", 700.0, FeeType.GOLF, audience="non_affiliated", holes=18, day_kind="weekday", priority=10),
+        row(1104, "Visitor Affiliated Weekend 9 Holes", 490.0, FeeType.GOLF, audience="visitor", holes=9, day_kind="weekend", priority=10),
+        row(1105, "Visitor Affiliated Weekend 18 Holes", 700.0, FeeType.GOLF, audience="visitor", holes=18, day_kind="weekend", priority=10),
+        row(1106, "Visitor Non-Affiliated Weekend 18 Holes", 900.0, FeeType.GOLF, audience="non_affiliated", holes=18, day_kind="weekend", priority=10),
+        row(1107, "Visitor Peak Season Affiliated 9 Holes", 490.0, FeeType.GOLF, audience="visitor", holes=9, start_date=peak_start, end_date=peak_end, priority=40),
+        row(1108, "Visitor Peak Season Affiliated 18 Holes", 700.0, FeeType.GOLF, audience="visitor", holes=18, start_date=peak_start, end_date=peak_end, priority=40),
+        row(1109, "Visitor Peak Season Non-Affiliated 18 Holes", 900.0, FeeType.GOLF, audience="non_affiliated", holes=18, start_date=peak_start, end_date=peak_end, priority=40),
+        row(1110, "Visitor Scholars 9 Holes", 180.0, FeeType.GOLF, audience="visitor", holes=9, priority=20),
+        row(1111, "Visitor Scholars 18 Holes", 215.0, FeeType.GOLF, audience="visitor", holes=18, priority=20),
+        row(1112, "Visitor Students 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, priority=20),
+        row(1113, "Visitor Students 18 Holes", 350.0, FeeType.GOLF, audience="visitor", holes=18, priority=20),
+        row(1114, "Visitor Pensioners Monday 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, weekday=0, min_age=60, priority=30),
+        row(1115, "Visitor Pensioners Monday 18 Holes", 360.0, FeeType.GOLF, audience="visitor", holes=18, weekday=0, min_age=60, priority=30),
+        row(1116, "Visitor Pensioners Tue-Fri Before 08:00 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1117, "Visitor Pensioners Wed-Fri Before 08:00 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1118, "Visitor Pensioners Thu-Fri Before 08:00 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1119, "Visitor Pensioners Fri Before 08:00 9 Holes", 230.0, FeeType.GOLF, audience="visitor", holes=9, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1120, "Visitor Pensioners Tue-Fri Before 08:00 18 Holes", 360.0, FeeType.GOLF, audience="visitor", holes=18, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1121, "Visitor Pensioners Wed-Fri Before 08:00 18 Holes", 360.0, FeeType.GOLF, audience="visitor", holes=18, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1122, "Visitor Pensioners Thu-Fri Before 08:00 18 Holes", 360.0, FeeType.GOLF, audience="visitor", holes=18, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1123, "Visitor Pensioners Fri Before 08:00 18 Holes", 360.0, FeeType.GOLF, audience="visitor", holes=18, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1201, "Carts Visitors 9 Holes", 325.0, FeeType.CART, audience="visitor", holes=9, priority=10),
+        row(1202, "Carts Visitors 18 Holes", 495.0, FeeType.CART, audience="visitor", holes=18, priority=10),
+        row(1203, "Carts Members 9 Holes", 270.0, FeeType.CART, audience="member", holes=9, priority=10),
+        row(1204, "Carts Members 18 Holes", 400.0, FeeType.CART, audience="member", holes=18, priority=10),
+        row(1205, "Cart Pensioners Monday 9 Holes", 200.0, FeeType.CART, audience="member", holes=9, weekday=0, min_age=60, priority=30),
+        row(1206, "Cart Pensioners Monday 18 Holes", 290.0, FeeType.CART, audience="member", holes=18, weekday=0, min_age=60, priority=30),
+        row(1207, "Cart Pensioners Tue-Fri Before 08:00 9 Holes", 200.0, FeeType.CART, audience="member", holes=9, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1208, "Cart Pensioners Wed-Fri Before 08:00 9 Holes", 200.0, FeeType.CART, audience="member", holes=9, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1209, "Cart Pensioners Thu-Fri Before 08:00 9 Holes", 200.0, FeeType.CART, audience="member", holes=9, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1210, "Cart Pensioners Fri Before 08:00 9 Holes", 200.0, FeeType.CART, audience="member", holes=9, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1211, "Cart Pensioners Tue-Fri Before 08:00 18 Holes", 290.0, FeeType.CART, audience="member", holes=18, weekday=1, min_age=60, end_time=before_8, priority=30),
+        row(1212, "Cart Pensioners Wed-Fri Before 08:00 18 Holes", 290.0, FeeType.CART, audience="member", holes=18, weekday=2, min_age=60, end_time=before_8, priority=30),
+        row(1213, "Cart Pensioners Thu-Fri Before 08:00 18 Holes", 290.0, FeeType.CART, audience="member", holes=18, weekday=3, min_age=60, end_time=before_8, priority=30),
+        row(1214, "Cart Pensioners Fri Before 08:00 18 Holes", 290.0, FeeType.CART, audience="member", holes=18, weekday=4, min_age=60, end_time=before_8, priority=30),
+        row(1301, "Caddy 9 Holes", 145.0, FeeType.CADDY, holes=9, priority=10),
+        row(1302, "Caddy 18 Holes", 245.0, FeeType.CADDY, holes=18, priority=10),
+    ]
+
+
+def get_reference_pricing_template(template_key: str) -> list[dict[str, Any]]:
+    key = str(template_key or "").strip().lower()
+    if key == "umhlali":
+        return _umhlali_pricing_reference_rows()
+    raise ValueError(f"Unknown pricing template: {template_key}")
+
+
+def apply_reference_pricing_template(
+    db,
+    *,
+    club_id: int,
+    template_key: str,
+    overwrite_existing: bool = True,
+) -> dict[str, Any]:
+    rows = get_reference_pricing_template(template_key)
+    codes = sorted({int(row["code"]) for row in rows})
+    existing_rows = (
+        db.query(FeeCategory)
+        .filter(FeeCategory.club_id == int(club_id), FeeCategory.code.in_(codes))
+        .all()
+    )
+    existing_by_code = {int(getattr(row, "code", 0) or 0): row for row in existing_rows}
+    created = 0
+    updated = 0
+    unchanged = 0
+
+    for payload in rows:
+        code = int(payload["code"])
+        existing = existing_by_code.get(code)
+        if existing is None:
+            db.add(FeeCategory(club_id=int(club_id), **payload))
+            created += 1
+            continue
+        if not overwrite_existing:
+            unchanged += 1
+            continue
+
+        changed = False
+        for field in (
+            "description",
+            "price",
+            "fee_type",
+            "active",
+            "audience",
+            "gender",
+            "day_kind",
+            "weekday",
+            "holes",
+            "min_age",
+            "max_age",
+            "start_date",
+            "end_date",
+            "start_time",
+            "end_time",
+            "priority",
+        ):
+            value = payload.get(field)
+            if getattr(existing, field, None) != value:
+                setattr(existing, field, value)
+                changed = True
+        if changed:
+            updated += 1
+        else:
+            unchanged += 1
+
+    db.flush()
+    return {
+        "template": str(template_key or "").strip().lower(),
+        "club_id": int(club_id),
+        "created": int(created),
+        "updated": int(updated),
+        "unchanged": int(unchanged),
+        "total_rows": len(rows),
+    }
 
 
 def _role_value(raw) -> str:
@@ -455,6 +633,13 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
         db.add(AccountingSetting(club_id=int(club_id)))
     db.flush()
 
+    pricing_seed = apply_reference_pricing_template(
+        db,
+        club_id=int(club_id),
+        template_key="umhlali",
+        overwrite_existing=False,
+    )
+
     for metric, annual_target in (("rounds", 36000.0), ("revenue", 14500000.0)):
         row = (
             db.query(KpiTarget)
@@ -484,7 +669,9 @@ def ensure_umhlali_defaults_exist(db, diagnostics: dict[str, Any], club_id: int 
                 f"Skipped KPI target bootstrap for {metric}: {type(exc).__name__}."
             )
 
-    diagnostics["notes"].append("Ensured Umhlali club defaults, booking rules, and KPI targets.")
+    diagnostics["notes"].append(
+        f"Ensured Umhlali club defaults, booking rules, KPI targets, and pricing matrix ({pricing_seed['created']} pricing rows created)."
+    )
 
 
 def ensure_umhlali_operational_inputs_exist(

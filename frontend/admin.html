@@ -476,6 +476,46 @@
                     </div>
 
                     <div class="dashboard-card" style="margin-top: 16px;">
+                        <h3>Golf Pricing Matrix</h3>
+                        <div class="acct-subtitle">Canonical club pricing rules used by bookings, tee sheet pricing, reconciliation, dashboards, and target revenue logic.</div>
+                        <div class="accounting-actions">
+                            <button class="btn-secondary" id="pricing-matrix-reload-btn" type="button">Reload Pricing</button>
+                            <button class="btn-secondary" id="pricing-matrix-apply-umhlali-btn" type="button">Apply Umhlali Reference</button>
+                            <button class="btn-secondary" id="pricing-matrix-add-row-btn" type="button">Add Pricing Row</button>
+                            <button class="btn-primary" id="pricing-matrix-save-btn" type="button">Save Pricing Matrix</button>
+                            <span class="accounting-note" id="pricing-matrix-status"></span>
+                        </div>
+                        <div class="table-container" style="margin-top: 12px;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Description</th>
+                                        <th>Type</th>
+                                        <th>Audience</th>
+                                        <th>Holes</th>
+                                        <th>Day</th>
+                                        <th>Weekday</th>
+                                        <th>Age</th>
+                                        <th>Season</th>
+                                        <th>Time</th>
+                                        <th>Price</th>
+                                        <th>Priority</th>
+                                        <th>Active</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pricing-matrix-body">
+                                    <tr>
+                                        <td colspan="14" class="action-note">Pricing matrix not loaded yet.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="action-note" id="pricing-matrix-hint">Super Admin uses this during onboarding. Club Admin reviews and maintains the active club pricing here.</div>
+                    </div>
+
+                    <div class="dashboard-card" style="margin-top: 16px;">
                         <h3>Import Revenue File</h3>
                         <div class="filters" style="flex-wrap: wrap; gap: 10px;">
                             <span class="action-note" id="ops-import-stream-label">Selected stream: Golf</span>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Date, Enum, Float, ForeignKey, Integer, String, Time, UniqueConstraint
 from app.database import Base
 import enum
 
@@ -39,4 +39,8 @@ class FeeCategory(Base):
     holes = Column(Integer, nullable=True, index=True)         # 9 or 18
     min_age = Column(Integer, nullable=True, index=True)
     max_age = Column(Integer, nullable=True, index=True)
+    start_date = Column(Date, nullable=True, index=True)
+    end_date = Column(Date, nullable=True, index=True)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
     priority = Column(Integer, default=0, index=True)

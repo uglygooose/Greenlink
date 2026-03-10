@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time as Time
 from types import SimpleNamespace
 
 from app.fee_models import FeeCategory, FeeType
@@ -167,6 +167,103 @@ def test_veteran_membership_label_infers_gender_for_fee_selection():
 
     assert best is not None
     assert best.code == 11
+
+
+def test_peak_season_affiliated_visitor_uses_peak_rule():
+    fees = [
+        FeeCategory(
+            code=1102,
+            description="Visitor Affiliated Weekday 18 Holes",
+            price=575,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="visitor",
+            holes=18,
+            day_kind="weekday",
+            priority=10,
+        ),
+        FeeCategory(
+            code=1108,
+            description="Visitor Peak Season Affiliated 18 Holes",
+            price=700,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="visitor",
+            holes=18,
+            start_date=date(2025, 12, 15),
+            end_date=date(2026, 1, 11),
+            priority=40,
+        ),
+    ]
+
+    best = select_best_fee_from_list(
+        fees,
+        PricingContext(
+            fee_type=FeeType.GOLF,
+            tee_time=datetime(2025, 12, 18, 7, 30),
+            player_type="visitor",
+            holes=18,
+        ),
+    )
+
+    assert best is not None
+    assert best.code == 1108
+
+
+def test_pensioner_time_window_only_applies_before_8am():
+    fees = [
+        FeeCategory(
+            code=1002,
+            description="Members 18 Holes",
+            price=340,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="member",
+            holes=18,
+            priority=10,
+        ),
+        FeeCategory(
+            code=1013,
+            description="Member Pensioners Tue-Fri Before 08:00 18 Holes",
+            price=290,
+            fee_type=FeeType.GOLF,
+            active=1,
+            audience="member",
+            holes=18,
+            weekday=1,
+            min_age=60,
+            end_time=Time(hour=7, minute=59),
+            priority=30,
+        ),
+    ]
+
+    early = select_best_fee_from_list(
+        fees,
+        PricingContext(
+            fee_type=FeeType.GOLF,
+            tee_time=datetime(2026, 3, 10, 7, 45),
+            player_type="member",
+            holes=18,
+            age=60,
+            pricing_tags=("pensioner",),
+        ),
+    )
+    late = select_best_fee_from_list(
+        fees,
+        PricingContext(
+            fee_type=FeeType.GOLF,
+            tee_time=datetime(2026, 3, 10, 8, 15),
+            player_type="member",
+            holes=18,
+            age=60,
+            pricing_tags=("pensioner",),
+        ),
+    )
+
+    assert early is not None
+    assert early.code == 1013
+    assert late is not None
+    assert late.code == 1002
 
 
 def test_parse_tee_sheet_csv_normalizes_multiline_rows():

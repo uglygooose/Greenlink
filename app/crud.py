@@ -53,7 +53,7 @@ def _infer_player_type_for_booking(booking: models.Booking) -> str:
             return str(pt)
     return "member" if getattr(booking, "member_id", None) else "visitor"
 
-def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
+def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18, age: int | None = None, pricing_tags: tuple[str, ...] = ()):
     from app.fee_models import FeeType
     from app.pricing import PricingContext, normalize_player_type, select_best_fee_category
 
@@ -62,10 +62,12 @@ def _select_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
         tee_time=tee_time,
         player_type=normalize_player_type(player_type),
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags,
     )
     return select_best_fee_category(db, ctx)
 
-def _select_push_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18):
+def _select_push_cart_fee(db: Session, tee_time, player_type: str, holes: int = 18, age: int | None = None, pricing_tags: tuple[str, ...] = ()):
     from app.fee_models import FeeType
     from app.pricing import PricingContext, normalize_player_type, select_best_fee_category
 
@@ -74,10 +76,12 @@ def _select_push_cart_fee(db: Session, tee_time, player_type: str, holes: int = 
         tee_time=tee_time,
         player_type=normalize_player_type(player_type),
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags,
     )
     return select_best_fee_category(db, ctx)
 
-def _select_caddy_fee(db: Session, tee_time, player_type: str, holes: int = 18):
+def _select_caddy_fee(db: Session, tee_time, player_type: str, holes: int = 18, age: int | None = None, pricing_tags: tuple[str, ...] = ()):
     from app.fee_models import FeeType
     from app.pricing import PricingContext, normalize_player_type, select_best_fee_category
 
@@ -86,6 +90,8 @@ def _select_caddy_fee(db: Session, tee_time, player_type: str, holes: int = 18):
         tee_time=tee_time,
         player_type=normalize_player_type(player_type),
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags,
     )
     return select_best_fee_category(db, ctx)
 
@@ -657,8 +663,10 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                 cart_player_type = player_type_snapshot or ("member" if resolved_member_id else "visitor")
 
             holes = int(getattr(booking_in, "holes", None) or 18)
+            cart_age = getattr(pricing_profile, "age", None)
+            cart_tags = getattr(pricing_profile, "pricing_tags", ()) or ()
 
-            cart_fee = _select_cart_fee(db, tee_time.tee_time, cart_player_type, holes=holes)
+            cart_fee = _select_cart_fee(db, tee_time.tee_time, cart_player_type, holes=holes, age=cart_age, pricing_tags=cart_tags)
             if not cart_fee:
                 raise HTTPException(
                     status_code=400,
@@ -690,7 +698,9 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                     db,
                     tee_time.tee_time,
                     "member" if pair_uses_member_rate else "visitor",
-                    holes=holes
+                    holes=holes,
+                    age=cart_age,
+                    pricing_tags=cart_tags,
                 ) or cart_fee
 
                 target_cart_price = float(target_cart_fee.price or 0.0)
@@ -738,8 +748,10 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         try:
             push_player_type = getattr(booking_in, "player_type", None) or player_type_snapshot or ("member" if resolved_member_id else "visitor")
             holes = int(getattr(booking_in, "holes", None) or 18)
+            push_age = getattr(pricing_profile, "age", None)
+            push_tags = getattr(pricing_profile, "pricing_tags", ()) or ()
 
-            push_fee = _select_push_cart_fee(db, tee_time.tee_time, push_player_type, holes=holes)
+            push_fee = _select_push_cart_fee(db, tee_time.tee_time, push_player_type, holes=holes, age=push_age, pricing_tags=push_tags)
             if not push_fee:
                 raise HTTPException(
                     status_code=400,
@@ -762,8 +774,10 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
         try:
             caddy_player_type = getattr(booking_in, "player_type", None) or player_type_snapshot or ("member" if resolved_member_id else "visitor")
             holes = int(getattr(booking_in, "holes", None) or 18)
+            caddy_age = getattr(pricing_profile, "age", None)
+            caddy_tags = getattr(pricing_profile, "pricing_tags", ()) or ()
 
-            caddy_fee = _select_caddy_fee(db, tee_time.tee_time, caddy_player_type, holes=holes)
+            caddy_fee = _select_caddy_fee(db, tee_time.tee_time, caddy_player_type, holes=holes, age=caddy_age, pricing_tags=caddy_tags)
             if not caddy_fee:
                 raise HTTPException(
                     status_code=400,

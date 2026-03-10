@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time as Time
 import re
 from typing import Any, Iterable, Optional
 
@@ -147,6 +147,7 @@ def pricing_tags_from_values(*values: Any) -> tuple[str, ...]:
             tags.add("student")
         if "scholar" in raw:
             tags.add("scholar")
+            tags.add("junior")
         if "junior" in raw or "academy" in raw:
             tags.add("junior")
         if "pensioner" in raw or "veteran" in raw or "60yr" in raw or "60 yr" in raw:
@@ -173,6 +174,23 @@ def compute_age(on_date: date, birth_date: date) -> int:
     return on_date.year - birth_date.year - ((on_date.month, on_date.day) < (birth_date.month, birth_date.day))
 
 
+def _time_value(value: Any) -> Optional[Time]:
+    if value is None:
+        return None
+    if isinstance(value, Time):
+        return value
+    try:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        parts = raw.split(":")
+        if len(parts) < 2:
+            return None
+        return Time(hour=int(parts[0]), minute=int(parts[1]))
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True)
 class PricingContext:
     fee_type: FeeType
@@ -197,6 +215,27 @@ def _matches(ctx: PricingContext, fee: FeeCategory) -> bool:
         return False
     if fee.fee_type != ctx.fee_type:
         return False
+
+    tee_date = ctx.tee_time.date()
+    if fee.start_date is not None and tee_date < fee.start_date:
+        return False
+    if fee.end_date is not None and tee_date > fee.end_date:
+        return False
+
+    if fee.start_time is not None or fee.end_time is not None:
+        tee_time_value = ctx.tee_time.time().replace(second=0, microsecond=0)
+        start_time = _time_value(getattr(fee, "start_time", None))
+        end_time = _time_value(getattr(fee, "end_time", None))
+        if start_time is not None and end_time is not None:
+            if start_time <= end_time:
+                if tee_time_value < start_time or tee_time_value > end_time:
+                    return False
+            elif tee_time_value < start_time and tee_time_value > end_time:
+                return False
+        elif start_time is not None and tee_time_value < start_time:
+            return False
+        elif end_time is not None and tee_time_value > end_time:
+            return False
 
     if fee.audience is not None:
         if not ctx.player_type:
@@ -234,6 +273,8 @@ def _specificity_score(fee: FeeCategory) -> int:
     score = 0
     if fee.audience is not None:
         score += 10
+    if fee.start_date is not None or fee.end_date is not None:
+        score += 8
     if fee.day_kind is not None:
         score += 6
     if fee.weekday is not None:
@@ -243,6 +284,8 @@ def _specificity_score(fee: FeeCategory) -> int:
     if fee.gender is not None:
         score += 3
     if fee.min_age is not None or fee.max_age is not None:
+        score += 2
+    if fee.start_time is not None or fee.end_time is not None:
         score += 2
     return score
 

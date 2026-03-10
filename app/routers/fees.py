@@ -15,6 +15,7 @@ from app.pricing import (
     compute_age,
     normalize_gender,
     normalize_player_type,
+    pricing_tags_from_values,
     select_best_fee_category,
 )
 from app.tenancy import get_active_club_id
@@ -143,6 +144,7 @@ class GolfFeeSuggestRequest(BaseModel):
     tee_time_id: int
     player_type: str
     gender: str | None = None
+    player_category: str | None = None
     birth_date: date | None = None
     age: int | None = None
     holes: int | None = None
@@ -170,6 +172,7 @@ def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db), 
         gender=gender,
         holes=holes,
         age=age,
+        pricing_tags=pricing_tags_from_values(req.player_category),
     )
 
     fee = select_best_fee_category(db, ctx)
@@ -194,6 +197,9 @@ def suggest_golf_fee(req: GolfFeeSuggestRequest, db: Session = Depends(get_db), 
 class CartFeeSuggestRequest(BaseModel):
     tee_time_id: int
     player_type: str
+    player_category: str | None = None
+    birth_date: date | None = None
+    age: int | None = None
     holes: int | None = None
 
 
@@ -205,12 +211,17 @@ def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db), 
     tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
     holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
+    age = req.age
+    if age is None and req.birth_date:
+        age = compute_age(tee_time.tee_time.date(), req.birth_date)
 
     ctx = PricingContext(
         fee_type=FeeType.CART,
         tee_time=tee_time.tee_time,
         player_type=player_type,
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags_from_values(req.player_category),
     )
 
     fee = select_best_fee_category(db, ctx)
@@ -233,6 +244,9 @@ def suggest_cart_fee(req: CartFeeSuggestRequest, db: Session = Depends(get_db), 
 class AddOnFeeSuggestRequest(BaseModel):
     tee_time_id: int
     player_type: str
+    player_category: str | None = None
+    birth_date: date | None = None
+    age: int | None = None
     holes: int | None = None
 
 
@@ -244,12 +258,17 @@ def suggest_push_cart_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get
     tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
     holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
+    age = req.age
+    if age is None and req.birth_date:
+        age = compute_age(tee_time.tee_time.date(), req.birth_date)
 
     ctx = PricingContext(
         fee_type=FeeType.PUSH_CART,
         tee_time=tee_time.tee_time,
         player_type=player_type,
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags_from_values(req.player_category),
     )
 
     fee = select_best_fee_category(db, ctx)
@@ -277,12 +296,17 @@ def suggest_caddy_fee(req: AddOnFeeSuggestRequest, db: Session = Depends(get_db)
     tee_time = _get_tee_time_for_club(db, req.tee_time_id, club_id)
     holes = _normalize_holes(req.holes)
     player_type = normalize_player_type(req.player_type)
+    age = req.age
+    if age is None and req.birth_date:
+        age = compute_age(tee_time.tee_time.date(), req.birth_date)
 
     ctx = PricingContext(
         fee_type=FeeType.CADDY,
         tee_time=tee_time.tee_time,
         player_type=player_type,
         holes=holes,
+        age=age,
+        pricing_tags=pricing_tags_from_values(req.player_category),
     )
 
     fee = select_best_fee_category(db, ctx)

@@ -51,6 +51,7 @@ let dashboardStreamPreset = "all";
 let dashboardMenuContext = "main";
 let dashboardPeriodView = "day";
 let revenueImportSettingsCache = {};
+let pricingMatrixRows = [];
 let proShopProductsCache = [];
 let proShopCart = [];
 let peopleSort = "recent_activity";
@@ -306,6 +307,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupPageShortcuts();
     setupUmhlaliOperationalSync();
     setupTargetModelSettings();
+    setupPricingMatrixSettings();
     await loadTeeProfileSettings({ silent: true });
     await loadAccountCustomersCache({ silent: true });
 
@@ -1372,6 +1374,7 @@ function loadAdminPageData(pageName) {
         case "operations-config":
             loadOpsImportSettings();
             loadTargetModelSettings({ silent: true });
+            loadPricingMatrix({ silent: true });
             break;
         case "pro-shop":
             initProShopPage();
@@ -4503,6 +4506,12 @@ async function openEditBookingPriceModal(bookingId) {
                         <option value="member" ${defaultPlayerType === "member" ? "selected" : ""}>Member</option>
                         <option value="visitor" ${defaultPlayerType === "visitor" ? "selected" : ""}>Visitor</option>
                     </select>
+                    <select id="booking-auto-player-category" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #d0d7de;">
+                        <option value="">Standard</option>
+                        <option value="student">Student</option>
+                        <option value="scholar">Scholar</option>
+                        <option value="pensioner">Pensioner</option>
+                    </select>
                     <label style="display:flex; align-items:center; gap:8px; font-weight:600; color:#2c3e50;">
                         <input type="checkbox" id="booking-auto-senior" />
                         Senior (60+)
@@ -4540,6 +4549,7 @@ async function applyAutoBookingPrice(bookingId) {
     const token = localStorage.getItem("token");
     const playerType = document.getElementById("booking-auto-player-type")?.value || "visitor";
     const senior = Boolean(document.getElementById("booking-auto-senior")?.checked);
+    const playerCategory = String(document.getElementById("booking-auto-player-category")?.value || "").trim().toLowerCase();
     const teeTimeId = currentBookingDetail?.tee_time_id;
 
     if (!teeTimeId) {
@@ -4558,7 +4568,8 @@ async function applyAutoBookingPrice(bookingId) {
                 tee_time_id: teeTimeId,
                 player_type: playerType,
                 holes: 18,
-                age: senior ? 60 : null
+                player_category: playerCategory || (senior ? "pensioner" : null),
+                age: senior || playerCategory === "pensioner" ? 60 : null
             })
         });
 
@@ -5238,6 +5249,372 @@ function setupTargetModelSettings() {
     const currentYear = new Date().getFullYear();
     if (yearInput && !yearInput.value) yearInput.value = String(currentYear);
     loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
+}
+
+function emptyPricingMatrixRow() {
+    return {
+        id: null,
+        code: "",
+        description: "",
+        price: "",
+        fee_type: "golf",
+        active: true,
+        audience: "",
+        gender: "",
+        day_kind: "",
+        weekday: "",
+        holes: "",
+        min_age: "",
+        max_age: "",
+        start_date: "",
+        end_date: "",
+        start_time: "",
+        end_time: "",
+        priority: "0",
+    };
+}
+
+function normalizePricingMatrixRow(raw) {
+    const row = { ...emptyPricingMatrixRow(), ...(raw || {}) };
+    row.id = row.id == null ? null : Number(row.id);
+    row.code = row.code == null ? "" : String(row.code);
+    row.description = String(row.description || "");
+    row.price = row.price == null ? "" : String(row.price);
+    row.fee_type = String(row.fee_type || "golf").toLowerCase();
+    row.active = row.active !== false;
+    row.audience = String(row.audience || "");
+    row.gender = String(row.gender || "");
+    row.day_kind = String(row.day_kind || "");
+    row.weekday = row.weekday == null ? "" : String(row.weekday);
+    row.holes = row.holes == null ? "" : String(row.holes);
+    row.min_age = row.min_age == null ? "" : String(row.min_age);
+    row.max_age = row.max_age == null ? "" : String(row.max_age);
+    row.start_date = String(row.start_date || "");
+    row.end_date = String(row.end_date || "");
+    row.start_time = String(row.start_time || "");
+    row.end_time = String(row.end_time || "");
+    row.priority = row.priority == null ? "0" : String(row.priority);
+    return row;
+}
+
+function pricingMatrixSelectOptions(options, currentValue, emptyLabel = "Any") {
+    const selected = String(currentValue == null ? "" : currentValue);
+    const parts = [`<option value="">${escapeHtml(emptyLabel)}</option>`];
+    options.forEach((option) => {
+        const value = String(option.value);
+        parts.push(`<option value="${escapeHtml(value)}" ${selected === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`);
+    });
+    return parts.join("");
+}
+
+function renderPricingMatrixHint(rows) {
+    const hintEl = document.getElementById("pricing-matrix-hint");
+    if (!hintEl) return;
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+        hintEl.textContent = "No club pricing rows saved yet. Super Admin can apply a reference set during onboarding, then save edits for this club.";
+        return;
+    }
+    const activeRows = list.filter(row => row.active !== false);
+    const golfRows = activeRows.filter(row => String(row.fee_type || "").toLowerCase() === "golf").length;
+    const addOnRows = activeRows.filter(row => ["cart", "push_cart", "caddy"].includes(String(row.fee_type || "").toLowerCase())).length;
+    hintEl.textContent = `${formatInteger(activeRows.length)} active pricing rules loaded: ${formatInteger(golfRows)} golf and ${formatInteger(addOnRows)} rental/caddy rules. These rules drive booking value, tee sheet pricing, reconciliation, and targets.`;
+}
+
+function renderPricingMatrix(rows = pricingMatrixRows) {
+    const tbody = document.getElementById("pricing-matrix-body");
+    if (!tbody) return;
+    const list = Array.isArray(rows) ? rows.map(normalizePricingMatrixRow) : [];
+    pricingMatrixRows = list;
+    if (!list.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="14" class="action-note">No pricing rows saved for this club yet.</td>
+            </tr>
+        `;
+        renderPricingMatrixHint([]);
+        return;
+    }
+
+    const feeTypeOptions = [
+        { value: "golf", label: "Golf" },
+        { value: "cart", label: "Cart" },
+        { value: "push_cart", label: "Push Cart" },
+        { value: "caddy", label: "Caddy" },
+        { value: "competition", label: "Competition" },
+        { value: "other", label: "Other" },
+    ];
+    const audienceOptions = [
+        { value: "member", label: "Member" },
+        { value: "visitor", label: "Affiliated Visitor" },
+        { value: "non_affiliated", label: "Non-affiliated" },
+        { value: "reciprocity", label: "Reciprocity" },
+    ];
+    const genderOptions = [
+        { value: "male", label: "Male" },
+        { value: "female", label: "Female" },
+    ];
+    const dayKindOptions = [
+        { value: "weekday", label: "Weekday" },
+        { value: "weekend", label: "Weekend" },
+    ];
+    const weekdayOptions = [
+        { value: "0", label: "Mon" },
+        { value: "1", label: "Tue" },
+        { value: "2", label: "Wed" },
+        { value: "3", label: "Thu" },
+        { value: "4", label: "Fri" },
+        { value: "5", label: "Sat" },
+        { value: "6", label: "Sun" },
+    ];
+    const holesOptions = [
+        { value: "9", label: "9" },
+        { value: "18", label: "18" },
+    ];
+
+    tbody.innerHTML = list.map((row, index) => `
+        <tr data-pricing-row="${index}" data-fee-id="${row.id ?? ""}">
+            <td><input type="number" data-field="code" value="${escapeHtml(row.code)}" style="width: 86px;" min="1" step="1" placeholder="Auto" /></td>
+            <td><input type="text" data-field="description" value="${escapeHtml(row.description)}" style="min-width: 220px;" /></td>
+            <td><select data-field="fee_type">${pricingMatrixSelectOptions(feeTypeOptions, row.fee_type, "Type")}</select></td>
+            <td>
+                <select data-field="audience">${pricingMatrixSelectOptions(audienceOptions, row.audience, "Any")}</select>
+                <select data-field="gender" style="margin-top:6px;">${pricingMatrixSelectOptions(genderOptions, row.gender, "Any")}</select>
+            </td>
+            <td><select data-field="holes">${pricingMatrixSelectOptions(holesOptions, row.holes, "Any")}</select></td>
+            <td><select data-field="day_kind">${pricingMatrixSelectOptions(dayKindOptions, row.day_kind, "Any")}</select></td>
+            <td><select data-field="weekday">${pricingMatrixSelectOptions(weekdayOptions, row.weekday, "Any")}</select></td>
+            <td>
+                <input type="number" data-field="min_age" value="${escapeHtml(row.min_age)}" min="0" step="1" placeholder="Min" style="width:70px;" />
+                <input type="number" data-field="max_age" value="${escapeHtml(row.max_age)}" min="0" step="1" placeholder="Max" style="width:70px; margin-top:6px;" />
+            </td>
+            <td>
+                <input type="date" data-field="start_date" value="${escapeHtml(row.start_date)}" />
+                <input type="date" data-field="end_date" value="${escapeHtml(row.end_date)}" style="margin-top:6px;" />
+            </td>
+            <td>
+                <input type="time" data-field="start_time" value="${escapeHtml(row.start_time)}" />
+                <input type="time" data-field="end_time" value="${escapeHtml(row.end_time)}" style="margin-top:6px;" />
+            </td>
+            <td><input type="number" data-field="price" value="${escapeHtml(row.price)}" min="0" step="0.01" style="width:96px;" /></td>
+            <td><input type="number" data-field="priority" value="${escapeHtml(row.priority)}" step="1" style="width:74px;" /></td>
+            <td style="text-align:center;"><input type="checkbox" data-field="active" ${row.active ? "checked" : ""} /></td>
+            <td><button class="btn-cancel btn-small" type="button" data-action="delete-pricing-row">Remove</button></td>
+        </tr>
+    `).join("");
+    renderPricingMatrixHint(list);
+}
+
+function collectPricingMatrixRowsFromDom() {
+    const tbody = document.getElementById("pricing-matrix-body");
+    if (!tbody) return [];
+    return Array.from(tbody.querySelectorAll("tr[data-pricing-row]")).map((row) => {
+        const getValue = (field) => String(row.querySelector(`[data-field="${field}"]`)?.value || "").trim();
+        const getInt = (field) => {
+            const raw = getValue(field);
+            if (!raw) return null;
+            const parsed = Number.parseInt(raw, 10);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const getFloat = (field) => {
+            const raw = getValue(field);
+            if (!raw) return null;
+            const parsed = Number.parseFloat(raw);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        return {
+            id: row.dataset.feeId ? Number(row.dataset.feeId) : null,
+            code: getInt("code"),
+            description: getValue("description"),
+            price: getFloat("price"),
+            fee_type: getValue("fee_type") || "golf",
+            active: Boolean(row.querySelector('[data-field="active"]')?.checked),
+            audience: getValue("audience") || null,
+            gender: getValue("gender") || null,
+            day_kind: getValue("day_kind") || null,
+            weekday: getInt("weekday"),
+            holes: getInt("holes"),
+            min_age: getInt("min_age"),
+            max_age: getInt("max_age"),
+            start_date: getValue("start_date") || null,
+            end_date: getValue("end_date") || null,
+            start_time: getValue("start_time") || null,
+            end_time: getValue("end_time") || null,
+            priority: getInt("priority") ?? 0,
+        };
+    });
+}
+
+async function loadPricingMatrix(options = {}) {
+    const statusEl = document.getElementById("pricing-matrix-status");
+    try {
+        if (statusEl && !options?.silent) statusEl.textContent = "Loading pricing...";
+        const data = await fetchJson(`${API_BASE}/api/admin/pricing-matrix`);
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        renderPricingMatrix(rows);
+        if (statusEl && !options?.silent) statusEl.textContent = rows.length ? "Pricing loaded" : "No club pricing saved";
+    } catch (error) {
+        console.error("Failed to load pricing matrix:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Load failed";
+        renderPricingMatrix([]);
+    }
+}
+
+async function persistPricingMatrixRow(row) {
+    const payload = {
+        code: row.code,
+        description: row.description,
+        price: row.price,
+        fee_type: row.fee_type,
+        active: row.active,
+        audience: row.audience,
+        gender: row.gender,
+        day_kind: row.day_kind,
+        weekday: row.weekday,
+        holes: row.holes,
+        min_age: row.min_age,
+        max_age: row.max_age,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        priority: row.priority,
+    };
+    const path = row.id ? `${API_BASE}/api/admin/pricing-matrix/${encodeURIComponent(row.id)}` : `${API_BASE}/api/admin/pricing-matrix`;
+    const method = row.id ? "PUT" : "POST";
+    return fetchJson(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+async function savePricingMatrix() {
+    const statusEl = document.getElementById("pricing-matrix-status");
+    const rows = collectPricingMatrixRowsFromDom();
+    if (!rows.length) {
+        if (statusEl) statusEl.textContent = "Add at least one pricing row";
+        return;
+    }
+    for (const row of rows) {
+        if (!String(row.description || "").trim()) {
+            if (statusEl) statusEl.textContent = "Every pricing row needs a description";
+            return;
+        }
+        if (!Number.isFinite(Number(row.price)) || Number(row.price) < 0) {
+            if (statusEl) statusEl.textContent = "Every pricing row needs a valid price";
+            return;
+        }
+    }
+
+    try {
+        if (statusEl) statusEl.textContent = "Saving pricing...";
+        for (const row of rows) {
+            await persistPricingMatrixRow(row);
+        }
+        golfFeesCache = [];
+        await loadPricingMatrix({ silent: true });
+        await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
+        if (currentUserRole !== "super_admin") {
+            loadDashboard({ silent: true, useCache: false });
+            if (currentActivePage === "revenue") loadRevenue();
+        }
+        if (statusEl) statusEl.textContent = "Pricing saved";
+        toastSuccess("Pricing matrix saved");
+    } catch (error) {
+        console.error("Failed to save pricing matrix:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Save failed";
+        toastError(error?.message || "Failed to save pricing matrix");
+    }
+}
+
+function addPricingMatrixRow() {
+    pricingMatrixRows = [...collectPricingMatrixRowsFromDom(), emptyPricingMatrixRow()];
+    renderPricingMatrix(pricingMatrixRows);
+    document.querySelector('#pricing-matrix-body tr:last-child input[data-field="description"]')?.focus();
+}
+
+async function deletePricingMatrixRow(buttonEl) {
+    const rowEl = buttonEl?.closest?.("tr[data-pricing-row]");
+    if (!(rowEl instanceof HTMLTableRowElement)) return;
+    const feeId = Number(rowEl.dataset.feeId || 0);
+    const statusEl = document.getElementById("pricing-matrix-status");
+
+    if (!(feeId > 0)) {
+        rowEl.remove();
+        pricingMatrixRows = collectPricingMatrixRowsFromDom();
+        renderPricingMatrix(pricingMatrixRows);
+        return;
+    }
+
+    try {
+        if (statusEl) statusEl.textContent = "Removing pricing row...";
+        await fetchJson(`${API_BASE}/api/admin/pricing-matrix/${encodeURIComponent(feeId)}`, { method: "DELETE" });
+        golfFeesCache = [];
+        await loadPricingMatrix({ silent: true });
+        await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
+        if (currentUserRole !== "super_admin") {
+            loadDashboard({ silent: true, useCache: false });
+            if (currentActivePage === "revenue") loadRevenue();
+        }
+        if (statusEl) statusEl.textContent = "Pricing row removed";
+        toastSuccess("Pricing row removed");
+    } catch (error) {
+        console.error("Failed to remove pricing row:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Remove failed";
+        toastError(error?.message || "Failed to remove pricing row");
+    }
+}
+
+async function applyUmhlaliPricingReference() {
+    const statusEl = document.getElementById("pricing-matrix-status");
+    if (!confirm("Apply the Umhlali reference pricing to the active club? Existing matching rule codes will be updated.")) {
+        return;
+    }
+    try {
+        if (statusEl) statusEl.textContent = "Applying Umhlali pricing...";
+        await fetchJson(`${API_BASE}/api/admin/pricing-matrix/apply-reference`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ template: "umhlali" }),
+        });
+        golfFeesCache = [];
+        await loadPricingMatrix({ silent: true });
+        await loadTargetModelSettings({ year: getTargetSettingsYear(), silent: true });
+        if (currentUserRole !== "super_admin") {
+            loadDashboard({ silent: true, useCache: false });
+            if (currentActivePage === "revenue") loadRevenue();
+        }
+        if (statusEl) statusEl.textContent = "Umhlali pricing applied";
+        toastSuccess("Umhlali reference pricing applied");
+    } catch (error) {
+        console.error("Failed to apply Umhlali pricing:", error);
+        if (statusEl) statusEl.textContent = error?.message || "Apply failed";
+        toastError(error?.message || "Failed to apply Umhlali reference pricing");
+    }
+}
+
+function setupPricingMatrixSettings() {
+    if (!["admin", "super_admin"].includes(String(currentUserRole || "").toLowerCase())) return;
+    const reloadBtn = document.getElementById("pricing-matrix-reload-btn");
+    const applyBtn = document.getElementById("pricing-matrix-apply-umhlali-btn");
+    const addBtn = document.getElementById("pricing-matrix-add-row-btn");
+    const saveBtn = document.getElementById("pricing-matrix-save-btn");
+    const tbody = document.getElementById("pricing-matrix-body");
+    if (!(reloadBtn instanceof HTMLButtonElement) || !(saveBtn instanceof HTMLButtonElement) || !(tbody instanceof HTMLElement)) return;
+
+    reloadBtn.addEventListener("click", () => loadPricingMatrix());
+    applyBtn?.addEventListener("click", () => applyUmhlaliPricingReference());
+    addBtn?.addEventListener("click", () => addPricingMatrixRow());
+    saveBtn.addEventListener("click", () => savePricingMatrix());
+    tbody.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.dataset.action === "delete-pricing-row") {
+            deletePricingMatrixRow(target);
+        }
+    });
+    loadPricingMatrix({ silent: true });
 }
 
 async function loadOpsImportSettings(options = {}) {
@@ -8467,11 +8844,13 @@ async function suggestFeeForRow(row) {
     const feeSelect = row.querySelector('select[data-field="fee"]');
     const typeSelect = row.querySelector('select[data-field="player_type"]');
     const seniorCheckbox = row.querySelector('input[data-field="senior"]');
+    const categorySelect = row.querySelector('select[data-field="player_category"]');
 
     if (!feeSelect || !typeSelect) return;
 
     const playerType = typeSelect.value || "visitor";
     const senior = Boolean(seniorCheckbox?.checked);
+    const playerCategory = String(categorySelect?.value || "").trim().toLowerCase();
 
     try {
         const res = await fetch("/fees/suggest/golf", {
@@ -8484,7 +8863,8 @@ async function suggestFeeForRow(row) {
                 tee_time_id: teeBookingState.teeTimeId,
                 player_type: playerType,
                 holes: teeBookingState.holes || 18,
-                age: senior ? 60 : null
+                player_category: playerCategory || (senior ? "pensioner" : null),
+                age: senior || playerCategory === "pensioner" ? 60 : null
             })
         });
 
@@ -8527,7 +8907,11 @@ async function suggestCartForRow(row) {
     }
 
     const typeSelect = row.querySelector('select[data-field="player_type"]');
+    const categorySelect = row.querySelector('select[data-field="player_category"]');
+    const seniorCheckbox = row.querySelector('input[data-field="senior"]');
     const playerType = typeSelect?.value || "visitor";
+    const playerCategory = String(categorySelect?.value || "").trim().toLowerCase();
+    const senior = Boolean(seniorCheckbox?.checked);
 
     try {
         const res = await fetch("/fees/suggest/cart", {
@@ -8539,6 +8923,8 @@ async function suggestCartForRow(row) {
             body: JSON.stringify({
                 tee_time_id: teeBookingState.teeTimeId,
                 player_type: playerType,
+                player_category: playerCategory || (senior ? "pensioner" : null),
+                age: senior || playerCategory === "pensioner" ? 60 : null,
                 holes: teeBookingState.holes || 18
             })
         });
@@ -8579,7 +8965,11 @@ async function suggestPushCartForRow(row) {
     }
 
     const typeSelect = row.querySelector('select[data-field="player_type"]');
+    const categorySelect = row.querySelector('select[data-field="player_category"]');
+    const seniorCheckbox = row.querySelector('input[data-field="senior"]');
     const playerType = typeSelect?.value || "visitor";
+    const playerCategory = String(categorySelect?.value || "").trim().toLowerCase();
+    const senior = Boolean(seniorCheckbox?.checked);
 
     try {
         const res = await fetch("/fees/suggest/push-cart", {
@@ -8591,6 +8981,8 @@ async function suggestPushCartForRow(row) {
             body: JSON.stringify({
                 tee_time_id: teeBookingState.teeTimeId,
                 player_type: playerType,
+                player_category: playerCategory || (senior ? "pensioner" : null),
+                age: senior || playerCategory === "pensioner" ? 60 : null,
                 holes: teeBookingState.holes || 18
             })
         });
@@ -8631,7 +9023,11 @@ async function suggestCaddyForRow(row) {
     }
 
     const typeSelect = row.querySelector('select[data-field="player_type"]');
+    const categorySelect = row.querySelector('select[data-field="player_category"]');
+    const seniorCheckbox = row.querySelector('input[data-field="senior"]');
     const playerType = typeSelect?.value || "visitor";
+    const playerCategory = String(categorySelect?.value || "").trim().toLowerCase();
+    const senior = Boolean(seniorCheckbox?.checked);
 
     try {
         const res = await fetch("/fees/suggest/caddy", {
@@ -8643,6 +9039,8 @@ async function suggestCaddyForRow(row) {
             body: JSON.stringify({
                 tee_time_id: teeBookingState.teeTimeId,
                 player_type: playerType,
+                player_category: playerCategory || (senior ? "pensioner" : null),
+                age: senior || playerCategory === "pensioner" ? 60 : null,
                 holes: teeBookingState.holes || 18
             })
         });
@@ -8847,6 +9245,15 @@ function addBookingRow() {
                     </label>
                 </div>
                 <div>
+                    <label>Category</label>
+                    <select data-field="player_category">
+                        <option value="">Standard</option>
+                        <option value="student">Student</option>
+                        <option value="scholar">Scholar</option>
+                        <option value="pensioner">Pensioner</option>
+                    </select>
+                </div>
+                <div>
                     <label>Handicap</label>
                     <input type="text" data-field="handicap" placeholder="Handicap">
                 </div>
@@ -9023,10 +9430,23 @@ document.addEventListener("change", (e) => {
         }
     }
 
-    if (e.target.matches("select[data-field='player_type']") || e.target.matches("input[data-field='senior']")) {
+    if (
+        e.target.matches("select[data-field='player_type']")
+        || e.target.matches("input[data-field='senior']")
+        || e.target.matches("select[data-field='player_category']")
+    ) {
         const feeSelect = row.querySelector("select[data-field='fee']");
         if (feeSelect && !feeSelect.value) {
             suggestFeeForRow(row);
+        }
+        if (row.querySelector("input[data-field='cart']")?.checked) {
+            suggestCartForRow(row);
+        }
+        if (row.querySelector("input[data-field='push_cart']")?.checked) {
+            suggestPushCartForRow(row);
+        }
+        if (row.querySelector("input[data-field='caddy']")?.checked) {
+            suggestCaddyForRow(row);
         }
         return;
     }
@@ -9266,6 +9686,7 @@ async function submitTeeBooking() {
             const handicap = row.querySelector('input[data-field=\"handicap\"]').value.trim();
             const playerType = row.querySelector('select[data-field=\"player_type\"]').value;
             const senior = Boolean(row.querySelector('input[data-field=\"senior\"]')?.checked);
+            const playerCategory = String(row.querySelector('select[data-field=\"player_category\"]')?.value || "").trim().toLowerCase();
             const feeSelect = row.querySelector('select[data-field=\"fee\"]');
             const feeId = feeSelect.value;
             const cart = Boolean(row.querySelector('input[data-field=\"cart\"]')?.checked);
@@ -9286,6 +9707,7 @@ async function submitTeeBooking() {
                 player_email: email,
                 handicap_number: handicap || null,
                 player_type: playerType || "visitor",
+                player_category: playerCategory || (senior ? "pensioner" : null),
                 holes: teeBookingState.holes || 18,
                 prepaid,
                 cart,
@@ -9303,7 +9725,7 @@ async function submitTeeBooking() {
             if (resolvedFeeId) {
                 payload.fee_category_id = resolvedFeeId;
             } else {
-                payload.age = senior ? 60 : null;
+                payload.age = senior || playerCategory === "pensioner" ? 60 : null;
             }
 
             const res = await fetch("/tsheet/booking", {
