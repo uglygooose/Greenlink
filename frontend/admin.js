@@ -3299,6 +3299,10 @@ function dateToYMD(dateObj) {
     return `${y}-${m}-${d}`;
 }
 
+function localTodayYMD() {
+    return dateToYMD(new Date());
+}
+
 function ymdToDate(dateStr) {
     const [y, m, d] = String(dateStr || "").split("-").map(Number);
     if (!y || !m || !d) return null;
@@ -6635,8 +6639,7 @@ function setupTeeSheetFilters() {
     if (!dateInput) return;
 
     if (!dateInput.value) {
-        const today = new Date();
-        dateInput.value = today.toISOString().split("T")[0];
+        dateInput.value = localTodayYMD();
     }
 
     dateInput.addEventListener("change", () => {
@@ -6666,8 +6669,7 @@ function setupTeeSheetFilters() {
     });
 
     todayBtn?.addEventListener("click", () => {
-        const today = new Date().toISOString().split("T")[0];
-        dateInput.value = today;
+        dateInput.value = localTodayYMD();
         loadTeeTimes();
     });
 
@@ -6705,7 +6707,7 @@ async function runTeeManageAction(action, triggerButton = null) {
 
     if (action === "generate") {
         if (item?.disabled) return;
-        const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+        const dateStr = document.getElementById("tee-sheet-date")?.value || localTodayYMD();
         try {
             if (item) item.disabled = true;
             const created = await generateDaySheet(dateStr, new Set());
@@ -7073,7 +7075,7 @@ function openBulkBookModal() {
     const modal = document.getElementById("bulk-book-modal");
     if (!modal) return;
 
-    const dateStr = document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0];
+    const dateStr = document.getElementById("tee-sheet-date")?.value || localTodayYMD();
     const holes = String(selectedHolesView) === "9" ? "9" : "18";
     applyTeePlanGlobals(dateStr);
     const plan = teePlanForDate(dateStr, holes === "9" ? 9 : 18);
@@ -8164,7 +8166,7 @@ function updateTeeSheetSummary(teeTimes = [], dateStr = "") {
     });
 
     const openSeats = Math.max(0, totalSlots - bookedPlayers);
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = localTodayYMD();
     const nextLabel = nextTee
         ? nextTee.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         : (dateStr && dateStr < todayStr ? "Past day" : "No upcoming");
@@ -8183,7 +8185,7 @@ async function loadTeeTimes(options = {}) {
     const tbody = document.getElementById("admin-tee-sheet-body");
     if (!dateInput || !tbody) return;
 
-    const dateStr = dateInput.value || new Date().toISOString().split("T")[0];
+    const dateStr = dateInput.value || localTodayYMD();
     applyTeePlanGlobals(dateStr);
     const dayPlan18 = teePlanForDate(dateStr, 18);
     const dayPlan9 = teePlanForDate(dateStr, 9);
@@ -8361,7 +8363,7 @@ async function loadTeeTimes(options = {}) {
             renderTeeSheetRows(filteredTeeTimes, dateStr);
             updateTeeSheetSummary(filteredTeeTimes, dateStr);
         }
-        const todayStr = new Date().toISOString().split("T")[0];
+        const todayStr = localTodayYMD();
         const shouldAutoScrollNow = !preserveScroll && dateStr === todayStr;
         if (shouldAutoScrollNow) {
             scrollTeeSheetToNow(dateStr);
@@ -11234,7 +11236,7 @@ async function loadTeeProfileSettings(options = {}) {
         });
         if (!res.ok) {
             teeSheetProfile = normalizeTeeProfile(defaultTeeProfile());
-            applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+            applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || localTodayYMD());
             if (!silent) {
                 const statusEl = document.getElementById("tee-profile-status");
                 if (statusEl) statusEl.textContent = "Using default profile";
@@ -11243,10 +11245,10 @@ async function loadTeeProfileSettings(options = {}) {
         }
         const data = await res.json();
         writeTeeProfileToForm(data?.profile || defaultTeeProfile());
-        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || localTodayYMD());
     } catch (error) {
         teeSheetProfile = normalizeTeeProfile(defaultTeeProfile());
-        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || localTodayYMD());
         if (!silent) {
             console.error("Failed to load tee profile settings:", error);
             const statusEl = document.getElementById("tee-profile-status");
@@ -11277,7 +11279,7 @@ async function saveTeeProfileSettings() {
         }
         const data = await res.json();
         writeTeeProfileToForm(data?.profile || profile);
-        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || new Date().toISOString().split("T")[0]);
+        applyTeePlanGlobals(document.getElementById("tee-sheet-date")?.value || localTodayYMD());
         if (statusEl) {
             statusEl.textContent = "Saved";
             setTimeout(() => { statusEl.textContent = ""; }, 2000);
