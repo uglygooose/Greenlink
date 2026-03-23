@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
   <link rel="stylesheet" href="/frontend/style.css">
   <script src="club-config.js"></script>
+  <script src="js/utils/session.js?v=2026-03-23-club-ops-recovery-01"></script>
   <style>
     :root {
       --ucc-olive: #5a7a3a;
@@ -670,14 +671,71 @@
 const API_PREFIX = '/tsheet';
 const token = localStorage.getItem('token');
 if(!token) location.href='/frontend/index.html';
-const role = String(localStorage.getItem('user_role') || 'player').toLowerCase();
+let bootstrap = null;
+let role = String(localStorage.getItem('user_role') || 'player').trim().toLowerCase();
+let roleShell = '';
+let isAdmin = role === 'admin';
+let isSuperAdmin = role === 'super_admin';
+let isStaff = role === 'club_staff' || isAdmin;
+let isMember = role === 'player';
 
-if (role === 'player') {
-  const p = new URLSearchParams(window.location.search || "");
-  p.set("tab", "book");
-  const next = `/frontend/dashboard.html?${p.toString()}`;
-  window.location.replace(next);
+function syncRoleStateFromBootstrap(nextBootstrap) {
+  bootstrap = nextBootstrap && typeof nextBootstrap === 'object' ? nextBootstrap : bootstrap;
+  roleShell = String(bootstrap?.role_shell || '').trim().toLowerCase();
+  role = String(bootstrap?.user?.role || localStorage.getItem('user_role') || role || 'player').trim().toLowerCase();
+  isAdmin = roleShell === 'club_admin' || role === 'admin';
+  isSuperAdmin = roleShell === 'super_admin' || role === 'super_admin';
+  isStaff = roleShell === 'staff' || role === 'club_staff' || isAdmin;
+  isMember = roleShell === 'member' || role === 'player';
+
+  try {
+    if (role) localStorage.setItem('user_role', role);
+    const activeClubId = Number(bootstrap?.effective_club?.id || bootstrap?.preview_club?.id || 0);
+    if (activeClubId > 0) localStorage.setItem('active_club_id', String(activeClubId));
+  } catch {}
 }
+
+function sessionLandingPath(fallback) {
+  const resolved = String(bootstrap?.landing_path || fallback || '').trim();
+  return resolved || '/frontend/index.html';
+}
+
+function redirectToSessionLanding(fallback) {
+  window.location.replace(sessionLandingPath(fallback));
+}
+
+async function ensureBookingOperatorBootstrap() {
+  const sessionApi = window.GreenLinkSession;
+  const cached = sessionApi?.readBootstrap?.() || null;
+  if (cached) {
+    syncRoleStateFromBootstrap(cached);
+    return cached;
+  }
+  if (!sessionApi?.fetchBootstrap) return null;
+
+  try {
+    const fresh = await sessionApi.fetchBootstrap();
+    const normalized = sessionApi.writeBootstrap ? sessionApi.writeBootstrap(fresh) : fresh;
+    syncRoleStateFromBootstrap(normalized);
+    return normalized;
+  } catch (error) {
+    console.error('Booking bootstrap failed', error);
+    if (Number(error?.status || 0) === 401 || error?.code === 'INVALID_BOOTSTRAP') {
+      sessionApi?.clearSessionState?.();
+      bootstrap = null;
+      role = '';
+      roleShell = '';
+      isAdmin = false;
+      isSuperAdmin = false;
+      isStaff = false;
+      isMember = false;
+      redirectToSessionLanding('/frontend/index.html');
+    }
+    return null;
+  }
+}
+
+syncRoleStateFromBootstrap(window.GreenLinkSession?.readBootstrap?.() || null);
 
 let clubConfig = null;
 let typeLabels = {
@@ -705,6 +763,22 @@ const teeTimeStr = urlParams.get('tee_time');
 
 // Initialize
 async function init() {
+  await ensureBookingOperatorBootstrap();
+  if (isMember) {
+    const p = new URLSearchParams(window.location.search || "");
+    p.set("tab", "book");
+    redirectToSessionLanding(`/frontend/dashboard.html?${p.toString()}`);
+    return;
+  }
+  if (isSuperAdmin) {
+    redirectToSessionLanding('/frontend/admin.html?workspace=overview');
+    return;
+  }
+  if (!isAdmin && !isStaff) {
+    redirectToSessionLanding('/frontend/index.html');
+    return;
+  }
+
   if (!teeTimeId) {
     alert('No tee time selected');
     goBack();

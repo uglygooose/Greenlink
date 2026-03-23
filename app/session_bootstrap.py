@@ -78,7 +78,9 @@ def role_shell_for_user(user: User) -> str:
 def _landing_path_for_shell(shell: str, workspace: str) -> str:
     if shell == ROLE_SHELL_MEMBER:
         return f"/frontend/dashboard.html?view={workspace}"
-    return f"/frontend/admin.html?workspace={workspace}"
+    if shell == ROLE_SHELL_SUPER_ADMIN:
+        return f"/frontend/admin.html?workspace={workspace}"
+    return "/frontend/tsheet.html"
 
 
 def _club_status(settings: dict[str, str], club: Club) -> str:

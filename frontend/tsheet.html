@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
   <link rel="stylesheet" href="/frontend/style.css">
   <script src="club-config.js"></script>
+  <script src="js/utils/session.js?v=2026-03-23-club-ops-recovery-01"></script>
   <style>
     :root {
       --ucc-olive: #5a7a3a;
@@ -1288,17 +1289,74 @@
 		const API_PREFIX = '/tsheet';
 		const token = localStorage.getItem('token');
 		if(!token) location.href='/frontend/index.html';
-			const role = localStorage.getItem('user_role') || 'player';
-			const isAdmin = role === 'admin';
-			const isSuperAdmin = role === 'super_admin';
-			const isStaff = isAdmin || role === 'club_staff' || isSuperAdmin;
-			if (!isStaff) {
-			  const p = new URLSearchParams(window.location.search || "");
-			  p.set("tab", "book");
-			  const next = `/frontend/dashboard.html?${p.toString()}`;
-			  window.location.replace(next);
+			let bootstrap = null;
+			let role = String(localStorage.getItem('user_role') || 'player').trim().toLowerCase();
+			let roleShell = '';
+			let isAdmin = role === 'admin';
+			let isSuperAdmin = role === 'super_admin';
+			let isStaff = role === 'club_staff' || isAdmin;
+			let isMember = role === 'player';
+
+			function syncRoleStateFromBootstrap(nextBootstrap) {
+			  bootstrap = nextBootstrap && typeof nextBootstrap === 'object' ? nextBootstrap : bootstrap;
+			  roleShell = String(bootstrap?.role_shell || '').trim().toLowerCase();
+			  role = String(bootstrap?.user?.role || localStorage.getItem('user_role') || role || 'player').trim().toLowerCase();
+			  isAdmin = roleShell === 'club_admin' || role === 'admin';
+			  isSuperAdmin = roleShell === 'super_admin' || role === 'super_admin';
+			  isStaff = roleShell === 'staff' || role === 'club_staff' || isAdmin;
+			  isMember = roleShell === 'member' || role === 'player';
+
+			  try {
+			    if (role) localStorage.setItem('user_role', role);
+			    const activeClubId = Number(bootstrap?.effective_club?.id || bootstrap?.preview_club?.id || 0);
+			    if (activeClubId > 0) localStorage.setItem('active_club_id', String(activeClubId));
+			  } catch {}
+
+			  document.body.classList.remove('admin', 'player');
+			  document.body.classList.add(isAdmin || isStaff ? 'admin' : 'player');
 			}
-			document.body.classList.add(isStaff ? 'admin' : 'player');
+
+			function sessionLandingPath(fallback) {
+			  const resolved = String(bootstrap?.landing_path || fallback || '').trim();
+			  return resolved || '/frontend/index.html';
+			}
+
+			function redirectToSessionLanding(fallback) {
+			  window.location.replace(sessionLandingPath(fallback));
+			}
+
+			async function ensureClubOpsBootstrap() {
+			  const sessionApi = window.GreenLinkSession;
+			  const cached = sessionApi?.readBootstrap?.() || null;
+			  if (cached) {
+			    syncRoleStateFromBootstrap(cached);
+			    return cached;
+			  }
+			  if (!sessionApi?.fetchBootstrap) return null;
+
+			  try {
+			    const fresh = await sessionApi.fetchBootstrap();
+			    const normalized = sessionApi.writeBootstrap ? sessionApi.writeBootstrap(fresh) : fresh;
+			    syncRoleStateFromBootstrap(normalized);
+			    return normalized;
+			  } catch (error) {
+			    console.error('Club ops bootstrap failed', error);
+			    if (Number(error?.status || 0) === 401 || error?.code === 'INVALID_BOOTSTRAP') {
+			      sessionApi?.clearSessionState?.();
+			      bootstrap = null;
+			      role = '';
+			      roleShell = '';
+			      isAdmin = false;
+			      isSuperAdmin = false;
+			      isStaff = false;
+			      isMember = false;
+			      redirectToSessionLanding('/frontend/index.html');
+			    }
+			    return null;
+			  }
+			}
+
+			syncRoleStateFromBootstrap(window.GreenLinkSession?.readBootstrap?.() || null);
 
 		(function installAuthFetch() {
 		  const originalFetch = window.fetch.bind(window);
@@ -2528,8 +2586,24 @@ async function checkIn(bookingId) {
 
 		// Initialize
 		(async () => {
+		  await ensureClubOpsBootstrap();
+		  if (isMember) {
+		    const p = new URLSearchParams(window.location.search || "");
+		    p.set("tab", "book");
+		    const memberFallback = `/frontend/dashboard.html?${p.toString()}`;
+		    redirectToSessionLanding(memberFallback);
+		    return;
+		  }
+		  if (isSuperAdmin) {
+		    redirectToSessionLanding('/frontend/admin.html?workspace=overview');
+		    return;
+		  }
+		  if (!isAdmin && !isStaff) {
+		    redirectToSessionLanding('/frontend/index.html');
+		    return;
+		  }
+
 		  try {
-		    await ensureActiveClubIdForSuperAdmin();
 		    clubConfig = await window.Greenlink?.loadClubConfig?.();
 		    if (clubConfig?.labels) typeLabels = { ...typeLabels, ...clubConfig.labels };
 		    if (clubConfig) window.Greenlink?.applyClubBranding?.(clubConfig);

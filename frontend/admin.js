@@ -2252,9 +2252,13 @@
         const token = ++state.renderToken;
         renderWorkspaceLoading("Loading role-specific workspace.");
         try {
-            await refreshBootstrap(false);
+            await refreshBootstrap(roleShell() === "club_admin" || roleShell() === "staff");
             if (roleShell() === "member") {
                 window.location.href = state.bootstrap.landing_path || "/frontend/dashboard.html?view=home";
+                return;
+            }
+            if (roleShell() === "club_admin" || roleShell() === "staff") {
+                window.location.replace(String(state.bootstrap?.landing_path || "/frontend/tsheet.html").trim() || "/frontend/tsheet.html");
                 return;
             }
             state.route = parseRoute();
@@ -2667,11 +2671,15 @@
 
         state.route = { workspace: "overview", panel: null, date: todayYmd(), clubId: positiveInt(new URLSearchParams(window.location.search || "").get("club_id")) };
         hydrateBootstrapFromCache();
-        if (!state.bootstrap) {
+        if (!state.bootstrap || roleShell() === "club_admin" || roleShell() === "staff") {
             await refreshBootstrap(true);
         }
         if (roleShell() === "member") {
             window.location.href = state.bootstrap.landing_path || "/frontend/dashboard.html?view=home";
+            return;
+        }
+        if (roleShell() === "club_admin" || roleShell() === "staff") {
+            window.location.replace(String(state.bootstrap?.landing_path || "/frontend/tsheet.html").trim() || "/frontend/tsheet.html");
             return;
         }
 

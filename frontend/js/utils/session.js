@@ -48,13 +48,17 @@
             ? payload.allowed_workspaces.map(item => String(item || "").trim().toLowerCase()).filter(Boolean)
             : [];
         const user = payload.user;
+        const userId = positiveInt(user?.id);
+        const userEmail = String(user?.email || "").trim().toLowerCase();
+        const userName = String(user?.name || "").trim() || userEmail;
+        const userRole = String(user?.role || "").trim().toLowerCase();
         const effectiveClub = normalizeClubPayload(payload.effective_club);
         const previewClub = normalizeClubPayload(payload.preview_club);
 
         if (!VALID_ROLE_SHELLS.has(roleShell)) {
             throw sessionError("Session bootstrap returned an unknown role shell.", { code: "INVALID_BOOTSTRAP" });
         }
-        if (!user || typeof user !== "object" || !positiveInt(user.id) || !String(user.email || "").trim()) {
+        if (!user || typeof user !== "object" || !userId || !userEmail) {
             throw sessionError("Session bootstrap is missing user identity.", { code: "INVALID_BOOTSTRAP" });
         }
         if (!defaultWorkspace) {
@@ -72,6 +76,13 @@
 
         return {
             ...payload,
+            user: {
+                ...user,
+                id: userId,
+                email: userEmail,
+                name: userName,
+                role: userRole,
+            },
             role_shell: roleShell,
             default_workspace: defaultWorkspace,
             landing_path: landingPath,
@@ -119,6 +130,9 @@
         }
 
         try {
+            if (normalized?.user?.role) {
+                global.localStorage.setItem("user_role", String(normalized.user.role));
+            }
             const effectiveClubId = Number(normalized?.effective_club?.id || 0);
             const previewClubId = Number(normalized?.preview_club?.id || 0);
             if (effectiveClubId > 0) {
