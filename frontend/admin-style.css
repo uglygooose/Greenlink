@@ -45,6 +45,10 @@ body {
     padding: 18px;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 body.shell-loading {
     overflow: hidden;
 }
