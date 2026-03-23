@@ -77,6 +77,9 @@ DEMO_SETTINGS = {
     "club_region": "KwaZulu-Natal",
     "club_postal_code": "4420",
     "club_country": "South Africa",
+    "booking_window_member_days": "21",
+    "booking_window_affiliated_days": "14",
+    "booking_window_non_affiliated_days": "10",
 }
 DEMO_PERSONAS = {
     "club_admin": {

@@ -28,7 +28,7 @@ from app.models import (
 )
 from app.observability import log_event
 from app.people import sync_user_person
-from app.runtime_env import is_local_like, is_production_like
+from app.runtime_env import is_cloud_runtime, is_local_like, is_production_like
 from app.tee_profile import DEFAULT_TEE_SHEET_PROFILE, normalize_tee_sheet_profile
 from app.umhlali_operational_seed import (
     extract_gl_accounts_reference,
@@ -336,6 +336,17 @@ def _upsert_club_setting(db, club_id: int, key: str, value: str) -> None:
 def _sync_umhlali_gl_reference(db, diagnostics: dict[str, Any], club_id: int) -> None:
     path = find_umhlali_gl_accounts_file()
     if path is None:
+        existing = (
+            db.query(ClubSetting.id)
+            .filter(
+                ClubSetting.club_id == int(club_id),
+                ClubSetting.key == "gl_account_reference",
+            )
+            .first()
+        )
+        if existing is not None or is_cloud_runtime():
+            diagnostics["notes"].append("Umhlali GL accounts workbook is not present in runtime; keeping finance reference state unchanged.")
+            return
         diagnostics["warnings"].append(UMHLALI_GL_REFERENCE_MISSING_WARNING)
         return
 
@@ -786,6 +797,8 @@ def backfill_missing_club_scope(db, diagnostics: dict[str, Any], club_id: int | 
     else:
         for table_name in TENANT_BACKFILL_TABLES:
             if table_name not in table_names:
+                continue
+            if table_name == "audit_logs":
                 continue
             count = _null_club_id_count(conn, table_name)
             if count <= 0:
