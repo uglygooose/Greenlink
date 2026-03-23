@@ -12,6 +12,54 @@ body {
     color: #2c3e50;
 }
 
+body.admin-loading {
+    overflow: hidden;
+}
+
+body.admin-loading .admin-container {
+    visibility: hidden;
+}
+
+.admin-loading-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top, rgba(10, 107, 71, 0.18), transparent 40%),
+        linear-gradient(180deg, rgba(8, 18, 14, 0.92), rgba(8, 18, 14, 0.96));
+    z-index: 3000;
+}
+
+body.admin-loading .admin-loading-overlay {
+    display: flex;
+}
+
+.admin-loading-card {
+    min-width: min(420px, 100%);
+    max-width: 480px;
+    padding: 24px 26px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    display: grid;
+    gap: 8px;
+    text-align: center;
+}
+
+.admin-loading-card strong {
+    color: #123f31;
+    font-size: 18px;
+}
+
+.admin-loading-card span {
+    color: #5d6d67;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
 .muted {
     color: #7f8c8d;
 }

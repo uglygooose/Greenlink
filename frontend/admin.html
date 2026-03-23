@@ -11,7 +11,13 @@
     <link rel="stylesheet" href="admin-style.css?v=2026-03-05-ux-06" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
+<body class="admin-loading">
+    <div class="admin-loading-overlay" id="admin-loading-overlay" aria-live="polite">
+        <div class="admin-loading-card">
+            <strong>Loading GreenLink</strong>
+            <span>Verifying session and opening the correct workspace.</span>
+        </div>
+    </div>
     <div class="admin-container">
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
@@ -106,7 +112,7 @@
             <!-- Content Area -->
             <div class="content">
                 <!-- Dashboard Page -->
-                <section id="dashboard" class="page active">
+                <section id="dashboard" class="page">
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-icon">📊</div>
@@ -1406,7 +1412,7 @@
                         <button class="super-subnav-btn" type="button" data-super-target="settings">Settings</button>
                     </div>
 
-                    <div class="dashboard-grid">
+                    <div class="dashboard-grid" data-super-view="overview">
                         <div class="dashboard-card">
                             <h3>Next Action</h3>
                             <div class="action-note" id="super-next-action">Loading next action...</div>
@@ -1419,7 +1425,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width" id="super-section-overview">
+                    <div class="dashboard-card full-width" id="super-section-overview" data-super-view="overview">
                         <h3>Club Setup Readiness</h3>
                         <div class="action-note" id="super-readiness-note">Loading setup readiness...</div>
                         <div class="table-container">
@@ -1442,7 +1448,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width" id="super-section-clubs">
+                    <div class="dashboard-card full-width" id="super-section-clubs" data-super-view="clubs">
                         <div class="dashboard-performance-header">
                             <h3>Clubs</h3>
                             <div class="filters">
@@ -1476,7 +1482,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-grid">
+                    <div class="dashboard-grid" data-super-view="clubs">
                         <div class="dashboard-card">
                             <h3>Club Workspace</h3>
                             <div class="action-note" id="super-workspace-summary">Select a club to inspect its platform setup.</div>
@@ -1488,7 +1494,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-grid">
+                    <div class="dashboard-grid" data-super-view="clubs">
                         <div class="dashboard-card">
                             <h3>Users & Roles</h3>
                             <div class="stack-list compact-list" id="super-workspace-staff"></div>
@@ -1500,7 +1506,7 @@
                     </div>
 
                     <div class="dashboard-grid">
-                        <div class="dashboard-card" id="super-section-demo">
+                        <div class="dashboard-card" id="super-section-demo" data-super-view="demo">
                             <h3>Demo Club</h3>
                             <div class="action-note" id="super-demo-club-summary">Loading demo club status...</div>
                             <div class="bulk-book-actions">
@@ -1510,13 +1516,13 @@
                             <div class="stack-list compact-list" id="super-demo-credentials"></div>
                         </div>
 
-                        <div class="dashboard-card" id="super-section-catalog">
+                        <div class="dashboard-card" id="super-section-catalog" data-super-view="catalog">
                             <h3>Operations Catalog</h3>
                             <div class="stack-list compact-list" id="super-catalog-modules"></div>
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width" id="super-section-onboarding">
+                    <div class="dashboard-card full-width" id="super-section-onboarding" data-super-view="onboarding">
                         <div class="dashboard-performance-header">
                             <h3 id="super-onboarding-title">Club Onboarding</h3>
                             <div class="filters">
@@ -1665,7 +1671,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card" id="super-section-users">
+                    <div class="dashboard-card" id="super-section-users" data-super-view="users">
                         <h3>Create Club Admin / Staff</h3>
                         <div class="bulk-book-grid">
                             <label for="super-staff-name">Name</label>
@@ -1692,7 +1698,7 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width" id="super-section-health">
+                    <div class="dashboard-card full-width" id="super-section-health" data-super-view="health">
                         <h3>Club Admin / Staff Directory</h3>
                         <div class="table-container">
                             <table class="data-table">
@@ -1714,11 +1720,11 @@
                     </div>
 
                     <div class="dashboard-grid">
-                        <div class="dashboard-card" id="super-section-templates">
+                        <div class="dashboard-card" id="super-section-templates" data-super-view="templates">
                             <h3>Platform Templates</h3>
                             <div class="stack-list compact-list" id="super-template-list"></div>
                         </div>
-                        <div class="dashboard-card" id="super-section-settings">
+                        <div class="dashboard-card" id="super-section-settings" data-super-view="settings">
                             <h3>Platform Settings</h3>
                             <div class="stack-list compact-list" id="super-settings-list"></div>
                         </div>

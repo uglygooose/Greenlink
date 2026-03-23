@@ -213,6 +213,10 @@ const ADMIN_API = (() => {
     return null;
 })();
 
+function markAdminShellReady() {
+    document.body.classList.remove("admin-loading");
+}
+
 function apiGetJson(path, options) {
     const safePath = String(path || "").startsWith("/") ? String(path || "") : `/${String(path || "")}`;
     if (ADMIN_API && typeof ADMIN_API.getJson === "function") {
@@ -1284,7 +1288,7 @@ function superSectionIdForView(view) {
         users: "super-section-users",
         catalog: "super-section-catalog",
         templates: "super-section-templates",
-        health: "super-section-overview",
+        health: "super-section-health",
         settings: "super-section-settings",
     };
     return mapping[key] || "super-section-overview";
@@ -1296,11 +1300,16 @@ function setSuperAdminSectionButtons() {
     });
 }
 
-function scrollSuperAdminSection(view, smooth = true) {
-    const id = superSectionIdForView(view);
-    const el = document.getElementById(id);
-    if (!(el instanceof HTMLElement)) return;
-    el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+function setSuperAdminSectionVisibility(view = superAdminView) {
+    const selected = normalizeSuperAdminView(view, "overview");
+    document.querySelectorAll("#super-admin [data-super-view]").forEach(section => {
+        const tokens = String(section.getAttribute("data-super-view") || "")
+            .split(/\s+/)
+            .map(value => value.trim().toLowerCase())
+            .filter(Boolean);
+        section.style.display = tokens.includes(selected) ? "" : "none";
+    });
+    setSuperAdminSectionButtons();
 }
 
 function renderSuperAdminReadiness(platform = superAdminCommandCenterCache) {
@@ -1876,7 +1885,7 @@ async function ensureSuperClubCommunications() {
 
 async function initSuperAdminContext() {
     superAdminView = normalizeSuperAdminView(superAdminView || "overview", "overview");
-    setSuperAdminSectionButtons();
+    setSuperAdminSectionVisibility(superAdminView);
     await loadSuperAdminCommandCenter({ silent: true });
     const rememberedClub = Number(localStorage.getItem("active_club_id") || 0);
     const demoClubId = Number(superAdminCommandCenterCache?.demo_environment?.club_id || 0);
@@ -1886,7 +1895,7 @@ async function initSuperAdminContext() {
     } else {
         renderSuperWorkspace(null);
     }
-    scrollSuperAdminSection(superAdminView, false);
+    setSuperAdminSectionVisibility(superAdminView);
 }
 
 function setupSuperAdminControls() {
@@ -2368,6 +2377,9 @@ function showPage(pageName) {
         }[normalizeSuperAdminView(superAdminView || "overview", "overview")] || "Platform Overview",
     };
     document.getElementById("page-title").textContent = titles[nextPage] || nextPage;
+    if (nextPage === "super-admin") {
+        setSuperAdminSectionVisibility(superAdminView);
+    }
 
     if (nextPage === "dashboard" && dashboardDataCache) {
         applyDashboardEntryVisibility();
@@ -2401,6 +2413,7 @@ function navigateToAdminPage(pageName, routeOptions = {}, navigationOptions = {}
     const route = applyRoutePresets(target, routeOptions);
     setActiveNavItemForRoute(target, route);
     showPage(target);
+    markAdminShellReady();
     loadAdminPageData(target);
     if (navigationOptions.updateHistory !== false) {
         syncAdminRouteLocation(target, route, { replace: navigationOptions.replaceHistory === true });

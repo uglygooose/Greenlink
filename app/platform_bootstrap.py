@@ -739,6 +739,13 @@ def ensure_umhlali_operational_inputs_exist(
 
 
 def _null_club_id_count(conn, table_name: str) -> int:
+    if table_name == "users":
+        return int(
+            conn.execute(
+                text("SELECT COUNT(*) FROM users WHERE club_id IS NULL AND (role IS NULL OR role <> 'super_admin')")
+            ).scalar()
+            or 0
+        )
     return int(conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE club_id IS NULL")).scalar() or 0)
 
 
@@ -803,6 +810,13 @@ def _active_club_rows(db) -> list[dict[str, Any]]:
             }
         )
     return payload
+
+
+def _default_public_club(active_clubs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if len(active_clubs) != 1:
+        return None
+    club = active_clubs[0]
+    return club if isinstance(club, dict) else None
 
 
 def _club_setup_readiness_rows(db) -> list[dict[str, Any]]:
@@ -957,6 +971,7 @@ def _strip_umhlali_gl_missing_warning(messages: list[str] | None) -> list[str]:
 
 def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     active_clubs = _active_club_rows(db)
+    default_club = _default_public_club(active_clubs)
     setup_readiness = _club_setup_readiness_rows(db)
     runtime = runtime or {}
     bootstrap = runtime.get("platform") if isinstance(runtime, dict) else None
@@ -966,6 +981,8 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
     warnings = list((bootstrap or {}).get("warnings") or runtime.get("warnings") or [])
     errors = list((bootstrap or {}).get("errors") or runtime.get("errors") or [])
     bootstrap_payload = dict(bootstrap or {})
+    bootstrap_payload.pop("launch_club_slug", None)
+    bootstrap_payload.pop("launch_club_name", None)
     if warnings:
         try:
             if _umhlali_gl_reference_resolved(db):
@@ -976,15 +993,16 @@ def get_platform_state_payload(db, runtime: dict[str, Any] | None = None) -> dic
         except Exception:
             # Keep platform-state non-fatal if the warning-cleanup probe fails.
             pass
-    umhlali_present = db.query(Club.id).filter(func.lower(Club.slug) == _canonical_umhlali_slug()).first() is not None
 
     return {
         "status": status,
         "warnings": warnings,
         "errors": errors,
-        "launch_club_slug": _canonical_umhlali_slug(),
-        "launch_club_name": _canonical_umhlali_name(),
-        "umhlali_present": bool(umhlali_present),
+        "launch_club_slug": default_club.get("slug") if default_club else None,
+        "launch_club_name": default_club.get("name") if default_club else None,
+        "default_club_id": default_club.get("id") if default_club else None,
+        "default_club_slug": default_club.get("slug") if default_club else None,
+        "default_club_name": default_club.get("name") if default_club else None,
         "active_clubs": active_clubs,
         "active_club_count": len(active_clubs),
         "requires_club_selection": len(active_clubs) > 1,
@@ -998,8 +1016,8 @@ def ensure_platform_ready() -> dict[str, Any]:
     diagnostics: dict[str, Any] = {
         "status": "booting",
         "db_source": DB_SOURCE,
-        "launch_club_slug": _canonical_umhlali_slug(),
-        "launch_club_name": _canonical_umhlali_name(),
+        "launch_club_slug": None,
+        "launch_club_name": None,
         "warnings": [],
         "errors": [],
         "notes": [],
@@ -1050,7 +1068,10 @@ def ensure_platform_ready() -> dict[str, Any]:
             diagnostics["bootstrap_sequence"].append("umhlali_operational_seed")
 
             active_clubs = _active_club_rows(db)
+            default_club = _default_public_club(active_clubs)
             diagnostics["active_clubs"] = active_clubs
+            diagnostics["launch_club_slug"] = default_club.get("slug") if default_club else None
+            diagnostics["launch_club_name"] = default_club.get("name") if default_club else None
             if not active_clubs:
                 diagnostics["errors"].append("No active clubs are available after bootstrap.")
             diagnostics["bootstrap_sequence"].append("active_clubs_verified")

@@ -312,7 +312,7 @@ def health(request: Request, db: Session = Depends(get_db)):
         try:
             from sqlalchemy import func
 
-            demo_email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
+            demo_email = (os.getenv("DEMO_ADMIN_EMAIL") or "demo.admin@harbourpoint.club").strip().lower()
             demo_admin_present = bool(
                 db.query(models.User.id).filter(func.lower(models.User.email) == demo_email).first()
             )
@@ -382,7 +382,7 @@ def _seed_demo_admin_if_enabled() -> None:
         )
         return
 
-    email = (os.getenv("DEMO_ADMIN_EMAIL") or "admin@umhlali.com").strip().lower()
+    email = (os.getenv("DEMO_ADMIN_EMAIL") or "demo.admin@harbourpoint.club").strip().lower()
     password = os.getenv("DEMO_ADMIN_PASSWORD") or ("123" if is_local_like() else "")
     name = (os.getenv("DEMO_ADMIN_NAME") or "Admin").strip() or "Admin"
     force_reset = (

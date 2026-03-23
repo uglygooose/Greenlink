@@ -61,9 +61,7 @@ function setPlatformBanner(state) {
     } else if (status === "needs_attention") {
         message = warnings[0] || "Platform boot completed with warnings.";
     } else if (activeClubs.length > 1) {
-        message = "Choose a club for branding and signup. Account login remains global.";
-    } else if (activeClubs.length === 1) {
-        message = `Ready for ${activeClubs[0].name}.`;
+        message = "Choose a club to continue. Account login remains platform-wide.";
     }
 
     if (!message) {
@@ -76,6 +74,17 @@ function setPlatformBanner(state) {
     banner.dataset.status = status;
     banner.style.display = "block";
     banner.textContent = message;
+}
+
+function adminDestinationForRole(role) {
+    const normalizedRole = String(role || "").trim().toLowerCase();
+    if (normalizedRole === "super_admin") {
+        return "/frontend/admin.html#super-admin?view=overview";
+    }
+    if (normalizedRole === "club_staff") {
+        return "/frontend/admin.html#tee-times";
+    }
+    return "/frontend/admin.html#dashboard?stream=all";
 }
 
 function syncClubTargetToUrl(club) {
@@ -234,7 +243,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         // Redirect based on role
         const role = data?.role || 'player';
         if (role === 'admin' || role === 'club_staff' || role === 'super_admin') {
-            window.location.href = '/frontend/admin.html';
+            window.location.href = adminDestinationForRole(role);
         } else {
             window.location.href = '/frontend/dashboard.html';
         }
@@ -376,7 +385,7 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
             document.getElementById("createUserForm")?.reset();
 
             if (loginData?.role === "admin" || loginData?.role === "club_staff" || loginData?.role === "super_admin") {
-                window.location.href = "/frontend/admin.html";
+                window.location.href = adminDestinationForRole(loginData?.role);
             } else {
                 window.location.href = "/frontend/dashboard.html";
             }
