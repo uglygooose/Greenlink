@@ -228,6 +228,34 @@ def test_health_startup_diagnostics_available(client: TestClient):
     assert str(startup.get("status") or "").lower() != "failed"
 
 
+def test_admin_shell_no_longer_embeds_legacy_tee_or_booking_pages():
+    admin_js = (Path(__file__).resolve().parents[1] / "frontend" / "admin.js").read_text(encoding="utf-8")
+    admin_css = (Path(__file__).resolve().parents[1] / "frontend" / "admin-style.css").read_text(encoding="utf-8")
+
+    forbidden_js_markers = [
+        "data-open-tee-sheet",
+        "/frontend/tsheet.html?embedded=1",
+        "/frontend/booking.html?embedded=1",
+        "<iframe",
+    ]
+    for marker in forbidden_js_markers:
+        assert marker not in admin_js, f"Legacy embed marker still present in admin shell JS: {marker}"
+
+    forbidden_css_markers = [
+        ".embedded-workspace",
+        ".embedded-workspace-frame",
+        ".golf-embedded-frame",
+    ]
+    for marker in forbidden_css_markers:
+        assert marker not in admin_css, f"Legacy embed styling still present in admin shell CSS: {marker}"
+
+
+def test_frontend_pages_are_not_frameable_by_default(client: TestClient):
+    response = client.get("/frontend/admin.html")
+    assert response.status_code == 200
+    assert str(response.headers.get("X-Frame-Options") or "").upper() == "DENY"
+
+
 def test_metrics_fails_closed_in_production_without_token(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GREENLINK_ENV", "production")
     monkeypatch.setenv("GREENLINK_ASSUME_LOCAL", "0")

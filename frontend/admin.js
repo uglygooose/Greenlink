@@ -3564,7 +3564,7 @@
                     <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
                     <span class="metric-pill">${escapeHtml(formatDate(bundle.date))}</span>
                     <button type="button" class="button secondary" data-date-shift="1">Next day</button>
-                    <button type="button" class="button" data-open-tee-sheet="embedded">Open live sheet</button>
+                    <button type="button" class="button" data-nav-panel="tee-sheet">Open live sheet</button>
                     <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Export &amp; close</button>
                 </div>
@@ -5654,13 +5654,12 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-open-tee-sheet]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
         if (target.hasAttribute("data-refresh")) return renderCurrentWorkspace();
         if (target.hasAttribute("data-demo-ensure")) return ensureDemoEnvironment();
-        if (target.hasAttribute("data-open-tee-sheet")) return navigate({ workspace: "golf", panel: "tee-sheet" });
         if (target.hasAttribute("data-dashboard-stream")) {
             setDashboardStreamPreference(target.getAttribute("data-dashboard-stream") || "all");
             return renderCurrentWorkspace();

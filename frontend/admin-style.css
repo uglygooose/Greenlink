@@ -373,51 +373,6 @@ body[data-shell="super_admin"] .shell-header {
     min-width: 0;
 }
 
-.embedded-workspace {
-    display: grid;
-    gap: 14px;
-}
-
-.golf-embedded-workspace {
-    gap: 18px;
-}
-
-.embedded-workspace-note {
-    margin: 0;
-    color: var(--muted);
-    line-height: 1.5;
-}
-
-.golf-sheet-intro {
-    display: grid;
-    gap: 12px;
-}
-
-.golf-sheet-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.embedded-workspace-frame {
-    border-radius: 20px;
-    overflow: hidden;
-    border: 1px solid rgba(32, 106, 93, 0.18);
-    background: linear-gradient(180deg, rgba(32, 106, 93, 0.08), rgba(255, 255, 255, 0.92));
-    box-shadow: var(--shadow);
-}
-
-body[data-shell="club_admin"] .embedded-workspace-frame {
-    border-color: rgba(198, 168, 106, 0.24);
-    background:
-        linear-gradient(180deg, rgba(6, 79, 50, 0.08), rgba(255, 255, 255, 0.96)),
-        linear-gradient(135deg, rgba(198, 168, 106, 0.06), transparent);
-}
-
-.golf-embedded-frame {
-    position: relative;
-}
-
 .tee-sheet-panel-hero {
     gap: 18px;
 }
@@ -689,21 +644,6 @@ body.drag-active .tee-sheet-slot-card.open {
     flex-wrap: wrap;
     gap: 8px;
     margin-top: auto;
-}
-
-.golf-embedded-frame::before {
-    content: "";
-    display: block;
-    height: 10px;
-    background: linear-gradient(90deg, #0a6b47, #064f32 76%, var(--luxe));
-}
-
-.embedded-workspace-frame iframe {
-    width: 100%;
-    min-height: 1380px;
-    border: 0;
-    display: block;
-    background: transparent;
 }
 
 .workspace-panel,

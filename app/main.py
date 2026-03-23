@@ -203,15 +203,10 @@ async def request_context_and_security_headers(request: Request, call_next):
         )
 
         if response is not None:
-            frame_option = "DENY"
-            path = str(getattr(request.url, "path", "") or "")
-            embedded = str(getattr(request.query_params, "get", lambda _key, _default=None: None)("embedded", "") or "").strip()
-            if path in {"/frontend/tsheet.html", "/frontend/booking.html"} and embedded == "1":
-                frame_option = "SAMEORIGIN"
             response.headers.setdefault("X-Request-ID", request_id)
             response.headers.setdefault("X-Response-Time-ms", str(max(duration_ms, 0)))
             response.headers.setdefault("X-Content-Type-Options", "nosniff")
-            response.headers.setdefault("X-Frame-Options", frame_option)
+            response.headers.setdefault("X-Frame-Options", "DENY")
             response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
             response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
             response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
