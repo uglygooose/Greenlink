@@ -135,18 +135,18 @@
             },
         },
     };
-    const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
-    const BOOTSTRAP_REFRESH_TTL_MS = 60000;
-    const WORKSPACE_CACHE_DEFAULT_TTL_MS = 12000;
+    const WORKSPACE_REQUEST_TIMEOUT_MS = 12000;
+    const BOOTSTRAP_REFRESH_TTL_MS = 300000;
+    const WORKSPACE_CACHE_DEFAULT_TTL_MS = 45000;
     const WORKSPACE_CACHE_TTL_BY_WORKSPACE = {
-        overview: 10000,
-        today: 8000,
-        golf: 5000,
-        operations: 12000,
-        members: 15000,
-        communications: 12000,
-        reports: 20000,
-        settings: 20000,
+        overview: 30000,
+        today: 20000,
+        golf: 15000,
+        operations: 30000,
+        members: 45000,
+        communications: 30000,
+        reports: 60000,
+        settings: 60000,
     };
 
     const state = {
@@ -5742,7 +5742,7 @@
 
         state.route = { workspace: "overview", panel: null, date: todayYmd(), clubId: positiveInt(new URLSearchParams(window.location.search || "").get("club_id")) };
         hydrateBootstrapFromCache();
-        if (!state.bootstrap || roleShell() === "club_admin" || roleShell() === "staff") {
+        if (!state.bootstrap) {
             await refreshBootstrap(true);
         }
         if (roleShell() === "member") {
