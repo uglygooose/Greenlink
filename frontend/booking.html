@@ -127,6 +127,113 @@
       font-weight: 700;
     }
 
+    .ops-context-card {
+      margin: 10px 6px 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(90, 122, 58, 0.24);
+      background: linear-gradient(135deg, rgba(90, 122, 58, 0.10), rgba(255, 255, 255, 0.96));
+      box-shadow: 0 10px 24px rgba(31, 42, 27, 0.08);
+      display: grid;
+      gap: 10px;
+    }
+
+    .ops-context-title {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--ucc-muted);
+      margin: 0;
+    }
+
+    .ops-context-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ops-context-row input {
+      flex: 1 1 240px;
+      min-width: 220px;
+      padding: 12px 14px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
+      font-size: 14px;
+      color: var(--ucc-ink);
+      background: #fff;
+    }
+
+    .context-note {
+      font-size: 12px;
+      color: var(--ucc-muted);
+      line-height: 1.5;
+    }
+
+    .lookup-results {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .lookup-results[hidden] {
+      display: none !important;
+    }
+
+    .lookup-item {
+      width: 100%;
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px 14px;
+      text-align: left;
+      color: var(--ucc-ink);
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(31, 42, 27, 0.06);
+    }
+
+    .lookup-item strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .lookup-item span {
+      display: block;
+      font-size: 12px;
+      color: var(--ucc-muted);
+    }
+
+    .lookup-selected {
+      border: 1px solid rgba(4, 120, 87, 0.24);
+      border-radius: 14px;
+      background: rgba(4, 120, 87, 0.08);
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .lookup-selected[hidden] {
+      display: none !important;
+    }
+
+    .lookup-selected strong {
+      display: block;
+      font-size: 14px;
+      color: var(--ucc-ink);
+      margin-bottom: 4px;
+    }
+
+    .lookup-selected span {
+      display: block;
+      font-size: 12px;
+      color: var(--ucc-muted);
+      line-height: 1.5;
+    }
+
     .selector-btn {
       flex: 1;
       padding: 16px 18px;
@@ -563,6 +670,17 @@
       <span id="booking-window-label">Booking window: --</span>
       <span id="booking-window-range"></span>
     </div>
+
+    <div class="ops-context-card">
+      <p class="ops-context-title">Booking Context</p>
+      <div class="ops-context-row">
+        <input type="text" id="debtor_search" placeholder="Link debtor account for this booking" oninput="queueAccountCustomerSearch()">
+        <button class="add-player-btn" type="button" onclick="clearAccountCustomerContext()">Clear debtor</button>
+      </div>
+      <div class="lookup-selected" id="debtor-selected" hidden></div>
+      <div class="lookup-results" id="debtor-results" hidden></div>
+      <div class="context-note" id="debtor-status">Optional. When linked, the debtor account is applied to all new players in this booking.</div>
+    </div>
     
     <div class="booking-tabs">
       <button class="tab-btn active" onclick="setTab('book')">Book for Players</button>
@@ -605,6 +723,14 @@
         <div class="type-option" onclick="selectPlayerType('non_affiliated')" id="type-non_affiliated">
           <div class="type-name">Visitor (No HNA)</div>
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>Find Member</label>
+        <input type="text" id="player_member_search" placeholder="Search member name, number, phone, email, handicap" oninput="queueMemberSearch()">
+        <div class="helper-text">Use this for member-linked pricing and club context. Manual entry still works for visitors.</div>
+        <div class="lookup-selected" id="member-selected" hidden></div>
+        <div class="lookup-results" id="member-search-results" hidden></div>
       </div>
       
       <div class="form-group">
@@ -757,9 +883,17 @@ const teeTimeStr = urlParams.get('tee_time');
 	let golfFees = [];
 	let defaultPlayerType = 'visitor';
 	let selectedPlayerType = 'member';
-	let existingBookings = [];
-	let modalPricingSeq = 0;
-	let bookingSubmitting = false;
+let existingBookings = [];
+let modalPricingSeq = 0;
+let bookingSubmitting = false;
+let selectedMemberContext = null;
+let selectedAccountCustomer = null;
+let memberSearchSeq = 0;
+let accountCustomerSearchSeq = 0;
+let memberSearchTimer = null;
+let accountCustomerSearchTimer = null;
+let memberSearchResults = [];
+let accountCustomerSearchResults = [];
 
 // Initialize
 async function init() {
@@ -887,6 +1021,234 @@ function formatTime(date) {
   return `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function displayValue(value, fallback = '-') {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text ? escapeHtml(text) : fallback;
+}
+
+function clearLookupResults(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '';
+  el.hidden = true;
+}
+
+function renderMemberSelection() {
+  const selectedEl = document.getElementById('member-selected');
+  if (!selectedEl) return;
+  if (!selectedMemberContext) {
+    selectedEl.hidden = true;
+    selectedEl.innerHTML = '';
+    return;
+  }
+  selectedEl.hidden = false;
+  selectedEl.innerHTML = `
+    <div>
+      <strong>${displayValue(selectedMemberContext.name, 'Linked member')}</strong>
+      <span>${displayValue(selectedMemberContext.member_number, 'No member number')} | ${displayValue(selectedMemberContext.membership_status, 'Status unknown')}</span>
+      <span>${displayValue(selectedMemberContext.email, 'No email')} | ${displayValue(selectedMemberContext.home_club, 'No home club')}</span>
+    </div>
+    <button class="add-player-btn" type="button" onclick="clearMemberContext()">Clear</button>
+  `;
+}
+
+function clearMemberContext(options = {}) {
+  selectedMemberContext = null;
+  memberSearchResults = [];
+  if (!options.keepInput) {
+    const input = document.getElementById('player_member_search');
+    if (input) input.value = '';
+  }
+  clearLookupResults('member-search-results');
+  renderMemberSelection();
+}
+
+function applyMemberContext(member) {
+  selectedMemberContext = member && typeof member === 'object' ? member : null;
+  if (!selectedMemberContext) {
+    renderMemberSelection();
+    return;
+  }
+  const searchInput = document.getElementById('player_member_search');
+  if (searchInput) searchInput.value = selectedMemberContext.name || '';
+  const nameInput = document.getElementById('player_name');
+  if (nameInput) nameInput.value = selectedMemberContext.name || '';
+  const emailInput = document.getElementById('player_email');
+  if (emailInput && selectedMemberContext.email) emailInput.value = selectedMemberContext.email;
+  const handicapInput = document.getElementById('player_handicap');
+  if (handicapInput) handicapInput.value = selectedMemberContext.handicap_number || selectedMemberContext.member_number || '';
+  selectedPlayerType = 'member';
+  updateTypeSelection();
+  clearLookupResults('member-search-results');
+  renderMemberSelection();
+  void updateModalPrice();
+}
+
+function applyMemberSearchResult(index) {
+  const member = Array.isArray(memberSearchResults) ? memberSearchResults[index] : null;
+  if (member) applyMemberContext(member);
+}
+
+function renderMemberSearchResults(members) {
+  const el = document.getElementById('member-search-results');
+  if (!el) return;
+  const rows = Array.isArray(members) ? members : [];
+  memberSearchResults = rows;
+  if (!rows.length) {
+    el.hidden = false;
+    el.innerHTML = '<div class="context-note">No matching members found.</div>';
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = rows.map((member, index) => `
+    <button class="lookup-item" type="button" onclick="applyMemberSearchResult(${index})">
+      <strong>${displayValue(member.name, 'Member')}</strong>
+      <span>${displayValue(member.member_number, 'No member number')} | ${displayValue(member.membership_status, 'Status unknown')}</span>
+      <span>${displayValue(member.email, 'No email')} | ${displayValue(member.handicap_number, 'No handicap')}</span>
+    </button>
+  `).join('');
+}
+
+async function searchMembers(query) {
+  const needle = String(query || '').trim();
+  if (needle.length < 2) {
+    clearLookupResults('member-search-results');
+    return;
+  }
+  const seq = ++memberSearchSeq;
+  try {
+    const res = await fetch(`/api/admin/members/search?q=${encodeURIComponent(needle)}&limit=8`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = res.ok ? await res.json() : { members: [] };
+    if (seq !== memberSearchSeq) return;
+    renderMemberSearchResults(data.members || []);
+  } catch (error) {
+    console.error('Member search failed:', error);
+    if (seq !== memberSearchSeq) return;
+    clearLookupResults('member-search-results');
+  }
+}
+
+function queueMemberSearch() {
+  if (memberSearchTimer) clearTimeout(memberSearchTimer);
+  const query = document.getElementById('player_member_search')?.value || '';
+  if (selectedMemberContext && String(query).trim() !== String(selectedMemberContext.name || '').trim()) {
+    clearMemberContext({ keepInput: true });
+  }
+  memberSearchTimer = setTimeout(() => {
+    void searchMembers(query);
+  }, 180);
+}
+
+function renderAccountCustomerSelection() {
+  const selectedEl = document.getElementById('debtor-selected');
+  const statusEl = document.getElementById('debtor-status');
+  if (!selectedEl || !statusEl) return;
+  if (!selectedAccountCustomer) {
+    selectedEl.hidden = true;
+    selectedEl.innerHTML = '';
+    statusEl.textContent = 'Optional. When linked, the debtor account is applied to all new players in this booking.';
+    return;
+  }
+  selectedEl.hidden = false;
+  selectedEl.innerHTML = `
+    <div>
+      <strong>${displayValue(selectedAccountCustomer.name, 'Debtor account')}</strong>
+      <span>${displayValue(selectedAccountCustomer.account_code, 'No account code')} | ${displayValue(selectedAccountCustomer.terms, 'No terms')}</span>
+      <span>${displayValue(selectedAccountCustomer.billing_contact, 'No billing contact')}</span>
+    </div>
+    <button class="add-player-btn" type="button" onclick="clearAccountCustomerContext()">Clear</button>
+  `;
+  statusEl.textContent = 'Debtor context will be applied to every new booking in this party.';
+}
+
+function clearAccountCustomerContext(options = {}) {
+  selectedAccountCustomer = null;
+  accountCustomerSearchResults = [];
+  if (!options.keepInput) {
+    const input = document.getElementById('debtor_search');
+    if (input) input.value = '';
+  }
+  clearLookupResults('debtor-results');
+  renderAccountCustomerSelection();
+}
+
+function applyAccountCustomerContext(customer) {
+  selectedAccountCustomer = customer && typeof customer === 'object' ? customer : null;
+  const input = document.getElementById('debtor_search');
+  if (input) input.value = selectedAccountCustomer?.name || '';
+  clearLookupResults('debtor-results');
+  renderAccountCustomerSelection();
+}
+
+function applyAccountCustomerSearchResult(index) {
+  const customer = Array.isArray(accountCustomerSearchResults) ? accountCustomerSearchResults[index] : null;
+  if (customer) applyAccountCustomerContext(customer);
+}
+
+function renderAccountCustomerResults(rows) {
+  const el = document.getElementById('debtor-results');
+  if (!el) return;
+  const items = Array.isArray(rows) ? rows.slice(0, 8) : [];
+  accountCustomerSearchResults = items;
+  if (!items.length) {
+    el.hidden = false;
+    el.innerHTML = '<div class="context-note">No matching debtor accounts found.</div>';
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = items.map((customer, index) => `
+    <button class="lookup-item" type="button" onclick="applyAccountCustomerSearchResult(${index})">
+      <strong>${displayValue(customer.name, 'Debtor account')}</strong>
+      <span>${displayValue(customer.account_code, 'No account code')} | ${displayValue(customer.terms, 'No terms')}</span>
+      <span>${displayValue(customer.billing_contact, 'No billing contact')}</span>
+    </button>
+  `).join('');
+}
+
+async function searchAccountCustomers(query) {
+  const needle = String(query || '').trim();
+  if (needle.length < 2) {
+    clearLookupResults('debtor-results');
+    return;
+  }
+  const seq = ++accountCustomerSearchSeq;
+  try {
+    const res = await fetch(`/api/admin/account-customers?q=${encodeURIComponent(needle)}&active_only=true`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = res.ok ? await res.json() : { account_customers: [] };
+    if (seq !== accountCustomerSearchSeq) return;
+    renderAccountCustomerResults(data.account_customers || []);
+  } catch (error) {
+    console.error('Account customer search failed:', error);
+    if (seq !== accountCustomerSearchSeq) return;
+    clearLookupResults('debtor-results');
+  }
+}
+
+function queueAccountCustomerSearch() {
+  if (accountCustomerSearchTimer) clearTimeout(accountCustomerSearchTimer);
+  const query = document.getElementById('debtor_search')?.value || '';
+  if (selectedAccountCustomer && String(query).trim() !== String(selectedAccountCustomer.name || '').trim()) {
+    clearAccountCustomerContext({ keepInput: true });
+  }
+  accountCustomerSearchTimer = setTimeout(() => {
+    void searchAccountCustomers(query);
+  }, 180);
+}
+
 async function loadFees() {
   try {
     const res = await fetch('/fees/golf', { headers: { 'Authorization': 'Bearer ' + token }});
@@ -914,13 +1276,17 @@ async function loadExistingBookings() {
       existingBookings = await res.json();
       // Convert existing bookings to players format
       existingBookings.forEach(b => {
+        const playerType = String(b.player_type || '').trim().toLowerCase() || (b.member_id ? 'member' : 'visitor');
         players.push({
           id: b.id,
           name: b.player_name,
           email: b.player_email,
-          type: b.member_id ? 'Member' : 'Visitor',
-          playerType: b.member_id ? 'member' : 'visitor',
+          type: typeLabels[playerType] || (b.member_id ? 'Member' : 'Visitor'),
+          playerType,
           handicap: b.handicap_number || '',
+          memberId: b.member_id || null,
+          accountCustomerId: b.account_customer_id || null,
+          clubCard: b.club_card || '',
           price: b.price,
           feeId: b.fee_category_id,
           isExisting: true,
@@ -999,6 +1365,16 @@ function renderPlayers() {
     players.forEach((p, index) => {
       const initials = p.name.split(' ').map(n => n[0]).join('').toUpperCase();
       const displayPrice = getDisplayPrice(p, index, cartSplitMap);
+      const contextBits = [];
+      if (p.memberId) {
+        contextBits.push(`Linked member${p.memberNumber ? ` ${p.memberNumber}` : ''}`);
+      }
+      if (p.accountCustomerName) {
+        contextBits.push(`Debtor ${p.accountCustomerName}`);
+      }
+      const contextLine = contextBits.length
+        ? `<div class="modify-text">${contextBits.join(' | ')}</div>`
+        : '';
       html += `
         <div class="player-card" onclick="editPlayer(${index})">
           <div class="player-avatar">${initials}</div>
@@ -1006,6 +1382,7 @@ function renderPlayers() {
             <div class="player-name">${p.name}</div>
             <div class="player-type">${p.type}${p.handicap ? ` (${p.handicap})` : ''}</div>
             <div class="modify-text">tap to modify & add rentals</div>
+            ${contextLine}
           </div>
           <div class="player-price">
             <span class="currency">R</span>${Number(displayPrice || 0).toFixed(0)}
@@ -1055,7 +1432,10 @@ function openAddPlayerModal() {
   document.getElementById('player_push_cart').checked = false;
   document.getElementById('player_caddy').checked = false;
   document.getElementById('player_cart_label').textContent = 'No cart';
+  document.getElementById('player_push_cart_label').textContent = '-';
+  document.getElementById('player_caddy_label').textContent = '-';
   document.getElementById('modal_price').textContent = 'Select a fee type';
+  clearMemberContext();
   selectedPlayerType = defaultPlayerType || 'visitor';
   updateTypeSelection();
   updateModalPrice();
@@ -1063,6 +1443,9 @@ function openAddPlayerModal() {
 }
 
 function selectPlayerType(type) {
+  if (type !== 'member' && selectedMemberContext) {
+    clearMemberContext();
+  }
   selectedPlayerType = type;
   updateTypeSelection();
   updateModalPrice();
@@ -1249,6 +1632,8 @@ async function addPlayer() {
   const wantsCart = Boolean(document.getElementById('player_cart')?.checked);
   const wantsPushCart = Boolean(document.getElementById('player_push_cart')?.checked);
   const wantsCaddy = Boolean(document.getElementById('player_caddy')?.checked);
+  const linkedMember = selectedMemberContext;
+  const linkedAccount = selectedAccountCustomer;
   
   if (!name) {
     alert('Please enter player name');
@@ -1315,6 +1700,9 @@ async function addPlayer() {
     email: email || '',
     type: typeMap[selectedPlayerType],
     playerType: selectedPlayerType,
+    memberId: linkedMember?.id || null,
+    memberNumber: linkedMember?.member_number || '',
+    homeClub: linkedMember?.home_club || '',
     handicap: handicap,
     basePrice,
     cart: wantsCart,
@@ -1329,6 +1717,9 @@ async function addPlayer() {
     price: totalPrice,
     feeId: resolvedFeeId,
     autoFee: isAutoFee,
+    accountCustomerId: linkedAccount?.id || null,
+    accountCustomerName: linkedAccount?.name || '',
+    clubCard: linkedAccount?.account_code || '',
     isExisting: false
   });
   
@@ -1368,6 +1759,12 @@ function editPlayer(index) {
       <label>Handicap Number</label>
       <input type="text" id="edit_handicap" value="${player.handicap || ''}">
     </div>
+    ${(player.memberId || player.accountCustomerName) ? `
+      <div class="helper-text">
+        ${player.memberId ? `Linked member${player.memberNumber ? `: ${player.memberNumber}` : ''}.` : ''}
+        ${player.accountCustomerName ? ` ${player.memberId ? ' ' : ''}Debtor: ${player.accountCustomerName}${player.clubCard ? ` (${player.clubCard})` : ''}.` : ''}
+      </div>
+    ` : ''}
 
     ${!player.isExisting ? `
       <div class="form-group">
@@ -1577,6 +1974,8 @@ async function confirmBookings() {
   const errors = [];
   for (const player of newPlayers) {
     try {
+      const accountCustomerId = selectedAccountCustomer?.id || player.accountCustomerId || null;
+      const clubCard = selectedAccountCustomer?.account_code || player.clubCard || null;
       const res = await fetch('/tsheet/booking', {
         method: 'POST',
         headers: {
@@ -1585,10 +1984,14 @@ async function confirmBookings() {
         },
         body: JSON.stringify({
           tee_time_id: parseInt(teeTimeId),
+          member_id: player.memberId || null,
           player_name: player.name,
           player_email: normalizeEmail(player.email),
+          account_customer_id: accountCustomerId,
+          club_card: clubCard,
           handicap_number: player.handicap || null,
           player_type: player.playerType || null,
+          home_club: player.homeClub || null,
           cart: Boolean(player.cart),
           push_cart: Boolean(player.push_cart),
           caddy: Boolean(player.caddy),
