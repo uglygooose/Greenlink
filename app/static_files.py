@@ -17,9 +17,7 @@ def _env_int(key: str, default: int) -> int:
 
 
 ASSET_CACHE_SECONDS = max(60, _env_int("FRONTEND_ASSET_CACHE_SECONDS", 86400))
-ASSET_EXTENSIONS = {
-    ".js",
-    ".css",
+IMMUTABLE_ASSET_EXTENSIONS = {
     ".png",
     ".jpg",
     ".jpeg",
@@ -37,13 +35,14 @@ class FrontendStaticFiles(StaticFiles):
         if getattr(response, "status_code", 0) != 200:
             return response
 
-        ext = Path(str(path or "")).suffix.lower()
-        if ext in ASSET_EXTENSIONS:
+        normalized_path = str(path or "").replace("\\", "/").lstrip("/")
+        ext = Path(normalized_path).suffix.lower()
+        if ext in {".html", ".js", ".css"} or not ext:
+            response.headers.setdefault("Cache-Control", "no-cache")
+        elif ext in IMMUTABLE_ASSET_EXTENSIONS:
             response.headers.setdefault(
                 "Cache-Control",
                 f"public, max-age={ASSET_CACHE_SECONDS}, immutable",
             )
-        elif ext == ".html" or not ext:
-            response.headers.setdefault("Cache-Control", "no-cache")
 
         return response
