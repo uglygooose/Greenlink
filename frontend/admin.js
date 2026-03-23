@@ -158,6 +158,7 @@
         modalData: null,
         navOpenGroups: new Set(),
         workspaceCache: new Map(),
+        sharedCache: new Map(),
     };
 
     const els = {
@@ -2040,41 +2041,189 @@
         `).join("");
     }
 
+    function teeSheetSlotState(value) {
+        const status = String(value || "").trim().toLowerCase();
+        if (["checked_in", "checked-in"].includes(status)) return "checked-in";
+        if (status === "no_show") return "no-show";
+        if (status === "cancelled") return "cancelled";
+        if (status === "completed") return "completed";
+        if (status === "blocked") return "blocked";
+        if (status === "closed") return "closed";
+        return status === "booked" ? "booked" : "open";
+    }
+
+    function teeSheetSlotLabel(value) {
+        const status = String(value || "").trim().toLowerCase();
+        if (!status || status === "open") return "Open";
+        return status.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function orderedGolfTeeRows(rows) {
+        return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
+            const byTime = String(left.tee_time || "").localeCompare(String(right.tee_time || ""));
+            if (byTime) return byTime;
+            return safeNumber(left.hole || 0) - safeNumber(right.hole || 0);
+        });
+    }
+
+    function renderNativeTeeSlot(row, booking, slotNumber) {
+        if (booking) {
+            const bookingId = Number(booking.id || 0);
+            const paymentState = booking.prepaid ? "Prepaid" : "Pay on day";
+            const playerMeta = [
+                booking.member_id ? "Member linked" : "",
+                booking.holes ? `${formatInteger(booking.holes)} holes` : "",
+                paymentState,
+                booking.cart ? "Cart" : "",
+            ].filter(Boolean).join(" · ");
+            return `
+                <article
+                    class="tee-sheet-slot-card ${escapeHtml(teeSheetSlotState(booking.status || "booked"))}"
+                    draggable="true"
+                    data-booking-id="${escapeHtml(String(bookingId))}"
+                    data-tee-time-id="${escapeHtml(String(row.id))}"
+                    data-slot-number="${escapeHtml(String(slotNumber))}"
+                >
+                    <div class="tee-sheet-slot-top">
+                        <span class="tee-sheet-slot-status">${escapeHtml(teeSheetSlotLabel(booking.status || "booked"))}</span>
+                        <span class="tee-sheet-slot-price">${escapeHtml(formatCurrency(booking.price || 0))}</span>
+                    </div>
+                    <div class="tee-sheet-slot-name">${escapeHtml(booking.player_name || "Booking")}</div>
+                    <div class="tee-sheet-slot-meta">${escapeHtml(playerMeta || (booking.player_email || "Player details pending"))}</div>
+                    <div class="tee-sheet-slot-actions">
+                        ${(booking.status || "") === "booked" ? `<button type="button" class="button secondary" data-check-in="${escapeHtml(String(booking.id))}">Check in</button>` : ""}
+                        ${(booking.status || "") === "booked" ? `<button type="button" class="button ghost" data-booking-status="${escapeHtml(String(booking.id))}" data-status-value="no_show">No-show</button>` : ""}
+                        ${(booking.status || "") === "booked" ? `<button type="button" class="button ghost" data-booking-status="${escapeHtml(String(booking.id))}" data-status-value="cancelled">Cancel</button>` : ""}
+                    </div>
+                </article>
+            `;
+        }
+
+        const slotState = String(row.status || "").trim().toLowerCase() === "blocked" ? "blocked" : "open";
+        const slotCopy = slotState === "blocked"
+            ? "Blocked for this tee start"
+            : "Open for a new booking";
+        return `
+            <article
+                class="tee-sheet-slot-card ${escapeHtml(slotState)}"
+                data-tee-time-id="${escapeHtml(String(row.id))}"
+                data-slot-number="${escapeHtml(String(slotNumber))}"
+            >
+                <div class="tee-sheet-slot-top">
+                    <span class="tee-sheet-slot-status">${escapeHtml(slotState === "blocked" ? "Blocked" : `Slot ${slotNumber}`)}</span>
+                </div>
+                <div class="tee-sheet-slot-name">${escapeHtml(slotCopy)}</div>
+                <div class="tee-sheet-slot-meta">${escapeHtml(slotState === "blocked" ? "Golf-day or closure rule applied." : "Add booking, then drag between starts without leaving the shell.")}</div>
+                ${slotState === "blocked" ? "" : `
+                    <div class="tee-sheet-slot-actions">
+                        <button type="button" class="button secondary" data-open-booking="${escapeHtml(String(row.id))}">Add booking</button>
+                    </div>
+                `}
+            </article>
+        `;
+    }
+
+    function renderNativeTeeSheetRows(rows) {
+        const ordered = orderedGolfTeeRows(rows);
+        if (!ordered.length) {
+            return `
+                <tr class="empty-row">
+                    <td colspan="6">
+                        <div class="empty-state">No tee times are loaded for this day yet.</div>
+                    </td>
+                </tr>
+            `;
+        }
+        return ordered.map(row => {
+            const bookings = Array.isArray(row.bookings) ? row.bookings.slice(0, 4) : [];
+            const capacity = Math.max(1, Number(row.capacity || 4));
+            const teeLabel = row.hole || "1";
+            const status = String(row.status || "open").trim().toLowerCase();
+            return `
+                <tr data-tee-time-id="${escapeHtml(String(row.id))}" data-tee-time-iso="${escapeHtml(String(row.tee_time || ""))}">
+                    <td class="time-col">
+                        <div class="tee-sheet-time">${escapeHtml(formatTime(row.tee_time))}</div>
+                        <div class="tee-sheet-time-meta">${escapeHtml(formatDate(row.tee_time))}</div>
+                    </td>
+                    <td class="tee-col">
+                        <div class="tee-sheet-tee-label">Tee ${escapeHtml(String(teeLabel))}</div>
+                        <div class="tee-sheet-tee-meta">${escapeHtml(status === "blocked" ? "Blocked" : `${formatInteger(row.occupied || 0)}/${formatInteger(capacity)} used`)}</div>
+                    </td>
+                    ${Array.from({ length: 4 }, (_, index) => `
+                        <td class="slot-col">
+                            ${index < capacity
+                                ? renderNativeTeeSlot(row, bookings[index] || null, index + 1)
+                                : `<article class="tee-sheet-slot-card closed"><div class="tee-sheet-slot-top"><span class="tee-sheet-slot-status">Closed</span></div><div class="tee-sheet-slot-name">Not in play</div><div class="tee-sheet-slot-meta">This start is configured below four active player places.</div></article>`}
+                        </td>
+                    `).join("")}
+                </tr>
+            `;
+        }).join("");
+    }
+
     function renderGolfTeeSheetPanel(bundle) {
         const rows = Array.isArray(bundle.teeRows) ? bundle.teeRows : [];
+        const ordered = orderedGolfTeeRows(rows);
+        const occupied = ordered.reduce((sum, row) => sum + Number(row.occupied || 0), 0);
+        const capacity = ordered.reduce((sum, row) => sum + Number(row.capacity || 4), 0);
+        const bookedStarts = ordered.filter(row => Number(row.occupied || 0) > 0).length;
+        const blockedStarts = ordered.filter(row => String(row.status || "").trim().toLowerCase() === "blocked").length;
+        const teeLabels = Array.from(new Set(ordered.map(row => String(row.hole || "").trim()).filter(Boolean)));
+        const opsPlan = teeLabels.length
+            ? `Live across Tee ${teeLabels.join(" and Tee ")} · ${formatInteger(ordered.length)} starts · Four-slot operating grid`
+            : "The live day sheet stays in the shell with direct booking, movement, and check-in control.";
         return `
-            <section class="hero-card golf-hero-card golf-panel-hero">
+            <section class="hero-card golf-hero-card native-tee-sheet-hero">
                 <div class="panel-head">
                     <div>
                         <h3>Tee Sheet</h3>
-                        <p>Open directly into live tee-sheet control. This panel is for the day sheet and its management actions, not a long golf overview above it.</p>
+                        <p>This tab is for day-sheet work only: time grid, Tee 1 / Tee 10 starts, booking cards, and fast in-place movement.</p>
                     </div>
                 </div>
-                ${renderGolfCommandStrip(bundle, rows)}
-            </section>
-            <section class="card golf-sheet-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Live tee sheet</h4>
-                        <p>The real drag-drop day sheet stays inside the club-admin shell. Navigation, finance, reporting, and club context remain around it instead of forcing staff into a separate page.</p>
-                    </div>
-                    <div class="inline-actions">
+                <div class="tee-sheet-toolbar">
+                    <div class="tee-sheet-date-controls">
                         <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
+                        <input type="date" class="tee-sheet-date-input" data-tee-sheet-date value="${escapeHtml(bundle.date)}">
                         <button type="button" class="button secondary" data-date-shift="1">Next day</button>
                     </div>
+                    <div class="tee-sheet-toolbar-actions">
+                        <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Export & close</button>
+                    </div>
                 </div>
-                <div class="embedded-workspace golf-embedded-workspace">
-                    <div class="golf-sheet-intro">
-                        <p class="embedded-workspace-note">The shell keeps navigation, dashboards, reports, and role context. The embedded surface restores the dense tee-sheet workflow, including drag and drop, booking detail, and schedule-driven generation.</p>
-                        <div class="golf-sheet-tags">
-                            <span class="metric-pill ok">Drag and drop live</span>
-                            <span class="metric-pill">Member-linked booking flow</span>
-                            <span class="metric-pill">Schedule-driven sheet</span>
-                        </div>
+                <div class="tee-sheet-ops-plan">${escapeHtml(opsPlan)}</div>
+                <div class="tee-sheet-summary-strip">
+                    ${metricCards([
+                        { label: "Starts", value: formatInteger(ordered.length), meta: "Active tee-time rows on this day" },
+                        { label: "Booked Starts", value: formatInteger(bookedStarts), meta: "Rows carrying at least one booking" },
+                        { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} places used` },
+                        { label: "Blocked", value: formatInteger(blockedStarts), meta: "Starts blocked by rules or closure" },
+                    ])}
+                </div>
+            </section>
+            <section class="card native-tee-sheet-card">
+                <div class="panel-head">
+                    <div>
+                        <h4>Live tee grid</h4>
+                        <p>Use the booking cards directly in this grid. Drag booked cards onto open starts to move them without leaving the shell.</p>
                     </div>
-                    <div class="embedded-workspace-frame golf-embedded-frame">
-                        <iframe src="${escapeHtml(teeSheetEmbeddedSrc(bundle.date))}" title="GreenLink Tee Sheet"></iframe>
-                    </div>
+                </div>
+                <div class="tee-sheet-table-wrap" data-native-tee-sheet>
+                    <table class="tee-sheet-table">
+                        <thead class="tee-sheet-head">
+                            <tr>
+                                <th class="time-col">Time</th>
+                                <th class="tee-col">Tee</th>
+                                <th class="slot-col">Slot 1</th>
+                                <th class="slot-col">Slot 2</th>
+                                <th class="slot-col">Slot 3</th>
+                                <th class="slot-col">Slot 4</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${renderNativeTeeSheetRows(ordered)}
+                        </tbody>
+                    </table>
                 </div>
             </section>
         `;
@@ -2224,6 +2373,36 @@
 
     function invalidateWorkspaceCache() {
         state.workspaceCache.clear();
+        state.sharedCache.clear();
+    }
+
+    function readSharedCache(key, ttlMs = WORKSPACE_CACHE_DEFAULT_TTL_MS) {
+        const cacheKey = String(key || "").trim();
+        if (!cacheKey) return null;
+        const cached = state.sharedCache.get(cacheKey);
+        if (!cached) return null;
+        if ((Date.now() - Number(cached.createdAt || 0)) > ttlMs) {
+            state.sharedCache.delete(cacheKey);
+            return null;
+        }
+        return cloneWorkspacePayload(cached.payload);
+    }
+
+    function writeSharedCache(key, payload) {
+        const cacheKey = String(key || "").trim();
+        if (!cacheKey) return;
+        state.sharedCache.set(cacheKey, {
+            createdAt: Date.now(),
+            payload: cloneWorkspacePayload(payload),
+        });
+    }
+
+    async function loadSharedResource(key, loader, ttlMs = WORKSPACE_CACHE_DEFAULT_TTL_MS) {
+        const cached = readSharedCache(key, ttlMs);
+        if (cached) return cached;
+        const fresh = await loader();
+        writeSharedCache(key, fresh);
+        return cloneWorkspacePayload(fresh);
     }
 
     async function loadWorkspaceBundle(route, loader) {
@@ -2947,26 +3126,58 @@
         `;
     }
 
-    async function dashboardBundle() {
+    function activeClubCacheKeyPart() {
+        return String(activeClub()?.id || state.route?.clubId || state.bootstrap?.club?.id || "club");
+    }
+
+    async function loadSharedDashboardData({ includeCommunications = false, communicationsPublishedOnly = false, includeStaffContext = false } = {}) {
         const shell = roleShell();
         const date = todayYmd();
-        const financeAccess = shell === "club_admin";
-        const requests = [
-            fetchJson("/api/admin/dashboard"),
-            fetchJson("/api/admin/operational-alerts"),
-            financeAccess ? fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }) : Promise.resolve({ date, is_closed: false }),
-            financeAccess ? fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }) : Promise.resolve({ date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-            financeAccess ? fetchJsonSafe("/cashbook/settings", {}) : Promise.resolve({}),
-        ];
-        if (shell === "staff") {
-            requests.push(fetchJson("/api/admin/staff-role-context"));
-            requests.push(fetchJson("/api/admin/communications?status=published&limit=6"));
-        } else {
-            requests.push(Promise.resolve(null));
-            requests.push(fetchJson("/api/admin/communications?limit=6"));
-        }
-        const [dashboard, alerts, closeStatus, summary, settings, staffContext, communications] = await Promise.all(requests);
-        return { dashboard, alerts, closeStatus, summary, settings, staffContext, communications };
+        const clubKey = activeClubCacheKeyPart();
+        const dashboard = await loadSharedResource(`dashboard:${clubKey}`, () => fetchJson("/api/admin/dashboard"), 12000);
+        const alerts = await loadSharedResource(`alerts:${clubKey}`, () => fetchJson("/api/admin/operational-alerts"), 8000);
+        const financeBase = shell === "club_admin"
+            ? await loadSharedResource(`finance-base:${clubKey}:${date}`, async () => {
+                const [closeStatus, summary, settings] = await Promise.all([
+                    fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }),
+                    fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
+                    fetchJsonSafe("/cashbook/settings", {}),
+                ]);
+                return { closeStatus, summary, settings };
+            }, 10000)
+            : { closeStatus: { date, is_closed: false }, summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, settings: {} };
+
+        const communications = includeCommunications
+            ? await loadSharedResource(
+                `communications:${clubKey}:${communicationsPublishedOnly ? "published" : "all"}`,
+                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6"),
+                10000
+            )
+            : null;
+
+        const staffContext = includeStaffContext
+            ? await loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context"), 12000)
+            : null;
+
+        return {
+            dashboard,
+            alerts,
+            closeStatus: financeBase.closeStatus,
+            summary: financeBase.summary,
+            settings: financeBase.settings,
+            communications,
+            staffContext,
+            date,
+        };
+    }
+
+    async function dashboardBundle() {
+        const shell = roleShell();
+        return loadSharedDashboardData({
+            includeCommunications: true,
+            communicationsPublishedOnly: shell === "staff",
+            includeStaffContext: shell === "staff",
+        });
     }
 
     function renderDashboardWorkspace(bundle, options = {}) {
@@ -3119,38 +3330,19 @@
     }
 
     async function golfBundle() {
-        const shell = roleShell();
         const date = clampYmd(state.route.date);
         const start = `${date}T00:00:00`;
         const end = `${addDaysYmd(date, 1)}T00:00:00`;
         const panel = state.route.panel || "tee-sheet";
-        const financeAccess = shell === "club_admin";
+        const shared = await loadSharedDashboardData();
         if (panel === "golf-days") {
-            const [dashboard, alerts, closeStatus, summary, settings, bookings] = await Promise.all([
-                fetchJson("/api/admin/dashboard"),
-                fetchJson("/api/admin/operational-alerts"),
-                financeAccess ? fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }) : Promise.resolve({ date, is_closed: false }),
-                financeAccess ? fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }) : Promise.resolve({ date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-                financeAccess ? fetchJsonSafe("/cashbook/settings", {}) : Promise.resolve({}),
-                fetchJson("/api/admin/golf-day-bookings"),
-            ]);
-            return { panel, dashboard, alerts, closeStatus, summary, settings, golfDays: bookings, date };
+            const bookings = await loadSharedResource(`golf-days:${activeClubCacheKeyPart()}`, () => fetchJson("/api/admin/golf-day-bookings"), 8000);
+            return { panel, ...shared, golfDays: bookings, date };
         }
-        const [dashboard, alerts, closeStatus, summary, settings, rows] = await Promise.all([
-            fetchJson("/api/admin/dashboard"),
-            fetchJson("/api/admin/operational-alerts"),
-            financeAccess ? fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }) : Promise.resolve({ date, is_closed: false }),
-            financeAccess ? fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }) : Promise.resolve({ date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-            financeAccess ? fetchJsonSafe("/cashbook/settings", {}) : Promise.resolve({}),
-            fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
-        ]);
+        const rows = await fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
         return {
             panel,
-            dashboard,
-            alerts,
-            closeStatus,
-            summary,
-            settings,
+            ...shared,
             teeRows: groupTeeRows(rows),
             date,
         };
@@ -3197,9 +3389,85 @@
         `).join("");
     }
 
-    function teeSheetEmbeddedSrc(date) {
-        const safeDate = clampYmd(date);
-        return `/frontend/tsheet.html?embedded=1&date=${encodeURIComponent(safeDate)}`;
+    function setupNativeTeeSheetInteractions() {
+        const root = els.root.querySelector("[data-native-tee-sheet]");
+        const dateInput = els.root.querySelector("[data-tee-sheet-date]");
+        if (dateInput instanceof HTMLInputElement) {
+            dateInput.addEventListener("change", () => {
+                const nextDate = clampYmd(dateInput.value);
+                if (nextDate !== state.route.date) {
+                    navigate({ date: nextDate });
+                }
+            });
+        }
+        if (!(root instanceof HTMLElement)) return;
+
+        let activeDrag = null;
+        const clearDropHover = () => {
+            root.querySelectorAll(".tee-sheet-slot-card.drop-hover").forEach(el => el.classList.remove("drop-hover"));
+        };
+
+        root.addEventListener("dragstart", event => {
+            const card = event.target instanceof HTMLElement ? event.target.closest(".tee-sheet-slot-card[data-booking-id]") : null;
+            if (!(card instanceof HTMLElement)) return;
+            const bookingId = positiveInt(card.getAttribute("data-booking-id"));
+            const teeTimeId = positiveInt(card.getAttribute("data-tee-time-id"));
+            if (!bookingId || !teeTimeId) return;
+            activeDrag = { bookingId, fromTeeTimeId: teeTimeId };
+            try {
+                event.dataTransfer?.setData("text/plain", `booking:${bookingId}`);
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+            } catch {}
+            card.classList.add("dragging");
+            document.body.classList.add("drag-active");
+        });
+
+        root.addEventListener("dragend", event => {
+            const card = event.target instanceof HTMLElement ? event.target.closest(".tee-sheet-slot-card[data-booking-id]") : null;
+            if (card instanceof HTMLElement) card.classList.remove("dragging");
+            clearDropHover();
+            document.body.classList.remove("drag-active");
+            activeDrag = null;
+        });
+
+        root.addEventListener("dragover", event => {
+            const drop = event.target instanceof HTMLElement ? event.target.closest(".tee-sheet-slot-card.open[data-tee-time-id]") : null;
+            if (!(drop instanceof HTMLElement)) return;
+            if (!activeDrag) return;
+            event.preventDefault();
+            try {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+            } catch {}
+            clearDropHover();
+            drop.classList.add("drop-hover");
+        });
+
+        root.addEventListener("dragleave", event => {
+            const drop = event.target instanceof HTMLElement ? event.target.closest(".tee-sheet-slot-card.open[data-tee-time-id]") : null;
+            if (!(drop instanceof HTMLElement)) return;
+            drop.classList.remove("drop-hover");
+        });
+
+        root.addEventListener("drop", async event => {
+            const drop = event.target instanceof HTMLElement ? event.target.closest(".tee-sheet-slot-card.open[data-tee-time-id]") : null;
+            if (!(drop instanceof HTMLElement) || !activeDrag) return;
+            event.preventDefault();
+            event.stopPropagation();
+            clearDropHover();
+            const toTeeTimeId = positiveInt(drop.getAttribute("data-tee-time-id"));
+            if (!toTeeTimeId || toTeeTimeId === activeDrag.fromTeeTimeId) return;
+            drop.classList.add("pending");
+            try {
+                await moveBookingToTeeTime(activeDrag.bookingId, toTeeTimeId);
+                showToast("Booking moved.", "ok");
+            } catch (error) {
+                showToast(error?.message || "Unable to move booking.", "bad");
+            } finally {
+                drop.classList.remove("pending");
+                document.body.classList.remove("drag-active");
+                activeDrag = null;
+            }
+        });
     }
 
     function teePriorityRows(rows) {
@@ -3355,7 +3623,6 @@
         const capacity = rows.reduce((sum, row) => sum + Number(row.capacity || 0), 0);
         const bookedSlots = rows.filter(row => Number(row.occupied || 0) > 0).length;
         const blockedSlots = rows.filter(row => String(row.status || "") === "blocked").length;
-        const embeddedSrc = teeSheetEmbeddedSrc(bundle.date);
         const golfInsight = bundle.dashboard?.operation_insights?.golf || {};
         const golfPipeline = {
             total: bundle.dashboard?.golf_day_pipeline_total || 0,
@@ -3450,25 +3717,28 @@
             <section class="card golf-sheet-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Live tee sheet</h4>
-                        <p>The real drag-drop day sheet stays inside the club-admin shell. Navigation, finance, reporting, and club context remain around it instead of forcing staff into a separate page.</p>
-                    </div>
-                    <div class="inline-actions">
-                        <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
-                        <button type="button" class="button secondary" data-date-shift="1">Next day</button>
+                        <h4>Live tee-sheet access</h4>
+                        <p>Golf overview keeps the priorities and commercial signal. The actual day sheet now opens in its own shell-native tee-sheet tab instead of being buried at the bottom here.</p>
                     </div>
                 </div>
-                <div class="embedded-workspace golf-embedded-workspace">
-                    <div class="golf-sheet-intro">
-                        <p class="embedded-workspace-note">The shell keeps navigation, dashboards, reports, and role context. The embedded surface restores the dense tee-sheet workflow, including drag and drop, booking detail, and schedule-driven generation.</p>
-                        <div class="golf-sheet-tags">
-                            <span class="metric-pill ok">Drag and drop live</span>
-                            <span class="metric-pill">Member-linked booking flow</span>
-                            <span class="metric-pill">Schedule-driven sheet</span>
+                <div class="ops-cadence">
+                    <div class="ops-step">
+                        <div class="ops-step-index">1</div>
+                        <div class="ops-step-copy">
+                            <div class="ops-step-title">Open the live tee sheet</div>
+                            <div class="ops-step-state">${escapeHtml(formatDate(bundle.date))}</div>
+                            <div class="ops-step-detail">Run booking cards, drag-drop movement, check-in, and status changes in the dedicated Tee Sheet panel.</div>
                         </div>
+                        <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
                     </div>
-                    <div class="embedded-workspace-frame golf-embedded-frame">
-                        <iframe src="${escapeHtml(embeddedSrc)}" title="GreenLink Tee Sheet"></iframe>
+                    <div class="ops-step">
+                        <div class="ops-step-index">2</div>
+                        <div class="ops-step-copy">
+                            <div class="ops-step-title">Then close the golf handoff</div>
+                            <div class="ops-step-state">${escapeHtml(bundle.closeStatus?.is_closed ? "Day closed" : "Day open")}</div>
+                            <div class="ops-step-detail">Use finance handoff, payment audit, and export controls without leaving the club shell.</div>
+                        </div>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & close</button>
                     </div>
                 </div>
             </section>
@@ -3477,27 +3747,19 @@
 
     async function operationsBundle() {
         const panel = state.route.panel || "overview";
-        const date = todayYmd();
-        const financeAccess = roleShell() === "club_admin";
-        const [dashboard, alerts, closeStatus, summary, settings] = await Promise.all([
-            fetchJson("/api/admin/dashboard"),
-            fetchJson("/api/admin/operational-alerts"),
-            financeAccess ? fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }) : Promise.resolve({ date, is_closed: false }),
-            financeAccess ? fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }) : Promise.resolve({ date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-            financeAccess ? fetchJsonSafe("/cashbook/settings", {}) : Promise.resolve({}),
-        ]);
+        const shared = await loadSharedDashboardData();
         if (panel === "pro_shop") {
             const [products, sales] = await Promise.all([
                 fetchJson("/api/admin/pro-shop/products?limit=100"),
                 fetchJson("/api/admin/pro-shop/sales?limit=12&days=30"),
             ]);
-            return { panel, dashboard, alerts, closeStatus, summary, settings, products, sales };
+            return { panel, ...shared, products, sales };
         }
         if (["tennis", "bowls"].includes(panel)) {
             const members = await fetchJson(`/api/admin/members?area=${encodeURIComponent(panel)}&limit=12&sort=recent_activity`);
-            return { panel, dashboard, alerts, closeStatus, summary, settings, members };
+            return { panel, ...shared, members };
         }
-        return { panel, dashboard, alerts, closeStatus, summary, settings };
+        return { panel, ...shared };
     }
 
     function renderOperationsOverview(bundle) {
@@ -4258,17 +4520,12 @@
     async function communicationsBundle() {
         const shell = roleShell();
         const query = shell === "staff" ? "/api/admin/communications?status=published&limit=50" : "/api/admin/communications?limit=50";
-        const date = todayYmd();
-        const financeAccess = shell === "club_admin";
-        const [communications, dashboard, alerts, members, closeStatus, summary] = await Promise.all([
+        const shared = await loadSharedDashboardData();
+        const [communications, members] = await Promise.all([
             fetchJson(query),
-            fetchJson("/api/admin/dashboard"),
-            fetchJson("/api/admin/operational-alerts"),
             fetchJson("/api/admin/members?limit=20&sort=recent_activity"),
-            financeAccess ? fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }) : Promise.resolve({ date, is_closed: false }),
-            financeAccess ? fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }) : Promise.resolve({ date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
         ]);
-        return { communications, dashboard, alerts, members, closeStatus, summary, date };
+        return { ...shared, communications, members, date: shared.date };
     }
 
     function renderCommunicationsCadenceCard(payload) {
@@ -4716,34 +4973,24 @@
         const panel = state.route.panel || "performance";
         if (panel === "ledger") {
             const windowRange = recentLedgerWindow();
-            const date = todayYmd();
-            const [dashboard, ledger, closeStatus, summary, settings] = await Promise.all([
-                fetchJson("/api/admin/dashboard"),
-                fetchJson(`/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`),
-                fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }),
-                fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-                fetchJsonSafe("/cashbook/settings", {}),
-            ]);
-            return { panel, dashboard, ledger, closeStatus, summary, settings, date };
+            const shared = await loadSharedDashboardData();
+            const ledger = await fetchJson(`/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`);
+            return { panel, ...shared, ledger, date: shared.date };
         }
         if (panel === "cashbook") {
-            const date = todayYmd();
-            const [dashboard, settings, closeStatus, preview, summary, proShop] = await Promise.all([
-                fetchJson("/api/admin/dashboard"),
-                fetchJsonSafe("/cashbook/settings", {}),
-                fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }),
-                fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(date)}`, { journal_lines: [] }),
-                fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { records: [], total_payments: 0, total_tax: 0 }),
-                fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(date)}`, { transaction_count: 0, total_payments: 0 }),
+            const shared = await loadSharedDashboardData();
+            const [preview, proShop] = await Promise.all([
+                fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(shared.date)}`, { journal_lines: [] }),
+                fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(shared.date)}`, { transaction_count: 0, total_payments: 0 }),
             ]);
-            return { panel, dashboard, settings, closeStatus, preview, summary, proShop, date };
+            return { panel, ...shared, preview, proShop, date: shared.date };
         }
-        const [dashboard, revenue, targets] = await Promise.all([
-            fetchJson("/api/admin/dashboard"),
+        const shared = await loadSharedDashboardData();
+        const [revenue, targets] = await Promise.all([
             fetchJson("/api/admin/revenue?period=mtd"),
             fetchJson("/api/admin/operation-targets"),
         ]);
-        return { panel, dashboard, revenue, targets };
+        return { panel, dashboard: shared.dashboard, alerts: shared.alerts, closeStatus: shared.closeStatus, summary: shared.summary, settings: shared.settings, revenue, targets, date: shared.date };
     }
 
     function renderReportsWorkspace(bundle) {
@@ -4912,18 +5159,14 @@
     async function settingsBundle() {
         const panel = state.route.panel || "profile";
         if (panel === "imports") {
-            const date = todayYmd();
-            const [dashboard, imports, golf, proShop, pubSettings, settings, closeStatus, summary] = await Promise.all([
-                fetchJson("/api/admin/dashboard"),
+            const shared = await loadSharedDashboardData();
+            const [imports, golf, proShop, pubSettings] = await Promise.all([
                 fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }),
                 fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }),
                 fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }),
                 fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }),
-                fetchJsonSafe("/cashbook/settings", {}),
-                fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }),
-                fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
             ]);
-            return { panel, dashboard, imports, importSettings: [golf, proShop, pubSettings], settings, closeStatus, summary, date };
+            return { panel, dashboard: shared.dashboard, imports, importSettings: [golf, proShop, pubSettings], settings: shared.settings, closeStatus: shared.closeStatus, summary: shared.summary, date: shared.date };
         }
         const [profile, bookingWindow, targets] = await Promise.all([
             fetchJson("/api/admin/club-profile"),
@@ -5095,7 +5338,10 @@
             }
 
             if (token !== state.renderToken) return;
-            if (html) els.root.innerHTML = html;
+            if (html) {
+                els.root.innerHTML = html;
+                setupNativeTeeSheetInteractions();
+            }
             setOverlay(false);
         } catch (error) {
             if (token !== state.renderToken) return;
@@ -5353,6 +5599,11 @@
         await renderCurrentWorkspace();
     }
 
+    async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
+        await postJson(`/tsheet/bookings/${Number(bookingId)}/move`, { to_tee_time_id: Number(toTeeTimeId) }, { method: "PUT" });
+        await renderCurrentWorkspace();
+    }
+
     async function ensureDemoEnvironment() {
         await postJson("/api/super/demo/ensure", {});
         showToast("Demo environment refreshed.", "ok");
@@ -5409,10 +5660,7 @@
         if (target.hasAttribute("data-close-modal")) return closeModal();
         if (target.hasAttribute("data-refresh")) return renderCurrentWorkspace();
         if (target.hasAttribute("data-demo-ensure")) return ensureDemoEnvironment();
-        if (target.hasAttribute("data-open-tee-sheet")) {
-            document.querySelector(".golf-sheet-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            return;
-        }
+        if (target.hasAttribute("data-open-tee-sheet")) return navigate({ workspace: "golf", panel: "tee-sheet" });
         if (target.hasAttribute("data-dashboard-stream")) {
             setDashboardStreamPreference(target.getAttribute("data-dashboard-stream") || "all");
             return renderCurrentWorkspace();
