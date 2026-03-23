@@ -16,9 +16,15 @@ from app.club_setup_service import apply_club_setup
 from app.auth import get_db
 from app.auth import get_password_hash
 from app.club_assignments import sync_user_club_assignment
-from app.models import Club, User, UserRole
+from app.models import Club, ClubCommunication, User, UserRole
 from app.people import sync_user_person
 from app.password_policy import assert_password_policy
+from app.super_admin_service import (
+    build_club_workspace_payload,
+    build_command_center_payload,
+    demo_persona_metadata,
+    ensure_demo_environment,
+)
 from app.tenancy import require_super_admin
 
 
@@ -143,10 +149,15 @@ class ClubSetupAdminInput(BaseModel):
 
 
 class ClubSetupInput(BaseModel):
+    club_id: Optional[int] = None
     club_name: str
     club_slug: Optional[str] = None
     active: Optional[bool] = True
+    status: Optional[str] = "onboarding"
+    is_demo: Optional[bool] = False
+    display_name: Optional[str] = None
     logo_url: Optional[str] = None
+    hero_image_url: Optional[str] = None
     currency_symbol: Optional[str] = None
     member_label: Optional[str] = None
     visitor_label: Optional[str] = None
@@ -163,10 +174,16 @@ class ClubSetupInput(BaseModel):
     website: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    address_line_1: Optional[str] = None
+    address_line_2: Optional[str] = None
+    city: Optional[str] = None
+    region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
     enabled_modules: Optional[list[str]] = None
     operational_targets: Optional[list[ClubSetupTargetInput]] = None
     annual_targets: Optional[ClubAnnualTargetsInput] = None
-    pricing_template: Optional[str] = "umhlali"
+    pricing_template: Optional[str] = "country_club_standard"
     overwrite_pricing: Optional[bool] = True
     admin_user: ClubSetupAdminInput
 
@@ -285,6 +302,7 @@ def setup_club(
     try:
         result = apply_club_setup(
             db,
+            club_id=int(payload.club_id) if payload.club_id is not None else None,
             club_payload=club_payload,
             enabled_modules=list(payload.enabled_modules or []),
             operational_targets=operational_targets,
@@ -306,6 +324,17 @@ def setup_club(
     if admin_user is not None and getattr(admin_user, "id", None):
         db.refresh(admin_user)
     profile = club_config_response(db, club_id=club_id)
+
+    status_value = str(payload.status or "").strip().lower()
+    if status_value in {"draft", "onboarding", "live", "inactive", "demo"}:
+        from app.super_admin_service import _upsert_setting  # local import to keep router import surface small
+
+        _upsert_setting(db, club_id, "club_status", status_value)
+        _upsert_setting(db, club_id, "club_is_demo", "1" if bool(payload.is_demo or status_value == "demo") else "0")
+        if status_value == "inactive":
+            club.active = 0
+        elif bool(payload.active):
+            club.active = 1
 
     _audit_super_event(
         db,
@@ -339,6 +368,74 @@ def setup_club(
         "admin_user_created": bool(result.get("admin_user_created")),
         "target_year": int(result.get("target_year") or 0),
     }
+
+
+class SuperClubCommunicationInput(BaseModel):
+    kind: str
+    audience: str = "members"
+    status: str = "draft"
+    title: str
+    summary: Optional[str] = None
+    body: str
+    cta_label: Optional[str] = None
+    cta_url: Optional[str] = None
+    pinned: Optional[bool] = False
+
+
+@router.get("/command-center")
+def get_command_center(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    return build_command_center_payload(db)
+
+
+@router.get("/catalog")
+def get_platform_catalog(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    payload = build_command_center_payload(db)
+    return {
+        "catalog": payload.get("catalog") or {},
+        "demo_personas": demo_persona_metadata(),
+    }
+
+
+@router.get("/clubs/{club_id}/workspace")
+def get_club_workspace(
+    club_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    try:
+        return build_club_workspace_payload(db, int(club_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Club not found")
+
+
+@router.post("/demo/ensure")
+def ensure_demo_workspace(
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_super_admin),
+):
+    payload = ensure_demo_environment(db)
+    workspace = payload.get("workspace") or {}
+    club = workspace.get("club") or {}
+    club_id = int(club.get("id") or 0) or None
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.demo_environment_ensured",
+        entity_type="club",
+        entity_id=club_id,
+        club_id=club_id,
+        payload={"club_slug": club.get("slug"), "status": club.get("status")},
+    )
+    db.commit()
+    return payload
 
 
 @router.get("/staff", response_model=list[StaffUserOut])

@@ -8,6 +8,7 @@ import math
 from sqlalchemy import func, or_
 from app.auth import get_db, get_current_user
 from app import models
+from app.club_config import club_config_response
 from app.fee_models import FeeCategory, FeeType
 from app.people import sync_member_person, sync_user_person
 from app.tenancy import get_active_club_id
@@ -482,6 +483,98 @@ def respond_to_notification(
         "status": str(getattr(row, "status", "") or ""),
         "response": str(getattr(row, "response", "") or ""),
         "booking_id": booking_id if booking_id > 0 else None,
+    }
+
+
+@router.get("/club-feed")
+def get_club_feed(
+    limit: int = Query(10, ge=1, le=40),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(_require_player_user),
+    club_id: int = Depends(get_active_club_id),
+):
+    now = datetime.utcnow()
+    member = _resolve_linked_member(db, current_user)
+    booking_filters = [
+        func.lower(models.Booking.player_email) == str(getattr(current_user, "email", "") or "").strip().lower(),
+        models.Booking.created_by_user_id == int(current_user.id),
+    ]
+    if getattr(member, "id", None):
+        booking_filters.append(models.Booking.member_id == int(member.id))
+    communications = (
+        db.query(models.ClubCommunication)
+        .filter(
+            models.ClubCommunication.club_id == int(club_id),
+            models.ClubCommunication.status == "published",
+            models.ClubCommunication.audience.in_(["members", "all"]),
+            or_(models.ClubCommunication.expires_at.is_(None), models.ClubCommunication.expires_at >= now),
+        )
+        .order_by(models.ClubCommunication.pinned.desc(), models.ClubCommunication.published_at.desc(), models.ClubCommunication.created_at.desc())
+        .limit(int(limit))
+        .all()
+    )
+    notifications = (
+        db.query(models.PlayerNotification)
+        .filter(
+            models.PlayerNotification.club_id == int(club_id),
+            models.PlayerNotification.user_id == int(current_user.id),
+        )
+        .order_by(models.PlayerNotification.created_at.desc())
+        .limit(6)
+        .all()
+    )
+    booking_query = (
+        db.query(models.Booking, models.TeeTime)
+        .join(models.TeeTime, models.Booking.tee_time_id == models.TeeTime.id)
+        .filter(
+            models.Booking.club_id == int(club_id),
+            models.TeeTime.tee_time >= now,
+            or_(*booking_filters),
+        )
+        .order_by(models.TeeTime.tee_time.asc())
+        .limit(6)
+    )
+    bookings = booking_query.all()
+    return {
+        "club": club_config_response(db, club_id=int(club_id)),
+        "communications": [
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "kind": str(getattr(row, "kind", "") or ""),
+                "title": str(getattr(row, "title", "") or ""),
+                "summary": str(getattr(row, "summary", "") or ""),
+                "body": str(getattr(row, "body", "") or ""),
+                "cta_label": str(getattr(row, "cta_label", "") or "").strip() or None,
+                "cta_url": str(getattr(row, "cta_url", "") or "").strip() or None,
+                "pinned": bool(getattr(row, "pinned", False)),
+                "published_at": getattr(row, "published_at", None).isoformat() if getattr(row, "published_at", None) else None,
+            }
+            for row in communications
+        ],
+        "messages": [
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "kind": str(getattr(row, "kind", "") or ""),
+                "title": str(getattr(row, "title", "") or ""),
+                "body": str(getattr(row, "body", "") or ""),
+                "status": str(getattr(row, "status", "") or ""),
+                "requires_action": bool(getattr(row, "requires_action", False)),
+                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+            }
+            for row in notifications
+        ],
+        "bookings": [
+            {
+                "id": int(getattr(booking, "id", 0) or 0),
+                "tee_time_id": int(getattr(booking, "tee_time_id", 0) or 0),
+                "tee_time": tee_time.tee_time.isoformat() if getattr(tee_time, "tee_time", None) else None,
+                "player_name": str(getattr(booking, "player_name", "") or ""),
+                "status": str(getattr(booking, "status", "") or ""),
+                "holes": int(getattr(booking, "holes", 18) or 18),
+                "price": float(getattr(booking, "price", 0.0) or 0.0),
+            }
+            for booking, tee_time in bookings
+        ],
     }
 
 @router.get("/fees-available")

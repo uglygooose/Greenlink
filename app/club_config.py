@@ -139,7 +139,9 @@ def _home_matches_keywords(home_club: str, keywords: list[str]) -> bool:
 class ClubConfig:
     club_name: str
     club_slug: str | None
+    display_name: str
     logo_url: str
+    hero_image_url: str | None
     currency_symbol: str
     member_label: str
     visitor_label: str
@@ -156,6 +158,12 @@ class ClubConfig:
     website: str | None
     contact_email: str | None
     contact_phone: str | None
+    address_line_1: str | None
+    address_line_2: str | None
+    city: str | None
+    region: str | None
+    postal_code: str | None
+    country: str | None
     enabled_modules: list[str]
 
     def is_home_member(self, home_club: str | None) -> bool:
@@ -183,12 +191,14 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
 
     club_name = _s("club_name") or _env("CLUB_NAME") or "GreenLink"
     club_slug = _s("club_slug") or _env("CLUB_SLUG")
+    display_name = _s("club_display_name") or club_name
 
     logo_url = (
         _s("club_logo_url")
         or _env("CLUB_LOGO_URL")
         or "/frontend/assets/logo.png"
     )
+    hero_image_url = _s("club_hero_image_url") or _env("CLUB_HERO_IMAGE_URL")
     currency_symbol = (
         _s("club_currency_symbol")
         or _env("CLUB_CURRENCY_SYMBOL")
@@ -235,6 +245,12 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
     website = _s("club_website") or _env("CLUB_WEBSITE")
     contact_email = _s("club_contact_email") or _env("CLUB_CONTACT_EMAIL")
     contact_phone = _s("club_contact_phone") or _env("CLUB_CONTACT_PHONE")
+    address_line_1 = _s("club_address_line_1") or _env("CLUB_ADDRESS_LINE_1")
+    address_line_2 = _s("club_address_line_2") or _env("CLUB_ADDRESS_LINE_2")
+    city = _s("club_city") or _env("CLUB_CITY")
+    region = _s("club_region") or _env("CLUB_REGION")
+    postal_code = _s("club_postal_code") or _env("CLUB_POSTAL_CODE")
+    country = _s("club_country") or _env("CLUB_COUNTRY")
 
     if club_id:
         enabled_modules = enabled_module_keys_for_club(db, int(club_id))
@@ -244,7 +260,9 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
     return ClubConfig(
         club_name=club_name,
         club_slug=club_slug,
+        display_name=display_name,
         logo_url=logo_url,
+        hero_image_url=hero_image_url,
         currency_symbol=currency_symbol,
         member_label=member_label,
         visitor_label=visitor_label,
@@ -261,6 +279,12 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
         website=website,
         contact_email=contact_email,
         contact_phone=contact_phone,
+        address_line_1=address_line_1,
+        address_line_2=address_line_2,
+        city=city,
+        region=region,
+        postal_code=postal_code,
+        country=country,
         enabled_modules=enabled_modules,
     )
 
@@ -282,7 +306,9 @@ def club_config_response(db: Session | None = None, club_id: int | None = None) 
     return {
         "club_name": cfg.club_name,
         "club_slug": cfg.club_slug,
+        "display_name": cfg.display_name,
         "logo_url": cfg.logo_url,
+        "hero_image_url": cfg.hero_image_url,
         "currency_symbol": cfg.currency_symbol,
         "labels": {
             "member": cfg.member_label,
@@ -304,6 +330,14 @@ def club_config_response(db: Session | None = None, club_id: int | None = None) 
             "website": cfg.website,
             "contact_email": cfg.contact_email,
             "contact_phone": cfg.contact_phone,
+        },
+        "address": {
+            "line_1": cfg.address_line_1,
+            "line_2": cfg.address_line_2,
+            "city": cfg.city,
+            "region": cfg.region,
+            "postal_code": cfg.postal_code,
+            "country": cfg.country,
         },
         "enabled_modules": list(cfg.enabled_modules),
         "modules": modules,

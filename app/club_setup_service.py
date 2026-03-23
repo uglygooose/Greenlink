@@ -23,7 +23,9 @@ from app.platform_bootstrap import apply_reference_pricing_template
 _PROFILE_SETTING_KEYS = {
     "club_name": "club_name",
     "club_slug": "club_slug",
+    "display_name": "club_display_name",
     "logo_url": "club_logo_url",
+    "hero_image_url": "club_hero_image_url",
     "currency_symbol": "club_currency_symbol",
     "member_label": "club_member_label",
     "visitor_label": "club_visitor_label",
@@ -38,6 +40,12 @@ _PROFILE_SETTING_KEYS = {
     "website": "club_website",
     "contact_email": "club_contact_email",
     "contact_phone": "club_contact_phone",
+    "address_line_1": "club_address_line_1",
+    "address_line_2": "club_address_line_2",
+    "city": "club_city",
+    "region": "club_region",
+    "postal_code": "club_postal_code",
+    "country": "club_country",
 }
 
 
@@ -93,6 +101,7 @@ def apply_club_profile_settings(db: Session, club_id: int, payload: dict[str, An
 def ensure_club(
     db: Session,
     *,
+    club_id: int | None = None,
     name: str,
     slug: str | None,
     active: bool,
@@ -105,7 +114,21 @@ def ensure_club(
     if not normalized_slug:
         raise HTTPException(status_code=400, detail="club slug is required")
 
-    club = db.query(Club).filter(func.lower(Club.slug) == normalized_slug.lower()).first()
+    club = None
+    if club_id is not None:
+        club = db.query(Club).filter(Club.id == int(club_id)).first()
+        if club is None:
+            raise HTTPException(status_code=404, detail="Club not found")
+        existing = (
+            db.query(Club.id)
+            .filter(func.lower(Club.slug) == normalized_slug.lower(), Club.id != int(club_id))
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="club slug already exists")
+
+    if club is None:
+        club = db.query(Club).filter(func.lower(Club.slug) == normalized_slug.lower()).first()
     created = False
     if club is None:
         club = Club(name=club_name, slug=normalized_slug, active=1 if active else 0)
@@ -170,6 +193,7 @@ def ensure_staff_user(
 def apply_club_setup(
     db: Session,
     *,
+    club_id: int | None,
     club_payload: dict[str, Any],
     enabled_modules: list[str] | None,
     operational_targets: list[dict[str, Any]] | None,
@@ -181,6 +205,7 @@ def apply_club_setup(
 ) -> dict[str, Any]:
     club, club_created = ensure_club(
         db,
+        club_id=int(club_id) if club_id is not None else None,
         name=str(club_payload.get("club_name") or club_payload.get("name") or "").strip(),
         slug=str(club_payload.get("club_slug") or club_payload.get("slug") or "").strip() or None,
         active=bool(club_payload.get("active", True)),

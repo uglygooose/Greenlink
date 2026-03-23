@@ -16,53 +16,66 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="logo-section">
-                <h2>GreenLink Admin</h2>
+                <h2>GreenLink Platform</h2>
             </div>
             <nav class="nav-menu">
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Club Admin</summary>
+                    <summary class="nav-group-toggle">Overview</summary>
                     <div class="nav-group-items">
                         <a href="#dashboard" class="nav-item active" data-page="dashboard" data-dashboard-stream="all">Club Overview</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="all">People</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="staff" data-people-operation="general">Staff</a>
+                        <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
+                        <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Golf</summary>
+                    <summary class="nav-group-toggle">People & Clubs</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Dashboard</a>
-                        <a href="#tee-times" class="nav-item" data-page="tee-times">Tee Sheet</a>
-                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="golf">Members</a>
-                        <a href="#bookings" class="nav-item" data-page="bookings">Bookings</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="all">People</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="staff" data-people-operation="general">Staff</a>
+                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
                         <a href="#golf-days-page" class="nav-item" data-page="golf-days-page">Golf Day Operations</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Pro Shop</summary>
+                    <summary class="nav-group-toggle">Operations</summary>
                     <div class="nav-group-items">
-                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Dashboard</a>
+                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="golf">Golf Dashboard</a>
+                        <a href="#players" class="nav-item" data-page="players" data-people-view="members" data-people-operation="golf">Members</a>
+                        <a href="#dashboard" class="nav-item" data-page="dashboard" data-dashboard-stream="pro_shop">Pro Shop Dashboard</a>
                         <a href="#pro-shop" class="nav-item" data-page="pro-shop">Sales & Stock</a>
-                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Customers</a>
                     </div>
                 </details>
 
                 <details class="nav-group">
-                    <summary class="nav-group-toggle">Finance & Setup</summary>
+                    <summary class="nav-group-toggle">Revenue & Finance</summary>
                     <div class="nav-group-items">
                         <a href="#revenue" class="nav-item" data-page="revenue">Revenue & Reconciliation</a>
                         <a href="#ledger" class="nav-item" data-page="ledger">Payment Audit</a>
                         <a href="#cashbook" class="nav-item" data-page="cashbook">Export & Day Close</a>
-                        <a href="#account-customers-page" class="nav-item" data-page="account-customers-page">Account Customers</a>
+                    </div>
+                </details>
+
+                <details class="nav-group">
+                    <summary class="nav-group-toggle">Club Setup</summary>
+                    <div class="nav-group-items">
                         <a href="#operations-config" class="nav-item" data-page="operations-config">Imports & Setup</a>
                     </div>
                 </details>
 
                 <details class="nav-group" id="nav-platform-group" style="display:none">
-                    <summary class="nav-group-toggle">Platform</summary>
+                    <summary class="nav-group-toggle">Platform Control</summary>
                     <div class="nav-group-items">
-                        <a href="#super-admin" class="nav-item" data-page="super-admin" id="nav-super-admin" style="display:none">Clubs & Access</a>
+                        <a href="#super-admin?view=overview" class="nav-item" data-page="super-admin" data-super-view="overview" id="nav-super-admin-overview" style="display:none">Overview</a>
+                        <a href="#super-admin?view=clubs" class="nav-item" data-page="super-admin" data-super-view="clubs" id="nav-super-admin-clubs" style="display:none">Clubs</a>
+                        <a href="#super-admin?view=onboarding" class="nav-item" data-page="super-admin" data-super-view="onboarding" id="nav-super-admin-onboarding" style="display:none">Onboarding</a>
+                        <a href="#super-admin?view=demo" class="nav-item" data-page="super-admin" data-super-view="demo" id="nav-super-admin-demo" style="display:none">Demo Environment</a>
+                        <a href="#super-admin?view=users" class="nav-item" data-page="super-admin" data-super-view="users" id="nav-super-admin-users" style="display:none">Users & Roles</a>
+                        <a href="#super-admin?view=catalog" class="nav-item" data-page="super-admin" data-super-view="catalog" id="nav-super-admin-catalog" style="display:none">Operations Catalog</a>
+                        <a href="#super-admin?view=templates" class="nav-item" data-page="super-admin" data-super-view="templates" id="nav-super-admin-templates" style="display:none">Templates & Defaults</a>
+                        <a href="#super-admin?view=health" class="nav-item" data-page="super-admin" data-super-view="health" id="nav-super-admin-health" style="display:none">Platform Health</a>
+                        <a href="#super-admin?view=settings" class="nav-item" data-page="super-admin" data-super-view="settings" id="nav-super-admin-settings" style="display:none">Settings</a>
                     </div>
                 </details>
 
@@ -76,41 +89,7 @@
             <div class="top-bar">
                 <h1 id="page-title">Club Overview</h1>
                 <div class="user-info">
-                    <select id="quick-nav" class="club-switcher quick-nav" aria-label="Quick navigation">
-                        <option value="">Quick Nav</option>
-                        <optgroup label="Club Admin">
-                            <option value="dashboard|all">Club Overview</option>
-                            <option value="players|members|all">People</option>
-                            <option value="players|staff|general">Staff</option>
-                        </optgroup>
-                        <optgroup label="Golf">
-                            <option value="dashboard|golf">Dashboard</option>
-                            <option value="tee-times">Tee Sheet</option>
-                            <option value="players|members|golf">Members</option>
-                            <option value="bookings">Bookings</option>
-                            <option value="golf-days-page">Golf Day Operations</option>
-                        </optgroup>
-                        <optgroup label="Pro Shop">
-                            <option value="dashboard|pro_shop">Dashboard</option>
-                            <option value="pro-shop">Sales & Stock</option>
-                            <option value="account-customers-page">Customers</option>
-                        </optgroup>
-                        <optgroup label="Finance & Setup">
-                            <option value="revenue">Revenue & Reconciliation</option>
-                            <option value="ledger">Payment Audit</option>
-                            <option value="cashbook">Export & Day Close</option>
-                            <option value="account-customers-page">Account Customers</option>
-                            <option value="operations-config">Imports & Setup</option>
-                        </optgroup>
-                        <optgroup label="Platform" id="quick-nav-platform-group" style="display:none">
-                            <option value="super-admin">Clubs & Access</option>
-                        </optgroup>
-                    </select>
-                    <select id="density-switcher" class="club-switcher density-switcher" aria-label="Layout density">
-                        <option value="comfortable">Comfortable</option>
-                        <option value="compact">Compact</option>
-                    </select>
-                    <select id="club-switcher" class="club-switcher" style="display:none"></select>
+                    <span id="role-scope-chip" class="top-context-chip">Club operations</span>
                     <span id="club-context-chip" class="top-context-chip" style="display:none"></span>
                     <span id="admin-name">Admin</span>
                     <span class="timestamp" id="current-time"></span>
@@ -1394,35 +1373,67 @@
                 <section id="super-admin" class="page">
                     <div class="page-header">
                         <div>
-                            <p class="action-note">Platform scope only: clubs, access, onboarding, and setup readiness.</p>
+                            <p class="eyebrow">Super Admin Command Center</p>
+                            <h2 class="section-title">Platform-wide control across clubs, onboarding, demo, and readiness.</h2>
+                            <p class="action-note" id="super-command-summary">Loading platform command center...</p>
                         </div>
                         <div class="filters">
-                            <button class="btn-secondary" type="button" onclick="navigateToAdminPage('operations-config')">Open Imports & Setup</button>
-                            <button class="btn-secondary" type="button" onclick="superRefreshPlatformReadiness()">Refresh Readiness</button>
+                            <button class="btn-primary" type="button" id="super-cta-create-club">Create New Club</button>
+                            <button class="btn-secondary" type="button" id="super-cta-open-demo">Open Demo Club</button>
+                            <button class="btn-secondary" type="button" id="super-cta-resume-onboarding">Resume Onboarding</button>
+                            <button class="btn-secondary" type="button" id="super-cta-manage-clubs">Manage Clubs</button>
+                            <button class="btn-secondary" type="button" id="super-cta-review-issues">Review Setup Issues</button>
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width">
-                        <h3>Club Setup Readiness</h3>
-                        <div class="cashbook-summary">
-                            <div class="summary-stat"><span>Active Clubs</span><strong id="super-readiness-clubs">0</strong></div>
-                            <div class="summary-stat"><span>Ready</span><strong id="super-readiness-ready">0</strong></div>
-                            <div class="summary-stat"><span>Needs Attention</span><strong id="super-readiness-attention">0</strong></div>
-                            <div class="summary-stat"><span>Setup Required</span><strong id="super-readiness-setup">0</strong></div>
+                    <div class="cashbook-summary super-summary-grid">
+                        <div class="summary-stat"><span>Active Clubs</span><strong id="super-readiness-clubs">0</strong></div>
+                        <div class="summary-stat"><span>Live</span><strong id="super-summary-live">0</strong></div>
+                        <div class="summary-stat"><span>Onboarding</span><strong id="super-summary-onboarding">0</strong></div>
+                        <div class="summary-stat"><span>Needs Action</span><strong id="super-readiness-attention">0</strong></div>
+                        <div class="summary-stat"><span>Demo Ready</span><strong id="super-summary-demo">0</strong></div>
+                    </div>
+
+                    <div class="super-subnav" role="navigation" aria-label="Super admin sections">
+                        <button class="super-subnav-btn active" type="button" data-super-target="overview">Overview</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="clubs">Clubs</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="onboarding">Onboarding</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="demo">Demo Environment</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="users">Users & Roles</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="catalog">Operations Catalog</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="templates">Templates</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="health">Platform Health</button>
+                        <button class="super-subnav-btn" type="button" data-super-target="settings">Settings</button>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Next Action</h3>
+                            <div class="action-note" id="super-next-action">Loading next action...</div>
+                            <div class="stack-list compact-list" id="super-needs-action-list"></div>
                         </div>
+                        <div class="dashboard-card">
+                            <h3>Demo Environment</h3>
+                            <div class="action-note" id="super-demo-note">Checking demo environment...</div>
+                            <div class="stack-list compact-list" id="super-demo-personas"></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card full-width" id="super-section-overview">
+                        <h3>Club Setup Readiness</h3>
                         <div class="action-note" id="super-readiness-note">Loading setup readiness...</div>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
                                     <tr>
                                         <th>Club</th>
-                                        <th>Status</th>
-                                        <th>Setup Score</th>
+                                        <th>Lifecycle</th>
+                                        <th>Readiness</th>
                                         <th>Access</th>
-                                        <th>Members</th>
                                         <th>Pricing</th>
-                                        <th>Operations</th>
-                                        <th>Finance Export</th>
+                                        <th>Targets</th>
+                                        <th>Comms</th>
+                                        <th>Modules</th>
                                         <th>Next Focus</th>
                                     </tr>
                                 </thead>
@@ -1431,22 +1442,165 @@
                         </div>
                     </div>
 
-                    <div class="dashboard-card">
-                        <h3>Create Club</h3>
-                        <div class="bulk-book-grid">
-                            <label for="super-club-name">Club Name</label>
-                            <input type="text" id="super-club-name" placeholder="e.g. Umhlali Country Club" />
-
-                            <label for="super-club-slug">Slug (optional)</label>
-                            <input type="text" id="super-club-slug" placeholder="e.g. umhlali" />
+                    <div class="dashboard-card full-width" id="super-section-clubs">
+                        <div class="dashboard-performance-header">
+                            <h3>Clubs</h3>
+                            <div class="filters">
+                                <input type="search" id="super-club-search" placeholder="Search clubs" />
+                                <select id="super-club-status-filter">
+                                    <option value="all">All statuses</option>
+                                    <option value="draft">Draft</option>
+                                    <option value="onboarding">Onboarding</option>
+                                    <option value="live">Live</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="demo">Demo</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="bulk-book-actions">
-                            <button class="btn-primary" type="button" onclick="superCreateClub()">Create Club</button>
-                            <span class="bulk-book-status" id="super-club-status"></span>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Club</th>
+                                        <th>Status</th>
+                                        <th>Readiness</th>
+                                        <th>Modules</th>
+                                        <th>Admin</th>
+                                        <th>Members</th>
+                                        <th>Next Step</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="super-clubs-table"></tbody>
+                            </table>
                         </div>
                     </div>
 
-                    <div class="dashboard-card">
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Club Workspace</h3>
+                            <div class="action-note" id="super-workspace-summary">Select a club to inspect its platform setup.</div>
+                            <div class="stack-list compact-list" id="super-workspace-highlights"></div>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Launch Checklist</h3>
+                            <div class="stack-list compact-list" id="super-workspace-checklist"></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Users & Roles</h3>
+                            <div class="stack-list compact-list" id="super-workspace-staff"></div>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Communications</h3>
+                            <div class="stack-list compact-list" id="super-workspace-comms"></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card" id="super-section-demo">
+                            <h3>Demo Club</h3>
+                            <div class="action-note" id="super-demo-club-summary">Loading demo club status...</div>
+                            <div class="bulk-book-actions">
+                                <button class="btn-primary" type="button" id="super-ensure-demo-btn">Prepare Demo Environment</button>
+                                <button class="btn-secondary" type="button" id="super-open-demo-workspace-btn">Open Demo Workspace</button>
+                            </div>
+                            <div class="stack-list compact-list" id="super-demo-credentials"></div>
+                        </div>
+
+                        <div class="dashboard-card" id="super-section-catalog">
+                            <h3>Operations Catalog</h3>
+                            <div class="stack-list compact-list" id="super-catalog-modules"></div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card full-width" id="super-section-onboarding">
+                        <div class="dashboard-performance-header">
+                            <h3 id="super-onboarding-title">Club Onboarding</h3>
+                            <div class="filters">
+                                <select id="super-onboarding-step">
+                                    <option value="1">1. Club Basics</option>
+                                    <option value="2">2. Branding</option>
+                                    <option value="3">3. Operations</option>
+                                    <option value="4">4. Pricing & Targets</option>
+                                    <option value="5">5. Access & Roles</option>
+                                    <option value="6">6. Communications Setup</option>
+                                    <option value="7">7. Review & Launch</option>
+                                </select>
+                                <button class="btn-secondary" type="button" id="super-onboarding-prev">Previous</button>
+                                <button class="btn-secondary" type="button" id="super-onboarding-next">Next</button>
+                            </div>
+                        </div>
+                        <div class="action-note" id="super-onboarding-note">Use the sequenced setup flow to create or relaunch a club without missing critical launch steps.</div>
+                        <div class="bulk-book-grid">
+                            <label for="super-club-name">Club Name</label>
+                            <input type="text" id="super-club-name" placeholder="e.g. Harbour Point Country Club" />
+                            <label for="super-club-slug">Slug</label>
+                            <input type="text" id="super-club-slug" placeholder="e.g. harbour-point" />
+                            <label for="super-club-display-name">Display Name</label>
+                            <input type="text" id="super-club-display-name" placeholder="Club-facing display name" />
+                            <label for="super-club-email">Contact Email</label>
+                            <input type="email" id="super-club-email" placeholder="ops@club.com" />
+                            <label for="super-club-phone">Contact Phone</label>
+                            <input type="text" id="super-club-phone" placeholder="+27 ..." />
+                            <label for="super-club-location">Location / Address</label>
+                            <input type="text" id="super-club-location" placeholder="City / address summary" />
+                            <label for="super-logo-url">Logo URL</label>
+                            <input type="text" id="super-logo-url" placeholder="/frontend/assets/logo.png" />
+                            <label for="super-hero-image-url">Hero Image URL</label>
+                            <input type="text" id="super-hero-image-url" placeholder="/frontend/assets/grass.jpg" />
+                            <label for="super-brand-primary">Primary Color</label>
+                            <input type="text" id="super-brand-primary" placeholder="#0f4c3a" />
+                            <label for="super-brand-secondary">Secondary Color</label>
+                            <input type="text" id="super-brand-secondary" placeholder="#153a62" />
+                            <label for="super-brand-accent">Accent Color</label>
+                            <input type="text" id="super-brand-accent" placeholder="#d7a33d" />
+                            <label for="super-brand-tagline">Tagline</label>
+                            <input type="text" id="super-brand-tagline" placeholder="Premium club operations" />
+                            <label for="super-pricing-template">Pricing Template</label>
+                            <select id="super-pricing-template"></select>
+                            <label for="super-target-year">Target Year</label>
+                            <input type="number" id="super-target-year" min="2024" max="2100" />
+                            <label for="super-annual-rounds">Annual Rounds Target</label>
+                            <input type="number" id="super-annual-rounds" min="0" step="1" />
+                            <label for="super-annual-revenue">Annual Revenue Target</label>
+                            <input type="number" id="super-annual-revenue" min="0" step="0.01" />
+                            <label for="super-target-golf-revenue">Golf Revenue Target</label>
+                            <input type="number" id="super-target-golf-revenue" min="0" step="0.01" />
+                            <label for="super-target-members">Active Members Target</label>
+                            <input type="number" id="super-target-members" min="0" step="1" />
+                            <label for="super-comm-announcement">Announcement Title</label>
+                            <input type="text" id="super-comm-announcement" placeholder="Welcome announcement" />
+                            <label for="super-comm-news">News Title</label>
+                            <input type="text" id="super-comm-news" placeholder="Featured club news" />
+                            <label for="super-comm-message">Member Message</label>
+                            <textarea id="super-comm-message" rows="4" placeholder="Message shown in the member app"></textarea>
+                            <label for="super-club-status">Lifecycle Status</label>
+                            <select id="super-club-status">
+                                <option value="draft">Draft</option>
+                                <option value="onboarding" selected>Onboarding</option>
+                                <option value="live">Live</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="demo">Demo</option>
+                            </select>
+                            <label for="super-club-is-demo">Demo Environment</label>
+                            <select id="super-club-is-demo">
+                                <option value="false" selected>No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div class="super-module-grid" id="super-module-grid"></div>
+                        <div class="stack-list compact-list" id="super-launch-checklist"></div>
+                        <div class="bulk-book-actions">
+                            <button class="btn-secondary" type="button" id="super-save-draft-btn">Save Draft</button>
+                            <button class="btn-primary" type="button" id="super-launch-club-btn">Save & Launch</button>
+                            <span class="bulk-book-status" id="super-club-status-text"></span>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card" id="super-section-users">
                         <h3>Create Club Admin / Staff</h3>
                         <div class="bulk-book-grid">
                             <label for="super-staff-name">Name</label>
@@ -1468,12 +1622,12 @@
                             <select id="super-staff-club"></select>
                         </div>
                         <div class="bulk-book-actions">
-                            <button class="btn-primary" type="button" onclick="superCreateStaff()">Create User</button>
+                            <button class="btn-primary" type="button" id="super-create-staff-btn">Create User</button>
                             <span class="bulk-book-status" id="super-staff-status"></span>
                         </div>
                     </div>
 
-                    <div class="dashboard-card full-width">
+                    <div class="dashboard-card full-width" id="super-section-health">
                         <h3>Club Admin / Staff Directory</h3>
                         <div class="table-container">
                             <table class="data-table">
@@ -1490,7 +1644,18 @@
                             </table>
                         </div>
                         <div style="margin-top: 10px;">
-                            <button class="btn-secondary" type="button" onclick="superRefreshStaff()">Refresh</button>
+                            <button class="btn-secondary" type="button" id="super-refresh-staff-btn">Refresh</button>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card" id="super-section-templates">
+                            <h3>Platform Templates</h3>
+                            <div class="stack-list compact-list" id="super-template-list"></div>
+                        </div>
+                        <div class="dashboard-card" id="super-section-settings">
+                            <h3>Platform Settings</h3>
+                            <div class="stack-list compact-list" id="super-settings-list"></div>
                         </div>
                     </div>
                 </section>

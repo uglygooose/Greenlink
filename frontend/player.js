@@ -30,7 +30,9 @@ const state = {
   pendingRouteTab: "home",
   typeLabels: { ...typeLabelsFallback },
   currencySymbol: "R",
-  clubConfig: null
+  clubConfig: null,
+  clubFeed: [],
+  clubMessages: []
 };
 
 const API_TIMEOUT_MS = 15000;
@@ -492,7 +494,7 @@ function renderHome() {
   if (subtitle) {
     subtitle.textContent = missing.length
       ? `Complete ${missing.join(", ")} to keep booking and HNA actions reliable.`
-      : "Everything for bookings, rounds, and profile in one mobile flow.";
+      : `${state.clubConfig?.display_name || state.clubConfig?.club_name || "Your club"} bookings, rounds, news, and messages in one branded member flow.`;
   }
 
   const upcoming = upcomingBookings(6);
@@ -593,6 +595,41 @@ function renderWeatherAlerts() {
       </div>
     `;
   }).join("");
+}
+
+function renderClubFeed() {
+  const feedEl = document.getElementById("club-feed-list");
+  const messageEl = document.getElementById("club-message-list");
+  if (feedEl) {
+    if (!state.clubFeed.length) {
+      feedEl.innerHTML = `<div class="empty-state">No club announcements or news published yet.</div>`;
+    } else {
+      feedEl.innerHTML = state.clubFeed.map(item => `
+        <div class="list-row">
+          <div class="list-row-header">
+            <div class="list-row-title">${escapeHtml(item?.title || "Club update")}</div>
+            <span class="pill">${escapeHtml(String(item?.kind || "update").replaceAll("_", " "))}</span>
+          </div>
+          <div class="row-meta">${escapeHtml(item?.summary || item?.body || "")}</div>
+        </div>
+      `).join("");
+    }
+  }
+  if (messageEl) {
+    if (!state.clubMessages.length) {
+      messageEl.innerHTML = `<div class="empty-state">No direct club messages right now.</div>`;
+    } else {
+      messageEl.innerHTML = state.clubMessages.map(item => `
+        <div class="list-row">
+          <div class="list-row-header">
+            <div class="list-row-title">${escapeHtml(item?.title || "Club message")}</div>
+            <span class="pill ${item?.requires_action ? "warn" : ""}">${item?.requires_action ? "Action" : "Message"}</span>
+          </div>
+          <div class="row-meta">${escapeHtml(item?.body || "")}</div>
+        </div>
+      `).join("");
+    }
+  }
 }
 
 function renderTeeTimes() {
@@ -784,6 +821,7 @@ function renderAll() {
   renderSummaryChips();
   renderHome();
   renderWeatherAlerts();
+  renderClubFeed();
   renderTeeTimes();
   renderRounds();
   renderProfileChecklist();
@@ -832,6 +870,18 @@ async function loadNotifications() {
   } catch (err) {
     state.notifications = [];
     showToast(err?.message || "Failed to load weather prompts", "error");
+  }
+}
+
+async function loadClubFeed() {
+  try {
+    const response = await api("/profile/club-feed?limit=8");
+    state.clubFeed = Array.isArray(response?.communications) ? response.communications : [];
+    state.clubMessages = Array.isArray(response?.messages) ? response.messages : [];
+  } catch (err) {
+    state.clubFeed = [];
+    state.clubMessages = [];
+    showToast(err?.message || "Failed to load club updates", "error");
   }
 }
 
@@ -1238,7 +1288,7 @@ function bindEvents() {
   });
 
   document.getElementById("refresh-home-btn")?.addEventListener("click", async () => {
-    await Promise.all([loadMyBookings(), loadNotifications()]);
+    await Promise.all([loadMyBookings(), loadNotifications(), loadClubFeed()]);
     renderAll();
   });
   document.getElementById("refresh-rounds-btn")?.addEventListener("click", async () => {
@@ -1247,6 +1297,10 @@ function bindEvents() {
   });
   document.getElementById("refresh-weather-btn")?.addEventListener("click", async () => {
     await loadNotifications();
+    renderAll();
+  });
+  document.getElementById("refresh-club-feed-btn")?.addEventListener("click", async () => {
+    await loadClubFeed();
     renderAll();
   });
   document.getElementById("refresh-profile-btn")?.addEventListener("click", async () => {
@@ -1406,7 +1460,7 @@ async function initialize() {
   await loadClubConfig();
   setActiveView(state.pendingRouteTab, { syncUrl: false });
 
-  await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings(), loadNotifications()]);
+  await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings(), loadNotifications(), loadClubFeed()]);
   syncBookDateConstraints();
   await loadTeeTimes();
   renderAll();

@@ -209,7 +209,7 @@ def _umhlali_pricing_reference_rows() -> list[dict[str, Any]]:
 
 def get_reference_pricing_template(template_key: str) -> list[dict[str, Any]]:
     key = str(template_key or "").strip().lower()
-    if key == "umhlali":
+    if key in {"umhlali", "country_club_standard", "multi_club_demo"}:
         return _umhlali_pricing_reference_rows()
     raise ValueError(f"Unknown pricing template: {template_key}")
 

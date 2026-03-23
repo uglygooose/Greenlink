@@ -6,7 +6,9 @@
   const DEFAULT_CFG = Object.freeze({
     club_name: "GreenLink",
     club_slug: null,
+    display_name: "GreenLink",
     logo_url: "/frontend/assets/logo.png",
+    hero_image_url: null,
     currency_symbol: "R",
     labels: {
       member: "Member",
@@ -141,10 +143,11 @@
 
   function applyClubBranding(cfg) {
     const clubName = String(cfg?.club_name || DEFAULT_CFG.club_name);
+    const displayName = String(cfg?.display_name || clubName);
     const logoUrl = String(cfg?.logo_url || DEFAULT_CFG.logo_url);
 
     document.querySelectorAll(".club-name, .brand-kicker").forEach((el) => {
-      el.textContent = clubName;
+      el.textContent = displayName;
     });
 
     document.querySelectorAll("img[data-club-logo]").forEach((img) => {

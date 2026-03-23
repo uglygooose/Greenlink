@@ -105,7 +105,7 @@ const BOOKING_PERIOD_KEYS = Object.freeze(["day", "week", "month", "ytd"]);
 const BOOKING_INTEGRITY_KEYS = Object.freeze(["all", "missing_paid_ledger"]);
 const DEFAULT_IMPORT_STREAM = "golf";
 const ROLE_PAGE_SCOPE = Object.freeze({
-    super_admin: ["super-admin", "operations-config"],
+    super_admin: ["super-admin"],
     admin: [
         "dashboard",
         "bookings",
@@ -153,6 +153,12 @@ let teeWeatherRiskMap = new Map();
 let teeWeatherRequestSeq = 0;
 let weatherPreviewDebounceTimer = null;
 let operationalAlertsCache = null;
+let superAdminView = "overview";
+let superAdminCommandCenterCache = null;
+let superAdminWorkspaceCache = null;
+let superAdminCatalogCache = null;
+let superAdminSelectedClubId = null;
+let superAdminOnboardingStep = 1;
 
 const AUTH_FETCH_TIMEOUT_MS = 15000;
 const AUTH_FETCH_RETRY_ATTEMPTS = 2;
@@ -297,7 +303,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     syncAdminNavHrefs();
     setupNavigation();
-    setupGlobalQuickControls();
+    setupSuperAdminControls();
     setupDashboardStreamFilters();
     setupDashboardPeriodFilters();
     setupAiAssistantActions();
@@ -611,13 +617,6 @@ function isPageAllowedForRole(page, role = currentUserRole) {
     return allowedPagesForRole(role).has(target);
 }
 
-function hideEmptyQuickNavGroups() {
-    document.querySelectorAll("#quick-nav optgroup").forEach(group => {
-        const options = Array.from(group.querySelectorAll("option")).filter(option => String(option.value || "").trim());
-        group.style.display = options.length ? "" : "none";
-    });
-}
-
 function normalizePeopleRouteView(view) {
     const value = String(view || "").trim().toLowerCase();
     return PEOPLE_ROUTE_VIEWS.includes(value) ? value : "members";
@@ -638,6 +637,13 @@ function normalizeBookingIntegrityFilter(value) {
     return BOOKING_INTEGRITY_KEYS.includes(key) ? key : "all";
 }
 
+function normalizeSuperAdminView(value, fallback = "overview") {
+    const key = String(value || "").trim().toLowerCase();
+    const allowed = ["overview", "clubs", "onboarding", "demo", "users", "catalog", "templates", "health", "settings"];
+    if (allowed.includes(key)) return key;
+    return allowed.includes(String(fallback || "").toLowerCase()) ? String(fallback || "").toLowerCase() : "overview";
+}
+
 function normalizeAdminRoute(pageName, routeOptions = {}) {
     const page = String(pageName || "").trim();
     const route = { page };
@@ -652,6 +658,8 @@ function normalizeAdminRoute(pageName, routeOptions = {}) {
             return { page: "account-customers-page" };
         }
         route.operation = normalizeAdminRouteOperation(routeOptions.operation || peopleAreaFilter || "all");
+    } else if (page === "super-admin") {
+        route.view = normalizeSuperAdminView(routeOptions.view || superAdminView || "overview", "overview");
     }
     return route;
 }
@@ -670,6 +678,8 @@ function buildAdminRouteHash(pageName, routeOptions = {}) {
     } else if (route.page === "players") {
         params.set("view", route.view || "members");
         params.set("operation", route.operation || "all");
+    } else if (route.page === "super-admin") {
+        params.set("view", route.view || "overview");
     }
     const query = params.toString();
     return `#${route.page}${query ? `?${query}` : ""}`;
@@ -700,8 +710,8 @@ function syncAdminNavHrefs() {
         if (!page) return;
         item.setAttribute("href", buildAdminRouteHash(page, {
             stream: item.dataset.dashboardStream,
-            view: item.dataset.peopleView,
             operation: item.dataset.peopleOperation,
+            view: page === "super-admin" ? item.dataset.superView : item.dataset.peopleView,
             context: item.dataset.operationContext,
             focus: item.dataset.operationFocus,
         }));
@@ -725,6 +735,9 @@ function findNavItemForRoute(pageName, routeOptions = {}) {
             const operation = normalizeAdminRouteOperation(item.dataset.peopleOperation || "all");
             if (view === route.view) score += 20;
             if (operation === route.operation) score += 10;
+        } else if (route.page === "super-admin") {
+            const view = normalizeSuperAdminView(item.dataset.superView || "overview", "overview");
+            score = view === normalizeSuperAdminView(route.view || "overview", "overview") ? 20 : 0;
         } else {
             score = 10;
         }
@@ -805,20 +818,18 @@ function applyRoleScope(role) {
     const normalizedRole = String(role || "").trim().toLowerCase();
     const allowedPages = allowedPagesForRole(normalizedRole);
     const platformGroup = document.getElementById("nav-platform-group");
-    const superNav = document.getElementById("nav-super-admin");
-    const quickNav = document.getElementById("quick-nav");
-    const clubSwitcher = document.getElementById("club-switcher");
+    const roleScopeChip = document.getElementById("role-scope-chip");
     const peopleBtnStaff = document.querySelector('#players .people-btn[data-view="staff"]');
     const peopleBtnGuests = document.querySelector('#players .people-btn[data-view="guests"]');
 
     if (platformGroup) {
         platformGroup.style.display = normalizedRole === "super_admin" ? "" : "none";
     }
-    if (superNav) {
-        superNav.style.display = normalizedRole === "super_admin" ? "" : "none";
-    }
-    if (clubSwitcher) {
-        clubSwitcher.style.display = normalizedRole === "super_admin" ? "inline-block" : "none";
+    document.querySelectorAll('[id^="nav-super-admin-"]').forEach(item => {
+        item.style.display = normalizedRole === "super_admin" ? "" : "none";
+    });
+    if (roleScopeChip) {
+        roleScopeChip.textContent = normalizedRole === "super_admin" ? "Platform mode" : normalizedRole === "club_staff" ? "Operator mode" : "Club admin";
     }
 
     document.querySelectorAll(".nav-item[data-page]").forEach(item => {
@@ -834,18 +845,6 @@ function applyRoleScope(role) {
         const pageEl = document.getElementById(pageId);
         if (pageEl) pageEl.style.display = "none";
     });
-
-    if (quickNav instanceof HTMLSelectElement) {
-        Array.from(quickNav.querySelectorAll("option")).forEach(option => {
-            const raw = String(option.value || "").trim();
-            if (!raw) return;
-            const page = raw.split("|")[0];
-            if (!allowedPages.has(page)) {
-                option.remove();
-            }
-        });
-        hideEmptyQuickNavGroups();
-    }
 
     const opsOpenRevenueBtn = document.getElementById("ops-open-revenue-btn");
     const opsOpenPeopleBtn = document.getElementById("ops-open-people-btn");
@@ -984,18 +983,6 @@ async function applyStaffMode(role) {
         el.style.display = "none";
     });
 
-    const quickNav = document.getElementById("quick-nav");
-    if (quickNav instanceof HTMLSelectElement) {
-        Array.from(quickNav.querySelectorAll("option")).forEach(option => {
-            const raw = String(option.value || "");
-            if (!raw) return;
-            const page = raw.split("|")[0];
-            if (!allowed.has(page)) {
-                option.remove();
-            }
-        });
-    }
-
     const token = localStorage.getItem("token");
     try {
         const ctx = await fetchJson(`${API_BASE}/api/admin/staff-role-context`, {
@@ -1124,7 +1111,6 @@ async function initSuperAdminContext() {
     if (nav) nav.style.display = "";
     applyRoleScope(currentUserRole || "super_admin");
 
-    const clubSwitcher = document.getElementById("club-switcher");
     const staffClub = document.getElementById("super-staff-club");
 
     try {
@@ -1138,10 +1124,6 @@ async function initSuperAdminContext() {
 
     const activeClubs = superAdminClubsCache.filter(c => (c && (c.active === 1 || c.active === true)));
     if (!activeClubs.length) {
-        if (clubSwitcher) {
-            clubSwitcher.innerHTML = "";
-            clubSwitcher.style.display = "none";
-        }
         if (staffClub) {
             staffClub.innerHTML = '<option value="">Create a club first</option>';
             staffClub.value = "";
@@ -1161,16 +1143,6 @@ async function initSuperAdminContext() {
     const optionHtml = activeClubs
         .map(c => `<option value="${c.id}">${c.name} (#${c.id})</option>`)
         .join("");
-
-    if (clubSwitcher) {
-        clubSwitcher.innerHTML = optionHtml;
-        clubSwitcher.value = String(activeClubId);
-        clubSwitcher.style.display = "inline-block";
-        clubSwitcher.onchange = () => {
-            localStorage.setItem("active_club_id", String(clubSwitcher.value));
-            window.location.reload();
-        };
-    }
 
     if (staffClub) {
         staffClub.innerHTML = optionHtml;
@@ -1263,6 +1235,514 @@ async function superRefreshStaff() {
         console.error("Failed to load staff:", e);
         body.innerHTML = `<tr><td colspan="5">Failed to load staff</td></tr>`;
     }
+}
+
+function superSectionIdForView(view) {
+    const key = normalizeSuperAdminView(view, "overview");
+    const mapping = {
+        overview: "super-section-overview",
+        clubs: "super-section-clubs",
+        onboarding: "super-section-onboarding",
+        demo: "super-section-demo",
+        users: "super-section-users",
+        catalog: "super-section-catalog",
+        templates: "super-section-templates",
+        health: "super-section-overview",
+        settings: "super-section-settings",
+    };
+    return mapping[key] || "super-section-overview";
+}
+
+function setSuperAdminSectionButtons() {
+    document.querySelectorAll(".super-subnav-btn").forEach(btn => {
+        btn.classList.toggle("active", String(btn.dataset.superTarget || "") === normalizeSuperAdminView(superAdminView, "overview"));
+    });
+}
+
+function scrollSuperAdminSection(view, smooth = true) {
+    const id = superSectionIdForView(view);
+    const el = document.getElementById(id);
+    if (!(el instanceof HTMLElement)) return;
+    el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+}
+
+function renderSuperAdminReadiness(platform = superAdminCommandCenterCache) {
+    const totalEl = document.getElementById("super-readiness-clubs");
+    const liveEl = document.getElementById("super-summary-live");
+    const onboardingEl = document.getElementById("super-summary-onboarding");
+    const attentionEl = document.getElementById("super-readiness-attention");
+    const demoEl = document.getElementById("super-summary-demo");
+    const noteEl = document.getElementById("super-readiness-note");
+    const tableEl = document.getElementById("super-readiness-table");
+    if (!tableEl) return;
+
+    let summary = platform?.summary || {};
+    let rows = Array.isArray(platform?.clubs) ? platform.clubs : [];
+    let issueRows = Array.isArray(platform?.needs_action) ? platform.needs_action : [];
+    if (!rows.length && Array.isArray(platform?.setup_readiness)) {
+        rows = platform.setup_readiness.map(row => ({
+            id: row.club_id,
+            name: resolveClubName(row.club_id) || row.club_name || row.club_slug || `Club ${row.club_id}`,
+            status: row.status,
+            score: row.score,
+            next_step: Array.isArray(row.missing) && row.missing.length ? row.missing[0] : "Review setup",
+            modules: [],
+            counts: {
+                admins: Number(row?.checks?.access ? 1 : 0),
+                fees: Number(row?.checks?.pricing ? 1 : 0),
+                annual_targets: 0,
+                operational_targets: Number(row?.checks?.operations ? 1 : 0),
+                communications: 0,
+            },
+        }));
+        summary = {
+            active_clubs: rows.length,
+            live_clubs: rows.filter(row => String(row.status || "") === "ready").length,
+            onboarding_clubs: rows.filter(row => String(row.status || "") !== "ready").length,
+            needs_action: rows.filter(row => Number(row.score || 0) < 100).length,
+        };
+        issueRows = rows.filter(row => Number(row.score || 0) < 100).map(row => ({
+            club_name: row.name,
+            issue: row.next_step,
+        }));
+    }
+    if (totalEl) totalEl.textContent = String(summary.active_clubs || 0);
+    if (liveEl) liveEl.textContent = String(summary.live_clubs || 0);
+    if (onboardingEl) onboardingEl.textContent = String(summary.onboarding_clubs || 0);
+    if (attentionEl) attentionEl.textContent = String(summary.needs_action || 0);
+    if (demoEl) demoEl.textContent = platform?.demo_environment?.available ? "1" : "0";
+
+    const nextIssue = issueRows[0];
+    if (noteEl) {
+        noteEl.textContent = nextIssue
+            ? `${nextIssue.club_name}: ${nextIssue.issue}`
+            : "All clubs currently meet the baseline launch readiness checks.";
+    }
+
+    if (!rows.length) {
+        tableEl.innerHTML = `<tr><td colspan="9">No clubs found yet.</td></tr>`;
+        return;
+    }
+
+    tableEl.innerHTML = rows.map(row => {
+        const modules = Array.isArray(row.modules) && row.modules.length ? row.modules.join(", ") : "-";
+        const access = Number(row?.counts?.admins || 0) > 0 ? "Ready" : "Missing";
+        const pricing = Number(row?.counts?.fees || 0) > 0 ? "Ready" : "Missing";
+        const targets = Number(row?.counts?.annual_targets || 0) > 0 || Number(row?.counts?.operational_targets || 0) > 0 ? "Ready" : "Missing";
+        const comms = Number(row?.counts?.communications || 0) > 0 ? "Ready" : "Missing";
+        return `<tr>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${escapeHtml(readinessStatusLabel(row.status || row.readiness_status || ""))}</td>
+            <td>${Math.max(0, Math.min(100, Number(row.score || 0)))}%</td>
+            <td>${access}</td>
+            <td>${pricing}</td>
+            <td>${targets}</td>
+            <td>${comms}</td>
+            <td>${escapeHtml(modules)}</td>
+            <td>${escapeHtml(row.next_step || "-")}</td>
+        </tr>`;
+    }).join("");
+}
+
+function renderSuperNeedsAction(platform = superAdminCommandCenterCache) {
+    const listEl = document.getElementById("super-needs-action-list");
+    const actionEl = document.getElementById("super-next-action");
+    if (!(listEl instanceof HTMLElement)) return;
+    const rows = Array.isArray(platform?.needs_action) ? platform.needs_action : [];
+    if (!rows.length) {
+        if (actionEl) actionEl.textContent = "No clubs are currently blocked. Use Create New Club to start the next rollout.";
+        listEl.innerHTML = `<div>All active clubs are on track.</div>`;
+        return;
+    }
+    if (actionEl) {
+        actionEl.textContent = `${rows[0].club_name}: ${rows[0].issue}`;
+    }
+    listEl.innerHTML = rows.map(row => `<div><strong>${escapeHtml(row.club_name || "")}</strong><br>${escapeHtml(row.issue || row.next_step || "")}</div>`).join("");
+}
+
+function renderSuperDemoArea(platform = superAdminCommandCenterCache) {
+    const noteEl = document.getElementById("super-demo-note");
+    const personasEl = document.getElementById("super-demo-personas");
+    const summaryEl = document.getElementById("super-demo-club-summary");
+    const credsEl = document.getElementById("super-demo-credentials");
+    const demo = platform?.demo_environment || {};
+    const personas = Array.isArray(demo.personas) ? demo.personas : [];
+    const summaryText = demo.available
+        ? `${demo.club_name || "Demo club"} is available and ready for admin and member walkthroughs.`
+        : "No demo club is ready yet. Prepare the demo environment to seed personas and believable operating data.";
+    if (noteEl) noteEl.textContent = summaryText;
+    if (summaryEl) summaryEl.textContent = summaryText;
+    const markup = personas.map(persona => `<div><strong>${escapeHtml(persona.label || persona.role_type || "")}</strong><br>${escapeHtml(persona.email || "")}<br><span>Password: ${escapeHtml(persona.password || "")}</span></div>`).join("");
+    if (personasEl) personasEl.innerHTML = markup || `<div>No demo personas configured yet.</div>`;
+    if (credsEl) credsEl.innerHTML = markup || `<div>No demo credentials available yet.</div>`;
+}
+
+function renderSuperCatalog(platform = superAdminCommandCenterCache) {
+    const modulesEl = document.getElementById("super-catalog-modules");
+    const targetsEl = document.getElementById("super-template-list");
+    const settingsEl = document.getElementById("super-settings-list");
+    const templatesWrapEl = document.getElementById("super-template-list");
+    const moduleGrid = document.getElementById("super-module-grid");
+    const catalog = platform?.catalog || {};
+    const modules = Array.isArray(catalog.modules) ? catalog.modules : [];
+    const targets = Array.isArray(catalog.targets) ? catalog.targets : [];
+    const templates = Array.isArray(catalog.pricing_templates) ? catalog.pricing_templates : [];
+    if (modulesEl) {
+        modulesEl.innerHTML = modules.map(row => `<div><strong>${escapeHtml(row.label || row.key || "")}</strong><br>${escapeHtml(row.description || "")}</div>`).join("");
+    }
+    if (templatesWrapEl) {
+        templatesWrapEl.innerHTML = templates.map(row => `<div><strong>${escapeHtml(row.label || row.key || "")}</strong><br>${escapeHtml(row.description || "")}</div>`).join("");
+    }
+    if (settingsEl) {
+        settingsEl.innerHTML = [
+            `<div><strong>Platform templates</strong><br>${templates.length} launch template(s) available.</div>`,
+            `<div><strong>Operations catalog</strong><br>${modules.length} modules and ${targets.length} target metrics currently defined.</div>`,
+            `<div><strong>Role model</strong><br>Super Admin, Club Admin, Club Staff / Operator, and Member / Player are now treated as explicit product roles.</div>`,
+        ].join("");
+    }
+    if (moduleGrid) {
+        moduleGrid.innerHTML = modules.map(row => `<div class="super-module-card"><label><input type="checkbox" data-module-key="${escapeHtml(row.key || "")}" ${row.default_enabled ? "checked" : ""}><span>${escapeHtml(row.label || row.key || "")}</span></label><p>${escapeHtml(row.description || "")}</p></div>`).join("");
+    }
+    const templateSelect = document.getElementById("super-pricing-template");
+    if (templateSelect instanceof HTMLSelectElement && !templateSelect.options.length) {
+        templateSelect.innerHTML = templates.map(row => `<option value="${escapeHtml(row.key || "")}">${escapeHtml(row.label || row.key || "")}</option>`).join("");
+    }
+}
+
+function populateSuperClubOptions(rows) {
+    const staffClub = document.getElementById("super-staff-club");
+    if (!(staffClub instanceof HTMLSelectElement)) return;
+    staffClub.innerHTML = rows.map(row => `<option value="${row.id}">${escapeHtml(row.name || "")}</option>`).join("");
+    if (superAdminSelectedClubId) {
+        staffClub.value = String(superAdminSelectedClubId);
+    }
+}
+
+function renderSuperClubsTable(platform = superAdminCommandCenterCache) {
+    const body = document.getElementById("super-clubs-table");
+    if (!(body instanceof HTMLElement)) return;
+    const search = String(document.getElementById("super-club-search")?.value || "").trim().toLowerCase();
+    const filter = String(document.getElementById("super-club-status-filter")?.value || "all").trim().toLowerCase();
+    const rows = (Array.isArray(platform?.clubs) ? platform.clubs : []).filter(row => {
+        const matchesSearch = !search || String(row.name || "").toLowerCase().includes(search) || String(row.slug || "").toLowerCase().includes(search);
+        const matchesFilter = filter === "all" || String(row.status || "").toLowerCase() === filter;
+        return matchesSearch && matchesFilter;
+    });
+    populateSuperClubOptions(Array.isArray(platform?.clubs) ? platform.clubs : []);
+    body.innerHTML = rows.map(row => {
+        const modules = Array.isArray(row.modules) && row.modules.length ? row.modules.join(", ") : "-";
+        const adminState = Number(row?.counts?.admins || 0) > 0 ? "Ready" : "Missing";
+        return `<tr>
+            <td>${escapeHtml(row.name || "")}</td>
+            <td>${escapeHtml(readinessStatusLabel(row.status || ""))}</td>
+            <td>${Math.max(0, Math.min(100, Number(row.score || 0)))}%</td>
+            <td>${escapeHtml(modules)}</td>
+            <td>${adminState}</td>
+            <td>${Number(row?.counts?.members || 0)}</td>
+            <td>${escapeHtml(row.next_step || "-")}</td>
+            <td><button class="super-action-link" type="button" data-super-select-club="${row.id}">Open</button></td>
+        </tr>`;
+    }).join("");
+}
+
+function populateSuperOnboarding(workspace = null) {
+    const club = workspace?.club || {};
+    const profile = workspace?.profile || {};
+    const details = profile.details || {};
+    const branding = profile.branding || {};
+    const metrics = workspace?.metrics || {};
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value == null ? "" : String(value);
+    };
+    setValue("super-club-name", club.name || "");
+    setValue("super-club-slug", club.slug || "");
+    setValue("super-club-display-name", profile.display_name || "");
+    setValue("super-club-email", details.contact_email || "");
+    setValue("super-club-phone", details.contact_phone || "");
+    setValue("super-club-location", details.location || "");
+    setValue("super-logo-url", profile.logo_url || "");
+    setValue("super-hero-image-url", profile.hero_image_url || "");
+    setValue("super-brand-primary", branding.primary || "");
+    setValue("super-brand-secondary", branding.secondary || "");
+    setValue("super-brand-accent", branding.accent || "");
+    setValue("super-brand-tagline", details.tagline || "");
+    setValue("super-target-year", new Date().getFullYear());
+    setValue("super-target-members", metrics.members || "");
+    setValue("super-club-status", club.status || "onboarding");
+    setValue("super-club-is-demo", club.is_demo ? "true" : "false");
+    const checklist = document.getElementById("super-launch-checklist");
+    if (checklist) {
+        const items = Array.isArray(workspace?.readiness?.checklist) ? workspace.readiness.checklist : [];
+        checklist.innerHTML = items.map(item => `<div><strong>${escapeHtml(item.label || "")}</strong><br>${item.ready ? "Ready" : escapeHtml(item.hint || "")}</div>`).join("");
+    }
+}
+
+function renderSuperWorkspace(workspace = null) {
+    superAdminWorkspaceCache = workspace;
+    const summaryEl = document.getElementById("super-workspace-summary");
+    const highlightsEl = document.getElementById("super-workspace-highlights");
+    const checklistEl = document.getElementById("super-workspace-checklist");
+    const staffEl = document.getElementById("super-workspace-staff");
+    const commsEl = document.getElementById("super-workspace-comms");
+    if (!workspace) {
+        if (summaryEl) summaryEl.textContent = "Select a club to inspect its platform setup.";
+        if (highlightsEl) highlightsEl.innerHTML = "";
+        if (checklistEl) checklistEl.innerHTML = "";
+        if (staffEl) staffEl.innerHTML = "";
+        if (commsEl) commsEl.innerHTML = "";
+        return;
+    }
+    const club = workspace.club || {};
+    const readiness = workspace.readiness || {};
+    if (summaryEl) {
+        summaryEl.textContent = `${club.name || "Club"} is ${readinessStatusLabel(club.status || readiness.readiness_status || "")}. Next step: ${readiness.next_step || "review setup"}.`;
+    }
+    if (highlightsEl) {
+        highlightsEl.innerHTML = [
+            `<div><strong>Modules</strong><br>${(workspace.profile?.enabled_modules || []).join(", ") || "None configured"}</div>`,
+            `<div><strong>Member experience</strong><br>${Number(workspace.metrics?.members || 0)} members, ${Number(workspace.metrics?.bookings_upcoming || 0)} upcoming bookings.</div>`,
+            `<div><strong>Published communications</strong><br>${Number(workspace.metrics?.communications_published || 0)} items available in the member experience.</div>`,
+        ].join("");
+    }
+    if (checklistEl) {
+        const items = Array.isArray(readiness.checklist) ? readiness.checklist : [];
+        checklistEl.innerHTML = items.map(item => `<div><strong>${escapeHtml(item.label || "")}</strong><br>${item.ready ? "Ready" : escapeHtml(item.hint || "")}</div>`).join("");
+    }
+    if (staffEl) {
+        const rows = Array.isArray(workspace.staff) ? workspace.staff : [];
+        staffEl.innerHTML = rows.map(row => `<div><strong>${escapeHtml(row.name || "")}</strong><br>${escapeHtml(row.role || "")} | ${escapeHtml(row.email || "")}</div>`).join("") || "<div>No staff configured yet.</div>";
+    }
+    if (commsEl) {
+        const rows = Array.isArray(workspace.communications) ? workspace.communications : [];
+        commsEl.innerHTML = rows.map(row => `<div><strong>${escapeHtml(row.title || "")}</strong><br>${escapeHtml(row.kind || "")} | ${escapeHtml(row.summary || "")}</div>`).join("") || "<div>No member-facing communications published yet.</div>";
+    }
+    populateSuperOnboarding(workspace);
+}
+
+async function loadSuperAdminCommandCenter({ silent = false } = {}) {
+    try {
+        superAdminCommandCenterCache = await apiGetJson("/api/super/command-center");
+        superAdminCatalogCache = superAdminCommandCenterCache?.catalog || {};
+        renderSuperAdminReadiness(superAdminCommandCenterCache);
+        renderSuperNeedsAction(superAdminCommandCenterCache);
+        renderSuperDemoArea(superAdminCommandCenterCache);
+        renderSuperCatalog(superAdminCommandCenterCache);
+        renderSuperClubsTable(superAdminCommandCenterCache);
+        const summary = superAdminCommandCenterCache?.summary || {};
+        const summaryEl = document.getElementById("super-command-summary");
+        if (summaryEl) {
+            summaryEl.textContent = `${Number(summary.live_clubs || 0)} live club(s), ${Number(summary.onboarding_clubs || 0)} in onboarding, and ${Number(summary.needs_action || 0)} requiring action.`;
+        }
+        return superAdminCommandCenterCache;
+    } catch (error) {
+        if (!silent) {
+            toastError(`Failed to load command center: ${error.message || error}`);
+        }
+        return null;
+    }
+}
+
+async function loadSuperClubWorkspace(clubId) {
+    const resolvedId = Number(clubId || 0);
+    if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
+        renderSuperWorkspace(null);
+        return null;
+    }
+    try {
+        superAdminSelectedClubId = resolvedId;
+        localStorage.setItem("active_club_id", String(resolvedId));
+        const workspace = await apiGetJson(`/api/super/clubs/${resolvedId}/workspace`);
+        renderSuperWorkspace(workspace);
+        return workspace;
+    } catch (error) {
+        toastError(`Failed to load club workspace: ${error.message || error}`);
+        return null;
+    }
+}
+
+function collectSuperClubSetupPayload(launch = false) {
+    const checkedModules = Array.from(document.querySelectorAll("#super-module-grid input[data-module-key]:checked")).map(el => String(el.getAttribute("data-module-key") || "").trim()).filter(Boolean);
+    const targetYear = Number(document.getElementById("super-target-year")?.value || new Date().getFullYear());
+    return {
+        club_name: String(document.getElementById("super-club-name")?.value || "").trim(),
+        club_slug: String(document.getElementById("super-club-slug")?.value || "").trim(),
+        display_name: String(document.getElementById("super-club-display-name")?.value || "").trim() || null,
+        contact_email: String(document.getElementById("super-club-email")?.value || "").trim() || null,
+        contact_phone: String(document.getElementById("super-club-phone")?.value || "").trim() || null,
+        location: String(document.getElementById("super-club-location")?.value || "").trim() || null,
+        logo_url: String(document.getElementById("super-logo-url")?.value || "").trim() || null,
+        hero_image_url: String(document.getElementById("super-hero-image-url")?.value || "").trim() || null,
+        brand_primary: String(document.getElementById("super-brand-primary")?.value || "").trim() || null,
+        brand_secondary: String(document.getElementById("super-brand-secondary")?.value || "").trim() || null,
+        brand_accent: String(document.getElementById("super-brand-accent")?.value || "").trim() || null,
+        tagline: String(document.getElementById("super-brand-tagline")?.value || "").trim() || null,
+        enabled_modules: checkedModules,
+        pricing_template: String(document.getElementById("super-pricing-template")?.value || "country_club_standard").trim(),
+        status: launch ? "live" : String(document.getElementById("super-club-status")?.value || "onboarding").trim(),
+        is_demo: String(document.getElementById("super-club-is-demo")?.value || "false").trim() === "true",
+        annual_targets: {
+            year: targetYear,
+            rounds: Number(document.getElementById("super-annual-rounds")?.value || 0) || 0,
+            revenue: Number(document.getElementById("super-annual-revenue")?.value || 0) || 0,
+        },
+        operational_targets: [
+            {
+                operation_key: "golf",
+                metric_key: "revenue",
+                target_value: Number(document.getElementById("super-target-golf-revenue")?.value || 0) || 0,
+                unit: "currency",
+            },
+            {
+                operation_key: "members",
+                metric_key: "active_members",
+                target_value: Number(document.getElementById("super-target-members")?.value || 0) || 0,
+                unit: "members",
+            },
+        ],
+        admin_user: {
+            name: String(document.getElementById("super-staff-name")?.value || "").trim() || "Club Admin",
+            email: String(document.getElementById("super-staff-email")?.value || "").trim(),
+            password: String(document.getElementById("super-staff-password")?.value || "").trim(),
+            force_reset: true,
+        },
+    };
+}
+
+async function saveSuperClubSetup({ launch = false } = {}) {
+    const statusEl = document.getElementById("super-club-status-text");
+    if (statusEl) statusEl.textContent = "";
+    const payload = collectSuperClubSetupPayload(launch);
+    if (!payload.club_name || !payload.club_slug || !payload.admin_user.email || !payload.admin_user.password) {
+        if (statusEl) statusEl.textContent = "Club basics and first club-admin credentials are required.";
+        return;
+    }
+    try {
+        const result = await apiGetJson("/api/super/clubs/setup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const clubId = Number(result?.club?.id || 0);
+        if (clubId > 0) {
+            superAdminSelectedClubId = clubId;
+            localStorage.setItem("active_club_id", String(clubId));
+            await ensureSuperClubCommunications();
+            await loadSuperClubWorkspace(clubId);
+        }
+        if (statusEl) statusEl.textContent = launch ? "Club saved and marked live." : "Club setup saved.";
+        await loadSuperAdminCommandCenter({ silent: true });
+    } catch (error) {
+        if (statusEl) statusEl.textContent = error?.message || "Failed to save club setup";
+    }
+}
+
+async function ensureSuperClubCommunications() {
+    const announcementTitle = String(document.getElementById("super-comm-announcement")?.value || "").trim();
+    const newsTitle = String(document.getElementById("super-comm-news")?.value || "").trim();
+    const memberMessage = String(document.getElementById("super-comm-message")?.value || "").trim();
+    if (!announcementTitle && !newsTitle && !memberMessage) return;
+    const existing = await apiGetJson("/api/admin/communications?status=all&limit=50");
+    const rows = Array.isArray(existing?.communications) ? existing.communications : [];
+    const titles = new Set(rows.map(row => String(row?.title || "").trim().toLowerCase()).filter(Boolean));
+    const createIfMissing = async (title, kind, body, summary = "") => {
+        if (!title || titles.has(title.toLowerCase())) return;
+        await apiGetJson("/api/admin/communications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                kind,
+                audience: "members",
+                status: "published",
+                title,
+                summary: summary || title,
+                body: body || title,
+                pinned: kind === "announcement",
+            }),
+        });
+    };
+    await createIfMissing(announcementTitle, "announcement", `${announcementTitle} is now live in the member app.`, announcementTitle);
+    await createIfMissing(newsTitle, "news", `${newsTitle} has been added to the club news feed.`, newsTitle);
+    await createIfMissing(memberMessage ? "Member app welcome" : "", "message", memberMessage, "Welcome message");
+}
+
+async function initSuperAdminContext() {
+    superAdminView = normalizeSuperAdminView(superAdminView || "overview", "overview");
+    setSuperAdminSectionButtons();
+    await loadSuperAdminCommandCenter({ silent: true });
+    const rememberedClub = Number(localStorage.getItem("active_club_id") || 0);
+    const demoClubId = Number(superAdminCommandCenterCache?.demo_environment?.club_id || 0);
+    const defaultClubId = rememberedClub || demoClubId || Number(superAdminCommandCenterCache?.clubs?.[0]?.id || 0);
+    if (defaultClubId > 0) {
+        await loadSuperClubWorkspace(defaultClubId);
+    } else {
+        renderSuperWorkspace(null);
+    }
+    scrollSuperAdminSection(superAdminView, false);
+}
+
+function setupSuperAdminControls() {
+    document.querySelectorAll(".super-subnav-btn").forEach(btn => {
+        btn.addEventListener("click", () => navigateToAdminPage("super-admin", { view: btn.dataset.superTarget || "overview" }));
+    });
+    document.getElementById("super-refresh-command-center")?.addEventListener("click", () => loadSuperAdminCommandCenter());
+    document.getElementById("super-club-search")?.addEventListener("input", () => renderSuperClubsTable(superAdminCommandCenterCache));
+    document.getElementById("super-club-status-filter")?.addEventListener("change", () => renderSuperClubsTable(superAdminCommandCenterCache));
+    document.getElementById("super-cta-create-club")?.addEventListener("click", () => navigateToAdminPage("super-admin", { view: "onboarding" }));
+    document.getElementById("super-cta-open-demo")?.addEventListener("click", async () => {
+        navigateToAdminPage("super-admin", { view: "demo" });
+        const demoId = Number(superAdminCommandCenterCache?.demo_environment?.club_id || 0);
+        if (demoId > 0) await loadSuperClubWorkspace(demoId);
+    });
+    document.getElementById("super-cta-resume-onboarding")?.addEventListener("click", () => navigateToAdminPage("super-admin", { view: "onboarding" }));
+    document.getElementById("super-cta-manage-clubs")?.addEventListener("click", () => navigateToAdminPage("super-admin", { view: "clubs" }));
+    document.getElementById("super-cta-review-issues")?.addEventListener("click", () => navigateToAdminPage("super-admin", { view: "health" }));
+    document.getElementById("super-save-draft-btn")?.addEventListener("click", () => saveSuperClubSetup({ launch: false }));
+    document.getElementById("super-launch-club-btn")?.addEventListener("click", () => saveSuperClubSetup({ launch: true }));
+    document.getElementById("super-create-staff-btn")?.addEventListener("click", () => superCreateStaff());
+    document.getElementById("super-refresh-staff-btn")?.addEventListener("click", () => superRefreshStaff());
+    document.getElementById("super-ensure-demo-btn")?.addEventListener("click", async () => {
+        await apiGetJson("/api/super/demo/ensure", { method: "POST" });
+        await loadSuperAdminCommandCenter({ silent: true });
+        const demoId = Number(superAdminCommandCenterCache?.demo_environment?.club_id || 0);
+        if (demoId > 0) await loadSuperClubWorkspace(demoId);
+    });
+    document.getElementById("super-open-demo-workspace-btn")?.addEventListener("click", async () => {
+        const demoId = Number(superAdminCommandCenterCache?.demo_environment?.club_id || 0);
+        if (demoId > 0) {
+            navigateToAdminPage("super-admin", { view: "clubs" });
+            await loadSuperClubWorkspace(demoId);
+        }
+    });
+    document.getElementById("super-onboarding-prev")?.addEventListener("click", () => {
+        const select = document.getElementById("super-onboarding-step");
+        if (!(select instanceof HTMLSelectElement)) return;
+        superAdminOnboardingStep = Math.max(1, Number(select.value || 1) - 1);
+        select.value = String(superAdminOnboardingStep);
+    });
+    document.getElementById("super-onboarding-next")?.addEventListener("click", () => {
+        const select = document.getElementById("super-onboarding-step");
+        if (!(select instanceof HTMLSelectElement)) return;
+        superAdminOnboardingStep = Math.min(7, Number(select.value || 1) + 1);
+        select.value = String(superAdminOnboardingStep);
+    });
+    document.getElementById("super-onboarding-step")?.addEventListener("change", (event) => {
+        superAdminOnboardingStep = Number(event.target?.value || 1) || 1;
+    });
+    document.addEventListener("click", async (event) => {
+        const trigger = event.target instanceof HTMLElement ? event.target.closest("[data-super-select-club]") : null;
+        if (!(trigger instanceof HTMLElement)) return;
+        const clubId = Number(trigger.getAttribute("data-super-select-club") || 0);
+        if (clubId > 0) {
+            await loadSuperClubWorkspace(clubId);
+            navigateToAdminPage("super-admin", { view: "clubs" }, { updateHistory: true });
+        }
+    });
+}
+
+async function superRefreshPlatformReadiness() {
+    await loadPlatformStatus();
+    await loadSuperAdminCommandCenter({ silent: true });
 }
 
 // Navigation
@@ -1414,6 +1894,8 @@ function applyRoutePresets(pageName, routeOptions = {}) {
                 ? "operation"
                 : "general",
         });
+    } else if (route.page === "super-admin") {
+        superAdminView = normalizeSuperAdminView(route.view || superAdminView || "overview", "overview");
     }
     return route;
 }
@@ -1504,61 +1986,15 @@ function setupNavigation() {
             const streamPreset = String(item.dataset.dashboardStream || "").toLowerCase();
             const peoplePresetView = String(item.dataset.peopleView || "").toLowerCase();
             const peoplePresetOperation = String(item.dataset.peopleOperation || "").toLowerCase();
+            const superPresetView = String(item.dataset.superView || "").toLowerCase();
             if (!page) return;
             if (!isPageAllowedForRole(page) || PLACEHOLDER_OPERATION_PAGES.includes(page)) return;
             navigateToAdminPage(page, {
                 stream: streamPreset || "all",
-                view: peoplePresetView || peopleView,
+                view: page === "super-admin" ? (superPresetView || superAdminView) : (peoplePresetView || peopleView),
                 operation: peoplePresetOperation || peopleAreaFilter,
             });
         });
-    });
-}
-
-function applyAdminDensity(value) {
-    const mode = String(value || "comfortable").toLowerCase() === "compact" ? "compact" : "comfortable";
-    document.body.classList.toggle("compact-density", mode === "compact");
-    localStorage.setItem("admin_density", mode);
-}
-
-function applyQuickNavigationValue(raw) {
-    const value = String(raw || "").trim();
-    if (!value) return false;
-    const [pageName, arg1, arg2] = value.split("|");
-    if (!isPageAllowedForRole(pageName) || PLACEHOLDER_OPERATION_PAGES.includes(pageName)) return false;
-    if (pageName === "dashboard") {
-        navigateToAdminPage(pageName, { stream: arg1 || "all" });
-        return true;
-    }
-    if (pageName === "players") {
-        navigateToAdminPage(pageName, { view: arg1 || "members", operation: arg2 || "all" });
-        return true;
-    }
-    navigateToAdminPage(pageName);
-    return true;
-}
-
-function setupGlobalQuickControls() {
-    const densitySelect = document.getElementById("density-switcher");
-    const quickNavSelect = document.getElementById("quick-nav");
-
-    if (densitySelect instanceof HTMLSelectElement) {
-        const storedDensity = String(localStorage.getItem("admin_density") || "comfortable").toLowerCase();
-        densitySelect.value = storedDensity === "compact" ? "compact" : "comfortable";
-        applyAdminDensity(densitySelect.value);
-        densitySelect.addEventListener("change", () => {
-            applyAdminDensity(densitySelect.value);
-        });
-    } else {
-        applyAdminDensity(localStorage.getItem("admin_density") || "comfortable");
-    }
-
-    if (!(quickNavSelect instanceof HTMLSelectElement)) return;
-    quickNavSelect.addEventListener("change", () => {
-        const raw = String(quickNavSelect.value || "").trim();
-        if (!raw) return;
-        applyQuickNavigationValue(raw);
-        quickNavSelect.value = "";
     });
 }
 
@@ -1697,7 +2133,17 @@ function showPage(pageName) {
         "tee-times": "Tee Sheet",
         ledger: "Payment Audit",
         cashbook: "Export & Day Close",
-        "super-admin": "Platform Admin",
+        "super-admin": {
+            overview: "Platform Overview",
+            clubs: "Club Portfolio",
+            onboarding: "Club Onboarding",
+            demo: "Demo Environment",
+            users: "Users & Roles",
+            catalog: "Operations Catalog",
+            templates: "Templates & Defaults",
+            health: "Platform Health",
+            settings: "Platform Settings",
+        }[normalizeSuperAdminView(superAdminView || "overview", "overview")] || "Platform Overview",
     };
     document.getElementById("page-title").textContent = titles[nextPage] || nextPage;
 
