@@ -172,6 +172,82 @@ function setStatusBanner(message = "", show = false) {
   el.classList.toggle("show", Boolean(show && message));
 }
 
+function hideLoadingOverlay() {
+  document.body.classList.remove("member-shell-loading");
+  document.getElementById("member-loading-overlay")?.setAttribute("hidden", "hidden");
+}
+
+function logClientError(stage, error, extra = {}) {
+  try {
+    console.error("[GreenLink member]", {
+      stage,
+      message: String(error?.message || "Unknown error"),
+      code: String(error?.code || ""),
+      status: Number(error?.status || 0) || null,
+      view: String(state.activeView || ""),
+      ...extra
+    });
+  } catch {
+    // Console logging should never block the shell.
+  }
+}
+
+function runtimeFailureMessage(error, fallback) {
+  if (error?.code === "BOOTSTRAP_TIMEOUT") {
+    return "Session bootstrap timed out while opening the member shell. Retry or sign in again.";
+  }
+  if (error?.code === "INVALID_BOOTSTRAP") {
+    return "Session bootstrap returned invalid data. Your stored session state has been cleared.";
+  }
+  if (error?.code === "REQUEST_TIMEOUT") {
+    return "A member workspace request timed out. Retry to continue.";
+  }
+  return String(error?.message || fallback || "Unable to open the member workspace.");
+}
+
+function renderMemberFatalError(error) {
+  const message = runtimeFailureMessage(error, "Unable to open the member workspace.");
+  hideLoadingOverlay();
+  setActiveView("home", { syncUrl: false });
+  setStatusBanner(message, true);
+
+  const greeting = document.getElementById("home-greeting");
+  const subtitle = document.getElementById("home-subtitle");
+  const nextCard = document.getElementById("next-booking-card");
+  const upcomingList = document.getElementById("upcoming-list");
+  const roundsList = document.getElementById("rounds-list");
+  const feedList = document.getElementById("club-feed-list");
+  const messageList = document.getElementById("club-message-list");
+  const weatherList = document.getElementById("weather-alert-list");
+  const teeList = document.getElementById("tee-list");
+  const checklist = document.getElementById("profile-checklist");
+
+  if (greeting) greeting.textContent = "Unable to open member workspace";
+  if (subtitle) subtitle.textContent = message;
+  if (nextCard) {
+    nextCard.innerHTML = `
+      <div class="callout-title">Member shell unavailable</div>
+      <div class="callout-meta">${escapeHtml(message)}</div>
+      <div class="hero-actions" style="margin-top:12px;">
+        <button class="btn primary" type="button" id="member-retry-btn">Retry</button>
+        <button class="btn outline" type="button" id="member-login-btn">Sign in again</button>
+      </div>
+    `;
+  }
+  if (upcomingList) upcomingList.innerHTML = `<div class="empty-state">Member workspace failed to load.</div>`;
+  if (roundsList) roundsList.innerHTML = `<div class="empty-state">Round actions are unavailable until the workspace reloads.</div>`;
+  if (feedList) feedList.innerHTML = `<div class="empty-state">Club updates are unavailable right now.</div>`;
+  if (messageList) messageList.innerHTML = `<div class="empty-state">Club messages are unavailable right now.</div>`;
+  if (weatherList) weatherList.innerHTML = `<div class="empty-state">Weather prompts are unavailable right now.</div>`;
+  if (teeList) teeList.innerHTML = `<div class="empty-state">Tee times are unavailable until the workspace reloads.</div>`;
+  if (checklist) checklist.innerHTML = `<div class="empty-state">Profile readiness could not be loaded.</div>`;
+
+  document.getElementById("member-retry-btn")?.addEventListener("click", () => {
+    window.location.reload();
+  });
+  document.getElementById("member-login-btn")?.addEventListener("click", logout);
+}
+
 function showToast(message, type = "") {
   const wrap = document.getElementById("toast");
   if (!wrap) return;
@@ -1479,19 +1555,41 @@ async function loadClubConfig() {
   }
 }
 
-async function resolveMemberBootstrap() {
-  if (!window.GreenLinkSession?.fetchBootstrap) return null;
-  const bootstrap = await window.GreenLinkSession.fetchBootstrap();
-  window.GreenLinkSession.writeBootstrap(bootstrap);
-  sessionBootstrap = bootstrap;
-  if (bootstrap?.user?.role) {
-    localStorage.setItem("user_role", String(bootstrap.user.role));
+function hydrateBootstrapFromCache() {
+  const cached = window.GreenLinkSession?.readBootstrap?.();
+  if (!cached) return null;
+  sessionBootstrap = cached;
+  if (cached?.user?.role) {
+    localStorage.setItem("user_role", String(cached.user.role));
   }
-  if (String(bootstrap?.role_shell || "").trim().toLowerCase() !== "member") {
-    window.location.href = String(bootstrap?.landing_path || "/frontend/admin.html");
+  return cached;
+}
+
+async function resolveMemberBootstrap() {
+  const cached = hydrateBootstrapFromCache();
+  if (cached) {
+    if (String(cached?.role_shell || "").trim().toLowerCase() !== "member") {
+      window.location.href = String(cached?.landing_path || "/frontend/admin.html");
+      return null;
+    }
+    return cached;
+  }
+
+  if (!window.GreenLinkSession?.fetchBootstrap) {
+    throw new Error("Session bootstrap is unavailable.");
+  }
+
+  const bootstrap = await window.GreenLinkSession.fetchBootstrap();
+  const normalized = window.GreenLinkSession.writeBootstrap(bootstrap);
+  sessionBootstrap = normalized;
+  if (normalized?.user?.role) {
+    localStorage.setItem("user_role", String(normalized.user.role));
+  }
+  if (String(normalized?.role_shell || "").trim().toLowerCase() !== "member") {
+    window.location.href = String(normalized?.landing_path || "/frontend/admin.html");
     return null;
   }
-  return bootstrap;
+  return normalized;
 }
 
 async function initialize() {
@@ -1521,11 +1619,18 @@ async function initialize() {
     setActiveView(state.pendingRouteTab, { syncUrl: true });
   }
 
-  document.body.classList.remove("member-shell-loading");
-  document.getElementById("member-loading-overlay")?.setAttribute("hidden", "hidden");
+  hideLoadingOverlay();
 }
 
 initialize().catch(err => {
-  document.body.classList.remove("member-shell-loading");
-  showToast(err?.message || "Failed to load player dashboard.", "error");
+  logClientError("initialize", err);
+  if (Number(err?.status || 0) === 401) {
+    logout();
+    return;
+  }
+  if (err?.code === "INVALID_BOOTSTRAP") {
+    window.GreenLinkSession?.clearSessionState?.();
+  }
+  hideLoadingOverlay();
+  renderMemberFatalError(err);
 });

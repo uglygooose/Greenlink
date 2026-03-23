@@ -135,6 +135,7 @@
             },
         },
     };
+    const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
 
     const state = {
         bootstrap: null,
@@ -176,6 +177,23 @@
     function positiveInt(value) {
         const number = Number(value);
         return Number.isInteger(number) && number > 0 ? number : null;
+    }
+
+    function logClientError(stage, error, extra = {}) {
+        try {
+            console.error("[GreenLink admin]", {
+                stage,
+                message: String(error?.message || "Unknown error"),
+                code: String(error?.code || ""),
+                status: Number(error?.status || 0) || null,
+                role_shell: String(state.bootstrap?.role_shell || ""),
+                workspace: String(state.route?.workspace || ""),
+                club_id: positiveInt(state.route?.clubId),
+                ...extra,
+            });
+        } catch {
+            // Console logging should never block the shell.
+        }
     }
 
     function todayYmd() {
@@ -399,6 +417,60 @@
         els.body.classList.toggle("shell-loading", Boolean(visible));
     }
 
+    function runtimeFailureMessage(error, fallback) {
+        if (error?.code === "BOOTSTRAP_TIMEOUT") {
+            return "Session bootstrap timed out while opening this workspace. Retry or sign in again.";
+        }
+        if (error?.code === "INVALID_BOOTSTRAP") {
+            return "Session bootstrap returned invalid data. Your stored session state has been cleared.";
+        }
+        if (error?.code === "REQUEST_TIMEOUT") {
+            return "A workspace request timed out while loading this view. Retry to continue.";
+        }
+        return String(error?.message || fallback || "Unable to open the workspace.");
+    }
+
+    function renderFatalShellError(title, message) {
+        if (state.bootstrap) {
+            renderChrome();
+        } else {
+            els.brandKicker.textContent = "GreenLink";
+            els.brandTitle.textContent = "Operations";
+            els.brandCopy.textContent = "Role-safe workspace bootstrap failed.";
+            els.scopeTitle.textContent = "Session unavailable";
+            els.scopeCopy.textContent = "Bootstrap could not resolve role or club context.";
+            els.pageKicker.textContent = "Session";
+            els.pageTitle.textContent = title;
+            els.pageCopy.textContent = "Retry the shell bootstrap or return to sign in.";
+            els.contextChip.textContent = "Session error";
+            els.headerClub.textContent = "GreenLink";
+            els.nav.innerHTML = "";
+            els.tabs.hidden = true;
+            els.tabs.innerHTML = "";
+        }
+
+        els.root.innerHTML = `
+            <section class="card">
+                <div class="panel-head">
+                    <div>
+                        <h3>${escapeHtml(title || "Workspace error")}</h3>
+                        <p>${escapeHtml(message || "Unable to open the requested workspace.")}</p>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <button type="button" class="button" id="fatal-retry-btn">Retry</button>
+                    <button type="button" class="button secondary" id="fatal-logout-btn">Sign in again</button>
+                </div>
+            </section>
+        `;
+        setOverlay(false);
+
+        document.getElementById("fatal-retry-btn")?.addEventListener("click", () => {
+            window.location.reload();
+        });
+        document.getElementById("fatal-logout-btn")?.addEventListener("click", logout);
+    }
+
     function renderWorkspaceLoading(message) {
         els.root.innerHTML = `
             <section class="hero-card">
@@ -448,28 +520,78 @@
         if (roleShell() === "super_admin" && previewClubId && !headers.has("X-Club-Id")) {
             headers.set("X-Club-Id", String(previewClubId));
         }
+        const requestedTimeoutMs = Number(options.timeoutMs);
+        const timeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+            ? requestedTimeoutMs
+            : WORKSPACE_REQUEST_TIMEOUT_MS;
+        const controller = new AbortController();
+        let timedOut = false;
+        let abortedByExternal = false;
+        const timeoutId = timeoutMs > 0
+            ? window.setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, timeoutMs)
+            : null;
 
-        const response = await window.fetch(path, {
-            method: options.method || "GET",
-            headers,
-            body: options.body,
-            cache: "no-store",
-        });
-        const raw = await response.text();
-        let data = null;
+        const externalSignal = options.signal;
+        let onAbort = null;
+        if (externalSignal) {
+            if (externalSignal.aborted) {
+                abortedByExternal = true;
+                controller.abort();
+            } else {
+                onAbort = () => {
+                    abortedByExternal = true;
+                    controller.abort();
+                };
+                externalSignal.addEventListener("abort", onAbort, { once: true });
+            }
+        }
+
         try {
-            data = raw ? JSON.parse(raw) : null;
-        } catch {
-            data = null;
-        }
-        if (!response.ok) {
-            const detail = data?.detail || data?.message || raw || `Request failed (${response.status})`;
-            const error = new Error(String(detail));
-            error.status = response.status;
-            error.data = data;
+            const response = await window.fetch(path, {
+                method: options.method || "GET",
+                headers,
+                body: options.body,
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            const raw = await response.text();
+            let data = null;
+            try {
+                data = raw ? JSON.parse(raw) : null;
+            } catch {
+                data = null;
+            }
+            if (!response.ok) {
+                const detail = data?.detail || data?.message || raw || `Request failed (${response.status})`;
+                const error = new Error(String(detail));
+                error.status = response.status;
+                error.data = data;
+                error.path = path;
+                throw error;
+            }
+            return data;
+        } catch (error) {
+            if (error?.name === "AbortError") {
+                if (abortedByExternal) throw error;
+                if (timedOut) {
+                    const timeoutError = new Error(`Request timed out after ${timeoutMs}ms`);
+                    timeoutError.code = "REQUEST_TIMEOUT";
+                    timeoutError.path = path;
+                    throw timeoutError;
+                }
+            }
             throw error;
+        } finally {
+            if (timeoutId != null) {
+                window.clearTimeout(timeoutId);
+            }
+            if (externalSignal && onAbort) {
+                externalSignal.removeEventListener("abort", onAbort);
+            }
         }
-        return data;
     }
 
     async function postJson(path, payload, options = {}) {
@@ -649,6 +771,23 @@
         els.pageCopy.textContent = meta.copy;
         renderNav();
         renderTabs();
+    }
+
+    function cachedBootstrapMatchesRoute(bootstrap, route = state.route) {
+        if (!bootstrap || typeof bootstrap !== "object") return false;
+        if (String(bootstrap.role_shell || "").trim().toLowerCase() !== "super_admin") {
+            return true;
+        }
+        const requestedClubId = positiveInt(route?.clubId);
+        const cachedPreviewClubId = positiveInt(bootstrap.preview_club?.id);
+        return requestedClubId === cachedPreviewClubId;
+    }
+
+    function hydrateBootstrapFromCache() {
+        const cached = window.GreenLinkSession?.readBootstrap?.();
+        if (!cachedBootstrapMatchesRoute(cached, state.route)) return null;
+        state.bootstrap = cached;
+        return cached;
     }
 
     async function refreshBootstrap(force) {
@@ -2173,9 +2312,15 @@
             setOverlay(false);
         } catch (error) {
             if (token !== state.renderToken) return;
+            logClientError("renderCurrentWorkspace", error);
             if (Number(error?.status || 0) === 401) {
                 window.GreenLinkSession.clearSessionState();
                 window.location.href = "/frontend/index.html";
+                return;
+            }
+            if (error?.code === "INVALID_BOOTSTRAP") {
+                window.GreenLinkSession.clearSessionState();
+                renderFatalShellError("Session reset required", runtimeFailureMessage(error, "Session bootstrap returned invalid data."));
                 return;
             }
             els.root.innerHTML = `
@@ -2183,7 +2328,7 @@
                     <div class="panel-head">
                         <div>
                             <h3>Workspace error</h3>
-                            <p>${escapeHtml(error?.message || "Failed to load workspace.")}</p>
+                            <p>${escapeHtml(runtimeFailureMessage(error, "Failed to load workspace."))}</p>
                         </div>
                     </div>
                     <div class="button-row">
@@ -2500,6 +2645,19 @@
         window.location.href = "/frontend/index.html";
     }
 
+    function handleInitializationFailure(error) {
+        logClientError("initialize", error);
+        if (Number(error?.status || 0) === 401) {
+            window.GreenLinkSession.clearSessionState();
+            window.location.href = "/frontend/index.html";
+            return;
+        }
+        if (error?.code === "INVALID_BOOTSTRAP") {
+            window.GreenLinkSession.clearSessionState();
+        }
+        renderFatalShellError("Unable to open workspace", runtimeFailureMessage(error, "The workspace could not be initialized."));
+    }
+
     async function initialize() {
         const token = window.localStorage.getItem("token");
         if (!token) {
@@ -2508,7 +2666,10 @@
         }
 
         state.route = { workspace: "overview", panel: null, date: todayYmd(), clubId: positiveInt(new URLSearchParams(window.location.search || "").get("club_id")) };
-        await refreshBootstrap(true);
+        hydrateBootstrapFromCache();
+        if (!state.bootstrap) {
+            await refreshBootstrap(true);
+        }
         if (roleShell() === "member") {
             window.location.href = state.bootstrap.landing_path || "/frontend/dashboard.html?view=home";
             return;
@@ -2531,5 +2692,5 @@
         await renderCurrentWorkspace();
     }
 
-    void initialize();
+    void initialize().catch(handleInitializationFailure);
 })();

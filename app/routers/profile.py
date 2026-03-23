@@ -268,11 +268,8 @@ def _require_player_user(current_user: models.User = Depends(get_current_user)) 
 @router.get("/me", response_model=PlayerProfileResponse)
 def get_my_profile(db: Session = Depends(get_db), current_user: models.User = Depends(_require_player_user)):
     """Get current player's profile"""
-    user = db.query(models.User).filter(func.lower(models.User.email) == str(current_user.email).strip().lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    member = _resolve_linked_member(db, user)
-    return _build_profile_response(user, member)
+    member = _resolve_linked_member(db, current_user)
+    return _build_profile_response(current_user, member)
 
 @router.put("/me", response_model=PlayerProfileResponse)
 def update_my_profile(
@@ -281,9 +278,7 @@ def update_my_profile(
     current_user: models.User = Depends(_require_player_user),
 ):
     """Update current player's profile"""
-    user = db.query(models.User).filter(func.lower(models.User.email) == str(current_user.email).strip().lower()).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = current_user
     
     # Update fields
     user.name = _normalize_name(profile_update.name)
