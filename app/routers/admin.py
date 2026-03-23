@@ -749,6 +749,20 @@ class ClubProfileSettings(BaseModel):
     enabled_modules: list[str] | None = None
 
 
+class ClubCommunicationInput(BaseModel):
+    kind: str
+    audience: str = "members"
+    status: str = "draft"
+    title: str
+    summary: str | None = None
+    body: str
+    cta_label: str | None = None
+    cta_url: str | None = None
+    pinned: bool = False
+    published_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
 @router.get("/club-profile")
 def get_club_profile_settings(
     db: Session = Depends(get_db),
