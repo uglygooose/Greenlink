@@ -24,13 +24,13 @@ _SUPER_ADMIN_NAV = [
     {"workspace": "settings", "label": "Platform Settings"},
 ]
 _CLUB_ADMIN_NAV = [
-    {"workspace": "overview", "label": "Overview"},
+    {"workspace": "overview", "label": "Club Overview"},
     {"workspace": "golf", "label": "Golf"},
     {"workspace": "operations", "label": "Operations"},
-    {"workspace": "members", "label": "Members"},
+    {"workspace": "members", "label": "People & Clubs"},
     {"workspace": "communications", "label": "Communications"},
-    {"workspace": "reports", "label": "Reports"},
-    {"workspace": "settings", "label": "Club Settings"},
+    {"workspace": "reports", "label": "Revenue & Finance"},
+    {"workspace": "settings", "label": "Club Setup"},
 ]
 _STAFF_NAV = [
     {"workspace": "today", "label": "Today"},
@@ -78,9 +78,7 @@ def role_shell_for_user(user: User) -> str:
 def _landing_path_for_shell(shell: str, workspace: str) -> str:
     if shell == ROLE_SHELL_MEMBER:
         return f"/frontend/dashboard.html?view={workspace}"
-    if shell == ROLE_SHELL_SUPER_ADMIN:
-        return f"/frontend/admin.html?workspace={workspace}"
-    return "/frontend/tsheet.html"
+    return f"/frontend/admin.html?workspace={workspace}"
 
 
 def _club_status(settings: dict[str, str], club: Club) -> str:

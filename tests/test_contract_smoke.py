@@ -324,7 +324,7 @@ def test_session_bootstrap_role_shells_and_club_scope(client: TestClient, seeded
     admin_payload = admin_response.json()
     assert admin_payload["role_shell"] == "club_admin"
     assert admin_payload["default_workspace"] == "overview"
-    assert admin_payload["landing_path"] == "/frontend/tsheet.html"
+    assert admin_payload["landing_path"] == "/frontend/admin.html?workspace=overview"
     assert admin_payload["effective_club"]["id"] == int(seeded_contract["club_a_id"])
     assert admin_payload["allowed_workspaces"] == [
         "overview",
@@ -346,7 +346,7 @@ def test_session_bootstrap_role_shells_and_club_scope(client: TestClient, seeded
     staff_payload = staff_response.json()
     assert staff_payload["role_shell"] == "staff"
     assert staff_payload["default_workspace"] == "today"
-    assert staff_payload["landing_path"] == "/frontend/tsheet.html"
+    assert staff_payload["landing_path"] == "/frontend/admin.html?workspace=today"
     assert staff_payload["effective_club"]["id"] == int(seeded_contract["club_a_id"])
     assert staff_payload["allowed_workspaces"] == ["today", "golf", "operations", "members", "communications"]
 

@@ -39,6 +39,30 @@
       font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
     }
 
+    body.embedded {
+      background: transparent;
+    }
+
+    body.embedded .booking-container {
+      max-width: 100%;
+      width: 100%;
+      margin: 0 auto 36px;
+      padding: 12px 12px 120px;
+      min-height: auto;
+    }
+
+    body.embedded .booking-header {
+      margin-top: 0;
+    }
+
+    body.embedded .bottom-bar {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      border-radius: 18px;
+      border: 1px solid var(--ucc-border);
+    }
+
     .booking-container {
       position: relative;
       top: auto;
@@ -878,6 +902,11 @@ let bookingWindowMaxDate = null;
 const urlParams = new URLSearchParams(window.location.search);
 const teeTimeId = urlParams.get('tee_time_id');
 const teeTimeStr = urlParams.get('tee_time');
+const isEmbedded = urlParams.get('embedded') === '1';
+const teeSheetDate = teeTimeStr ? String(teeTimeStr).slice(0, 10) : '';
+if (isEmbedded) {
+  document.body.classList.add('embedded');
+}
 
 	let players = [];
 	let golfFees = [];
@@ -1403,6 +1432,13 @@ function updateTotal() {
 }
 
 function goBack() {
+  if (isEmbedded) {
+    const params = new URLSearchParams();
+    params.set('embedded', '1');
+    if (teeSheetDate) params.set('date', teeSheetDate);
+    window.location.href = `/frontend/tsheet.html?${params.toString()}`;
+    return;
+  }
   window.location.href = '/frontend/tsheet.html';
 }
 
