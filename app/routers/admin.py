@@ -771,36 +771,15 @@ def update_club_profile_settings(
 
     Stored in `club_settings` so each club deployment can be configured without code changes.
     """
-    if payload.club_name is not None:
-        name = str(payload.club_name).strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="club_name cannot be empty")
-        _upsert_setting(db, "club_name", name)
-    if payload.club_slug is not None:
-        _upsert_setting(db, "club_slug", str(payload.club_slug).strip() or "")
-    if payload.logo_url is not None:
-        _upsert_setting(db, "club_logo_url", str(payload.logo_url).strip() or "")
-    if payload.currency_symbol is not None:
-        _upsert_setting(db, "club_currency_symbol", str(payload.currency_symbol).strip() or "")
-
-    if payload.member_label is not None:
-        _upsert_setting(db, "club_member_label", str(payload.member_label).strip() or "")
-    if payload.visitor_label is not None:
-        _upsert_setting(db, "club_visitor_label", str(payload.visitor_label).strip() or "")
-    if payload.non_affiliated_label is not None:
-        _upsert_setting(db, "club_non_affiliated_label", str(payload.non_affiliated_label).strip() or "")
-
-    if payload.home_club_keywords is not None:
-        keywords = [str(v or "").strip() for v in payload.home_club_keywords]
-        keywords = [v for v in keywords if v]
-        _upsert_setting(db, "club_home_club_keywords", json.dumps(keywords))
-
-    if payload.suggested_home_clubs is not None:
-        clubs = [str(v or "").strip() for v in payload.suggested_home_clubs]
-        clubs = [v for v in clubs if v]
-        _upsert_setting(db, "club_suggested_home_clubs", json.dumps(clubs))
+    payload_dict = payload.model_dump(exclude_none=True)
+    if "club_name" in payload_dict and not str(payload_dict.get("club_name") or "").strip():
+        raise HTTPException(status_code=400, detail="club_name cannot be empty")
+    apply_club_profile_settings(db, int(club_id), payload_dict)
+    if payload.enabled_modules is not None:
+        upsert_club_modules(db, int(club_id), list(payload.enabled_modules or []))
 
     db.commit()
+    _invalidate_admin_caches(int(club_id))
     return club_config_response(db, club_id=club_id)
 
 def _parse_hhmm(value: str) -> Time:
@@ -3428,6 +3407,19 @@ class TargetAssumptionsPayload(BaseModel):
     revenue_mode: str = "derived"
 
 
+class OperationalTargetInput(BaseModel):
+    operation_key: str
+    metric_key: str
+    target_value: float
+    unit: str | None = None
+    notes: str | None = None
+
+
+class OperationalTargetUpsertPayload(BaseModel):
+    year: int
+    targets: list[OperationalTargetInput]
+
+
 @router.get("/targets")
 async def get_target_settings(
     year: Optional[int] = None,
@@ -3541,6 +3533,54 @@ async def update_target_assumptions(
     db.commit()
     _invalidate_admin_caches(int(getattr(db, "info", {}).get("club_id") or 0) or None)
     return _target_model_payload(db, target_year)
+
+
+@router.get("/operation-targets")
+async def get_operational_target_settings(
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_setup_admin),
+):
+    target_year = int(year or datetime.utcnow().year)
+    if target_year < 2000 or target_year > 2100:
+        raise HTTPException(status_code=400, detail="invalid year")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    return {
+        "year": int(target_year),
+        "catalog": target_catalog(),
+        "targets": operational_targets_for_club(db, int(club_id), int(target_year)),
+    }
+
+
+@router.put("/operation-targets")
+async def upsert_operational_target_settings(
+    payload: OperationalTargetUpsertPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_setup_admin),
+):
+    target_year = int(payload.year or datetime.utcnow().year)
+    if target_year < 2000 or target_year > 2100:
+        raise HTTPException(status_code=400, detail="invalid year")
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    result = upsert_operational_targets(
+        db,
+        club_id=int(club_id),
+        year=int(target_year),
+        rows=[row.model_dump(exclude_none=True) for row in list(payload.targets or [])],
+    )
+    _audit_event(
+        db,
+        request,
+        admin,
+        action="club_operational_targets.upserted",
+        entity_type="club_operational_target",
+        entity_id=f"{club_id}:{target_year}",
+        payload={"year": int(target_year), "count": len(result)},
+    )
+    db.commit()
+    _invalidate_admin_caches(int(club_id))
+    return {"status": "success", "year": int(target_year), "targets": result}
 
 
 @router.get("/bookings")
