@@ -90,6 +90,7 @@ class InMemoryRouteMetrics:
     def snapshot(self, limit: int = 200) -> dict[str, Any]:
         cap = max(1, min(int(limit or 200), 1000))
         with self._lock:
+            total_count = len(self._stats)
             rows = sorted(self._stats.values(), key=lambda row: int(row.get("count", 0)), reverse=True)[:cap]
         materialized: list[dict[str, Any]] = []
         for row in rows:
@@ -106,7 +107,7 @@ class InMemoryRouteMetrics:
                     "duration_ms_last": int(row.get("duration_ms_last", 0)),
                 }
             )
-        return {"route_count": len(materialized), "routes": materialized}
+        return {"route_count": total_count, "routes": materialized}
 
 
 ROUTE_METRICS = InMemoryRouteMetrics()
