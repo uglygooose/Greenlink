@@ -156,6 +156,7 @@
         renderToken: 0,
         workspaceData: {},
         modalData: null,
+        navOpenGroups: new Set(),
         workspaceCache: new Map(),
     };
 
@@ -334,27 +335,45 @@
         const items = Array.isArray(nav) ? nav : [];
         if (shell === "club_admin") {
             return [
-                { label: "Overview", items: items.filter(item => ["overview"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "Golf", items: items.filter(item => ["golf"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "People & Clubs", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "Operations", items: items.filter(item => ["operations"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "Communications", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "Revenue & Finance", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "Club Setup", items: items.filter(item => ["settings"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "overview", label: "Overview", items: items.filter(item => ["overview"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "golf", label: "Golf", items: items.filter(item => ["golf"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "members", label: "People & Clubs", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "operations", label: "Operations", items: items.filter(item => ["operations"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "communications", label: "Communications", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "reports", label: "Revenue & Finance", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "settings", label: "Club Setup", items: items.filter(item => ["settings"].includes(String(item.workspace || "").toLowerCase())) },
             ].filter(group => group.items.length);
         }
         if (shell === "staff") {
             return [
-                { label: "Daily Operations", items: items.filter(item => ["today", "golf", "operations"].includes(String(item.workspace || "").toLowerCase())) },
-                { label: "People & Notices", items: items.filter(item => ["members", "communications"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "daily-ops", label: "Daily Operations", items: items.filter(item => ["today", "golf", "operations"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "people-notices", label: "People & Notices", items: items.filter(item => ["members", "communications"].includes(String(item.workspace || "").toLowerCase())) },
             ].filter(group => group.items.length);
         }
         if (shell === "super_admin") {
             return [
-                { label: "Platform Control", items },
+                { id: "platform-control", label: "Platform Control", items },
             ];
         }
-        return [{ label: "Navigation", items }].filter(group => group.items.length);
+        return [{ id: "navigation", label: "Navigation", items }].filter(group => group.items.length);
+    }
+
+    function navGroupIsActive(group) {
+        const items = Array.isArray(group?.items) ? group.items : [];
+        return items.some(item => String(item.workspace || "").trim().toLowerCase() === String(state.route?.workspace || "").trim().toLowerCase());
+    }
+
+    function toggleNavGroup(groupId) {
+        const key = String(groupId || "").trim().toLowerCase();
+        if (!key) return;
+        if (state.navOpenGroups.has(key)) state.navOpenGroups.delete(key);
+        else state.navOpenGroups.add(key);
+        renderNav();
+    }
+
+    function ensureNavGroupOpenForWorkspace(workspace) {
+        const key = String(workspace || "").trim().toLowerCase();
+        if (key) state.navOpenGroups.add(key);
     }
 
     function workspaceMeta(workspace) {
@@ -466,6 +485,10 @@
         if (options.replace) window.history.replaceState({}, "", nextUrl);
         else window.history.pushState({}, "", nextUrl);
         state.route = parseRoute();
+        ensureNavGroupOpenForWorkspace(state.route.workspace);
+        if (typeof options.afterNavigate === "function") {
+            options.afterNavigate();
+        }
         void renderCurrentWorkspace();
     }
 
@@ -2017,12 +2040,55 @@
         `).join("");
     }
 
+    function renderGolfTeeSheetPanel(bundle) {
+        const rows = Array.isArray(bundle.teeRows) ? bundle.teeRows : [];
+        return `
+            <section class="hero-card golf-hero-card golf-panel-hero">
+                <div class="panel-head">
+                    <div>
+                        <h3>Tee Sheet</h3>
+                        <p>Open directly into live tee-sheet control. This panel is for the day sheet and its management actions, not a long golf overview above it.</p>
+                    </div>
+                </div>
+                ${renderGolfCommandStrip(bundle, rows)}
+            </section>
+            <section class="card golf-sheet-card">
+                <div class="panel-head">
+                    <div>
+                        <h4>Live tee sheet</h4>
+                        <p>The real drag-drop day sheet stays inside the club-admin shell. Navigation, finance, reporting, and club context remain around it instead of forcing staff into a separate page.</p>
+                    </div>
+                    <div class="inline-actions">
+                        <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
+                        <button type="button" class="button secondary" data-date-shift="1">Next day</button>
+                    </div>
+                </div>
+                <div class="embedded-workspace golf-embedded-workspace">
+                    <div class="golf-sheet-intro">
+                        <p class="embedded-workspace-note">The shell keeps navigation, dashboards, reports, and role context. The embedded surface restores the dense tee-sheet workflow, including drag and drop, booking detail, and schedule-driven generation.</p>
+                        <div class="golf-sheet-tags">
+                            <span class="metric-pill ok">Drag and drop live</span>
+                            <span class="metric-pill">Member-linked booking flow</span>
+                            <span class="metric-pill">Schedule-driven sheet</span>
+                        </div>
+                    </div>
+                    <div class="embedded-workspace-frame golf-embedded-frame">
+                        <iframe src="${escapeHtml(teeSheetEmbeddedSrc(bundle.date))}" title="GreenLink Tee Sheet"></iframe>
+                    </div>
+                </div>
+            </section>
+        `;
+    }
+
     function renderNav() {
         const nav = Array.isArray(state.bootstrap?.nav) ? state.bootstrap.nav : [];
         els.nav.innerHTML = navGroups(nav).map(group => `
-            <section class="nav-group">
-                <div class="nav-group-label">${escapeHtml(group.label)}</div>
-                <div class="nav-group-items">
+            <section class="nav-group ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "open" : ""} ${navGroupIsActive(group) ? "active" : ""}">
+                <button type="button" class="nav-group-toggle" data-nav-group="${escapeHtml(group.id || group.label)}" aria-expanded="${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "true" : "false"}">
+                    <span class="nav-group-label">${escapeHtml(group.label)}</span>
+                    <span class="nav-group-caret">${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "−" : "+"}</span>
+                </button>
+                <div class="nav-group-items" ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "" : "hidden"}>
                     ${group.items.flatMap(item => {
                         const workspace = String(item.workspace || "");
                         const tabs = roleShell() === "club_admin" || roleShell() === "staff"
@@ -3241,6 +3307,9 @@
     function renderGolfWorkspace(bundle) {
         const shell = roleShell();
         const panel = bundle.panel || "tee-sheet";
+        if (panel === "tee-sheet") {
+            return renderGolfTeeSheetPanel(bundle);
+        }
         if (panel === "golf-days") {
             const golfDays = bundle.golfDays || {};
             const rows = Array.isArray(golfDays.bookings) ? golfDays.bookings : [];
@@ -5334,8 +5403,9 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-open-tee-sheet]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-open-tee-sheet]") : null;
         if (!target) return;
+        if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
         if (target.hasAttribute("data-refresh")) return renderCurrentWorkspace();
         if (target.hasAttribute("data-demo-ensure")) return ensureDemoEnvironment();

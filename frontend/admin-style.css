@@ -147,13 +147,35 @@ body[data-shell="club_admin"] .shell-header h2 {
     border-top: 0;
 }
 
-.nav-group-label {
+.nav-group-toggle {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     padding: 12px 22px 10px;
+    cursor: pointer;
+}
+
+.nav-group.active .nav-group-toggle {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-group-label {
     color: rgba(255, 255, 255, 0.74);
     font-size: 12px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     font-weight: 800;
+}
+
+.nav-group-caret {
+    font-size: 22px;
+    line-height: 1;
+    color: rgba(244, 247, 245, 0.72);
 }
 
 .nav-group-items {
@@ -202,6 +224,11 @@ body[data-shell="super_admin"] .nav-item.active {
     font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.01em;
+}
+
+body[data-shell="club_admin"] .nav-item-text,
+body[data-shell="staff"] .nav-item-text {
+    font-size: 13px;
 }
 
 .sidebar-footer {
