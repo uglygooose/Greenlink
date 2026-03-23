@@ -3033,6 +3033,27 @@ body.drag-active .slot-card.open {
     font-size: 13px;
 }
 
+#super-onboarding-guidance {
+    margin: 16px 0;
+    border: 1px solid #dfe6e1;
+    background: linear-gradient(135deg, #f7faf8 0%, #edf4f0 100%);
+}
+
+.super-onboarding-panel {
+    display: none;
+    margin-top: 16px;
+    padding-top: 4px;
+}
+
+.super-onboarding-panel.is-active {
+    display: block;
+}
+
+.super-onboarding-panel h4 {
+    margin: 0 0 12px;
+    font-size: 16px;
+}
+
 .super-action-link {
     background: transparent;
     border: none;

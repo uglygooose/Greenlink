@@ -1,4 +1,6 @@
 .env
+.env.local
+.env.*.local
 .venv/
 __pycache__/
 *.pyc
@@ -6,5 +8,10 @@ __pycache__/
 *.log
 .pytest_cache/
 pytest-cache-files-*/
-.tmp_local/tmps*/
-_codex_*.db
+.tmp_local/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+htmlcov/
+.coverage*

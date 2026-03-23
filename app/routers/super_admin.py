@@ -185,7 +185,7 @@ class ClubSetupInput(BaseModel):
     annual_targets: Optional[ClubAnnualTargetsInput] = None
     pricing_template: Optional[str] = "country_club_standard"
     overwrite_pricing: Optional[bool] = True
-    admin_user: ClubSetupAdminInput
+    admin_user: Optional[ClubSetupAdminInput] = None
 
 
 @router.get("/clubs", response_model=list[ClubOut])
@@ -297,7 +297,7 @@ def setup_club(
         row.model_dump(exclude_none=True)
         for row in list(payload.operational_targets or [])
     ]
-    admin_user_payload = payload.admin_user.model_dump(exclude_none=True)
+    admin_user_payload = payload.admin_user.model_dump(exclude_none=True) if payload.admin_user else None
 
     try:
         result = apply_club_setup(

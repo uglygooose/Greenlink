@@ -432,7 +432,7 @@
                         <div class="acct-subtitle">Canonical club pricing rules used by bookings, tee sheet pricing, reconciliation, dashboards, and target revenue logic.</div>
                         <div class="accounting-actions">
                             <button class="btn-secondary" id="pricing-matrix-reload-btn" type="button">Reload Pricing</button>
-                            <button class="btn-secondary" id="pricing-matrix-apply-umhlali-btn" type="button">Apply Umhlali Reference</button>
+                            <button class="btn-secondary" id="pricing-matrix-apply-reference-btn" type="button">Apply Country Club Reference</button>
                             <button class="btn-secondary" id="pricing-matrix-add-row-btn" type="button">Add Pricing Row</button>
                             <button class="btn-primary" id="pricing-matrix-save-btn" type="button">Save Pricing Matrix</button>
                             <span class="accounting-note" id="pricing-matrix-status"></span>
@@ -488,11 +488,11 @@
                         </ol>
                     </div>
 
-                    <div class="dashboard-card" style="margin-top: 16px;">
+                    <div class="dashboard-card" style="margin-top: 16px;" id="ops-launch-sync-card">
                         <h3>Launch Data Sync</h3>
-                        <div class="acct-subtitle">Loads members, account customers, golf-day bookings, and staff role context from the Umhlali operating spreadsheets.</div>
+                        <div class="acct-subtitle">Legacy workbook import for the original launch-club data. Use only when restoring the historical Umhlali source files, not for normal club onboarding.</div>
                         <div class="filters" style="flex-wrap: wrap; gap: 10px; margin-top: 10px;">
-                            <button class="btn-primary" id="ops-umhlali-sync-btn" type="button">Run Umhlali Sync</button>
+                            <button class="btn-primary" id="ops-umhlali-sync-btn" type="button">Run Legacy Launch Sync</button>
                             <label style="display:flex; align-items:center; gap:8px; font-size:13px;">
                                 <input type="checkbox" id="ops-umhlali-sync-force" />
                                 Force full re-import
@@ -939,7 +939,7 @@
                                 <button class="btn-secondary" type="button" onclick="resetProShopProductForm()">Clear</button>
                                 <span class="bulk-book-status" id="pro-shop-product-status"></span>
                             </div>
-                            <div class="accounting-note">Live pro-shop products need an explicit retail sell price. Umhlali stock valuation sheets are cost/on-hand references only until a sell-price rule or retail price list is confirmed.</div>
+                            <div class="accounting-note">Live pro-shop products need an explicit retail sell price. Historical stock valuation sheets are cost/on-hand references only until a sell-price rule or retail price list is confirmed.</div>
                         </div>
                     </div>
 
@@ -1533,66 +1533,131 @@
                                 <button class="btn-secondary" type="button" id="super-onboarding-next">Next</button>
                             </div>
                         </div>
+                        <input type="hidden" id="super-club-id" />
                         <div class="action-note" id="super-onboarding-note">Use the sequenced setup flow to create or relaunch a club without missing critical launch steps.</div>
-                        <div class="bulk-book-grid">
-                            <label for="super-club-name">Club Name</label>
-                            <input type="text" id="super-club-name" placeholder="e.g. Harbour Point Country Club" />
-                            <label for="super-club-slug">Slug</label>
-                            <input type="text" id="super-club-slug" placeholder="e.g. harbour-point" />
-                            <label for="super-club-display-name">Display Name</label>
-                            <input type="text" id="super-club-display-name" placeholder="Club-facing display name" />
-                            <label for="super-club-email">Contact Email</label>
-                            <input type="email" id="super-club-email" placeholder="ops@club.com" />
-                            <label for="super-club-phone">Contact Phone</label>
-                            <input type="text" id="super-club-phone" placeholder="+27 ..." />
-                            <label for="super-club-location">Location / Address</label>
-                            <input type="text" id="super-club-location" placeholder="City / address summary" />
-                            <label for="super-logo-url">Logo URL</label>
-                            <input type="text" id="super-logo-url" placeholder="/frontend/assets/logo.png" />
-                            <label for="super-hero-image-url">Hero Image URL</label>
-                            <input type="text" id="super-hero-image-url" placeholder="/frontend/assets/grass.jpg" />
-                            <label for="super-brand-primary">Primary Color</label>
-                            <input type="text" id="super-brand-primary" placeholder="#0f4c3a" />
-                            <label for="super-brand-secondary">Secondary Color</label>
-                            <input type="text" id="super-brand-secondary" placeholder="#153a62" />
-                            <label for="super-brand-accent">Accent Color</label>
-                            <input type="text" id="super-brand-accent" placeholder="#d7a33d" />
-                            <label for="super-brand-tagline">Tagline</label>
-                            <input type="text" id="super-brand-tagline" placeholder="Premium club operations" />
-                            <label for="super-pricing-template">Pricing Template</label>
-                            <select id="super-pricing-template"></select>
-                            <label for="super-target-year">Target Year</label>
-                            <input type="number" id="super-target-year" min="2024" max="2100" />
-                            <label for="super-annual-rounds">Annual Rounds Target</label>
-                            <input type="number" id="super-annual-rounds" min="0" step="1" />
-                            <label for="super-annual-revenue">Annual Revenue Target</label>
-                            <input type="number" id="super-annual-revenue" min="0" step="0.01" />
-                            <label for="super-target-golf-revenue">Golf Revenue Target</label>
-                            <input type="number" id="super-target-golf-revenue" min="0" step="0.01" />
-                            <label for="super-target-members">Active Members Target</label>
-                            <input type="number" id="super-target-members" min="0" step="1" />
-                            <label for="super-comm-announcement">Announcement Title</label>
-                            <input type="text" id="super-comm-announcement" placeholder="Welcome announcement" />
-                            <label for="super-comm-news">News Title</label>
-                            <input type="text" id="super-comm-news" placeholder="Featured club news" />
-                            <label for="super-comm-message">Member Message</label>
-                            <textarea id="super-comm-message" rows="4" placeholder="Message shown in the member app"></textarea>
-                            <label for="super-club-status">Lifecycle Status</label>
-                            <select id="super-club-status">
-                                <option value="draft">Draft</option>
-                                <option value="onboarding" selected>Onboarding</option>
-                                <option value="live">Live</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="demo">Demo</option>
-                            </select>
-                            <label for="super-club-is-demo">Demo Environment</label>
-                            <select id="super-club-is-demo">
-                                <option value="false" selected>No</option>
-                                <option value="true">Yes</option>
-                            </select>
+                        <div class="dashboard-card" id="super-onboarding-guidance">
+                            <p class="eyebrow" id="super-onboarding-step-label">Step 1</p>
+                            <h4 id="super-onboarding-step-title">Club Basics</h4>
+                            <div class="action-note" id="super-onboarding-step-copy">Capture the club identity, contact details, and location before configuring modules or pricing.</div>
                         </div>
-                        <div class="super-module-grid" id="super-module-grid"></div>
-                        <div class="stack-list compact-list" id="super-launch-checklist"></div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="1">
+                            <h4>1. Club Basics</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-club-name">Club Name</label>
+                                <input type="text" id="super-club-name" placeholder="e.g. Harbour Point Country Club" />
+                                <label for="super-club-slug">Slug</label>
+                                <input type="text" id="super-club-slug" placeholder="e.g. harbour-point" />
+                                <label for="super-club-display-name">Display Name</label>
+                                <input type="text" id="super-club-display-name" placeholder="Club-facing display name" />
+                                <label for="super-club-email">Contact Email</label>
+                                <input type="email" id="super-club-email" placeholder="ops@club.com" />
+                                <label for="super-club-phone">Contact Phone</label>
+                                <input type="text" id="super-club-phone" placeholder="+27 ..." />
+                                <label for="super-club-website">Website</label>
+                                <input type="text" id="super-club-website" placeholder="https://club.com" />
+                                <label for="super-club-location">Location Summary</label>
+                                <input type="text" id="super-club-location" placeholder="City / region summary" />
+                                <label for="super-club-address-1">Address Line 1</label>
+                                <input type="text" id="super-club-address-1" placeholder="Street address" />
+                                <label for="super-club-address-2">Address Line 2</label>
+                                <input type="text" id="super-club-address-2" placeholder="Estate / suburb" />
+                                <label for="super-club-city">City</label>
+                                <input type="text" id="super-club-city" placeholder="Ballito" />
+                                <label for="super-club-region">Region / State</label>
+                                <input type="text" id="super-club-region" placeholder="KwaZulu-Natal" />
+                                <label for="super-club-postal-code">Postal Code</label>
+                                <input type="text" id="super-club-postal-code" placeholder="4420" />
+                                <label for="super-club-country">Country</label>
+                                <input type="text" id="super-club-country" placeholder="South Africa" />
+                            </div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="2">
+                            <h4>2. Branding</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-logo-url">Logo URL</label>
+                                <input type="text" id="super-logo-url" placeholder="/frontend/assets/logo.png" />
+                                <label for="super-hero-image-url">Hero Image URL</label>
+                                <input type="text" id="super-hero-image-url" placeholder="/frontend/assets/grass.jpg" />
+                                <label for="super-brand-primary">Primary Color</label>
+                                <input type="text" id="super-brand-primary" placeholder="#0f4c3a" />
+                                <label for="super-brand-secondary">Secondary Color</label>
+                                <input type="text" id="super-brand-secondary" placeholder="#153a62" />
+                                <label for="super-brand-accent">Accent Color</label>
+                                <input type="text" id="super-brand-accent" placeholder="#d7a33d" />
+                                <label for="super-brand-tagline">Tagline</label>
+                                <input type="text" id="super-brand-tagline" placeholder="Premium club operations" />
+                            </div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="3">
+                            <h4>3. Operations</h4>
+                            <div class="action-note">Enable only the modules this club will launch with. Keep the first release focused and commercially credible.</div>
+                            <div class="super-module-grid" id="super-module-grid"></div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="4">
+                            <h4>4. Pricing &amp; Targets</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-pricing-template">Pricing Template</label>
+                                <select id="super-pricing-template"></select>
+                                <label for="super-target-year">Target Year</label>
+                                <input type="number" id="super-target-year" min="2024" max="2100" />
+                                <label for="super-annual-rounds">Annual Rounds Target</label>
+                                <input type="number" id="super-annual-rounds" min="0" step="1" />
+                                <label for="super-annual-revenue">Annual Revenue Target</label>
+                                <input type="number" id="super-annual-revenue" min="0" step="0.01" />
+                                <label for="super-target-golf-revenue">Golf Revenue Target</label>
+                                <input type="number" id="super-target-golf-revenue" min="0" step="0.01" />
+                                <label for="super-target-members">Active Members Target</label>
+                                <input type="number" id="super-target-members" min="0" step="1" />
+                            </div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="5">
+                            <h4>5. Access &amp; Roles</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-onboarding-admin-name">First Club Admin</label>
+                                <input type="text" id="super-onboarding-admin-name" placeholder="e.g. Club General Manager" />
+                                <label for="super-onboarding-admin-email">Admin Email</label>
+                                <input type="email" id="super-onboarding-admin-email" placeholder="admin@club.com" />
+                                <label for="super-onboarding-admin-password">Initial Password</label>
+                                <input type="password" id="super-onboarding-admin-password" placeholder="Set an initial password" />
+                            </div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="6">
+                            <h4>6. Communications Setup</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-comm-announcement">Announcement Title</label>
+                                <input type="text" id="super-comm-announcement" placeholder="Welcome announcement" />
+                                <label for="super-comm-news">News Title</label>
+                                <input type="text" id="super-comm-news" placeholder="Featured club news" />
+                                <label for="super-comm-message">Member Message</label>
+                                <textarea id="super-comm-message" rows="4" placeholder="Message shown in the member app"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="super-onboarding-panel" data-onboarding-step="7">
+                            <h4>7. Review &amp; Launch</h4>
+                            <div class="bulk-book-grid">
+                                <label for="super-club-status">Lifecycle Status</label>
+                                <select id="super-club-status">
+                                    <option value="draft">Draft</option>
+                                    <option value="onboarding" selected>Onboarding</option>
+                                    <option value="live">Live</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="demo">Demo</option>
+                                </select>
+                                <label for="super-club-is-demo">Demo Environment</label>
+                                <select id="super-club-is-demo">
+                                    <option value="false" selected>No</option>
+                                    <option value="true">Yes</option>
+                                </select>
+                            </div>
+                            <div class="stack-list compact-list" id="super-launch-checklist"></div>
+                        </div>
                         <div class="bulk-book-actions">
                             <button class="btn-secondary" type="button" id="super-save-draft-btn">Save Draft</button>
                             <button class="btn-primary" type="button" id="super-launch-club-btn">Save & Launch</button>
@@ -2042,6 +2107,6 @@
         <script src="js/admin/golfDayBookings.js?v=2026-03-06-refactor-01"></script>
         <script src="js/admin/accountCustomers.js?v=2026-03-06-refactor-01"></script>
         <script src="js/admin/cashbook.js?v=2026-03-06-refactor-01"></script>
-	    <script src="admin.js?v=2026-03-06-ops-umhlali"></script>
+	    <script src="admin.js?v=2026-03-23-post-review"></script>
 	</body>
 	</html>
