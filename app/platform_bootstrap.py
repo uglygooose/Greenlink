@@ -337,7 +337,7 @@ def _sync_umhlali_gl_reference(db, diagnostics: dict[str, Any], club_id: int) ->
     path = find_umhlali_gl_accounts_file()
     if path is None:
         existing = (
-            db.query(ClubSetting.id)
+            db.query(ClubSetting)
             .filter(
                 ClubSetting.club_id == int(club_id),
                 ClubSetting.key == "gl_account_reference",
