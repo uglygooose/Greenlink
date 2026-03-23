@@ -61,7 +61,7 @@ function setPlatformBanner(state) {
     } else if (status === "needs_attention") {
         message = warnings[0] || "Platform boot completed with warnings.";
     } else if (activeClubs.length > 1) {
-        message = "Choose a club to continue. Account login remains platform-wide.";
+        message = "Account login is platform-wide. Choose a club only for signup or a club-specific demo link.";
     }
 
     if (!message) {
@@ -76,15 +76,11 @@ function setPlatformBanner(state) {
     banner.textContent = message;
 }
 
-function adminDestinationForRole(role) {
-    const normalizedRole = String(role || "").trim().toLowerCase();
-    if (normalizedRole === "super_admin") {
-        return "/frontend/admin.html#super-admin?view=overview";
+async function resolvePostLoginBootstrap() {
+    if (!window.GreenLinkSession?.fetchBootstrap) {
+        throw new Error("Session bootstrap is unavailable.");
     }
-    if (normalizedRole === "club_staff") {
-        return "/frontend/admin.html#tee-times";
-    }
-    return "/frontend/admin.html#dashboard?stream=all";
+    return window.GreenLinkSession.fetchBootstrap();
 }
 
 function syncClubTargetToUrl(club) {
@@ -221,37 +217,40 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
 
     const email = document.getElementById("loginEmail").value.trim();
     const password = document.getElementById("loginPassword").value;
+    const submitButton = e.target.querySelector("button[type='submit']");
+    if (submitButton) submitButton.disabled = true;
 
-    const res = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-    });
-
-    const raw = await res.text();
-    let data = null;
     try {
-        data = raw ? JSON.parse(raw) : null;
-    } catch {
-        data = null;
-    }
+        const res = await fetch(`${API_BASE}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+        });
 
-    if (res.ok) {
-        localStorage.setItem('token', data?.access_token || "");
-        localStorage.setItem('user_role', data?.role || 'player');
-        
-        // Redirect based on role
-        const role = data?.role || 'player';
-        if (role === 'admin' || role === 'club_staff' || role === 'super_admin') {
-            window.location.href = adminDestinationForRole(role);
-        } else {
-            window.location.href = '/frontend/dashboard.html';
+        const raw = await res.text();
+        let data = null;
+        try {
+            data = raw ? JSON.parse(raw) : null;
+        } catch {
+            data = null;
         }
-    } else {
-        const msg = data?.detail || raw || "Login failed";
-        alert("Login failed: " + msg);
+
+        if (!res.ok) {
+            const msg = data?.detail || raw || "Login failed";
+            throw new Error(String(msg));
+        }
+
+        window.GreenLinkSession?.clearSessionState?.();
+        window.GreenLinkSession?.setAuthSession?.(data?.access_token || "", data?.role || "player");
+        const bootstrap = await resolvePostLoginBootstrap();
+        window.GreenLinkSession?.writeBootstrap?.(bootstrap);
+        window.location.href = String(bootstrap?.landing_path || "/frontend/index.html");
+    } catch (error) {
+        window.GreenLinkSession?.clearSessionState?.();
+        alert("Login failed: " + (error?.message || "Unable to sign in"));
+    } finally {
+        if (submitButton) submitButton.disabled = false;
     }
-    console.log("Login response:", data || raw);
 });
 
 // CREATE USER
@@ -379,16 +378,13 @@ document.getElementById("createUserForm").addEventListener("submit", async (e) =
         }
 
         if (loginRes.ok) {
-            localStorage.setItem("token", loginData?.access_token || "");
-            localStorage.setItem("user_role", loginData?.role || "player");
+            window.GreenLinkSession?.clearSessionState?.();
+            window.GreenLinkSession?.setAuthSession?.(loginData?.access_token || "", loginData?.role || "player");
+            const bootstrap = await resolvePostLoginBootstrap();
+            window.GreenLinkSession?.writeBootstrap?.(bootstrap);
             closeModal("signupModal");
             document.getElementById("createUserForm")?.reset();
-
-            if (loginData?.role === "admin" || loginData?.role === "club_staff" || loginData?.role === "super_admin") {
-                window.location.href = adminDestinationForRole(loginData?.role);
-            } else {
-                window.location.href = "/frontend/dashboard.html";
-            }
+            window.location.href = String(bootstrap?.landing_path || "/frontend/index.html");
             return;
         }
 

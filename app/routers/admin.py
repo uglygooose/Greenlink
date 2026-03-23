@@ -829,7 +829,7 @@ def list_club_communications(
     status: str = Query("all"),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    admin: User = Depends(verify_setup_admin),
+    staff: User = Depends(verify_staff),
     club_id: int = Depends(get_active_club_id),
 ):
     q = db.query(ClubCommunication).filter(ClubCommunication.club_id == int(club_id))

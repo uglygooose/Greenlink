@@ -849,3 +849,49 @@ input, select {
     right: calc(50% - 478px);
   }
 }
+
+body.member-shell-loading {
+  overflow: hidden;
+}
+
+body.member-shell-loading .app-shell,
+body.member-shell-loading .tabbar,
+body.member-shell-loading .sheet,
+body.member-shell-loading .toast {
+  visibility: hidden;
+}
+
+.member-loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 18, 13, 0.68);
+  backdrop-filter: blur(8px);
+  z-index: 120;
+}
+
+body.member-shell-loading .member-loading-overlay {
+  display: flex;
+}
+
+.member-loading-card {
+  width: min(420px, calc(100vw - 32px));
+  border-radius: 22px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
+  display: grid;
+  gap: 8px;
+  text-align: center;
+}
+
+.member-loading-card strong {
+  font-size: 24px;
+  color: #122718;
+}
+
+.member-loading-card span {
+  color: #466052;
+}

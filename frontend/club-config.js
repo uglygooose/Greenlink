@@ -21,11 +21,27 @@
 
   let _clubPromise = null;
   
+  function _bootstrapScopeKey() {
+    try {
+      const raw = window.sessionStorage ? sessionStorage.getItem("greenlink.session.bootstrap.v2") : null;
+      if (!raw) return "";
+      const parsed = JSON.parse(raw);
+      return String(parsed?.cache_scope_key || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
   function _cacheKey(requested, hasAuth) {
     const clubId = String(requested?.club_id || "").trim();
     const clubSlug = String(requested?.club_slug || "").trim().toLowerCase();
     const authPart = hasAuth ? "auth" : "anon";
-    return `${CLUB_CFG_CACHE_PREFIX}:${authPart}:${clubId || "-"}:${clubSlug || "-"}`;
+    const scopePart = _bootstrapScopeKey()
+      || [
+        String(localStorage.getItem("user_role") || "").trim().toLowerCase() || "anon",
+        String(localStorage.getItem("active_club_id") || "").trim() || "-",
+      ].join(":");
+    return `${CLUB_CFG_CACHE_PREFIX}:${authPart}:${scopePart}:${clubId || "-"}:${clubSlug || "-"}`;
   }
 
   function _readCachedConfig(key) {

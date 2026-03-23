@@ -40,6 +40,7 @@ from app.routers import (
     profile,
     public,
     scoring,
+    session,
     settings,
     super_admin,
     tee,
@@ -504,6 +505,7 @@ app.include_router(cashbook.router)
 app.include_router(profile.router)
 app.include_router(settings.router)
 app.include_router(public.router)
+app.include_router(session.router)
 app.include_router(super_admin.router)
 
 # Import and include fees router

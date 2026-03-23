@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>GreenLink Player</title>
+  <title>GreenLink Member</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0d1a14">
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2">
@@ -11,14 +11,20 @@
   <link rel="stylesheet" href="/frontend/player.css?v=2026-03-05-weather-01">
   <script src="club-config.js"></script>
 </head>
-<body>
+<body class="member-shell-loading">
+  <div id="member-loading-overlay" class="member-loading-overlay" aria-live="polite">
+    <div class="member-loading-card">
+      <strong>Opening GreenLink</strong>
+      <span>Resolving member role and club context.</span>
+    </div>
+  </div>
   <div class="app-shell">
     <header class="topbar card">
       <div class="brand">
         <img src="/frontend/assets/logo.png" alt="Club Logo" class="brand-logo" data-club-logo>
         <div class="brand-copy">
           <p class="brand-kicker">GreenLink</p>
-          <div class="brand-title">Player App</div>
+          <div class="brand-title">Member Home</div>
         </div>
       </div>
       <button id="logout-btn" class="btn outline">Logout</button>
@@ -38,8 +44,9 @@
             <span class="chip" id="chip-hna">HNA: -</span>
           </div>
           <div class="hero-actions">
-            <button class="btn primary" data-go-view="book">Book Tee Time</button>
-            <button class="btn ghost" data-go-view="rounds">My Rounds</button>
+            <button class="btn primary" data-go-view="bookings">My Bookings</button>
+            <button class="btn ghost" data-go-view="news">Club News</button>
+            <button class="btn ghost" data-go-view="messages">Messages</button>
             <button class="btn outline" data-go-view="profile">Profile</button>
           </div>
           <div class="stats-grid">
@@ -61,20 +68,10 @@
         <article class="card section-card">
           <div class="section-head">
             <h2>Next Tee Time</h2>
-            <button class="btn ghost small" type="button" data-go-view="book">Open Book</button>
+            <button class="btn ghost small" type="button" data-go-view="bookings">Open Bookings</button>
           </div>
           <div id="next-booking-card" class="callout-card">
             <div class="empty-state">Loading next booking...</div>
-          </div>
-        </article>
-
-        <article class="card section-card">
-          <div class="section-head">
-            <h2>Weather Check</h2>
-            <button class="btn ghost small" id="refresh-weather-btn" type="button">Refresh</button>
-          </div>
-          <div id="weather-alert-list" class="stack-list">
-            <div class="empty-state">No weather prompts right now.</div>
           </div>
         </article>
 
@@ -88,31 +85,12 @@
           </div>
         </article>
 
-        <article class="card section-card">
-          <div class="section-head">
-            <h2>Club News & Announcements</h2>
-            <button class="btn ghost small" id="refresh-club-feed-btn" type="button">Refresh</button>
-          </div>
-          <div id="club-feed-list" class="stack-list">
-            <div class="empty-state">Loading club updates...</div>
-          </div>
-        </article>
-
-        <article class="card section-card">
-          <div class="section-head">
-            <h2>Direct Club Messages</h2>
-            <span class="muted">Member only</span>
-          </div>
-          <div id="club-message-list" class="stack-list">
-            <div class="empty-state">Loading club messages...</div>
-          </div>
-        </article>
       </section>
 
-      <section id="view-book" class="view" data-view="book">
+      <section id="view-bookings" class="view" data-view="bookings">
         <article class="card section-card">
           <div class="section-head">
-            <h2>Book Tee Time</h2>
+            <h2>My Bookings</h2>
             <button class="btn ghost small" id="refresh-tee-btn" type="button">Refresh</button>
           </div>
           <div class="date-nav">
@@ -175,7 +153,7 @@
         </article>
       </section>
 
-      <section id="view-rounds" class="view" data-view="rounds">
+      <section id="view-rounds" class="view" data-view="bookings">
         <article class="card section-card">
           <div class="section-head">
             <h2>My Rounds (HNA Ready)</h2>
@@ -215,6 +193,40 @@
         <article class="card section-card">
           <div id="rounds-list" class="stack-list">
             <div class="empty-state">Loading rounds...</div>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-news" class="view" data-view="news">
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Club News & Announcements</h2>
+            <button class="btn ghost small" id="refresh-club-feed-btn" type="button">Refresh</button>
+          </div>
+          <div id="club-feed-list" class="stack-list">
+            <div class="empty-state">Loading club updates...</div>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-messages" class="view" data-view="messages">
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Weather Check</h2>
+            <button class="btn ghost small" id="refresh-weather-btn" type="button">Refresh</button>
+          </div>
+          <div id="weather-alert-list" class="stack-list">
+            <div class="empty-state">No weather prompts right now.</div>
+          </div>
+        </article>
+
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Direct Club Messages</h2>
+            <span class="muted">Member only</span>
+          </div>
+          <div id="club-message-list" class="stack-list">
+            <div class="empty-state">Loading club messages...</div>
           </div>
         </article>
       </section>
@@ -313,8 +325,9 @@
 
   <nav class="tabbar" role="tablist" aria-label="Player navigation">
     <button class="tab-btn active" type="button" data-view="home">Home</button>
-    <button class="tab-btn" type="button" data-view="book">Book</button>
-    <button class="tab-btn" type="button" data-view="rounds">Rounds</button>
+    <button class="tab-btn" type="button" data-view="bookings">My Bookings</button>
+    <button class="tab-btn" type="button" data-view="news">Club News</button>
+    <button class="tab-btn" type="button" data-view="messages">Messages</button>
     <button class="tab-btn" type="button" data-view="profile">Profile</button>
   </nav>
 
@@ -356,6 +369,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/frontend/js/utils/session.js"></script>
   <script src="/frontend/player.js?v=2026-03-05-weather-01" defer></script>
 </body>
 </html>

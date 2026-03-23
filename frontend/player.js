@@ -2,8 +2,7 @@ const API_BASE = window.location.origin;
 const token = localStorage.getItem("token");
 if (!token) window.location.href = "/frontend/index.html";
 
-const userRole = String(localStorage.getItem("user_role") || "player").toLowerCase();
-if (userRole !== "player") window.location.href = "/frontend/admin.html";
+let sessionBootstrap = null;
 
 const typeLabelsFallback = {
   member: "Member",
@@ -183,8 +182,13 @@ function showToast(message, type = "") {
 }
 
 function logout() {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user_role");
+  if (window.GreenLinkSession?.clearSessionState) {
+    window.GreenLinkSession.clearSessionState();
+  } else {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user_role");
+    localStorage.removeItem("active_club_id");
+  }
   window.location.href = "/frontend/index.html";
 }
 
@@ -322,25 +326,46 @@ function invalidateTeeCache() {
   teeRangeCache.clear();
 }
 
+function bootstrapRouteToPlayerView(rawView) {
+  const value = String(rawView || "").trim().toLowerCase();
+  const map = {
+    home: "home",
+    bookings: "bookings",
+    news: "news",
+    messages: "messages",
+    profile: "profile",
+    book: "bookings",
+    rounds: "bookings"
+  };
+  return map[value] || "home";
+}
+
+function playerViewToRouteValue(view) {
+  const value = String(view || "").trim().toLowerCase();
+  return value || "home";
+}
+
 function applyRouteState() {
   const params = new URLSearchParams(window.location.search || "");
-  const tab = String(params.get("tab") || "").trim().toLowerCase();
+  const view = String(params.get("view") || params.get("tab") || "").trim().toLowerCase();
   const teeTimeId = Number(params.get("tee_time_id") || 0);
-  const allowed = new Set(["home", "book", "rounds", "profile"]);
-  state.pendingRouteTab = allowed.has(tab) ? tab : "home";
+  const allowed = new Set(["home", "bookings", "news", "messages", "profile"]);
+  const mappedView = bootstrapRouteToPlayerView(view);
+  state.pendingRouteTab = allowed.has(mappedView) ? mappedView : "home";
   state.pendingRouteTeeTimeId = Number.isFinite(teeTimeId) && teeTimeId > 0 ? teeTimeId : null;
 }
 
 function pushViewToUrl(view) {
   const params = new URLSearchParams(window.location.search || "");
-  params.set("tab", view);
-  if (view !== "book") params.delete("tee_time_id");
+  params.set("view", playerViewToRouteValue(view));
+  if (view !== "bookings") params.delete("tee_time_id");
+  params.delete("tab");
   const next = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, "", next);
 }
 
 function setActiveView(view, { syncUrl = true } = {}) {
-  const allowed = new Set(["home", "book", "rounds", "profile"]);
+  const allowed = new Set(["home", "bookings", "news", "messages", "profile"]);
   const next = allowed.has(view) ? view : "home";
   state.activeView = next;
 
@@ -1454,7 +1479,34 @@ async function loadClubConfig() {
   }
 }
 
+async function resolveMemberBootstrap() {
+  if (!window.GreenLinkSession?.fetchBootstrap) return null;
+  const bootstrap = await window.GreenLinkSession.fetchBootstrap();
+  window.GreenLinkSession.writeBootstrap(bootstrap);
+  sessionBootstrap = bootstrap;
+  if (bootstrap?.user?.role) {
+    localStorage.setItem("user_role", String(bootstrap.user.role));
+  }
+  if (String(bootstrap?.role_shell || "").trim().toLowerCase() !== "member") {
+    window.location.href = String(bootstrap?.landing_path || "/frontend/admin.html");
+    return null;
+  }
+  return bootstrap;
+}
+
 async function initialize() {
+  let bootstrap = null;
+  try {
+    bootstrap = await resolveMemberBootstrap();
+  } catch (err) {
+    if (Number(err?.status || 0) === 401) {
+      logout();
+      return;
+    }
+    throw err;
+  }
+  if (!bootstrap) return;
+
   applyRouteState();
   bindEvents();
   await loadClubConfig();
@@ -1468,8 +1520,12 @@ async function initialize() {
   if (state.pendingRouteTab) {
     setActiveView(state.pendingRouteTab, { syncUrl: true });
   }
+
+  document.body.classList.remove("member-shell-loading");
+  document.getElementById("member-loading-overlay")?.setAttribute("hidden", "hidden");
 }
 
 initialize().catch(err => {
+  document.body.classList.remove("member-shell-loading");
   showToast(err?.message || "Failed to load player dashboard.", "error");
 });

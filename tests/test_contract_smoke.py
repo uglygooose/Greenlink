@@ -45,6 +45,8 @@ def _route_pairs_from_app() -> set[tuple[str, str]]:
 
 def _seed_users() -> dict[str, int | str]:
     admin_email = "contract-admin@greenlinkqa.com"
+    staff_email = "contract-staff@greenlinkqa.com"
+    member_email = "contract-member@greenlinkqa.com"
     super_admin_email = "contract-super@greenlinkqa.com"
     password = "ContractPass!12345"
 
@@ -92,6 +94,68 @@ def _seed_users() -> dict[str, int | str]:
                 )
             )
 
+        staff = db.query(models.User).filter(func.lower(models.User.email) == staff_email.lower()).first()
+        if not staff:
+            staff = models.User(
+                name="Contract Staff",
+                email=staff_email,
+                password=get_password_hash(password),
+                role=models.UserRole.club_staff,
+                club_id=int(club_a.id),
+            )
+            db.add(staff)
+            db.flush()
+        else:
+            staff.password = get_password_hash(password)
+            staff.role = models.UserRole.club_staff
+            staff.club_id = int(club_a.id)
+
+        staff_assignment = (
+            db.query(models.UserClubAssignment)
+            .filter(models.UserClubAssignment.user_id == int(staff.id), models.UserClubAssignment.club_id == int(club_a.id))
+            .first()
+        )
+        if not staff_assignment:
+            db.add(
+                models.UserClubAssignment(
+                    user_id=int(staff.id),
+                    club_id=int(club_a.id),
+                    role=models.UserRole.club_staff.value,
+                    is_primary=True,
+                )
+            )
+
+        member = db.query(models.User).filter(func.lower(models.User.email) == member_email.lower()).first()
+        if not member:
+            member = models.User(
+                name="Contract Member",
+                email=member_email,
+                password=get_password_hash(password),
+                role=models.UserRole.player,
+                club_id=int(club_b.id),
+            )
+            db.add(member)
+            db.flush()
+        else:
+            member.password = get_password_hash(password)
+            member.role = models.UserRole.player
+            member.club_id = int(club_b.id)
+
+        member_assignment = (
+            db.query(models.UserClubAssignment)
+            .filter(models.UserClubAssignment.user_id == int(member.id), models.UserClubAssignment.club_id == int(club_b.id))
+            .first()
+        )
+        if not member_assignment:
+            db.add(
+                models.UserClubAssignment(
+                    user_id=int(member.id),
+                    club_id=int(club_b.id),
+                    role=models.UserRole.player.value,
+                    is_primary=True,
+                )
+            )
+
         super_admin = db.query(models.User).filter(func.lower(models.User.email) == super_admin_email.lower()).first()
         if not super_admin:
             super_admin = models.User(
@@ -111,6 +175,8 @@ def _seed_users() -> dict[str, int | str]:
         db.commit()
         return {
             "admin_email": admin_email,
+            "staff_email": staff_email,
+            "member_email": member_email,
             "super_admin_email": super_admin_email,
             "password": password,
             "club_a_id": int(club_a.id),
@@ -231,6 +297,94 @@ def test_super_admin_requires_club_context(client: TestClient, seeded_contract: 
         headers=headers,
     )
     assert with_club.status_code == 200, with_club.text
+
+
+def test_staff_can_read_club_communications(client: TestClient, seeded_contract: dict[str, int | str]):
+    token = _login(
+        client,
+        email=str(seeded_contract["staff_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get("/api/admin/communications?status=published", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert "communications" in payload
+
+
+def test_session_bootstrap_role_shells_and_club_scope(client: TestClient, seeded_contract: dict[str, int | str]):
+    admin_token = _login(
+        client,
+        email=str(seeded_contract["admin_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    admin_response = client.get("/api/session/bootstrap", headers={"Authorization": f"Bearer {admin_token}"})
+    assert admin_response.status_code == 200, admin_response.text
+    admin_payload = admin_response.json()
+    assert admin_payload["role_shell"] == "club_admin"
+    assert admin_payload["default_workspace"] == "overview"
+    assert admin_payload["landing_path"] == "/frontend/admin.html?workspace=overview"
+    assert admin_payload["effective_club"]["id"] == int(seeded_contract["club_a_id"])
+    assert admin_payload["allowed_workspaces"] == [
+        "overview",
+        "golf",
+        "operations",
+        "members",
+        "communications",
+        "reports",
+        "settings",
+    ]
+
+    staff_token = _login(
+        client,
+        email=str(seeded_contract["staff_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    staff_response = client.get("/api/session/bootstrap", headers={"Authorization": f"Bearer {staff_token}"})
+    assert staff_response.status_code == 200, staff_response.text
+    staff_payload = staff_response.json()
+    assert staff_payload["role_shell"] == "staff"
+    assert staff_payload["default_workspace"] == "today"
+    assert staff_payload["landing_path"] == "/frontend/admin.html?workspace=today"
+    assert staff_payload["effective_club"]["id"] == int(seeded_contract["club_a_id"])
+    assert staff_payload["allowed_workspaces"] == ["today", "golf", "operations", "members", "communications"]
+
+    member_token = _login(
+        client,
+        email=str(seeded_contract["member_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    member_response = client.get("/api/session/bootstrap", headers={"Authorization": f"Bearer {member_token}"})
+    assert member_response.status_code == 200, member_response.text
+    member_payload = member_response.json()
+    assert member_payload["role_shell"] == "member"
+    assert member_payload["default_workspace"] == "home"
+    assert member_payload["landing_path"] == "/frontend/dashboard.html?view=home"
+    assert member_payload["effective_club"]["id"] == int(seeded_contract["club_b_id"])
+    assert member_payload["allowed_workspaces"] == ["home", "bookings", "news", "messages", "profile"]
+
+    super_token = _login(
+        client,
+        email=str(seeded_contract["super_admin_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    super_headers = {"Authorization": f"Bearer {super_token}"}
+    super_response = client.get("/api/session/bootstrap", headers=super_headers)
+    assert super_response.status_code == 200, super_response.text
+    super_payload = super_response.json()
+    assert super_payload["role_shell"] == "super_admin"
+    assert super_payload["default_workspace"] == "overview"
+    assert super_payload["effective_club"] is None
+    assert super_payload["allowed_workspaces"] == ["overview", "clubs", "onboarding", "demo", "users", "settings"]
+
+    preview_response = client.get(
+        f"/api/session/bootstrap?preview_club_id={int(seeded_contract['club_b_id'])}",
+        headers=super_headers,
+    )
+    assert preview_response.status_code == 200, preview_response.text
+    preview_payload = preview_response.json()
+    assert preview_payload["preview_club"]["id"] == int(seeded_contract["club_b_id"])
 
 
 def test_bootstrap_guard_blocks_unsafe_default_passwords(monkeypatch: pytest.MonkeyPatch):
