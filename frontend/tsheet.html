@@ -223,6 +223,89 @@
       margin-left: auto;
     }
 
+    .ops-command-bar {
+      margin: 10px 6px 14px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(90, 122, 58, 0.24);
+      background: linear-gradient(135deg, rgba(90, 122, 58, 0.14), rgba(246, 244, 236, 0.94));
+      box-shadow: 0 14px 28px rgba(31, 42, 27, 0.08);
+      display: grid;
+      gap: 12px;
+    }
+
+    .ops-command-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ops-command-note {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 12px;
+      color: var(--ucc-muted);
+    }
+
+    .ops-command-note strong {
+      color: var(--ucc-ink);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+
+    .ops-batch-bar {
+      margin: 0 6px 14px;
+      padding: 14px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(4, 120, 87, 0.22);
+      background: linear-gradient(135deg, rgba(4, 120, 87, 0.10), rgba(255, 255, 255, 0.96));
+      box-shadow: 0 12px 26px rgba(31, 42, 27, 0.08);
+      display: grid;
+      gap: 12px;
+    }
+
+    .ops-batch-bar[hidden] {
+      display: none !important;
+    }
+
+    .ops-batch-summary {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 13px;
+      color: var(--ucc-muted);
+    }
+
+    .ops-batch-summary strong {
+      color: var(--ucc-ink);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 11px;
+    }
+
+    .ops-batch-controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ops-batch-controls input,
+    .ops-batch-controls select {
+      min-width: 140px;
+      padding: 10px 12px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--ucc-ink);
+      background: #fff;
+    }
+
     .table-wrap {
       border-radius: 18px;
       border: 1px solid var(--ucc-border);
@@ -357,6 +440,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
 
 	    .slot-status {
@@ -387,10 +471,30 @@
 	      flex: 0 0 auto;
 	    }
 
-	    .slot-card:hover:not(.closed) {
-	      box-shadow: 0 10px 26px rgba(31, 42, 27, 0.10);
-	      transform: translateY(-1px);
-	    }
+    .slot-card:hover:not(.closed) {
+      box-shadow: 0 10px 26px rgba(31, 42, 27, 0.10);
+      transform: translateY(-1px);
+    }
+
+    .slot-select-btn {
+      border: 1px solid rgba(31, 42, 27, 0.14);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--ucc-muted);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 8px;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .slot-select-btn.selected {
+      background: var(--ucc-olive);
+      border-color: var(--ucc-olive);
+      color: #fff;
+    }
 
 	    .slot-card[draggable="true"],
 	    .tee-slot[draggable="true"] {
@@ -419,11 +523,17 @@
 		      }
 		    }
 
-		    .slot-card.drop-hover,
-		    .tee-slot.drop-hover {
-		      outline: 2px solid rgba(29, 78, 216, 0.65);
-		      box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.14);
-		    }
+	    .slot-card.drop-hover,
+	    .tee-slot.drop-hover {
+	      outline: 2px solid rgba(29, 78, 216, 0.65);
+	      box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.14);
+	    }
+
+    .slot-card.selected,
+    .tee-slot.selected {
+      border-color: rgba(4, 120, 87, 0.75);
+      box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.14), 0 12px 24px rgba(31, 42, 27, 0.10);
+    }
 
 	    body.drag-active .slot-card.open,
 	    body.drag-active .tee-slot.open {
@@ -557,6 +667,14 @@
 	    .tee-slot.no-show { --slot-accent: #be123c; background: #ffffff; border-color: rgba(190, 18, 60, 0.26); }
 	    .tee-slot.cancelled { --slot-accent: #475569; background: #ffffff; border-color: rgba(71, 85, 105, 0.22); opacity: 0.85; }
 	    .tee-slot.closed { color: #9aa391; }
+
+    .tee-slot-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+      width: 100%;
+    }
 
     .tee-slot .label {
       font-weight: 700;
@@ -1068,6 +1186,205 @@
       color: #fff;
     }
 
+    .action-btn.danger {
+      background: #7f1d1d;
+      border-color: #7f1d1d;
+      color: #fff;
+    }
+
+    .modal-content.wide {
+      max-width: 920px;
+    }
+
+    .support-note {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: var(--ucc-muted);
+      line-height: 1.5;
+    }
+
+    .settings-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-bottom: 14px;
+    }
+
+    .settings-grid label {
+      display: block;
+      font-size: 12px;
+      color: var(--ucc-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .settings-grid input,
+    .settings-grid select,
+    .settings-grid textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--ucc-border);
+      border-radius: 12px;
+      font-size: 14px;
+      color: var(--ucc-ink);
+      background: #fff;
+      box-sizing: border-box;
+    }
+
+    .settings-grid textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .plan-preview {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--ucc-border);
+      background: #f7faef;
+      color: var(--ucc-olive-dark);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .detail-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .detail-card {
+      border: 1px solid var(--ucc-border);
+      border-radius: 16px;
+      padding: 16px;
+      background: linear-gradient(180deg, #fff 0%, #fafbf6 100%);
+    }
+
+    .detail-card h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: var(--ucc-ink);
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 8px 0;
+      border-bottom: 1px solid #edf0e4;
+    }
+
+    .detail-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--ucc-muted);
+      min-width: 104px;
+    }
+
+    .detail-value {
+      flex: 1;
+      font-size: 14px;
+      color: var(--ucc-ink);
+      text-align: right;
+    }
+
+    .detail-value.stack {
+      display: grid;
+      gap: 8px;
+      text-align: right;
+    }
+
+    .detail-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: #eef2e4;
+      color: var(--ucc-olive-dark);
+      border: 1px solid rgba(90, 122, 58, 0.18);
+    }
+
+    .status-chip.paid {
+      background: rgba(4, 120, 87, 0.12);
+      color: #047857;
+      border-color: rgba(4, 120, 87, 0.2);
+    }
+
+    .status-chip.unpaid {
+      background: rgba(180, 83, 9, 0.12);
+      color: #92400e;
+      border-color: rgba(180, 83, 9, 0.2);
+    }
+
+    .status-chip.exported {
+      background: rgba(29, 78, 216, 0.12);
+      color: #1d4ed8;
+      border-color: rgba(29, 78, 216, 0.18);
+    }
+
+    .status-chip.missing {
+      background: rgba(127, 29, 29, 0.1);
+      color: #7f1d1d;
+      border-color: rgba(127, 29, 29, 0.16);
+    }
+
+    .detail-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .detail-summary {
+      margin: 0 0 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid var(--ucc-border);
+      background: linear-gradient(135deg, #f6f4ec 0%, #edf4de 100%);
+    }
+
+    .detail-summary h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: var(--ucc-ink);
+    }
+
+    .detail-summary p {
+      margin: 0;
+      color: var(--ucc-muted);
+      font-size: 13px;
+    }
+
+    .detail-note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--ucc-muted);
+      line-height: 1.5;
+    }
+
     /* Date picker modal */
     .date-picker-grid {
       display: grid;
@@ -1192,12 +1509,48 @@
       <span id="booking-window-range"></span>
     </div>
 
-    
-    <div class="sheet-actions">
-      <span class="non-embed admin-only">
+    <div class="ops-command-bar admin-only">
+      <div class="ops-command-row">
         <button class="action-btn primary" id="generate-btn" onclick="generateTeeSheet()">Generate Day Tee Sheet</button>
         <button class="action-btn ghost" onclick="openAddTeeTimeModal()">Add Single Tee Time</button>
-      </span>
+        <button class="action-btn" onclick="openBulkBookModal()">Bulk Reserve / Golf Day</button>
+        <button class="action-btn admin-config-only" onclick="openTeeProfileModal()">Tee Schedule</button>
+        <button class="action-btn admin-config-only" onclick="openBookingWindowSettingsModal()">Booking Window</button>
+      </div>
+      <div class="ops-command-note" id="ops-plan-note">
+        <strong>Ops Plan</strong>
+        <span>Loading tee schedule for this day...</span>
+      </div>
+    </div>
+
+
+    <div class="ops-batch-bar admin-config-only" id="batch-action-bar" hidden>
+      <div class="ops-batch-summary">
+        <strong id="batch-selected-count">0 selected</strong>
+        <span>Apply day-of-play actions to multiple live bookings without leaving the sheet.</span>
+      </div>
+      <div class="ops-batch-controls">
+        <select id="batch-payment-method">
+          <option value="">Payment method</option>
+          <option value="CARD">CARD</option>
+          <option value="CASH">CASH</option>
+          <option value="EFT">EFT</option>
+          <option value="ONLINE">ONLINE</option>
+          <option value="ACCOUNT">ACCOUNT</option>
+        </select>
+        <input type="text" id="batch-account-code" placeholder="Debtor account">
+        <button class="action-btn primary" type="button" onclick="applyBatchBookingUpdate({ status: 'checked_in', includePayment: true })">Check In Selected</button>
+        <button class="action-btn" type="button" onclick="applyBatchBookingUpdate({ status: 'completed', includePayment: true })">Complete</button>
+        <button class="action-btn" type="button" onclick="applyBatchBookingUpdate({ status: 'no_show' })">No-show</button>
+        <button class="action-btn danger" type="button" onclick="applyBatchBookingUpdate({ status: 'cancelled' })">Cancel</button>
+        <button class="action-btn" type="button" onclick="applyBatchBookingUpdate({ includePayment: true })">Apply Payment</button>
+        <button class="action-btn" type="button" onclick="applyBatchBookingUpdate({ includeAccount: true })">Apply Debtor</button>
+        <button class="action-btn ghost" type="button" onclick="clearBookingSelection()">Clear Selection</button>
+      </div>
+      <div class="detail-note" id="batch-action-status"></div>
+    </div>
+
+    <div class="sheet-actions">
       <button class="action-btn" id="earlier-btn" onclick="viewEarlier()">View Earlier</button>
       <button class="action-btn" id="later-btn" onclick="viewLater()">View Later</button>
       <span class="action-note" id="page-info">Showing 0–0</span>
@@ -1226,7 +1579,7 @@
 
   <!-- Booking Modal -->
   <div class="modal-overlay" id="bookingModal">
-    <div class="modal-content">
+    <div class="modal-content wide">
       <div class="modal-header">
         <span class="modal-title" id="modalTitle">Book Slot</span>
         <button class="modal-close" onclick="closeModal('bookingModal')">&times;</button>
@@ -1282,6 +1635,193 @@
         <input type="time" id="new_tee_time" step="600">
       </div>
       <button class="modal-btn btn-primary" onclick="createTeeTime()">Create Tee Time</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay admin-only" id="bookingWindowSettingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">Booking Window Rules</span>
+        <button class="modal-close" onclick="closeModal('bookingWindowSettingsModal')">&times;</button>
+      </div>
+      <p class="support-note">These rules drive public/member booking access and group cancellation windows. Keep them operational, not generic.</p>
+      <div class="settings-grid">
+        <div>
+          <label for="booking-window-member">Member Days</label>
+          <input type="number" id="booking-window-member" min="0" max="365" value="28">
+        </div>
+        <div>
+          <label for="booking-window-affiliated">Affiliated Visitor Days</label>
+          <input type="number" id="booking-window-affiliated" min="0" max="365" value="28">
+        </div>
+        <div>
+          <label for="booking-window-nonaff">Visitor Days</label>
+          <input type="number" id="booking-window-nonaff" min="0" max="365" value="28">
+        </div>
+        <div>
+          <label for="booking-window-group-cancel">Group Cancel Notice</label>
+          <input type="number" id="booking-window-group-cancel" min="0" max="365" value="10">
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="action-btn primary" type="button" onclick="saveBookingWindowSettings()">Save Booking Window</button>
+        <button class="action-btn" type="button" onclick="closeModal('bookingWindowSettingsModal')">Close</button>
+      </div>
+      <div class="detail-note" id="booking-window-status"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay admin-only" id="teeProfileModal">
+    <div class="modal-content wide">
+      <div class="modal-header">
+        <span class="modal-title">Tee Schedule Profile</span>
+        <button class="modal-close" onclick="closeModal('teeProfileModal')">&times;</button>
+      </div>
+      <p class="support-note">This profile controls generation rhythm, one-tee versus two-tee structure, and the 9-hole window. It should reflect how the club actually runs the day sheet.</p>
+      <div class="plan-preview" id="tee-profile-plan-preview">Loading current plan...</div>
+      <div class="settings-grid">
+        <div>
+          <label for="tee-profile-interval">Interval (Minutes)</label>
+          <input type="number" id="tee-profile-interval" min="1" max="30" value="8">
+        </div>
+        <div>
+          <label for="tee-profile-summer-two-start-1">Summer Two-Tee Start 1</label>
+          <input type="time" id="tee-profile-summer-two-start-1" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-two-end-1">Summer Two-Tee End 1</label>
+          <input type="time" id="tee-profile-summer-two-end-1" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-two-start-2">Summer Two-Tee Start 2</label>
+          <input type="time" id="tee-profile-summer-two-start-2" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-two-end-2">Summer Two-Tee End 2</label>
+          <input type="time" id="tee-profile-summer-two-end-2" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-one-start">Summer One-Tee Start</label>
+          <input type="time" id="tee-profile-summer-one-start" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-one-end">Summer One-Tee End</label>
+          <input type="time" id="tee-profile-summer-one-end" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-nine-start">Summer 9-Hole Start</label>
+          <input type="time" id="tee-profile-summer-nine-start" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-summer-nine-end">Summer 9-Hole End</label>
+          <input type="time" id="tee-profile-summer-nine-end" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-two-start-1">Winter Two-Tee Start 1</label>
+          <input type="time" id="tee-profile-winter-two-start-1" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-two-end-1">Winter Two-Tee End 1</label>
+          <input type="time" id="tee-profile-winter-two-end-1" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-two-start-2">Winter Two-Tee Start 2</label>
+          <input type="time" id="tee-profile-winter-two-start-2" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-two-end-2">Winter Two-Tee End 2</label>
+          <input type="time" id="tee-profile-winter-two-end-2" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-one-start">Winter One-Tee Start</label>
+          <input type="time" id="tee-profile-winter-one-start" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-one-end">Winter One-Tee End</label>
+          <input type="time" id="tee-profile-winter-one-end" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-nine-start">Winter 9-Hole Start</label>
+          <input type="time" id="tee-profile-winter-nine-start" step="60">
+        </div>
+        <div>
+          <label for="tee-profile-winter-nine-end">Winter 9-Hole End</label>
+          <input type="time" id="tee-profile-winter-nine-end" step="60">
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="action-btn primary" type="button" onclick="saveTeeProfileSettings()">Save Tee Schedule</button>
+        <button class="action-btn" type="button" onclick="closeModal('teeProfileModal')">Close</button>
+      </div>
+      <div class="detail-note" id="tee-profile-status"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay admin-only" id="bulkBookModal">
+    <div class="modal-content wide">
+      <div class="modal-header">
+        <span class="modal-title">Bulk Reserve / Golf Day</span>
+        <button class="modal-close" onclick="closeModal('bulkBookModal')">&times;</button>
+      </div>
+      <p class="support-note">Reserve multiple live slots in one operation for golf days or group blocks. This is the fast operational path, not a report workflow.</p>
+      <div class="settings-grid">
+        <div>
+          <label for="bulk-book-name">Event / Group Name</label>
+          <input type="text" id="bulk-book-name" placeholder="e.g. Monday Golf Day">
+        </div>
+        <div>
+          <label for="bulk-book-date">Date</label>
+          <input type="date" id="bulk-book-date">
+        </div>
+        <div>
+          <label for="bulk-book-tee">Tee</label>
+          <select id="bulk-book-tee">
+            <option value="all">Tee 1 + 10</option>
+            <option value="1">Tee 1</option>
+            <option value="10">Tee 10</option>
+          </select>
+        </div>
+        <div>
+          <label for="bulk-book-event-type">Event Type</label>
+          <select id="bulk-book-event-type">
+            <option value="group">Group</option>
+            <option value="golf_day">Golf Day</option>
+          </select>
+        </div>
+        <div>
+          <label for="bulk-book-holes">Holes</label>
+          <select id="bulk-book-holes">
+            <option value="18">18 Holes</option>
+            <option value="9">9 Holes</option>
+          </select>
+        </div>
+        <div>
+          <label for="bulk-book-slots">Slots Per Tee Time</label>
+          <input type="number" id="bulk-book-slots" min="1" max="4" value="4">
+        </div>
+        <div>
+          <label for="bulk-book-start">Start Time</label>
+          <input type="time" id="bulk-book-start" step="60">
+        </div>
+        <div>
+          <label for="bulk-book-end">End Time</label>
+          <input type="time" id="bulk-book-end" step="60">
+        </div>
+        <div>
+          <label for="bulk-book-price">Price Per Player</label>
+          <input type="number" id="bulk-book-price" min="0" step="0.01" value="0">
+        </div>
+        <div>
+          <label for="bulk-book-account-code">Debtor Account</label>
+          <input type="text" id="bulk-book-account-code" placeholder="e.g. 1100/015">
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="action-btn primary" type="button" id="bulk-book-run" onclick="submitBulkBook()">Bulk Reserve</button>
+        <button class="action-btn" type="button" id="bulk-book-undo" onclick="undoBulkBook()" disabled>Undo Last Block</button>
+        <button class="action-btn" type="button" onclick="closeModal('bulkBookModal')">Close</button>
+      </div>
+      <div class="detail-note" id="bulk-book-status"></div>
     </div>
   </div>
 
@@ -1436,15 +1976,184 @@ let allTeeTimes = [];
 let golfFees = [];
 let autoGeneratedDates = {};
 let pageStartIndex = 0;
+let teeSheetProfile = null;
+let lastBulkBookGroupId = null;
+let currentBookingDetail = null;
+let selectedBookingIds = new Set();
 const PAGE_SIZE = 10;
+const PAYMENT_METHODS = ["CARD", "CASH", "EFT", "ONLINE", "ACCOUNT"];
 
-const DEFAULT_START = "06:30";
-const DEFAULT_END = "16:30";
-const DEFAULT_INTERVAL_MIN = 10;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function displayValue(value, fallback = "—") {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  if (!text || text.toLowerCase() === "null") return fallback;
+  return escapeHtml(text);
+}
+
+function normalizeAccountCodeInput(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (value.includes(" - ")) return value.split(" - ")[0].trim();
+  return value;
+}
+
+function statusToClass(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "checked_in") return "checked-in";
+  if (normalized === "no_show") return "no-show";
+  return normalized || "";
+}
+
+function statusToLabel(status) {
+  return String(status || "").replaceAll("_", " ") || "unknown";
+}
+
+function renderReqPills(requirements) {
+  const pills = [];
+  if (requirements?.cart) pills.push("Cart");
+  if (requirements?.push_cart) pills.push("Push Cart");
+  if (requirements?.caddy) pills.push("Caddy");
+  return pills.length ? escapeHtml(pills.join(", ")) : "—";
+}
 
 
-// Format time for display
+function normalizeBookingId(value) {
+  const id = parseInt(String(value || ""), 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
 
+function visibleBookingIds() {
+  const ids = new Set();
+  const list = Array.isArray(allTeeTimes) ? allTeeTimes : [];
+  list.forEach((teeTime) => {
+    const bookings = Array.isArray(teeTime?.bookings) ? teeTime.bookings : [];
+    bookings.forEach((booking) => {
+      const bookingId = normalizeBookingId(booking?.id);
+      if (bookingId) ids.add(bookingId);
+    });
+  });
+  return ids;
+}
+
+function syncBookingSelection() {
+  const validIds = visibleBookingIds();
+  selectedBookingIds = new Set(
+    Array.from(selectedBookingIds).filter((bookingId) => validIds.has(bookingId))
+  );
+  updateBatchActionBar();
+}
+
+function isBookingSelected(bookingId) {
+  const normalized = normalizeBookingId(bookingId);
+  return normalized ? selectedBookingIds.has(normalized) : false;
+}
+
+function updateBatchActionBar(message = "") {
+  const bar = document.getElementById("batch-action-bar");
+  const countEl = document.getElementById("batch-selected-count");
+  const statusEl = document.getElementById("batch-action-status");
+  if (!bar) return;
+  const count = selectedBookingIds.size;
+  bar.hidden = !isAdmin || count === 0;
+  if (countEl) {
+    countEl.textContent = count === 1 ? "1 booking selected" : `${count} bookings selected`;
+  }
+  if (statusEl && message) {
+    statusEl.textContent = message;
+  } else if (statusEl && count === 0) {
+    statusEl.textContent = "";
+  }
+}
+
+function toggleBookingSelection(event, bookingId) {
+  if (!isAdmin) return;
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const normalized = normalizeBookingId(bookingId);
+  if (!normalized) return;
+  if (selectedBookingIds.has(normalized)) {
+    selectedBookingIds.delete(normalized);
+  } else {
+    selectedBookingIds.add(normalized);
+  }
+  renderTeeTimes();
+  updateBatchActionBar();
+}
+
+function clearBookingSelection() {
+  if (selectedBookingIds.size === 0) {
+    updateBatchActionBar();
+    return;
+  }
+  selectedBookingIds = new Set();
+  renderTeeTimes();
+  updateBatchActionBar();
+}
+
+function batchPaymentMethod() {
+  const raw = String(document.getElementById("batch-payment-method")?.value || "").trim().toUpperCase();
+  return PAYMENT_METHODS.includes(raw) ? raw : "";
+}
+
+async function applyBatchBookingUpdate(options = {}) {
+  if (!isAdmin) return;
+  const bookingIds = Array.from(selectedBookingIds).filter((bookingId) => normalizeBookingId(bookingId));
+  const statusEl = document.getElementById("batch-action-status");
+  if (!bookingIds.length) {
+    updateBatchActionBar("Select at least one booking.");
+    return;
+  }
+
+  const requestedStatus = String(options?.status || "").trim().toLowerCase();
+  const paymentMethod = options?.includePayment ? batchPaymentMethod() : "";
+  const accountCode = options?.includeAccount ? normalizeAccountCodeInput(document.getElementById("batch-account-code")?.value || "") : "";
+  const payload = { booking_ids: bookingIds };
+  if (requestedStatus) payload.status = requestedStatus;
+  if (paymentMethod) payload.payment_method = paymentMethod;
+  if (accountCode) payload.account_code = accountCode;
+
+  if (!payload.status && !payload.payment_method && !payload.account_code) {
+    if (statusEl) statusEl.textContent = "Choose a status, payment method, or debtor account first.";
+    return;
+  }
+
+  if (requestedStatus === "cancelled" && !confirm(`Cancel ${bookingIds.length} selected booking(s)?`)) {
+    return;
+  }
+
+  try {
+    if (statusEl) statusEl.textContent = "Updating selected bookings...";
+    const res = await fetch('/api/admin/bookings/batch-update', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data?.detail || "Batch update failed.";
+      return;
+    }
+    const updated = Number(data.updated || bookingIds.length || 0);
+    selectedBookingIds = new Set();
+    if (statusEl) statusEl.textContent = `Updated ${updated} booking(s).`;
+    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+  } catch (error) {
+    console.error("Failed to batch update bookings:", error);
+    if (statusEl) statusEl.textContent = "Batch update failed.";
+  }
+}
 
 function buildDateTime(baseDate, timeStr) {
   const [h, m] = timeStr.split(':');
@@ -1471,11 +2180,170 @@ function buildRangeForDay(date) {
   };
 }
 
+function currentTeeSheetDate() {
+  return dateToYMD(selectedDate);
+}
+
 function formatBannerDate(date) {
   try {
     return new Date(date).toLocaleDateString('en-GB');
   } catch (e) {
     return '';
+  }
+}
+
+function defaultTeeProfile() {
+  return {
+    version: 1,
+    interval_min: 8,
+    winter_months: [5, 6, 7, 8],
+    two_tee_days: [1, 2, 3, 5],
+    two_tee_tees: ["1", "10"],
+    one_tee_tees: ["1"],
+    summer: {
+      two_tee_windows: [{ start: "06:30", end: "08:30" }, { start: "11:30", end: "13:30" }],
+      one_tee_windows: [{ start: "06:30", end: "13:30" }],
+      nine_hole_start: "15:40",
+      nine_hole_end: "17:30",
+    },
+    winter: {
+      two_tee_windows: [{ start: "06:45", end: "08:00" }, { start: "11:00", end: "13:00" }],
+      one_tee_windows: [{ start: "06:45", end: "13:00" }],
+      nine_hole_start: "15:15",
+      nine_hole_end: "16:45",
+    },
+  };
+}
+
+function normalizeClockValue(value, fallback) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return fallback;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function addMinutesClock(value, minutes, fallback) {
+  const base = normalizeClockValue(value, "");
+  if (!base) return fallback;
+  const [hh, mm] = base.split(":").map(Number);
+  const total = Math.min((23 * 60) + 59, Math.max(0, (hh * 60) + mm + Number(minutes || 0)));
+  const outH = Math.floor(total / 60);
+  const outM = total % 60;
+  return `${String(outH).padStart(2, "0")}:${String(outM).padStart(2, "0")}`;
+}
+
+function normalizeWindowList(value, fallback) {
+  const rows = Array.isArray(value) ? value : [];
+  const out = rows
+    .map((row) => {
+      const start = normalizeClockValue(row?.start, "");
+      const end = normalizeClockValue(row?.end, "");
+      if (!start || !end || start > end) return null;
+      return { start, end };
+    })
+    .filter(Boolean);
+  return out.length ? out : fallback.map((row) => ({ start: row.start, end: row.end }));
+}
+
+function normalizeTeeProfile(rawProfile) {
+  const fallback = defaultTeeProfile();
+  const raw = rawProfile && typeof rawProfile === "object" ? rawProfile : {};
+
+  const normalizeNums = (rows, min, max, fallbackValues) => {
+    const list = Array.isArray(rows) ? rows : [];
+    const uniq = [];
+    for (const item of list) {
+      const n = parseInt(String(item), 10);
+      if (!Number.isFinite(n) || n < min || n > max || uniq.includes(n)) continue;
+      uniq.push(n);
+    }
+    return uniq.length ? uniq : [...fallbackValues];
+  };
+
+  const normalizeTees = (rows, fallbackValues) => {
+    const list = Array.isArray(rows) ? rows : [];
+    const uniq = [];
+    for (const item of list) {
+      const tee = String(item || "").trim();
+      if (!tee || uniq.includes(tee)) continue;
+      uniq.push(tee);
+    }
+    return uniq.length ? uniq : [...fallbackValues];
+  };
+
+  const normalizeSeason = (seasonRaw, seasonFallback) => {
+    const season = seasonRaw && typeof seasonRaw === "object" ? seasonRaw : {};
+    return {
+      two_tee_windows: normalizeWindowList(season.two_tee_windows, seasonFallback.two_tee_windows),
+      one_tee_windows: normalizeWindowList(season.one_tee_windows, seasonFallback.one_tee_windows),
+      nine_hole_start: normalizeClockValue(season.nine_hole_start, seasonFallback.nine_hole_start),
+      nine_hole_end: normalizeClockValue(season.nine_hole_end, seasonFallback.nine_hole_end),
+    };
+  };
+
+  const intervalRaw = parseInt(String(raw.interval_min ?? fallback.interval_min), 10);
+  return {
+    version: 1,
+    interval_min: Number.isFinite(intervalRaw) ? Math.min(30, Math.max(1, intervalRaw)) : fallback.interval_min,
+    winter_months: normalizeNums(raw.winter_months, 1, 12, fallback.winter_months),
+    two_tee_days: normalizeNums(raw.two_tee_days, 0, 6, fallback.two_tee_days),
+    two_tee_tees: normalizeTees(raw.two_tee_tees, fallback.two_tee_tees),
+    one_tee_tees: normalizeTees(raw.one_tee_tees, fallback.one_tee_tees),
+    summer: normalizeSeason(raw.summer, fallback.summer),
+    winter: normalizeSeason(raw.winter, fallback.winter),
+  };
+}
+
+function pyWeekdayFromDateValue(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date(`${String(dateValue || currentTeeSheetDate())}T00:00:00`);
+  return (date.getDay() + 6) % 7;
+}
+
+function monthFromDateValue(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date(`${String(dateValue || currentTeeSheetDate())}T00:00:00`);
+  return date.getMonth() + 1;
+}
+
+function teePlanForDate(dateValue, holes = 18) {
+  const profile = normalizeTeeProfile(teeSheetProfile);
+  const seasonKey = profile.winter_months.includes(monthFromDateValue(dateValue)) ? "winter" : "summer";
+  const season = profile[seasonKey] || profile.summer;
+  const twoTee = profile.two_tee_days.includes(pyWeekdayFromDateValue(dateValue));
+  const tees = twoTee ? profile.two_tee_tees : profile.one_tee_tees;
+  const oneTeeWindows = normalizeWindowList(season.one_tee_windows, [{ start: "06:30", end: "13:30" }]);
+  const oneTeeLastEnd = oneTeeWindows[oneTeeWindows.length - 1]?.end || "13:30";
+  const nineStart = twoTee
+    ? normalizeClockValue(season.nine_hole_start, "15:30")
+    : addMinutesClock(oneTeeLastEnd, 15, normalizeClockValue(season.nine_hole_start, "13:45"));
+  const nineEnd = normalizeClockValue(season.nine_hole_end, "17:00");
+  const windows = holes === 9
+    ? [{ start: nineStart, end: nineEnd }]
+    : (twoTee ? season.two_tee_windows : season.one_tee_windows);
+
+  return {
+    season: seasonKey,
+    mode: twoTee ? "two_tee" : "one_tee",
+    interval_min: profile.interval_min,
+    tees: Array.isArray(tees) && tees.length ? tees : ["1"],
+    windows: normalizeWindowList(windows, [{ start: "06:30", end: "13:30" }]),
+  };
+}
+
+function updateOpsPlanSummary() {
+  const note = document.getElementById("ops-plan-note");
+  const preview = document.getElementById("tee-profile-plan-preview");
+  const plan = teePlanForDate(selectedDate, selectedHoles);
+  const holesLabel = selectedHoles === 9 ? "9 holes" : "18 holes";
+  const windowsLabel = plan.windows.map((row) => `${row.start}-${row.end}`).join(", ");
+  const summary = `${plan.season} ${plan.mode.replace("_", "-")} | ${holesLabel} | ${plan.interval_min} min | Tee ${plan.tees.join(" & ")} | ${windowsLabel}`;
+  if (note) {
+    note.innerHTML = `<strong>Ops Plan</strong><span>${escapeHtml(summary)}</span>`;
+  }
+  if (preview) {
+    preview.textContent = `Current plan for ${currentTeeSheetDate()} (${holesLabel}): ${summary}`;
   }
 }
 
@@ -1512,6 +2380,324 @@ async function loadBookingWindow() {
   }
 }
 
+async function loadAdminBookingWindowSettings(options = {}) {
+  if (!isAdmin) return null;
+  const statusEl = document.getElementById("booking-window-status");
+  try {
+    const res = await fetch('/api/admin/booking-window', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) {
+      if (!options.silent && statusEl) statusEl.textContent = "Unable to load booking window.";
+      return null;
+    }
+    const data = await res.json();
+    const memberInput = document.getElementById("booking-window-member");
+    const affInput = document.getElementById("booking-window-affiliated");
+    const nonAffInput = document.getElementById("booking-window-nonaff");
+    const groupCancelInput = document.getElementById("booking-window-group-cancel");
+    if (memberInput) memberInput.value = String(data.member_days ?? 28);
+    if (affInput) affInput.value = String(data.affiliated_days ?? 28);
+    if (nonAffInput) nonAffInput.value = String(data.non_affiliated_days ?? 28);
+    if (groupCancelInput) groupCancelInput.value = String(data.group_cancel_days ?? 10);
+    if (statusEl && !options.silent) statusEl.textContent = "";
+    return data;
+  } catch (error) {
+    console.error("Failed to load booking window settings:", error);
+    if (!options.silent && statusEl) statusEl.textContent = "Unable to load booking window.";
+    return null;
+  }
+}
+
+function openBookingWindowSettingsModal() {
+  if (!isAdmin) return;
+  openModal('bookingWindowSettingsModal');
+  void loadAdminBookingWindowSettings();
+}
+
+async function saveBookingWindowSettings() {
+  if (!isAdmin) return;
+  const statusEl = document.getElementById("booking-window-status");
+  const memberDays = parseInt(document.getElementById("booking-window-member")?.value || "28", 10);
+  const affiliatedDays = parseInt(document.getElementById("booking-window-affiliated")?.value || "28", 10);
+  const nonAffDays = parseInt(document.getElementById("booking-window-nonaff")?.value || "28", 10);
+  const groupCancelDays = parseInt(document.getElementById("booking-window-group-cancel")?.value || "10", 10);
+
+  try {
+    if (statusEl) statusEl.textContent = "Saving...";
+    const res = await fetch('/api/admin/booking-window', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        member_days: Number.isFinite(memberDays) ? memberDays : 28,
+        affiliated_days: Number.isFinite(affiliatedDays) ? affiliatedDays : 28,
+        non_affiliated_days: Number.isFinite(nonAffDays) ? nonAffDays : 28,
+        group_cancel_days: Number.isFinite(groupCancelDays) ? groupCancelDays : 10,
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data?.detail || "Save failed.";
+      return;
+    }
+    if (statusEl) statusEl.textContent = "Booking window saved.";
+    await loadAdminBookingWindowSettings({ silent: true });
+  } catch (error) {
+    console.error("Failed to save booking window settings:", error);
+    if (statusEl) statusEl.textContent = "Save failed.";
+  }
+}
+
+function writeTeeProfileToForm(profile) {
+  const p = normalizeTeeProfile(profile);
+  teeSheetProfile = p;
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value || "";
+  };
+
+  setValue("tee-profile-interval", String(p.interval_min || 8));
+  setValue("tee-profile-summer-two-start-1", p.summer?.two_tee_windows?.[0]?.start || "06:30");
+  setValue("tee-profile-summer-two-end-1", p.summer?.two_tee_windows?.[0]?.end || "08:30");
+  setValue("tee-profile-summer-two-start-2", p.summer?.two_tee_windows?.[1]?.start || "11:30");
+  setValue("tee-profile-summer-two-end-2", p.summer?.two_tee_windows?.[1]?.end || "13:30");
+  setValue("tee-profile-summer-one-start", p.summer?.one_tee_windows?.[0]?.start || "06:30");
+  setValue("tee-profile-summer-one-end", p.summer?.one_tee_windows?.[0]?.end || "13:30");
+  setValue("tee-profile-summer-nine-start", p.summer?.nine_hole_start || "15:40");
+  setValue("tee-profile-summer-nine-end", p.summer?.nine_hole_end || "17:30");
+  setValue("tee-profile-winter-two-start-1", p.winter?.two_tee_windows?.[0]?.start || "06:45");
+  setValue("tee-profile-winter-two-end-1", p.winter?.two_tee_windows?.[0]?.end || "08:00");
+  setValue("tee-profile-winter-two-start-2", p.winter?.two_tee_windows?.[1]?.start || "11:00");
+  setValue("tee-profile-winter-two-end-2", p.winter?.two_tee_windows?.[1]?.end || "13:00");
+  setValue("tee-profile-winter-one-start", p.winter?.one_tee_windows?.[0]?.start || "06:45");
+  setValue("tee-profile-winter-one-end", p.winter?.one_tee_windows?.[0]?.end || "13:00");
+  setValue("tee-profile-winter-nine-start", p.winter?.nine_hole_start || "15:15");
+  setValue("tee-profile-winter-nine-end", p.winter?.nine_hole_end || "16:45");
+  updateOpsPlanSummary();
+}
+
+function readTeeProfileFromForm() {
+  const readTime = (id, fallback) => normalizeClockValue(document.getElementById(id)?.value, fallback);
+  const readNum = (id, fallback) => {
+    const n = parseInt(String(document.getElementById(id)?.value || fallback), 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  return normalizeTeeProfile({
+    interval_min: readNum("tee-profile-interval", 8),
+    winter_months: [5, 6, 7, 8],
+    two_tee_days: [1, 2, 3, 5],
+    two_tee_tees: ["1", "10"],
+    one_tee_tees: ["1"],
+    summer: {
+      two_tee_windows: [
+        { start: readTime("tee-profile-summer-two-start-1", "06:30"), end: readTime("tee-profile-summer-two-end-1", "08:30") },
+        { start: readTime("tee-profile-summer-two-start-2", "11:30"), end: readTime("tee-profile-summer-two-end-2", "13:30") },
+      ],
+      one_tee_windows: [
+        { start: readTime("tee-profile-summer-one-start", "06:30"), end: readTime("tee-profile-summer-one-end", "13:30") },
+      ],
+      nine_hole_start: readTime("tee-profile-summer-nine-start", "15:40"),
+      nine_hole_end: readTime("tee-profile-summer-nine-end", "17:30"),
+    },
+    winter: {
+      two_tee_windows: [
+        { start: readTime("tee-profile-winter-two-start-1", "06:45"), end: readTime("tee-profile-winter-two-end-1", "08:00") },
+        { start: readTime("tee-profile-winter-two-start-2", "11:00"), end: readTime("tee-profile-winter-two-end-2", "13:00") },
+      ],
+      one_tee_windows: [
+        { start: readTime("tee-profile-winter-one-start", "06:45"), end: readTime("tee-profile-winter-one-end", "13:00") },
+      ],
+      nine_hole_start: readTime("tee-profile-winter-nine-start", "15:15"),
+      nine_hole_end: readTime("tee-profile-winter-nine-end", "16:45"),
+    },
+  });
+}
+
+async function loadTeeProfileSettings(options = {}) {
+  const silent = Boolean(options.silent);
+  const statusEl = document.getElementById("tee-profile-status");
+  if (!isAdmin) {
+    teeSheetProfile = normalizeTeeProfile(defaultTeeProfile());
+    updateOpsPlanSummary();
+    return teeSheetProfile;
+  }
+
+  try {
+    const res = await fetch('/api/admin/tee-sheet-profile', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) {
+      writeTeeProfileToForm(defaultTeeProfile());
+      if (!silent && statusEl) statusEl.textContent = "Using default profile.";
+      return teeSheetProfile;
+    }
+    const data = await res.json();
+    writeTeeProfileToForm(data?.profile || defaultTeeProfile());
+    if (!silent && statusEl) statusEl.textContent = "";
+    return teeSheetProfile;
+  } catch (error) {
+    console.error("Failed to load tee profile settings:", error);
+    writeTeeProfileToForm(defaultTeeProfile());
+    if (!silent && statusEl) statusEl.textContent = "Load failed. Using default profile.";
+    return teeSheetProfile;
+  }
+}
+
+function openTeeProfileModal() {
+  if (!isAdmin) return;
+  openModal('teeProfileModal');
+  void loadTeeProfileSettings();
+}
+
+async function saveTeeProfileSettings() {
+  if (!isAdmin) return;
+  const statusEl = document.getElementById("tee-profile-status");
+  const profile = readTeeProfileFromForm();
+  try {
+    if (statusEl) statusEl.textContent = "Saving...";
+    const res = await fetch('/api/admin/tee-sheet-profile', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({ profile })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data?.detail || "Save failed.";
+      return;
+    }
+    writeTeeProfileToForm(data?.profile || profile);
+    if (statusEl) statusEl.textContent = "Tee schedule saved.";
+    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+  } catch (error) {
+    console.error("Failed to save tee profile settings:", error);
+    if (statusEl) statusEl.textContent = "Save failed.";
+  }
+}
+
+function openBulkBookModal() {
+  if (!isStaff) return;
+  const plan = teePlanForDate(selectedDate, selectedHoles);
+  const dateInput = document.getElementById("bulk-book-date");
+  const teeInput = document.getElementById("bulk-book-tee");
+  const holesInput = document.getElementById("bulk-book-holes");
+  const startInput = document.getElementById("bulk-book-start");
+  const endInput = document.getElementById("bulk-book-end");
+  const slotsInput = document.getElementById("bulk-book-slots");
+  const priceInput = document.getElementById("bulk-book-price");
+  const statusEl = document.getElementById("bulk-book-status");
+  const undoBtn = document.getElementById("bulk-book-undo");
+
+  if (dateInput) dateInput.value = currentTeeSheetDate();
+  if (teeInput) teeInput.value = plan.mode === "one_tee" ? "1" : "all";
+  if (holesInput) holesInput.value = String(selectedHoles === 9 ? 9 : 18);
+  if (startInput) startInput.value = plan.windows[0]?.start || "06:30";
+  if (endInput) endInput.value = plan.windows[plan.windows.length - 1]?.end || "13:30";
+  if (slotsInput) slotsInput.value = String(Math.min(4, Math.max(1, parseInt(String(slotsInput.value || "4"), 10) || 4)));
+  if (priceInput && !priceInput.value) priceInput.value = "0";
+  if (statusEl) statusEl.textContent = "";
+  if (undoBtn) undoBtn.disabled = !lastBulkBookGroupId;
+
+  openModal('bulkBookModal');
+}
+
+async function submitBulkBook() {
+  if (!isStaff) return;
+  const statusEl = document.getElementById("bulk-book-status");
+  const runBtn = document.getElementById("bulk-book-run");
+  const undoBtn = document.getElementById("bulk-book-undo");
+  const groupName = String(document.getElementById("bulk-book-name")?.value || "").trim();
+  const dateStr = String(document.getElementById("bulk-book-date")?.value || "").trim();
+  const teeValue = String(document.getElementById("bulk-book-tee")?.value || "all").trim();
+  const eventType = String(document.getElementById("bulk-book-event-type")?.value || "group").trim();
+  const holes = parseInt(document.getElementById("bulk-book-holes")?.value || "18", 10);
+  const startTime = String(document.getElementById("bulk-book-start")?.value || "").trim();
+  const endTime = String(document.getElementById("bulk-book-end")?.value || "").trim();
+  const slotsPerTime = parseInt(document.getElementById("bulk-book-slots")?.value || "4", 10);
+  const price = Number(document.getElementById("bulk-book-price")?.value || "0");
+  const accountCode = normalizeAccountCodeInput(document.getElementById("bulk-book-account-code")?.value || "");
+
+  if (!groupName) {
+    if (statusEl) statusEl.textContent = "Event / group name is required.";
+    return;
+  }
+  if (!dateStr || !startTime || !endTime) {
+    if (statusEl) statusEl.textContent = "Date, start time, and end time are required.";
+    return;
+  }
+
+  try {
+    if (statusEl) statusEl.textContent = "Reserving tee sheet...";
+    if (runBtn) runBtn.disabled = true;
+    const res = await fetch('/api/admin/tee-sheet/bulk-book', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        date: dateStr,
+        tees: teeValue === "all" ? ["1", "10"] : [teeValue],
+        start_time: startTime,
+        end_time: endTime,
+        holes: holes === 9 ? 9 : 18,
+        slots_per_time: Number.isFinite(slotsPerTime) ? slotsPerTime : 4,
+        group_name: groupName,
+        event_type: eventType || "group",
+        account_code: accountCode || null,
+        price: Number.isFinite(price) ? price : 0,
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data?.detail || "Bulk reserve failed.";
+      return;
+    }
+    lastBulkBookGroupId = String(data.group_id || "").trim() || null;
+    if (undoBtn) undoBtn.disabled = !lastBulkBookGroupId;
+    if (statusEl) statusEl.textContent = `Reserved ${Number(data.created || 0)} slot(s).`;
+    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+  } catch (error) {
+    console.error("Failed to bulk reserve tee sheet:", error);
+    if (statusEl) statusEl.textContent = "Bulk reserve failed.";
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+async function undoBulkBook() {
+  if (!isStaff || !lastBulkBookGroupId) return;
+  const statusEl = document.getElementById("bulk-book-status");
+  const runBtn = document.getElementById("bulk-book-run");
+  const undoBtn = document.getElementById("bulk-book-undo");
+  try {
+    if (statusEl) statusEl.textContent = "Undoing last reserve...";
+    if (runBtn) runBtn.disabled = true;
+    if (undoBtn) undoBtn.disabled = true;
+    const res = await fetch(`/api/admin/tee-sheet/bulk-book/${encodeURIComponent(lastBulkBookGroupId)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data?.detail || "Undo failed.";
+      if (undoBtn) undoBtn.disabled = false;
+      return;
+    }
+    lastBulkBookGroupId = null;
+    if (statusEl) statusEl.textContent = `Removed ${Number(data.deleted || 0)} slot(s).`;
+    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+  } catch (error) {
+    console.error("Failed to undo bulk reserve:", error);
+    if (statusEl) statusEl.textContent = "Undo failed.";
+    if (undoBtn) undoBtn.disabled = false;
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
 function floorToInterval(dateObj, intervalMin) {
   const d = new Date(dateObj);
   const mins = d.getMinutes();
@@ -1532,7 +2718,7 @@ function isPastTeeTime(teeTimeIso) {
   if (selected0.getTime() > today0.getTime()) return false;
 
   // Today: closed if earlier than current interval floor (e.g. 11:05 => 11:00).
-  const threshold = floorToInterval(new Date(), DEFAULT_INTERVAL_MIN);
+  const threshold = floorToInterval(new Date(), teePlanForDate(selectedDate, selectedHoles).interval_min || 8);
   return new Date(teeTimeIso) < threshold;
 }
 
@@ -1551,6 +2737,13 @@ async function createTeeTimeAt(teeDateTime) {
 	function formatTime(date) {
 	  const d = new Date(date);
 	  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+	}
+
+	function formatTimeDateDMY(value) {
+	  const d = new Date(value);
+	  if (Number.isNaN(d.getTime())) return '-';
+	  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+	  return `${time} ${formatDate(d)}`;
 	}
 
 // Format date for display
@@ -1586,6 +2779,7 @@ function updateDateDisplay() {
   const display = formatDateDisplay(selectedDate);
   document.getElementById('selected-day').textContent = display.day;
   document.getElementById('selected-date').textContent = display.date;
+  updateOpsPlanSummary();
 }
 
 // Load golf fees
@@ -1637,6 +2831,7 @@ async function loadFees() {
 	    const qs = `?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`;
 	    const res = await fetch(API_PREFIX + '/range' + qs, { headers: { 'Authorization': 'Bearer ' + token }});
 	    allTeeTimes = res.ok ? await res.json() : [];
+      syncBookingSelection();
 	    if (!preservePage) {
 	      resetPageStartIndex();
 	    }
@@ -1666,7 +2861,7 @@ function resetPageStartIndex() {
     return;
   }
 
-  const threshold = floorToInterval(new Date(), DEFAULT_INTERVAL_MIN);
+  const threshold = floorToInterval(new Date(), teePlanForDate(selectedDate, selectedHoles).interval_min || 8);
   let idx = list.findIndex(tt => new Date(tt.tee_time) >= threshold);
   if (idx < 0) idx = Math.max(0, list.length - PAGE_SIZE);
   const maxStart = Math.max(0, list.length - PAGE_SIZE);
@@ -1709,7 +2904,8 @@ function viewLater() {
 	// Render tee times for selected date
 			function renderTeeTimes() {
 			  const container = document.getElementById('tee_times_list');
-			  
+			  updateBatchActionBar();
+
 			  const dateStr = dateToYMD(selectedDate);
 		  const dayTeeTimes = (Array.isArray(allTeeTimes) ? allTeeTimes : [])
     .slice()
@@ -1720,7 +2916,21 @@ function viewLater() {
       const ha = parseInt(a.hole || '1', 10);
       const hb = parseInt(b.hole || '1', 10);
 	      return ha - hb;
-	    });
+	    })
+    .filter(tt => {
+      if (selectedHoles !== 9) return true;
+      const plan = teePlanForDate(selectedDate, 9);
+      const start = String(plan.windows?.[0]?.start || "00:00");
+      const end = String(plan.windows?.[0]?.end || "23:59");
+      const match = String(tt.tee_time || "").match(/T(\d{2}):(\d{2})/);
+      if (!match) return true;
+      const timeVal = (parseInt(match[1], 10) * 60) + parseInt(match[2], 10);
+      const [startH, startM] = start.split(":").map(Number);
+      const [endH, endM] = end.split(":").map(Number);
+      const startVal = (startH * 60) + startM;
+      const endVal = (endH * 60) + endM;
+      return timeVal >= startVal && timeVal <= endVal;
+    });
 	  
 		  const renderTable = true;
 		  let html = '';
@@ -1860,6 +3070,11 @@ function viewLater() {
 			      const booking = bookings[i];
 			      if (booking) {
 			        const status = booking.status || 'booked';
+              const bookingId = normalizeBookingId(booking.id);
+              const selectedClass = isBookingSelected(bookingId) ? ' selected' : '';
+              const selectMarkup = isAdmin && bookingId
+                ? `<button type="button" class="slot-select-btn${selectedClass ? ' selected' : ''}" onclick="toggleBookingSelection(event, ${bookingId})">${selectedClass ? 'Selected' : 'Select'}</button>`
+                : '';
 			        const statusClass = status === 'checked_in'
 			          ? 'checked-in'
 			          : status === 'completed'
@@ -1876,8 +3091,8 @@ function viewLater() {
 			            const dragAttrs = canDrag ? `draggable="true" title="Drag to move"` : '';
 			            html += `
 			              <td>
-			                <div class="slot-card ${statusClass}" ${dragAttrs} data-booking-id="${booking.id}" data-tee-time-id="${tt.id}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
-			                  <div class="slot-top"><span class="slot-status ${statusClass}">${statusLabel}</span></div>
+			                <div class="slot-card ${statusClass}${selectedClass}" ${dragAttrs} data-booking-id="${booking.id}" data-tee-time-id="${tt.id}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
+			                  <div class="slot-top"><span class="slot-status ${statusClass}">${statusLabel}</span>${selectMarkup}</div>
 			                  <div class="slot-name">${booking.player_name}</div>
 			                  <div class="slot-meta">R${booking.price}</div>
 			                </div>
@@ -1913,11 +3128,12 @@ function viewLater() {
 		          const canDrag = isStaff && !['cancelled', 'no_show'].includes(status);
 		          const dragAttrs = canDrag ? `draggable="true" title="Drag to move"` : '';
 		          cardsHtml += `
-		            <div class="tee-slot ${statusClass}" ${dragAttrs} data-booking-id="${booking.id}" data-tee-time-id="${tt.id}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
-		              <div>
+		            <div class="tee-slot ${statusClass}${selectedClass}" ${dragAttrs} data-booking-id="${booking.id}" data-tee-time-id="${tt.id}" onclick="openBookingDetails(${tt.id}, ${booking.id})">
+		              <div class="tee-slot-top">
 		                <div class="label">${booking.player_name}</div>
-		                <div class="meta">${statusLabel}</div>
+		                ${selectMarkup}
 		              </div>
+	              <div class="meta">${statusLabel}</div>
 	              <div class="meta">R${booking.price}</div>
 	            </div>
 	          `;
@@ -2084,6 +3300,7 @@ function selectHoles(num) {
   document.getElementById('selected-holes').textContent = num;
   document.querySelectorAll('.holes-option').forEach(el => el.classList.remove('selected'));
   event.target.closest('.holes-option').classList.add('selected');
+  updateOpsPlanSummary();
   closeModal('holesPickerModal');
   renderTeeTimes();
 }
@@ -2132,20 +3349,37 @@ function selectHoles(num) {
   }
 
   try {
-    const start = buildDateTime(selectedDate, DEFAULT_START);
-    const end = buildDateTime(selectedDate, DEFAULT_END);
-    const interval = DEFAULT_INTERVAL_MIN;
-
+    const plan = teePlanForDate(selectedDate, selectedHoles);
+    const dateStr = currentTeeSheetDate();
     let created = 0;
-    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + interval * 60000)) {
-      const ok = await createTeeTimeAt(t);
-      if (ok) created++;
+    for (const windowRow of plan.windows) {
+      const res = await fetch(`${API_PREFIX}/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          date: dateStr,
+          tees: plan.tees,
+          start_time: windowRow.start,
+          end_time: windowRow.end,
+          interval_min: plan.interval_min,
+          capacity: 4,
+          status: 'open'
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || 'Failed to generate tee times');
+      }
+      created += Number(data.created || 0);
     }
 
 	    await loadTeeTimes({ preservePage: true, preserveScroll: true });
-	    alert(`OK: Generated ${created} tee times`);
+	    alert(`Generated ${created} tee times`);
   } catch (e) {
-    alert('Failed to generate tee times');
+    alert(e?.message || 'Failed to generate tee times');
   } finally {
     if (button) {
       button.disabled = false;
@@ -2218,48 +3452,250 @@ async function createBooking(teeTimeId) {
   }
 }
 
+	function getSelectedPaymentMethod() {
+	  const el = document.getElementById("booking-payment-method");
+	  const raw = String(el?.value || "").trim().toUpperCase();
+	  if (PAYMENT_METHODS.includes(raw)) return raw;
+	  const saved = String(localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase();
+	  return PAYMENT_METHODS.includes(saved) ? saved : "CARD";
+	}
+
+	async function adminCheckIn(bookingId) {
+	  const paymentMethod = getSelectedPaymentMethod();
+	  localStorage.setItem("last_payment_method", paymentMethod);
+	  try {
+	    const res = await fetch(`/checkin/${bookingId}?payment_method=${encodeURIComponent(paymentMethod)}`, {
+	      method: 'POST',
+	      headers: { 'Authorization': 'Bearer ' + token }
+	    });
+	    const data = await res.json().catch(() => ({}));
+	    if (!res.ok) {
+	      alert(data?.detail || 'Check-in failed');
+	      return;
+	    }
+	    closeModal('bookingModal');
+	    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+	  } catch (error) {
+	    alert('Check-in failed');
+	  }
+	}
+
+	async function adminSetStatus(bookingId, status) {
+	  try {
+	    const body = { status };
+	    if (status === 'completed') {
+	      const paymentMethod = getSelectedPaymentMethod();
+	      localStorage.setItem("last_payment_method", paymentMethod);
+	      body.payment_method = paymentMethod;
+	    }
+	    const res = await fetch(`/api/admin/bookings/${bookingId}/status`, {
+	      method: 'PUT',
+	      headers: {
+	        'Content-Type': 'application/json',
+	        'Authorization': 'Bearer ' + token
+	      },
+	      body: JSON.stringify(body)
+	    });
+	    const data = await res.json().catch(() => ({}));
+	    if (!res.ok) {
+	      alert(data?.detail || 'Status update failed');
+	      return;
+	    }
+	    closeModal('bookingModal');
+	    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+	  } catch (error) {
+	    alert('Status update failed');
+	  }
+	}
+
+	async function saveBookingPaymentMethod(bookingId) {
+	  const paymentMethod = getSelectedPaymentMethod();
+	  localStorage.setItem("last_payment_method", paymentMethod);
+	  try {
+	    const res = await fetch(`/api/admin/bookings/${bookingId}/payment-method`, {
+	      method: 'PUT',
+	      headers: {
+	        'Content-Type': 'application/json',
+	        'Authorization': 'Bearer ' + token
+	      },
+	      body: JSON.stringify({ payment_method: paymentMethod })
+	    });
+	    const data = await res.json().catch(() => ({}));
+	    if (!res.ok) {
+	      alert(data?.detail || 'Failed to save payment method');
+	      return;
+	    }
+	    await openBookingDetails(currentBookingDetail?.tee_time_id, bookingId);
+	  } catch (error) {
+	    alert('Failed to save payment method');
+	  }
+	}
+
+	async function saveBookingAccountCode(bookingId) {
+	  const accountCode = normalizeAccountCodeInput(document.getElementById("booking-account-code")?.value || "");
+	  try {
+	    const res = await fetch(`/api/admin/bookings/${bookingId}/account-code`, {
+	      method: 'PUT',
+	      headers: {
+	        'Content-Type': 'application/json',
+	        'Authorization': 'Bearer ' + token
+	      },
+	      body: JSON.stringify({ account_code: accountCode || null })
+	    });
+	    const data = await res.json().catch(() => ({}));
+	    if (!res.ok) {
+	      alert(data?.detail || 'Failed to save debtor account');
+	      return;
+	    }
+	    await openBookingDetails(currentBookingDetail?.tee_time_id, bookingId);
+	  } catch (error) {
+	    alert('Failed to save debtor account');
+	  }
+	}
+
+	async function adminDeleteBooking(bookingId) {
+	  if (!isAdmin) return;
+	  if (!confirm('Remove this booking? This cannot be undone.')) return;
+	  try {
+	    const res = await fetch(`/api/admin/bookings/${bookingId}`, {
+	      method: 'DELETE',
+	      headers: { 'Authorization': 'Bearer ' + token }
+	    });
+	    const data = await res.json().catch(() => ({}));
+	    if (!res.ok) {
+	      alert(data?.detail || 'Delete failed');
+	      return;
+	    }
+	    closeModal('bookingModal');
+	    await loadTeeTimes({ preservePage: true, preserveScroll: true });
+	  } catch (error) {
+	    alert('Delete failed');
+	  }
+	}
+
 	// Open booking details
 		async function openBookingDetails(teeTimeId, bookingId) {
-		  // Find the booking
 		  const teeTime = allTeeTimes.find(tt => tt.id === teeTimeId);
-		  const booking = teeTime?.bookings?.find(b => b.id === bookingId);
-	  
-	  if (!booking) return;
+		  const summaryBooking = teeTime?.bookings?.find(b => b.id === bookingId);
 
 		  if (!isStaff) {
-		    // Player view shouldn't expose other players' details.
+		    if (!summaryBooking) return;
 		    document.getElementById('modalTitle').textContent = 'Slot booked';
 		    document.getElementById('modalBody').innerHTML = `
-		      <div style="padding: 15px; background: var(--ucc-cream); border-radius: 10px; margin-bottom: 15px;">
-	        <div style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">This slot is not available</div>
-	        <div style="font-size: 13px; color: var(--ucc-muted);">Please choose another open slot.</div>
-	      </div>
-	      <button class="modal-btn btn-secondary" onclick="closeModal('bookingModal')">Close</button>
+		      <div class="detail-summary">
+		        <h3>This slot is not available</h3>
+		        <p>Please choose another open slot.</p>
+		      </div>
+		      <div class="detail-actions">
+		        <button class="action-btn" type="button" onclick="closeModal('bookingModal')">Close</button>
+		      </div>
 	    `;
 	    openModal('bookingModal');
 	    return;
 	  }
 
-		  document.getElementById('modalTitle').textContent = 'Booking Details';
-		  
-		  const isCheckedIn = booking.status === 'checked_in' || booking.status === 'completed';
-	  
-	  document.getElementById('modalBody').innerHTML = `
-	    <div style="padding: 15px; background: var(--ucc-cream); border-radius: 10px; margin-bottom: 15px;">
-	      <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">${booking.player_name}</div>
-      <div style="font-size: 14px; color: var(--ucc-muted); margin-bottom: 5px;">
-        <strong>Status:</strong> ${booking.status.replace('_', ' ')}
-      </div>
-      <div style="font-size: 14px; color: var(--ucc-muted); margin-bottom: 5px;">
-        <strong>Price:</strong> R${booking.price}
-      </div>
-      ${booking.player_email ? `<div style="font-size: 14px; color: var(--ucc-muted);"><strong>Email:</strong> ${booking.player_email}</div>` : ''}
-    </div>
-    ${!isCheckedIn ? `<button class="modal-btn btn-success" onclick="checkIn(${bookingId})">Check In</button>` : ''}
-    <button class="modal-btn btn-secondary" onclick="closeModal('bookingModal')">Close</button>
-  `;
-  
-	  openModal('bookingModal');
+		  try {
+		    const res = await fetch(`/api/admin/bookings/${bookingId}`, {
+		      headers: { 'Authorization': 'Bearer ' + token }
+		    });
+		    const booking = res.ok ? await res.json() : null;
+		    const payload = booking && typeof booking === 'object' ? booking : summaryBooking;
+		    if (!payload) {
+		      throw new Error('Booking not found');
+		    }
+		    currentBookingDetail = {
+		      ...payload,
+		      tee_time_id: payload.tee_time_id || teeTimeId,
+		    };
+		    const status = String(payload.status || 'booked').trim().toLowerCase();
+		    const statusLabel = statusToLabel(status);
+		    const isPaid = status === 'checked_in' || status === 'completed';
+		    const ledgerEntries = Array.isArray(payload.ledger_entries) ? payload.ledger_entries : [];
+		    const paymentMethod = String(ledgerEntries[0]?.payment_method || localStorage.getItem("last_payment_method") || "CARD").trim().toUpperCase();
+		    const paymentMethodOptions = PAYMENT_METHODS.map(method => `<option value="${method}" ${paymentMethod === method ? 'selected' : ''}>${method}</option>`).join('');
+		    const feeLabel = payload?.fee_category?.description || (payload.fee_category_id ? `Fee #${payload.fee_category_id}` : "Auto / Custom");
+		    const exported = ledgerEntries.some(entry => Boolean(entry?.pastel_synced));
+		    const missingLedger = isPaid && !ledgerEntries.length;
+		    const timeLabel = payload.tee_time ? formatTimeDateDMY(payload.tee_time) : (teeTime?.tee_time ? formatTimeDateDMY(teeTime.tee_time) : 'No tee time');
+		    const checkInDisabled = status === 'checked_in' || status === 'completed' || status === 'cancelled' || status === 'no_show';
+		    const completeDisabled = status === 'completed' || status === 'cancelled' || status === 'no_show';
+		    const noShowDisabled = status === 'no_show' || status === 'completed' || status === 'cancelled';
+		    const cancelDisabled = status === 'cancelled';
+		    const reopenDisabled = status === 'booked';
+		    document.getElementById('modalTitle').textContent = 'Booking Details';
+		    document.getElementById('modalBody').innerHTML = `
+		      <div class="detail-summary">
+		        <h3>${displayValue(payload.player_name, 'Booking')}</h3>
+		        <p>Booking #${escapeHtml(String(payload.id || bookingId))} • ${escapeHtml(timeLabel)}</p>
+		        <div class="detail-badges">
+		          <span class="status-chip">${escapeHtml(statusLabel)}</span>
+		          <span class="status-chip ${isPaid ? 'paid' : 'unpaid'}">${isPaid ? 'Paid' : 'Unpaid'}</span>
+		          ${exported ? `<span class="status-chip exported">Exported</span>` : ''}
+		          ${missingLedger ? `<span class="status-chip missing">Missing Ledger</span>` : ''}
+		        </div>
+		      </div>
+
+		      <div class="detail-grid">
+		        <section class="detail-card">
+		          <h3>Player</h3>
+		          <div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">${displayValue(payload.player_email, '—')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Handicap</span><span class="detail-value">${displayValue(payload.handicap_number, '—')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Player Type</span><span class="detail-value">${displayValue(payload.player_type, '—')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Holes</span><span class="detail-value">${displayValue(payload.holes, '—')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Requirements</span><span class="detail-value">${renderReqPills(payload.requirements)}</span></div>
+		        </section>
+
+		        <section class="detail-card">
+		          <h3>Pricing & Ledger</h3>
+		          <div class="detail-row"><span class="detail-label">Fee</span><span class="detail-value">${displayValue(feeLabel, 'Auto / Custom')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Price</span><span class="detail-value">R${Number(payload.price || 0).toFixed(2)}</span></div>
+		          <div class="detail-row">
+		            <span class="detail-label">Payment</span>
+		            <span class="detail-value stack">
+		              <span>${ledgerEntries.length ? escapeHtml(String(ledgerEntries.length)) + ' ledger entr' + (ledgerEntries.length === 1 ? 'y' : 'ies') : 'No ledger entry yet'}</span>
+		              <span style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+		                <select id="booking-payment-method" style="min-width: 120px;">${paymentMethodOptions}</select>
+		                <button class="action-btn" type="button" onclick="saveBookingPaymentMethod(${Number(payload.id || bookingId)})">${isPaid ? (ledgerEntries.length ? 'Save Method' : 'Repair Entry') : 'Store Method'}</button>
+		              </span>
+		            </span>
+		          </div>
+		          <div class="detail-row">
+		            <span class="detail-label">Debtor</span>
+		            <span class="detail-value stack">
+		              <span>${displayValue(payload?.account_customer?.name, 'No linked debtor')}</span>
+		              <span style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+		                <input id="booking-account-code" type="text" value="${escapeHtml(String(payload.club_card || ''))}" placeholder="e.g. 1100/015" style="min-width: 150px;">
+		                <button class="action-btn" type="button" onclick="saveBookingAccountCode(${Number(payload.id || bookingId)})">Save Debtor</button>
+		              </span>
+		            </span>
+		          </div>
+		        </section>
+
+		        <section class="detail-card">
+		          <h3>Round Sync</h3>
+		          <div class="detail-row"><span class="detail-label">Round</span><span class="detail-value">${payload.round ? (payload.round.closed ? 'Closed' : 'Open') : 'Not started'}</span></div>
+		          <div class="detail-row"><span class="detail-label">Hcp SA</span><span class="detail-value">${displayValue(payload?.round?.handicap_sa_round_id, '—')}</span></div>
+		          <div class="detail-row"><span class="detail-label">Created</span><span class="detail-value">${payload.created_at ? escapeHtml(formatTimeDateDMY(payload.created_at)) : '—'}</span></div>
+		          <div class="detail-row"><span class="detail-label">Ledger Status</span><span class="detail-value">${missingLedger ? 'Needs repair' : (exported ? 'Exported' : (isPaid ? 'Pending export' : 'Unpaid'))}</span></div>
+		        </section>
+		      </div>
+
+		      <div class="detail-actions">
+		        <button class="action-btn primary" type="button" onclick="adminCheckIn(${Number(payload.id || bookingId)})" ${checkInDisabled ? 'disabled' : ''}>Check In</button>
+		        <button class="action-btn" type="button" onclick="adminSetStatus(${Number(payload.id || bookingId)}, 'completed')" ${completeDisabled ? 'disabled' : ''}>Mark Completed</button>
+		        <button class="action-btn" type="button" onclick="adminSetStatus(${Number(payload.id || bookingId)}, 'no_show')" ${noShowDisabled ? 'disabled' : ''}>No-show</button>
+		        <button class="action-btn danger" type="button" onclick="adminSetStatus(${Number(payload.id || bookingId)}, 'cancelled')" ${cancelDisabled ? 'disabled' : ''}>Cancel</button>
+		        ${isAdmin ? `<button class="action-btn" type="button" onclick="adminSetStatus(${Number(payload.id || bookingId)}, 'booked')" ${reopenDisabled ? 'disabled' : ''}>Reopen</button>` : ''}
+		        ${isAdmin ? `<button class="action-btn danger" type="button" onclick="adminDeleteBooking(${Number(payload.id || bookingId)})">Remove</button>` : ''}
+		        <button class="action-btn" type="button" onclick="closeModal('bookingModal')">Close</button>
+		      </div>
+		      <div class="detail-note">Drag-and-drop remains live from the tee sheet. Use these controls for payment repair, debtor context, and day-of-play status changes without leaving the sheet.</div>
+	    `;
+	    openModal('bookingModal');
+	  } catch (error) {
+	    console.error('Failed to load booking detail:', error);
+	    alert('Failed to load booking details');
+	  }
 	}
 
 		async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
@@ -2609,8 +4045,16 @@ async function checkIn(bookingId) {
 		    if (clubConfig) window.Greenlink?.applyClubBranding?.(clubConfig);
 		  } catch {}
 
+		  document.querySelectorAll('.admin-config-only').forEach((el) => {
+		    el.hidden = !isAdmin;
+		  });
+
 	  setupTeeSheetDragDrop();
+	  await loadTeeProfileSettings({ silent: true });
 	  await loadBookingWindow();
+	  if (isAdmin) {
+	    await loadAdminBookingWindowSettings({ silent: true });
+	  }
 	  updateDateDisplay();
 	  await loadFees();
 	  loadTeeTimes();
