@@ -37,6 +37,7 @@ from app.models import (
     ProShopSale,
     ProShopSaleItem,
     PlayerNotification,
+    ClubCommunication,
     GolfDayBooking,
     StaffRoleProfile,
     AuditLog,
@@ -75,6 +76,14 @@ from app.services.payment_methods import (
 )
 from calendar import isleap
 from app.club_config import club_config_response, invalidate_club_config_cache
+from app.club_ops import (
+    assert_club_module_enabled,
+    upsert_club_modules,
+    operational_targets_for_club,
+    target_catalog,
+    upsert_operational_targets,
+)
+from app.club_setup_service import apply_club_profile_settings
 from app.tee_profile import load_tee_sheet_profile, save_tee_sheet_profile, tee_sheet_plan_for_date
 from app.tenancy import get_active_club_id
 from app.ttl_cache import TTLCache
@@ -727,6 +736,17 @@ class ClubProfileSettings(BaseModel):
     non_affiliated_label: str | None = None
     home_club_keywords: list[str] | None = None
     suggested_home_clubs: list[str] | None = None
+    brand_primary: str | None = None
+    brand_secondary: str | None = None
+    brand_accent: str | None = None
+    brand_surface: str | None = None
+    brand_text: str | None = None
+    tagline: str | None = None
+    location: str | None = None
+    website: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
+    enabled_modules: list[str] | None = None
 
 
 @router.get("/club-profile")

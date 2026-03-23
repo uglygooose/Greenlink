@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.club_ops import enabled_module_keys_for_club, module_catalog, module_settings_for_club
+
 _CACHE_TTL_SECONDS = max(5, int(str(os.getenv("CLUB_CONFIG_CACHE_TTL_SECONDS", "60")).strip() or 60))
 _SETTINGS_CACHE: dict[int, tuple[float, dict[str, str]]] = {}
 _SETTINGS_CACHE_LOCK = threading.Lock()
@@ -144,6 +146,17 @@ class ClubConfig:
     non_affiliated_label: str
     home_club_keywords: list[str]
     suggested_home_clubs: list[str]
+    brand_primary: str
+    brand_secondary: str
+    brand_accent: str
+    brand_surface: str
+    brand_text: str
+    tagline: str | None
+    location: str | None
+    website: str | None
+    contact_email: str | None
+    contact_phone: str | None
+    enabled_modules: list[str]
 
     def is_home_member(self, home_club: str | None) -> bool:
         return _home_matches_keywords(str(home_club or ""), self.home_club_keywords)
@@ -211,6 +224,23 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
     suggested_raw = _s("club_suggested_home_clubs") or _env("CLUB_SUGGESTED_HOME_CLUBS")
     suggested_home_clubs = _parse_list(suggested_raw)
 
+    brand_primary = _s("club_brand_primary") or _env("CLUB_BRAND_PRIMARY") or "#2f6f49"
+    brand_secondary = _s("club_brand_secondary") or _env("CLUB_BRAND_SECONDARY") or "#1f5c3a"
+    brand_accent = _s("club_brand_accent") or _env("CLUB_BRAND_ACCENT") or "#c0912f"
+    brand_surface = _s("club_brand_surface") or _env("CLUB_BRAND_SURFACE") or "#ffffff"
+    brand_text = _s("club_brand_text") or _env("CLUB_BRAND_TEXT") or "#1f2a1b"
+
+    tagline = _s("club_tagline") or _env("CLUB_TAGLINE")
+    location = _s("club_location") or _env("CLUB_LOCATION")
+    website = _s("club_website") or _env("CLUB_WEBSITE")
+    contact_email = _s("club_contact_email") or _env("CLUB_CONTACT_EMAIL")
+    contact_phone = _s("club_contact_phone") or _env("CLUB_CONTACT_PHONE")
+
+    if club_id:
+        enabled_modules = enabled_module_keys_for_club(db, int(club_id))
+    else:
+        enabled_modules = [row["key"] for row in module_catalog() if bool(row.get("default_enabled"))]
+
     return ClubConfig(
         club_name=club_name,
         club_slug=club_slug,
@@ -221,11 +251,34 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
         non_affiliated_label=non_affiliated_label,
         home_club_keywords=home_keywords,
         suggested_home_clubs=suggested_home_clubs,
+        brand_primary=brand_primary,
+        brand_secondary=brand_secondary,
+        brand_accent=brand_accent,
+        brand_surface=brand_surface,
+        brand_text=brand_text,
+        tagline=tagline,
+        location=location,
+        website=website,
+        contact_email=contact_email,
+        contact_phone=contact_phone,
+        enabled_modules=enabled_modules,
     )
 
 
 def club_config_response(db: Session | None = None, club_id: int | None = None) -> dict[str, Any]:
     cfg = get_club_config(db, club_id=club_id)
+    if club_id:
+        modules = module_settings_for_club(db, int(club_id))
+    else:
+        modules = [
+            {
+                "key": row["key"],
+                "label": row["label"],
+                "description": row["description"],
+                "enabled": bool(row.get("default_enabled")),
+            }
+            for row in module_catalog()
+        ]
     return {
         "club_name": cfg.club_name,
         "club_slug": cfg.club_slug,
@@ -238,4 +291,20 @@ def club_config_response(db: Session | None = None, club_id: int | None = None) 
         },
         "home_club_keywords": list(cfg.home_club_keywords),
         "suggested_home_clubs": list(cfg.suggested_home_clubs),
+        "branding": {
+            "primary": cfg.brand_primary,
+            "secondary": cfg.brand_secondary,
+            "accent": cfg.brand_accent,
+            "surface": cfg.brand_surface,
+            "text": cfg.brand_text,
+        },
+        "details": {
+            "tagline": cfg.tagline,
+            "location": cfg.location,
+            "website": cfg.website,
+            "contact_email": cfg.contact_email,
+            "contact_phone": cfg.contact_phone,
+        },
+        "enabled_modules": list(cfg.enabled_modules),
+        "modules": modules,
     }

@@ -101,17 +101,21 @@ _TENANT_SCOPED_MODELS = (
     models.StaffRoleProfile,
     models.TeeTime,
     models.Booking,
+    models.Round,
     models.LedgerEntry,
     models.DayClose,
     models.AccountingSetting,
     models.KpiTarget,
     models.ClubSetting,
+    models.ClubModuleSetting,
+    models.ClubOperationalTarget,
     models.ImportBatch,
     models.RevenueTransaction,
     models.ProShopProduct,
     models.ProShopSale,
     models.ProShopSaleItem,
     models.PlayerNotification,
+    models.ClubCommunication,
     models.AuditLog,
 )
 
@@ -196,6 +200,16 @@ def get_current_user(
 
     if not user:
         raise credentials_exception
+
+    if getattr(user, "role", None) != models.UserRole.super_admin:
+        try:
+            from app.club_assignments import ensure_user_primary_club
+
+            resolved_club_id = ensure_user_primary_club(db, user)
+            if resolved_club_id:
+                db.info["club_id"] = int(resolved_club_id)
+        except Exception:
+            pass
 
     return user
 

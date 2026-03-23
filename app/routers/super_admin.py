@@ -11,6 +11,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
+from app.club_config import club_config_response
+from app.club_setup_service import apply_club_setup
 from app.auth import get_db
 from app.auth import get_password_hash
 from app.club_assignments import sync_user_club_assignment
@@ -116,6 +118,59 @@ def _parse_staff_role(raw: str | None) -> UserRole:
     raise HTTPException(status_code=400, detail="role must be 'admin' or 'club_staff'")
 
 
+class ClubSetupTargetInput(BaseModel):
+    operation_key: str
+    metric_key: str
+    target_value: float
+    unit: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ClubAnnualTargetsInput(BaseModel):
+    year: int
+    rounds: Optional[float] = None
+    revenue: Optional[float] = None
+    revenue_mode: Optional[str] = "derived"
+    member_round_share: Optional[float] = None
+    member_revenue_share: Optional[float] = None
+
+
+class ClubSetupAdminInput(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    force_reset: Optional[bool] = True
+
+
+class ClubSetupInput(BaseModel):
+    club_name: str
+    club_slug: Optional[str] = None
+    active: Optional[bool] = True
+    logo_url: Optional[str] = None
+    currency_symbol: Optional[str] = None
+    member_label: Optional[str] = None
+    visitor_label: Optional[str] = None
+    non_affiliated_label: Optional[str] = None
+    home_club_keywords: Optional[list[str]] = None
+    suggested_home_clubs: Optional[list[str]] = None
+    brand_primary: Optional[str] = None
+    brand_secondary: Optional[str] = None
+    brand_accent: Optional[str] = None
+    brand_surface: Optional[str] = None
+    brand_text: Optional[str] = None
+    tagline: Optional[str] = None
+    location: Optional[str] = None
+    website: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    enabled_modules: Optional[list[str]] = None
+    operational_targets: Optional[list[ClubSetupTargetInput]] = None
+    annual_targets: Optional[ClubAnnualTargetsInput] = None
+    pricing_template: Optional[str] = "umhlali"
+    overwrite_pricing: Optional[bool] = True
+    admin_user: ClubSetupAdminInput
+
+
 @router.get("/clubs", response_model=list[ClubOut])
 def list_clubs(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     return db.query(Club).order_by(Club.active.desc(), Club.name.asc()).all()
@@ -206,6 +261,84 @@ def update_club(
     db.commit()
     db.refresh(club)
     return club
+
+
+@router.post("/clubs/setup")
+def setup_club(
+    payload: ClubSetupInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_super_admin),
+):
+    club_payload = payload.model_dump(
+        exclude_none=True,
+        exclude={"enabled_modules", "operational_targets", "annual_targets", "pricing_template", "overwrite_pricing", "admin_user"},
+    )
+    annual_targets = payload.annual_targets.model_dump(exclude_none=True) if payload.annual_targets else None
+    target_year = int(payload.annual_targets.year) if payload.annual_targets else None
+    operational_targets = [
+        row.model_dump(exclude_none=True)
+        for row in list(payload.operational_targets or [])
+    ]
+    admin_user_payload = payload.admin_user.model_dump(exclude_none=True)
+
+    try:
+        result = apply_club_setup(
+            db,
+            club_payload=club_payload,
+            enabled_modules=list(payload.enabled_modules or []),
+            operational_targets=operational_targets,
+            annual_targets_year=target_year,
+            annual_targets=annual_targets,
+            pricing_template=str(payload.pricing_template or "").strip().lower() or None,
+            overwrite_pricing=bool(payload.overwrite_pricing),
+            admin_user_payload=admin_user_payload,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    club = result["club"]
+    db.refresh(club)
+    club_id = int(club.id)
+    admin_user = result.get("admin_user")
+    if admin_user is not None and getattr(admin_user, "id", None):
+        db.refresh(admin_user)
+    profile = club_config_response(db, club_id=club_id)
+
+    _audit_super_event(
+        db,
+        request,
+        actor,
+        action="super_admin.club_setup_applied",
+        entity_type="club",
+        entity_id=int(club_id),
+        club_id=int(club_id),
+        payload={
+            "club_slug": club.slug,
+            "club_created": bool(result.get("club_created")),
+            "enabled_modules": list(profile.get("enabled_modules") or []),
+            "target_year": int(result.get("target_year") or 0),
+            "pricing_template": str(payload.pricing_template or "").strip().lower() or None,
+            "admin_email": str(getattr(admin_user, "email", "") or ""),
+            "admin_user_created": bool(result.get("admin_user_created")),
+        },
+    )
+    db.commit()
+
+    return {
+        "status": "success",
+        "club": ClubOut.model_validate(club).model_dump(mode="json"),
+        "club_created": bool(result.get("club_created")),
+        "club_profile": profile,
+        "modules": result.get("modules") or [],
+        "operational_targets": result.get("targets") or [],
+        "pricing": result.get("pricing"),
+        "admin_user": StaffUserOut.model_validate(admin_user).model_dump(mode="json") if admin_user is not None else None,
+        "admin_user_created": bool(result.get("admin_user_created")),
+        "target_year": int(result.get("target_year") or 0),
+    }
 
 
 @router.get("/staff", response_model=list[StaffUserOut])

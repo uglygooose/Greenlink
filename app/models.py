@@ -354,6 +354,7 @@ class Booking(Base):
 class Round(Base):
     __tablename__ = "rounds"
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     booking_id = Column(Integer, ForeignKey("bookings.id"), unique=True)
     scores_json = Column(Text, nullable=True)  # store JSON string of holes/scores
     handicap_sa_round_id = Column(String(100), nullable=True)  # ID from Handicap SA
@@ -433,6 +434,44 @@ class ClubSetting(Base):
     club_id = Column(Integer, ForeignKey("clubs.id"), primary_key=True)
     key = Column(String(200), primary_key=True)
     value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ClubModuleSetting(Base):
+    __tablename__ = "club_module_settings"
+    __table_args__ = (
+        UniqueConstraint("club_id", "module_key", name="uq_club_module_settings_club_module"),
+    )
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    module_key = Column(String(60), nullable=False, index=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    configured_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ClubOperationalTarget(Base):
+    __tablename__ = "club_operational_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "year",
+            "operation_key",
+            "metric_key",
+            name="uq_club_operational_targets_scope",
+        ),
+    )
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    year = Column(Integer, nullable=False, index=True)
+    operation_key = Column(String(60), nullable=False, index=True)
+    metric_key = Column(String(60), nullable=False, index=True)
+    unit = Column(String(30), nullable=True)
+    target_value = Column(Float, nullable=False, default=0.0)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -544,6 +583,27 @@ class PlayerNotification(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     read_at = Column(DateTime, nullable=True)
     responded_at = Column(DateTime, nullable=True)
+
+
+class ClubCommunication(Base):
+    __tablename__ = "club_communications"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    kind = Column(String(40), nullable=False, index=True)  # news | announcement | message
+    audience = Column(String(40), nullable=False, default="members", index=True)  # members | staff | all
+    status = Column(String(20), nullable=False, default="draft", index=True)  # draft | published | archived
+    title = Column(String(200), nullable=False)
+    summary = Column(String(280), nullable=True)
+    body = Column(Text, nullable=False)
+    cta_label = Column(String(80), nullable=True)
+    cta_url = Column(String(255), nullable=True)
+    pinned = Column(Boolean, nullable=False, default=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    published_at = Column(DateTime, nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AuditLog(Base):

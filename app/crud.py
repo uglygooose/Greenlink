@@ -1012,7 +1012,7 @@ def checkin_booking(db: Session, booking_id: int, payment_method: str | None = N
     # Create (or update) round with Handicap SA round ID
     r = b.round
     if not r:
-        r = models.Round(booking_id=b.id)
+        r = models.Round(club_id=int(club_id), booking_id=b.id)
         db.add(r)
 
     r.handicap_sa_round_id = handicap_result.get("round_id")
@@ -1033,12 +1033,14 @@ def submit_scores(db: Session, booking_id: int, scores_json: str):
     
     if not b.round:
         # Create round if it doesn't exist (edge case)
-        r = models.Round(booking_id=b.id, scores_json=scores_json, closed=1)
+        r = models.Round(club_id=int(club_id), booking_id=b.id, scores_json=scores_json, closed=1)
         db.add(r)
         db.commit()
         db.refresh(r)
     else:
         r = b.round
+        if getattr(r, "club_id", None) is None:
+            r.club_id = int(club_id)
         r.scores_json = scores_json
         r.closed = 1
         

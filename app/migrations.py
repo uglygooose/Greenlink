@@ -273,6 +273,28 @@ def _apply_default_value_backfills(conn) -> list[str]:
     return applied
 
 
+def _repair_rounds_club_scope(conn) -> list[str]:
+    if "rounds" not in _table_names(conn) or "bookings" not in _table_names(conn):
+        return []
+    cols = _column_map(conn, "rounds")
+    if "club_id" not in cols:
+        return []
+    _safe_execute(
+        conn,
+        """
+        UPDATE rounds
+        SET club_id = (
+            SELECT bookings.club_id
+            FROM bookings
+            WHERE bookings.id = rounds.booking_id
+        )
+        WHERE club_id IS NULL
+          AND booking_id IS NOT NULL
+        """,
+    )
+    return ["rounds.club_id_from_bookings"]
+
+
 def _record_schema_version(conn, details: dict) -> None:
     if "schema_versions" not in _table_names(conn):
         return
@@ -283,7 +305,7 @@ def _record_schema_version(conn, details: dict) -> None:
     ).scalar()
     params = {
         "component": "auto_compatibility",
-        "version": 2,
+        "version": 3,
         "status": str(details.get("status") or "ready"),
         "details_json": payload,
     }
@@ -353,6 +375,9 @@ def run_auto_migrations(engine) -> dict[str, object]:
         backfills = _apply_default_value_backfills(conn)
         if backfills:
             diagnostics["default_backfills"] = backfills
+        round_repairs = _repair_rounds_club_scope(conn)
+        if round_repairs:
+            diagnostics["repairs"].extend(round_repairs)
         if _repair_club_settings_primary_key(conn):
             diagnostics["repairs"].append("club_settings.primary_key")
         member_index_repairs = _repair_members_unique_indexes(conn)

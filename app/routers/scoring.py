@@ -295,11 +295,13 @@ def open_my_round(
     round_row = booking.round
     mode = _normalize_scoring_mode(payload.scoring_mode)
     if round_row is None:
-        round_row = models.Round(booking_id=booking.id, closed=0, handicap_synced=0)
+        round_row = models.Round(club_id=int(club_id), booking_id=booking.id, closed=0, handicap_synced=0)
         db.add(round_row)
         db.flush()
     elif bool(getattr(round_row, "closed", 0)):
         raise HTTPException(status_code=409, detail="Round already closed for this booking")
+    elif getattr(round_row, "club_id", None) is None:
+        round_row.club_id = int(club_id)
 
     _sync_booking_identity(booking, current_user, member)
 
