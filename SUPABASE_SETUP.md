@@ -18,7 +18,7 @@ This project currently defaults to **MySQL** (via `MYSQL_*` vars), but it can us
 ### 1) Install Postgres driver
 From repo root:
 ```powershell
-cd "c:\Users\athom\Documents\Projects\GreenLink\Greenlink"
+cd "c:\Users\athom\Documents\Projects\GreenLink"
 .\.venv\Scripts\python.exe -m pip install -r ".\requirements.txt"
 .\.venv\Scripts\python.exe -m pip install -r ".\requirements.postgres.txt"
 ```
