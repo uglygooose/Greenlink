@@ -2163,7 +2163,7 @@
                 ${slotState === "blocked" ? "" : `
                     <div class="tee-sheet-slot-actions">
                         ${canCreateBooking
-                            ? `<button type="button" class="button secondary" data-open-booking="${escapeHtml(String(row.id))}">Add booking</button>`
+                            ? `<button type="button" class="button secondary" data-open-booking="${escapeHtml(String(row.id))}" data-open-booking-party="${escapeHtml(String(Math.max(1, Math.min(slotNumber, Number(row.available || 4) || 1))))}">Add booking</button>`
                             : `<button type="button" class="button secondary" disabled title="Generate the tee sheet for this day first.">Add booking</button>`}
                     </div>
                 `}
@@ -3198,6 +3198,71 @@
         return `golf-tee-rows:${clubKey}:${clampYmd(date)}`;
     }
 
+    function teeRowsNeedMaterialization(rows) {
+        const items = Array.isArray(rows) ? rows : [];
+        return Boolean(items.length) && items.every(row => !isPersistedTeeTimeId(row?.id));
+    }
+
+    function deriveTeeSheetGenerationWindows(rows) {
+        const orderedTimes = [...new Set((Array.isArray(rows) ? rows : [])
+            .map(row => {
+                const stamp = toDate(row?.tee_time);
+                return stamp ? stamp.getTime() : null;
+            })
+            .filter(value => Number.isFinite(value)))]
+            .sort((left, right) => left - right);
+        if (!orderedTimes.length) return [];
+
+        let intervalMinutes = 8;
+        for (let index = 1; index < orderedTimes.length; index += 1) {
+            const diffMinutes = Math.round((orderedTimes[index] - orderedTimes[index - 1]) / 60000);
+            if (diffMinutes > 0) {
+                intervalMinutes = diffMinutes;
+                break;
+            }
+        }
+
+        const windows = [];
+        let start = orderedTimes[0];
+        let end = orderedTimes[0];
+        for (let index = 1; index < orderedTimes.length; index += 1) {
+            const current = orderedTimes[index];
+            const diffMinutes = Math.round((current - end) / 60000);
+            if (diffMinutes > intervalMinutes) {
+                windows.push({ start, end, intervalMinutes });
+                start = current;
+            }
+            end = current;
+        }
+        windows.push({ start, end, intervalMinutes });
+        return windows;
+    }
+
+    async function materializeGolfTeeRows(date, rows, { signal } = {}) {
+        const safeDate = clampYmd(date);
+        const teeRows = Array.isArray(rows) ? rows : [];
+        if (!teeRowsNeedMaterialization(teeRows)) return false;
+        const teeLabels = Array.from(new Set(teeRows.map(row => String(row?.hole || "").trim()).filter(Boolean)));
+        const windows = deriveTeeSheetGenerationWindows(teeRows);
+        if (!teeLabels.length || !windows.length) return false;
+        for (const windowRange of windows) {
+            if (signal?.aborted) return false;
+            const startDate = new Date(windowRange.start);
+            const endDate = new Date(windowRange.end);
+            await postJson("/tsheet/generate", {
+                date: safeDate,
+                tees: teeLabels,
+                start_time: `${String(startDate.getHours()).padStart(2, "0")}:${String(startDate.getMinutes()).padStart(2, "0")}`,
+                end_time: `${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}`,
+                interval_min: Math.max(1, Number(windowRange.intervalMinutes || 8)),
+                capacity: Math.max(1, Number(teeRows[0]?.capacity || 4)),
+                status: String(teeRows[0]?.status || "open").trim() || "open",
+            }, { invalidateCache: false, signal });
+        }
+        deleteSharedCacheKey(golfTeeRowsCacheKey(safeDate));
+        return true;
+    }
+
     function isAbortError(error) {
         return Boolean(error?.name === "AbortError" || error?.code === "ABORT_ERR");
     }
@@ -3285,15 +3350,30 @@
         }, 10000);
     }
 
-    async function loadGolfTeeRows(date, { signal } = {}) {
+    async function loadGolfTeeRows(date, { signal, ensureMaterialized = false } = {}) {
         const safeDate = clampYmd(date);
         const start = `${safeDate}T00:00:00`;
         const end = `${addDaysYmd(safeDate, 1)}T00:00:00`;
-        const rows = await loadSharedResource(
+        let rows = await loadSharedResource(
             golfTeeRowsCacheKey(safeDate),
-            () => fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { signal }),
+            () => fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { signal, timeoutMs: 20000 }),
             WORKSPACE_CACHE_TTL_BY_WORKSPACE.golf
         );
+        if (ensureMaterialized && teeRowsNeedMaterialization(rows)) {
+            try {
+                const created = await materializeGolfTeeRows(safeDate, rows, { signal });
+                if (created && !signal?.aborted) {
+                    rows = await fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { signal, timeoutMs: 20000 });
+                    writeSharedCache(golfTeeRowsCacheKey(safeDate), rows);
+                }
+            } catch (error) {
+                if (!isAbortError(error)) {
+                    logClientError("materializeGolfTeeRows", error, { date: safeDate });
+                } else {
+                    throw error;
+                }
+            }
+        }
         return groupTeeRows(rows);
     }
 
@@ -3301,23 +3381,37 @@
         const shell = roleShell();
         const date = todayYmd();
         const clubKey = activeClubCacheKeyPart();
-        const dashboard = await loadSharedResource(dashboardCacheKey(clubKey), () => fetchJson("/api/admin/dashboard", { signal }), 12000);
-        const alerts = await loadSharedResource(alertsCacheKey(clubKey), () => fetchJson("/api/admin/operational-alerts", { signal }), 8000);
-        const financeBase = shell === "club_admin"
-            ? await loadSharedFinanceBase({ signal })
-            : { closeStatus: { date, is_closed: false }, summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, settings: {} };
-
-        const communications = includeCommunications
-            ? await loadSharedResource(
+        const dashboardPromise = loadSharedResource(
+            dashboardCacheKey(clubKey),
+            () => fetchJson("/api/admin/dashboard", { signal, timeoutMs: 25000 }),
+            12000
+        );
+        const alertsPromise = loadSharedResource(
+            alertsCacheKey(clubKey),
+            () => fetchJson("/api/admin/operational-alerts", { signal, timeoutMs: 12000 }),
+            8000
+        );
+        const financeBasePromise = shell === "club_admin"
+            ? loadSharedFinanceBase({ signal })
+            : Promise.resolve({ closeStatus: { date, is_closed: false }, summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, settings: {} });
+        const communicationsPromise = includeCommunications
+            ? loadSharedResource(
                 `communications:${clubKey}:${communicationsPublishedOnly ? "published" : "all"}`,
-                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6", { signal }),
+                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6", { signal, timeoutMs: 12000 }),
                 10000
             )
-            : null;
+            : Promise.resolve(null);
+        const staffContextPromise = includeStaffContext
+            ? loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context", { signal, timeoutMs: 15000 }), 12000)
+            : Promise.resolve(null);
 
-        const staffContext = includeStaffContext
-            ? await loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context", { signal }), 12000)
-            : null;
+        const [dashboard, alerts, financeBase, communications, staffContext] = await Promise.all([
+            dashboardPromise,
+            alertsPromise,
+            financeBasePromise,
+            communicationsPromise,
+            staffContextPromise,
+        ]);
 
         return {
             dashboard,
@@ -3533,7 +3627,7 @@
             ]);
             return { panel, ...sharedDashboard, golfDays: bookings, date };
         }
-        const teeRows = await loadGolfTeeRows(date, { signal });
+        const teeRows = await loadGolfTeeRows(date, { signal, ensureMaterialized: true });
         return {
             panel,
             teeRows,
@@ -3594,6 +3688,7 @@
             });
         }
         if (!(root instanceof HTMLElement)) return;
+        scrollNativeTeeSheetToNextRelevantStart(root);
 
         let activeDrag = null;
         const clearDropHover = () => {
@@ -3661,6 +3756,35 @@
                 activeDrag = null;
             }
         });
+    }
+
+    function scrollNativeTeeSheetToNextRelevantStart(root) {
+        if (!(root instanceof HTMLElement)) return;
+        const rows = Array.from(root.querySelectorAll("tbody tr[data-tee-time-iso]"));
+        if (!rows.length) return;
+        const selectedDate = clampYmd(state.route?.date);
+        const isToday = selectedDate === todayYmd();
+        const now = Date.now();
+        let target = null;
+
+        for (const row of rows) {
+            const stamp = toDate(row.getAttribute("data-tee-time-iso") || "");
+            if (!stamp) continue;
+            const hasOpenStart = row.querySelector(".tee-sheet-slot-card.open[data-tee-time-id]") instanceof HTMLElement;
+            if (!hasOpenStart) continue;
+            if (!isToday || stamp.getTime() >= now) {
+                target = row;
+                break;
+            }
+        }
+
+        if (!(target instanceof HTMLElement)) {
+            target = rows.find(row => row.querySelector(".tee-sheet-slot-card.open[data-tee-time-id]") instanceof HTMLElement) || rows[0];
+        }
+        if (!(target instanceof HTMLElement)) return;
+
+        const top = Math.max(0, target.offsetTop - 28);
+        root.scrollTo({ top, behavior: "auto" });
     }
 
     function teePriorityRows(rows) {
@@ -5803,11 +5927,7 @@
         const signal = requestController.signal;
         const optimisticRoute = parseRoute();
         const hasExistingWorkspace = Boolean(els.root.children.length || String(els.root.innerHTML || "").trim());
-        const cachedWorkspace = readWorkspaceCache(optimisticRoute);
-        if (!cachedWorkspace && hasExistingWorkspace) {
-            setOverlay(true);
-        }
-        if (!cachedWorkspace && !hasExistingWorkspace) {
+        if (!readWorkspaceCache(optimisticRoute) && !hasExistingWorkspace) {
             renderWorkspaceLoading("Loading role-specific workspace.");
         }
         try {
@@ -6069,14 +6189,87 @@
         return rows.find(row => Number(row.id) === Number(teeTimeId)) || null;
     }
 
-    function openBookingModal(teeTimeId) {
+    async function fetchSuggestedFee(path, payload) {
+        try {
+            return await fetchJson(path, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                timeoutMs: 12000,
+            });
+        } catch (error) {
+            if (Number(error?.status || 0) === 404) return null;
+            throw error;
+        }
+    }
+
+    async function updateBookingPricingPreview(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+        const preview = form.querySelector("[data-booking-price-preview]");
+        if (!(preview instanceof HTMLElement)) return;
+        const teeTimeId = Number(form.tee_time_id.value || 0);
+        if (!isPersistedTeeTimeId(teeTimeId)) {
+            preview.innerHTML = `<div class="detail-row"><span class="row-key">Pricing</span><span class="row-value">Unavailable until the tee sheet is generated</span></div>`;
+            return;
+        }
+        const requestId = String(Number(form.dataset.pricingRequestId || 0) + 1);
+        form.dataset.pricingRequestId = requestId;
+        preview.innerHTML = `<div class="detail-row"><span class="row-key">Pricing</span><span class="row-value">Estimating...</span></div>`;
+
+        const playerType = String(form.player_type.value || "visitor").trim();
+        const holes = Number(form.holes.value || 18) === 9 ? 9 : 18;
+        const golfPayload = { tee_time_id: teeTimeId, player_type: playerType, holes };
+
+        try {
+            const [greenFee, cartFee, pushCartFee, caddyFee] = await Promise.all([
+                fetchSuggestedFee("/fees/suggest/golf", golfPayload),
+                form.cart.checked ? fetchSuggestedFee("/fees/suggest/cart", golfPayload) : Promise.resolve(null),
+                form.push_cart.checked ? fetchSuggestedFee("/fees/suggest/push-cart", golfPayload) : Promise.resolve(null),
+                form.caddy.checked ? fetchSuggestedFee("/fees/suggest/caddy", golfPayload) : Promise.resolve(null),
+            ]);
+            if (form.dataset.pricingRequestId !== requestId) return;
+            const lines = [
+                greenFee ? { label: greenFee.description || "Green fee", amount: Number(greenFee.price || 0) } : null,
+                cartFee ? { label: cartFee.description || "Cart", amount: Number(cartFee.price || 0) } : null,
+                pushCartFee ? { label: pushCartFee.description || "Push cart", amount: Number(pushCartFee.price || 0) } : null,
+                caddyFee ? { label: caddyFee.description || "Caddy", amount: Number(caddyFee.price || 0) } : null,
+            ].filter(Boolean);
+            const partySize = Math.max(1, Number(form.party_size.value || 1));
+            const total = lines.reduce((sum, line) => sum + Number(line.amount || 0), 0) * partySize;
+            preview.innerHTML = lines.length
+                ? `
+                    <div class="stack">
+                        ${lines.map(line => `<div class="detail-row"><span class="row-key">${escapeHtml(line.label)}</span><span class="row-value">${escapeHtml(formatCurrency(line.amount || 0))}</span></div>`).join("")}
+                        <div class="detail-row"><span class="row-key">Estimated total</span><span class="row-value">${escapeHtml(formatCurrency(total))}</span></div>
+                    </div>
+                `
+                : `<div class="detail-row"><span class="row-key">Pricing</span><span class="row-value">Price will resolve on booking</span></div>`;
+        } catch (error) {
+            if (form.dataset.pricingRequestId !== requestId) return;
+            preview.innerHTML = `<div class="detail-row"><span class="row-key">Pricing</span><span class="row-value">${escapeHtml(error?.message || "Unable to estimate price")}</span></div>`;
+        }
+    }
+
+    function bindBookingModalPricing() {
+        const form = document.getElementById("booking-modal-form");
+        if (!(form instanceof HTMLFormElement)) return;
+        ["player_type", "holes", "party_size", "cart", "push_cart", "caddy"].forEach(name => {
+            form.elements[name]?.addEventListener?.("change", () => {
+                void updateBookingPricingPreview(form);
+            });
+        });
+        void updateBookingPricingPreview(form);
+    }
+
+    function openBookingModal(teeTimeId, options = {}) {
         const row = findTeeRow(teeTimeId);
         if (!row) return;
         if (!isPersistedTeeTimeId(row.id)) {
             showToast("Generate the tee sheet for this day before adding bookings.", "bad");
             return;
         }
-        state.modalData = { teeTimeId: Number(teeTimeId) };
+        const requestedPartySize = Math.max(1, Math.min(Number(options.defaultPartySize || 1), Number(row.available || 4) || 4));
+        state.modalData = { teeTimeId: Number(teeTimeId), defaultPartySize: requestedPartySize };
         openModal(
             "Create booking",
             `${formatDateTime(row.tee_time)} · Tee ${row.hole || "1"} · ${row.available} spot(s) available`,
@@ -6095,7 +6288,7 @@
                                 <option value="non_affiliated">Non-affiliated</option>
                             </select>
                         </div>
-                        <div class="field"><label>Party Size</label><input name="party_size" type="number" min="1" max="${escapeHtml(row.available || 4)}" value="1"></div>
+                        <div class="field"><label>Party Size</label><input name="party_size" type="number" min="1" max="${escapeHtml(row.available || 4)}" value="${escapeHtml(requestedPartySize)}"></div>
                         <div class="field">
                             <label>Holes</label>
                             <select name="holes">
@@ -6110,6 +6303,9 @@
                         <div class="checkbox-card"><label><input type="checkbox" name="push_cart" value="1"> Push Cart</label><p>Track push-cart allocation.</p></div>
                         <div class="checkbox-card"><label><input type="checkbox" name="caddy" value="1"> Caddy</label><p>Track caddy allocation.</p></div>
                     </div>
+                    <section class="card" data-booking-price-preview>
+                        <div class="detail-row"><span class="row-key">Pricing</span><span class="row-value">Estimating...</span></div>
+                    </section>
                     <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
                     <div class="button-row">
                         <button type="submit" class="button">Create booking</button>
@@ -6118,6 +6314,7 @@
                 </form>
             `
         );
+        bindBookingModalPricing();
     }
 
     async function submitBookingModal(form) {
@@ -6416,7 +6613,12 @@
             return refreshActiveMembersWorkspace({ membersUi: { query: "", status: "all" } });
         }
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });
-        if (target.hasAttribute("data-open-booking")) return openBookingModal(Number(target.getAttribute("data-open-booking") || 0));
+        if (target.hasAttribute("data-open-booking")) {
+            return openBookingModal(
+                Number(target.getAttribute("data-open-booking") || 0),
+                { defaultPartySize: Number(target.getAttribute("data-open-booking-party") || 1) }
+            );
+        }
         if (target.hasAttribute("data-check-in")) return checkInBooking(Number(target.getAttribute("data-check-in") || 0));
         if (target.hasAttribute("data-booking-status")) {
             return updateBookingStatus(Number(target.getAttribute("data-booking-status") || 0), target.getAttribute("data-status-value") || "");

@@ -464,7 +464,7 @@ body[data-shell="club_admin"] .native-tee-sheet-card {
     position: sticky;
     top: 0;
     z-index: 5;
-    padding: 14px 12px;
+    padding: 10px 10px;
     background:
         linear-gradient(180deg, #edf6f0 0%, #e5f0ea 100%);
     border-bottom: 1px solid rgba(6, 79, 50, 0.12);
@@ -476,7 +476,7 @@ body[data-shell="club_admin"] .native-tee-sheet-card {
 }
 
 .tee-sheet-table td {
-    padding: 12px;
+    padding: 8px;
     vertical-align: top;
     border-bottom: 1px solid rgba(6, 79, 50, 0.08);
     background: rgba(250, 252, 250, 0.96);
@@ -491,14 +491,14 @@ body[data-shell="club_admin"] .native-tee-sheet-card {
 }
 
 .tee-sheet-table .time-col {
-    width: 108px;
-    min-width: 108px;
+    width: 94px;
+    min-width: 94px;
 }
 
 .tee-sheet-table .tee-col {
-    left: 108px;
-    width: 96px;
-    min-width: 96px;
+    left: 94px;
+    width: 84px;
+    min-width: 84px;
     border-right: 1px solid rgba(6, 79, 50, 0.08);
 }
 
@@ -508,7 +508,7 @@ body[data-shell="club_admin"] .native-tee-sheet-card {
 }
 
 .tee-sheet-time {
-    font-size: 20px;
+    font-size: 16px;
     line-height: 1;
     font-weight: 800;
     color: var(--ink);
@@ -523,26 +523,26 @@ body[data-shell="club_admin"] .native-tee-sheet-card {
 }
 
 .tee-sheet-tee-label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
     color: var(--accent-strong);
 }
 
 .slot-col {
-    min-width: 196px;
+    min-width: 162px;
 }
 
 .tee-sheet-slot-card {
-    min-height: 118px;
+    min-height: 84px;
     display: grid;
     align-content: start;
-    gap: 8px;
-    padding: 12px;
-    border-radius: 18px;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 14px;
     border: 1px solid #dfe9e3;
-    border-left: 5px solid #cad8d0;
+    border-left: 4px solid #cad8d0;
     background: linear-gradient(180deg, #ffffff, #f8fbf9);
-    box-shadow: 0 8px 20px rgba(9, 32, 21, 0.06);
+    box-shadow: 0 6px 16px rgba(9, 32, 21, 0.05);
     transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
@@ -629,41 +629,41 @@ body.drag-active .tee-sheet-slot-card.placeholder {
 .tee-sheet-slot-status {
     display: inline-flex;
     align-items: center;
-    min-height: 22px;
-    padding: 0 8px;
+    min-height: 18px;
+    padding: 0 7px;
     border-radius: 999px;
     background: rgba(10, 107, 71, 0.1);
     color: var(--accent-strong);
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
 .tee-sheet-slot-price {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     color: var(--ink);
 }
 
 .tee-sheet-slot-name {
-    font-size: 16px;
+    font-size: 13px;
     line-height: 1.2;
     font-weight: 800;
     color: var(--ink);
 }
 
 .tee-sheet-slot-meta {
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
     color: var(--muted);
-    min-height: 28px;
+    min-height: 22px;
 }
 
 .tee-sheet-slot-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     margin-top: auto;
 }
 
@@ -905,6 +905,14 @@ textarea {
 
 .button:hover {
     filter: brightness(1.03);
+}
+
+.button:disabled,
+.button[disabled] {
+    cursor: not-allowed;
+    opacity: 0.58;
+    filter: none;
+    box-shadow: none;
 }
 
 body[data-shell="club_admin"] .button {
