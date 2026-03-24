@@ -90,16 +90,16 @@
                 navCopy: "News, notices, and club messaging.",
             },
             reports: {
-                kicker: "Revenue & Finance",
-                title: "Revenue & Finance",
-                copy: "Keep revenue, targets, and finance posture close to daily operations instead of burying them in passive reporting.",
-                navCopy: "Revenue, targets, and finance posture.",
+                kicker: "Finance & Admin",
+                title: "Finance & Admin",
+                copy: "Keep revenue, targets, imports, and finance posture close to daily operations instead of burying them in passive reporting.",
+                navCopy: "Revenue, imports, and finance posture.",
             },
             settings: {
                 kicker: "Club Setup",
                 title: "Club Setup",
-                copy: "Control branding, booking rules, and operating targets without breaking the daily operating shell.",
-                navCopy: "Branding, booking rules, and targets.",
+                copy: "Control branding and booking rules without breaking the daily operating shell.",
+                navCopy: "Branding and booking rules.",
             },
         },
         staff: {
@@ -325,7 +325,7 @@
         if (shell === "club_admin") {
             if (key === "overview") return "Club Overview";
             if (key === "members") return "People & Clubs";
-            if (key === "reports") return "Revenue & Finance";
+            if (key === "reports") return "Finance & Admin";
             if (key === "settings") return "Club Setup";
         }
         return String(fallback || workspace || "Workspace");
@@ -341,7 +341,7 @@
                 { id: "members", label: "People & Clubs", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "operations", label: "Operations", items: items.filter(item => ["operations"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "communications", label: "Communications", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "reports", label: "Revenue & Finance", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "reports", label: "Finance & Admin", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "settings", label: "Club Setup", items: items.filter(item => ["settings"].includes(String(item.workspace || "").toLowerCase())) },
             ].filter(group => group.items.length);
         }
@@ -391,6 +391,14 @@
     function tabsForWorkspace(workspace) {
         const shell = roleShell();
         if (workspace === "golf") {
+            if (shell === "club_admin") {
+                return [
+                    { id: "overview", label: "Golf Dashboard" },
+                    { id: "tee-sheet", label: "Tee Sheet" },
+                    { id: "bookings", label: "Bookings" },
+                    { id: "golf-days", label: "Golf Day Operations" },
+                ];
+            }
             return [
                 { id: "tee-sheet", label: "Tee Sheet" },
                 { id: "golf-days", label: "Golf Day Operations" },
@@ -415,20 +423,30 @@
         if (workspace === "reports") {
             return [
                 { id: "performance", label: "Revenue Board" },
-                { id: "ledger", label: "Payment Audit" },
-                { id: "cashbook", label: "Export & Day Close" },
+                { id: "ledger", label: "Ledger & Reconciliation" },
+                { id: "cashbook", label: "Cashbook & Day Close" },
+                { id: "imports", label: "Imports & Data Health" },
                 { id: "targets", label: "Targets" },
             ];
         }
         if (workspace === "settings" && shell !== "super_admin") {
             return [
                 { id: "profile", label: "Club Profile" },
-                { id: "booking-window", label: "Booking Window" },
-                { id: "imports", label: "Imports & Setup" },
+                { id: "booking-window", label: "Booking Rules" },
+                { id: "imports", label: "Imports & Data Health" },
                 { id: "targets", label: "Targets" },
             ];
         }
         return [];
+    }
+
+    function navTabsForWorkspace(workspace) {
+        const shell = roleShell();
+        const tabs = tabsForWorkspace(workspace);
+        if (shell === "club_admin" && workspace === "settings") {
+            return tabs.filter(tab => ["profile", "booking-window"].includes(String(tab.id || "").trim().toLowerCase()));
+        }
+        return tabs;
     }
 
     function normalizeWorkspace(raw) {
@@ -937,9 +955,9 @@
     function renderFinanceControlCards() {
         const cards = [
             { title: "Revenue Board", copy: "Keep finance signal, stream mix, and target pace visible.", workspace: "reports", panel: "performance" },
-            { title: "Payment Audit", copy: "Review ledger-backed payment history before export and close-out.", workspace: "reports", panel: "ledger" },
-            { title: "Export & Day Close", copy: "Preview and export club-specific CSV journals for accounting.", workspace: "reports", panel: "cashbook" },
-            { title: "Imports & Setup", copy: "Keep stream mappings and import posture tied to finance.", workspace: "settings", panel: "imports" },
+            { title: "Ledger & Reconciliation", copy: "Review ledger-backed payment history before export and close-out.", workspace: "reports", panel: "ledger" },
+            { title: "Cashbook & Day Close", copy: "Preview and export club-specific CSV journals for accounting.", workspace: "reports", panel: "cashbook" },
+            { title: "Imports & Data Health", copy: "Keep stream mappings and import posture tied to finance.", workspace: "reports", panel: "imports" },
         ];
         return `
             <div class="launchpad-grid">
@@ -956,9 +974,7 @@
     function renderSetupControlCards() {
         const cards = [
             { title: "Club Profile", copy: "Branding and member-facing club identity.", workspace: "settings", panel: "profile" },
-            { title: "Booking Window", copy: "Advance-booking rules and cancellation guardrails.", workspace: "settings", panel: "booking-window" },
-            { title: "Imports & Setup", copy: "Import mappings and CSV alignment for each club's accounting layout.", workspace: "settings", panel: "imports" },
-            { title: "Targets", copy: "Operational targets linked back to the finance board.", workspace: "settings", panel: "targets" },
+            { title: "Booking Rules", copy: "Advance-booking rules and cancellation guardrails.", workspace: "settings", panel: "booking-window" },
         ];
         return `
             <div class="launchpad-grid">
@@ -1141,7 +1157,7 @@
                     ? revenueIntegrity.alerts.slice(0, 3).map(item => ({ title: item.title || "Integrity alert", detail: item.detail || item.context || "" }))
                     : [{ title: "Aligned", detail: "No payment or ledger integrity blockers are active right now." }],
                 action: shell === "club_admin"
-                    ? { label: "Open Payment Audit", workspace: "reports", panel: "ledger" }
+                    ? { label: "Open Ledger & Reconciliation", workspace: "reports", panel: "ledger" }
                     : { label: "Open Operations", workspace: "operations", panel: "overview" },
             },
             {
@@ -1152,7 +1168,7 @@
                     ? importCopilot.recommendations.slice(0, 3).map(text => ({ title: "Import", detail: text }))
                     : [{ title: "Healthy", detail: "Import mapping and freshness guidance is stable." }],
                 action: shell === "club_admin"
-                    ? { label: "Open Imports & Setup", workspace: "settings", panel: "imports" }
+                    ? { label: "Open Imports & Data Health", workspace: "reports", panel: "imports" }
                     : { label: "Open Communications", workspace: "communications", panel: null },
             },
         ];
@@ -1194,8 +1210,8 @@
         const cards = shell === "club_admin" ? [
             { title: "Golf", copy: "Run the tee sheet, golf days, and live golf control from the product's hero workspace.", workspace: "golf", panel: "tee-sheet" },
             { title: "Operations", copy: "Open the service lanes clients switch on for shop, sport, and hospitality value.", workspace: "operations", panel: "overview" },
-            { title: "Payment Audit", copy: "Check paid bookings, ledger integrity, and accounting handoff before close-out.", workspace: "reports", panel: "ledger" },
-            { title: "Export & Day Close", copy: "Deliver clean club-specific CSV handoff without pretending to replace accounting software.", workspace: "reports", panel: "cashbook" },
+            { title: "Ledger & Reconciliation", copy: "Check paid bookings, ledger integrity, and accounting handoff before close-out.", workspace: "reports", panel: "ledger" },
+            { title: "Cashbook & Day Close", copy: "Deliver clean club-specific CSV handoff without pretending to replace accounting software.", workspace: "reports", panel: "cashbook" },
         ] : [
             { title: "Golf", copy: "Open the live tee sheet and golf-day work without leaving the club shell.", workspace: "golf", panel: "tee-sheet" },
             { title: "Operations", copy: "See the enabled service modules that matter for today's club floor.", workspace: "operations", panel: "overview" },
@@ -1277,7 +1293,7 @@
                     : closeMeta.detail,
                 workspace: "reports",
                 panel: "cashbook",
-                label: "Open export & day close",
+                label: "Open cashbook & day close",
             }
             : {
                 title: "Pro shop watch",
@@ -1332,9 +1348,9 @@
                     { label: "High Alerts", value: formatInteger(alertSummary.high || 0), meta: `${formatInteger(alertSummary.total || 0)} active operational alerts` },
                 ])}
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open payment audit</button>
-                    <button type="button" class="button ghost" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger & reconciliation</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                 </div>
             </article>
         `;
@@ -1360,7 +1376,7 @@
                 ])}
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="operations" data-nav-panel="pro_shop">Open pro shop</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
                 </div>
             </article>
         `;
@@ -1422,7 +1438,7 @@
                 copy: "Review paid bookings, debtor context, and ledger integrity before handover.",
                 workspace: "reports",
                 panel: "ledger",
-                label: "Open payment audit",
+                label: "Open ledger & reconciliation",
             },
             {
                 title: "Export and close",
@@ -1430,7 +1446,7 @@
                 copy: closeMeta.detail,
                 workspace: "reports",
                 panel: "cashbook",
-                label: "Open export & day close",
+                label: "Open cashbook & day close",
             },
         ];
         return `
@@ -1482,9 +1498,9 @@
                     { label: "Close State", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open payment audit</button>
-                    <button type="button" class="button ghost" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger & reconciliation</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                 </div>
             </article>
         `;
@@ -1510,9 +1526,9 @@
                     { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use revenue board for period pacing" },
                 ])}
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open revenue board</button>
-                    <button type="button" class="button ghost" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                 </div>
             </article>
         `;
@@ -1886,7 +1902,7 @@
                 </div>
                 ${metricCards([
                     { label: settingsRows.length ? "Mapped Streams" : "Export Fit", value: mappingValue, meta: mappingMeta },
-                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : "-", meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mapping posture is stable") : "Open Imports & Setup for stream mapping detail" },
+                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : "-", meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mapping posture is stable") : "Open Imports & Data Health for stream mapping detail" },
                     { label: "Cashbook Setup", value: summary.cashbookReady ? "Ready" : "Needs setup", meta: summary.cashbookReady ? "Cashbook name and contra GL are configured" : "Cashbook export target still needs setup" },
                     { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
@@ -1896,8 +1912,8 @@
                     <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the club’s existing accounting software.</span></div>
                 </div>
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
                 </div>
             </article>
         `;
@@ -2241,7 +2257,7 @@
                     ${group.items.flatMap(item => {
                         const workspace = String(item.workspace || "");
                         const tabs = roleShell() === "club_admin" || roleShell() === "staff"
-                            ? tabsForWorkspace(workspace)
+                            ? navTabsForWorkspace(workspace)
                             : [];
                         const entries = tabs.length
                             ? tabs.map(tab => ({
@@ -3203,10 +3219,10 @@
                 <div class="button-row">
                     <button type="button" class="button" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
                     ${shell === "club_admin"
-                        ? `<button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open revenue & finance</button>`
+                        ? `<button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>`
                         : `<button type="button" class="button secondary" data-nav-workspace="members" data-nav-panel="members">Open members</button>`}
                     <button type="button" class="button ghost" data-nav-workspace="operations" data-nav-panel="overview">Open operations</button>
-                    ${shell === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>` : ""}
+                    ${shell === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
                 </div>
             </section>
             ${renderOverviewStreamCard(dashboard, options)}
@@ -3333,8 +3349,28 @@
         const date = clampYmd(state.route.date);
         const start = `${date}T00:00:00`;
         const end = `${addDaysYmd(date, 1)}T00:00:00`;
-        const panel = state.route.panel || "tee-sheet";
+        const panel = state.route.panel || (tabsForWorkspace("golf")[0]?.id || "tee-sheet");
         const shared = await loadSharedDashboardData();
+        if (panel === "bookings") {
+            const query = new URLSearchParams({
+                period: "day",
+                anchor_date: date,
+                date_basis: "tee_time",
+                sort: "tee_asc",
+                limit: "100",
+            });
+            const bookings = await fetchJson(`/api/admin/bookings?${query.toString()}`);
+            return {
+                panel,
+                ...shared,
+                bookings,
+                bookingsUi: {
+                    ...defaultGolfBookingsUi(state.workspaceData?.bookingsUi),
+                    selectedIds: [],
+                },
+                date,
+            };
+        }
         if (panel === "golf-days") {
             const bookings = await loadSharedResource(`golf-days:${activeClubCacheKeyPart()}`, () => fetchJson("/api/admin/golf-day-bookings"), 8000);
             return { panel, ...shared, golfDays: bookings, date };
@@ -3572,11 +3608,366 @@
         `;
     }
 
+    function defaultGolfBookingsUi(raw = {}) {
+        const status = String(raw.status || "all").trim().toLowerCase();
+        const integrity = String(raw.integrity || "all").trim().toLowerCase();
+        const selectedIds = Array.isArray(raw.selectedIds)
+            ? raw.selectedIds.map(value => positiveInt(value)).filter(Boolean)
+            : [];
+        return {
+            q: String(raw.q || "").trim(),
+            status: ["all", "booked", "checked_in", "completed", "cancelled", "no_show"].includes(status) ? status : "all",
+            integrity: ["all", "missing_paid_ledger"].includes(integrity) ? integrity : "all",
+            selectedIds: Array.from(new Set(selectedIds)),
+        };
+    }
+
+    function golfBookingsPaymentState(row) {
+        if (Number(row.ledger_entry_count || 0) > 0) return "Ledger posted";
+        if (Boolean(row.prepaid)) return "Prepaid";
+        return "Pay on day";
+    }
+
+    function bookingMatchesQuery(row, query) {
+        const needle = String(query || "").trim().toLowerCase();
+        if (!needle) return true;
+        return [
+            row.id,
+            row.player_name,
+            row.player_email,
+            row.club_card,
+            row.player_type,
+        ].some(value => String(value || "").toLowerCase().includes(needle));
+    }
+
+    function filterGolfBookings(rows, ui) {
+        const filters = defaultGolfBookingsUi(ui);
+        return (Array.isArray(rows) ? rows : []).filter(row => {
+            const status = String(row.status || "").trim().toLowerCase();
+            const paidWithoutLedger = ["checked_in", "completed"].includes(status) && Number(row.ledger_entry_count || 0) <= 0;
+            if (filters.status !== "all" && status !== filters.status) return false;
+            if (filters.integrity === "missing_paid_ledger" && !paidWithoutLedger) return false;
+            if (!bookingMatchesQuery(row, filters.q)) return false;
+            return true;
+        });
+    }
+
+    function visibleGolfBookingRows(bundle) {
+        const rows = Array.isArray(bundle?.bookings?.bookings) ? bundle.bookings.bookings : [];
+        return filterGolfBookings(rows, bundle?.bookingsUi);
+    }
+
+    function renderGolfBookingsBulkBar(bundle) {
+        const ui = defaultGolfBookingsUi(bundle.bookingsUi);
+        const rows = visibleGolfBookingRows(bundle);
+        const selectedIds = new Set(ui.selectedIds.map(value => Number(value)));
+        const selectedCount = rows.filter(row => selectedIds.has(Number(row.id))).length;
+        return `
+            <section class="card">
+                <div class="panel-head">
+                    <div>
+                        <h4>Bulk actions</h4>
+                        <p>Select visible bookings, then apply safe first-pass updates without leaving Golf.</p>
+                    </div>
+                    <span class="metric-pill">${escapeHtml(formatInteger(selectedCount))} selected</span>
+                </div>
+                <div class="button-row">
+                    <button type="button" class="button secondary" data-booking-select-visible="1">Select visible</button>
+                    <button type="button" class="button ghost" data-booking-select-clear="1">Clear selection</button>
+                </div>
+                <div class="field-grid">
+                    <div class="field">
+                        <label>Bulk status</label>
+                        <select id="golf-bookings-bulk-status">
+                            <option value="">Choose status</option>
+                            <option value="checked_in">Check in</option>
+                            <option value="completed">Complete</option>
+                            <option value="no_show">No-show</option>
+                            <option value="cancelled">Cancel</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Apply</label>
+                        <div class="button-row">
+                            <button type="button" class="button" data-booking-bulk-status="1">Apply status</button>
+                            <button type="button" class="button ghost" data-booking-bulk-payment="1">Set payment</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        `;
+    }
+
+    function renderGolfBookingsTable(rows, ui) {
+        const selectedIds = new Set(defaultGolfBookingsUi(ui).selectedIds.map(value => Number(value)));
+        return renderTable(
+            ["Select", "Tee Time", "Player", "Status", "Type", "Price", "Payment", "Account", "Actions"],
+            rows.length ? rows.map(row => {
+                const status = String(row.status || "").trim().toLowerCase();
+                const canSetPayment = ["checked_in", "completed"].includes(status) || Number(row.ledger_entry_count || 0) > 0;
+                return `
+                    <tr>
+                        <td><input type="checkbox" data-booking-select="${escapeHtml(String(row.id))}" ${selectedIds.has(Number(row.id)) ? "checked" : ""}></td>
+                        <td>
+                            <strong>${escapeHtml(formatTime(row.tee_time || ""))}</strong>
+                            <div class="table-meta">${escapeHtml(formatDate(row.tee_time || ""))}</div>
+                        </td>
+                        <td>
+                            <strong>${escapeHtml(row.player_name || "Booking")}</strong>
+                            <div class="table-meta">${escapeHtml(row.player_email || row.id || "")}</div>
+                        </td>
+                        <td>${renderStatusPill("", row.status || "booked")}</td>
+                        <td>${escapeHtml(String(row.player_type || "-").replaceAll("_", " "))}</td>
+                        <td>${escapeHtml(formatCurrency(row.price || 0))}</td>
+                        <td>
+                            <span class="metric-pill">${escapeHtml(golfBookingsPaymentState(row))}</span>
+                            <div class="table-meta">${escapeHtml(formatInteger(row.ledger_entry_count || 0))} ledger row(s)</div>
+                        </td>
+                        <td>
+                            <span class="metric-pill">${escapeHtml(row.club_card || "No code")}</span>
+                        </td>
+                        <td>
+                            <div class="inline-actions">
+                                ${status === "booked" ? `<button type="button" class="button secondary" data-booking-status="${escapeHtml(String(row.id))}" data-status-value="checked_in">Check in</button>` : ""}
+                                ${status === "checked_in" ? `<button type="button" class="button ghost" data-booking-status="${escapeHtml(String(row.id))}" data-status-value="completed">Complete</button>` : ""}
+                                ${status === "booked" ? `<button type="button" class="button ghost" data-booking-status="${escapeHtml(String(row.id))}" data-status-value="no_show">No-show</button>` : ""}
+                                ${status === "booked" || status === "checked_in" ? `<button type="button" class="button ghost" data-booking-status="${escapeHtml(String(row.id))}" data-status-value="cancelled">Cancel</button>` : ""}
+                                ${canSetPayment ? `<button type="button" class="button ghost" data-booking-payment="${escapeHtml(String(row.id))}">Set payment</button>` : ""}
+                                <button type="button" class="button ghost" data-booking-account="${escapeHtml(String(row.id))}">Set account</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }) : [`<tr><td colspan="9"><div class="empty-state">No bookings match the current golf-day filters.</div></td></tr>`]
+        );
+    }
+
+    function renderGolfBookingsPanel(bundle) {
+        const payload = bundle.bookings || {};
+        const rows = Array.isArray(payload.bookings) ? payload.bookings : [];
+        const ui = defaultGolfBookingsUi(bundle.bookingsUi);
+        const filtered = filterGolfBookings(rows, ui);
+        const paidStatuses = rows.filter(row => ["checked_in", "completed"].includes(String(row.status || "").trim().toLowerCase()));
+        const missingPaidLedger = rows.filter(row => {
+            const status = String(row.status || "").trim().toLowerCase();
+            return ["checked_in", "completed"].includes(status) && Number(row.ledger_entry_count || 0) <= 0;
+        });
+        const arrivingWork = rows.filter(row => ["booked", "checked_in"].includes(String(row.status || "").trim().toLowerCase()));
+        return `
+            <section class="hero-card golf-hero-card">
+                <div class="panel-head">
+                    <div>
+                        <h3>Golf bookings</h3>
+                        <p>Work today's golf-day bookings outside the tee sheet: search, clean up payment/account coding, and push the right status quickly.</p>
+                    </div>
+                </div>
+                ${metricCards([
+                    { label: "Loaded Bookings", value: formatInteger(rows.length), meta: `Selected golf date ${escapeHtml(formatDate(bundle.date))}` },
+                    { label: "Booked / Arriving", value: formatInteger(arrivingWork.length), meta: "Booked or checked-in work still active" },
+                    { label: "Paid Statuses", value: formatInteger(paidStatuses.length), meta: "Checked-in or completed bookings" },
+                    { label: "Missing Paid Ledger", value: formatInteger(missingPaidLedger.length), meta: "Paid-status bookings without ledger rows" },
+                ])}
+                <div class="button-row">
+                    <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
+                    <button type="button" class="button secondary" data-nav-panel="overview">Open golf dashboard</button>
+                    <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Cashbook &amp; day close</button>
+                </div>
+            </section>
+            <form class="form-card" id="golf-bookings-filter-form">
+                <div class="panel-head">
+                    <div>
+                        <h4>Booking filters</h4>
+                        <p>Keep this first pass practical: search, status, and revenue-integrity exceptions for the selected golf date.</p>
+                    </div>
+                </div>
+                <div class="field-grid">
+                    <div class="field">
+                        <label>Search</label>
+                        <input name="q" value="${escapeHtml(ui.q)}" placeholder="Player, email, account code, or booking id">
+                    </div>
+                    <div class="field">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="all" ${ui.status === "all" ? "selected" : ""}>All statuses</option>
+                            <option value="booked" ${ui.status === "booked" ? "selected" : ""}>Booked</option>
+                            <option value="checked_in" ${ui.status === "checked_in" ? "selected" : ""}>Checked in</option>
+                            <option value="completed" ${ui.status === "completed" ? "selected" : ""}>Completed</option>
+                            <option value="cancelled" ${ui.status === "cancelled" ? "selected" : ""}>Cancelled</option>
+                            <option value="no_show" ${ui.status === "no_show" ? "selected" : ""}>No-show</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Integrity</label>
+                        <select name="integrity">
+                            <option value="all" ${ui.integrity === "all" ? "selected" : ""}>All bookings</option>
+                            <option value="missing_paid_ledger" ${ui.integrity === "missing_paid_ledger" ? "selected" : ""}>Missing paid ledger</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="button" value="apply">Apply filters</button>
+                    <button type="submit" class="button secondary" name="action" value="reset">Reset</button>
+                </div>
+            </form>
+            ${renderGolfBookingsBulkBar({ ...bundle, bookingsUi: ui })}
+            <section class="card">
+                <div class="panel-head">
+                    <div>
+                        <h4>Bookings for ${escapeHtml(formatDate(bundle.date))}</h4>
+                        <p>${escapeHtml(formatInteger(filtered.length))} booking(s) visible after client-side filtering.</p>
+                    </div>
+                </div>
+                ${renderGolfBookingsTable(filtered, ui)}
+            </section>
+        `;
+    }
+
     function renderGolfWorkspace(bundle) {
         const shell = roleShell();
-        const panel = bundle.panel || "tee-sheet";
+        const panel = bundle.panel || (tabsForWorkspace("golf")[0]?.id || "tee-sheet");
+        if (panel === "overview") {
+            const rows = Array.isArray(bundle.teeRows) ? bundle.teeRows : [];
+            const occupied = rows.reduce((sum, row) => sum + Number(row.occupied || 0), 0);
+            const capacity = rows.reduce((sum, row) => sum + Number(row.capacity || 0), 0);
+            const bookedSlots = rows.filter(row => Number(row.occupied || 0) > 0).length;
+            const blockedSlots = rows.filter(row => String(row.status || "") === "blocked").length;
+            const golfInsight = bundle.dashboard?.operation_insights?.golf || {};
+            const golfPipeline = {
+                total: bundle.dashboard?.golf_day_pipeline_total || 0,
+                outstanding: bundle.dashboard?.golf_day_outstanding_balance || 0,
+                open: bundle.dashboard?.golf_day_open_count || 0,
+                revenue: bundle.dashboard?.golf_revenue_today || 0,
+            };
+
+            return `
+                <section class="hero-card golf-hero-card">
+                    <div class="panel-head">
+                        <div>
+                            <h3>Golf command centre</h3>
+                            <p>Golf should feel immediate, premium, and operational. The tee sheet stays at the center, with the next actions and handoff state visible before the live sheet opens.</p>
+                        </div>
+                    </div>
+                    ${metricCards([
+                        { label: "Slots", value: formatInteger(rows.length), meta: "Rendered for the selected day" },
+                        { label: "Booked Slots", value: formatInteger(bookedSlots), meta: "Slots carrying at least one booking" },
+                        { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} player places used` },
+                        { label: "Blocked Slots", value: formatInteger(blockedSlots), meta: "Blocked by closure or golf-day rules" },
+                    ])}
+                    ${renderGolfCommandStrip(bundle, rows)}
+                </section>
+                <section class="dashboard-grid">
+                    <article class="dashboard-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Tee-day priorities</h4>
+                                <p>The first read should show where the sheet is loaded, sold out, or blocked so the golf desk knows what matters next.</p>
+                            </div>
+                        </div>
+                        ${renderGolfPriorityBoard(rows)}
+                    </article>
+                    <article class="dashboard-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Golf dashboard</h4>
+                                <p>${escapeHtml(golfInsight.note || "Golf should show live operational signal alongside the day sheet.")}</p>
+                            </div>
+                        </div>
+                        ${metricCards((golfInsight.cards || []).map(row => ({
+                            label: row.label,
+                            value: formatMaybe(row.value, row.format),
+                            meta: "Current golf signal",
+                        })))}
+                        ${renderOperationalHighlights(golfInsight.highlights)}
+                    </article>
+                    <article class="dashboard-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Golf-day pipeline</h4>
+                                <p>Golf-day commercial context stays inside golf operations, not in a detached report view.</p>
+                            </div>
+                        </div>
+                        ${metricCards([
+                            { label: "Pipeline Value", value: formatCurrency(golfPipeline.total), meta: "Open golf-day pipeline" },
+                            { label: "Outstanding", value: formatCurrency(golfPipeline.outstanding), meta: "Balance still due" },
+                            { label: "Open Events", value: formatInteger(golfPipeline.open), meta: "Pending or partial events" },
+                            { label: "Golf Revenue Today", value: formatCurrency(golfPipeline.revenue), meta: "Current golf revenue snapshot" },
+                        ])}
+                        <div class="button-row">
+                            <button type="button" class="button secondary" data-nav-panel="bookings">Open bookings</button>
+                            <button type="button" class="button ghost" data-nav-panel="golf-days">Open golf days</button>
+                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger &amp; reconciliation</button>
+                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook &amp; day close</button>
+                        </div>
+                    </article>
+                </section>
+                <section class="dashboard-grid">
+                    ${renderHandoverReadinessCard(bundle.dashboard || {}, bundle.alerts || {})}
+                    <article class="dashboard-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Golf finance bridge</h4>
+                                <p>Golf operations are only complete when tee-sheet work, paid status, and day-end export posture stay linked.</p>
+                            </div>
+                        </div>
+                        ${metricCards([
+                            { label: "Golf Revenue Today", value: formatCurrency(bundle.dashboard?.golf_revenue_today || 0), meta: "Current golf cash-basis revenue" },
+                            { label: "Completed Rounds", value: formatInteger(bundle.dashboard?.completed_rounds || 0), meta: "Rounds completed in current dashboard window" },
+                            { label: "Today Bookings", value: formatInteger(bundle.dashboard?.today_bookings || 0), meta: "Current golf booking load" },
+                            { label: "Revenue Integrity", value: escapeHtml(String(bundle.dashboard?.ai_assistant?.revenue_integrity?.status || "healthy").replaceAll("_", " ")), meta: `Score ${formatInteger(bundle.dashboard?.ai_assistant?.revenue_integrity?.health_score || 0)}` },
+                        ])}
+                    </article>
+                </section>
+                ${shell === "club_admin" ? `
+                    <section class="dashboard-grid">
+                        ${renderOperationsCadenceCard(bundle, { context: "golf" })}
+                        ${renderAccountingHandoffCard(bundle)}
+                    </section>
+                ` : ""}
+                <section class="card golf-sheet-card">
+                    <div class="panel-head">
+                        <div>
+                            <h4>Live tee-sheet access</h4>
+                            <p>Golf overview keeps the priorities and commercial signal. The actual day sheet now opens in its own shell-native tee-sheet tab instead of being buried at the bottom here.</p>
+                        </div>
+                    </div>
+                    <div class="ops-cadence">
+                        <div class="ops-step">
+                            <div class="ops-step-index">1</div>
+                            <div class="ops-step-copy">
+                                <div class="ops-step-title">Open the live tee sheet</div>
+                                <div class="ops-step-state">${escapeHtml(formatDate(bundle.date))}</div>
+                                <div class="ops-step-detail">Run booking cards, drag-drop movement, check-in, and status changes in the dedicated Tee Sheet panel.</div>
+                            </div>
+                            <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
+                        </div>
+                        <div class="ops-step">
+                            <div class="ops-step-index">2</div>
+                            <div class="ops-step-copy">
+                                <div class="ops-step-title">Work the golf booking queue</div>
+                                <div class="ops-step-state">${escapeHtml(formatInteger(bundle.dashboard?.today_bookings || 0))} booking(s)</div>
+                                <div class="ops-step-detail">Use the Bookings panel for search, status cleanup, payment method, and account coding without disturbing the live sheet.</div>
+                            </div>
+                            <button type="button" class="button secondary" data-nav-panel="bookings">Open bookings</button>
+                        </div>
+                        <div class="ops-step">
+                            <div class="ops-step-index">3</div>
+                            <div class="ops-step-copy">
+                                <div class="ops-step-title">Then close the golf handoff</div>
+                                <div class="ops-step-state">${escapeHtml(bundle.closeStatus?.is_closed ? "Day closed" : "Day open")}</div>
+                                <div class="ops-step-detail">Use finance handoff, ledger review, and export controls without leaving the club shell.</div>
+                            </div>
+                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook &amp; close</button>
+                        </div>
+                    </div>
+                </section>
+            `;
+        }
         if (panel === "tee-sheet") {
             return renderGolfTeeSheetPanel(bundle);
+        }
+        if (panel === "bookings") {
+            return renderGolfBookingsPanel(bundle);
         }
         if (panel === "golf-days") {
             const golfDays = bundle.golfDays || {};
@@ -3618,131 +4009,7 @@
             `;
         }
 
-        const rows = Array.isArray(bundle.teeRows) ? bundle.teeRows : [];
-        const occupied = rows.reduce((sum, row) => sum + Number(row.occupied || 0), 0);
-        const capacity = rows.reduce((sum, row) => sum + Number(row.capacity || 0), 0);
-        const bookedSlots = rows.filter(row => Number(row.occupied || 0) > 0).length;
-        const blockedSlots = rows.filter(row => String(row.status || "") === "blocked").length;
-        const golfInsight = bundle.dashboard?.operation_insights?.golf || {};
-        const golfPipeline = {
-            total: bundle.dashboard?.golf_day_pipeline_total || 0,
-            outstanding: bundle.dashboard?.golf_day_outstanding_balance || 0,
-            open: bundle.dashboard?.golf_day_open_count || 0,
-            revenue: bundle.dashboard?.golf_revenue_today || 0,
-        };
-
-        return `
-            <section class="hero-card golf-hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Golf command centre</h3>
-                        <p>Golf should feel immediate, premium, and operational. The tee sheet stays at the center, with the next actions and handoff state visible before the live sheet opens.</p>
-                    </div>
-                </div>
-                ${metricCards([
-                    { label: "Slots", value: formatInteger(rows.length), meta: "Rendered for the selected day" },
-                    { label: "Booked Slots", value: formatInteger(bookedSlots), meta: "Slots carrying at least one booking" },
-                    { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} player places used` },
-                    { label: "Blocked Slots", value: formatInteger(blockedSlots), meta: "Blocked by closure or golf-day rules" },
-                ])}
-                ${renderGolfCommandStrip(bundle, rows)}
-            </section>
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Tee-day priorities</h4>
-                            <p>The first read should show where the sheet is loaded, sold out, or blocked so the golf desk knows what matters next.</p>
-                        </div>
-                    </div>
-                    ${renderGolfPriorityBoard(rows)}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Golf dashboard</h4>
-                            <p>${escapeHtml(golfInsight.note || "Golf should show live operational signal alongside the day sheet.")}</p>
-                        </div>
-                    </div>
-                    ${metricCards((golfInsight.cards || []).map(row => ({
-                        label: row.label,
-                        value: formatMaybe(row.value, row.format),
-                        meta: "Current golf signal",
-                    })))}
-                    ${renderOperationalHighlights(golfInsight.highlights)}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Golf-day pipeline</h4>
-                            <p>Golf-day commercial context stays inside golf operations, not in a detached report view.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Pipeline Value", value: formatCurrency(golfPipeline.total), meta: "Open golf-day pipeline" },
-                        { label: "Outstanding", value: formatCurrency(golfPipeline.outstanding), meta: "Balance still due" },
-                        { label: "Open Events", value: formatInteger(golfPipeline.open), meta: "Pending or partial events" },
-                        { label: "Golf Revenue Today", value: formatCurrency(golfPipeline.revenue), meta: "Current golf revenue snapshot" },
-                    ])}
-                    <div class="button-row">
-                        <button type="button" class="button secondary" data-nav-panel="golf-days">Open golf days</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open payment audit</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
-                    </div>
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderHandoverReadinessCard(bundle.dashboard || {}, bundle.alerts || {})}
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Golf finance bridge</h4>
-                            <p>Golf operations are only complete when tee-sheet work, paid status, and day-end export posture stay linked.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Golf Revenue Today", value: formatCurrency(bundle.dashboard?.golf_revenue_today || 0), meta: "Current golf cash-basis revenue" },
-                        { label: "Completed Rounds", value: formatInteger(bundle.dashboard?.completed_rounds || 0), meta: "Rounds completed in current dashboard window" },
-                        { label: "Today Bookings", value: formatInteger(bundle.dashboard?.today_bookings || 0), meta: "Current golf booking load" },
-                        { label: "Revenue Integrity", value: escapeHtml(String(bundle.dashboard?.ai_assistant?.revenue_integrity?.status || "healthy").replaceAll("_", " ")), meta: `Score ${formatInteger(bundle.dashboard?.ai_assistant?.revenue_integrity?.health_score || 0)}` },
-                    ])}
-                </article>
-            </section>
-            ${shell === "club_admin" ? `
-                <section class="dashboard-grid">
-                    ${renderOperationsCadenceCard(bundle, { context: "golf" })}
-                    ${renderAccountingHandoffCard(bundle)}
-                </section>
-            ` : ""}
-            <section class="card golf-sheet-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Live tee-sheet access</h4>
-                        <p>Golf overview keeps the priorities and commercial signal. The actual day sheet now opens in its own shell-native tee-sheet tab instead of being buried at the bottom here.</p>
-                    </div>
-                </div>
-                <div class="ops-cadence">
-                    <div class="ops-step">
-                        <div class="ops-step-index">1</div>
-                        <div class="ops-step-copy">
-                            <div class="ops-step-title">Open the live tee sheet</div>
-                            <div class="ops-step-state">${escapeHtml(formatDate(bundle.date))}</div>
-                            <div class="ops-step-detail">Run booking cards, drag-drop movement, check-in, and status changes in the dedicated Tee Sheet panel.</div>
-                        </div>
-                        <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
-                    </div>
-                    <div class="ops-step">
-                        <div class="ops-step-index">2</div>
-                        <div class="ops-step-copy">
-                            <div class="ops-step-title">Then close the golf handoff</div>
-                            <div class="ops-step-state">${escapeHtml(bundle.closeStatus?.is_closed ? "Day closed" : "Day open")}</div>
-                            <div class="ops-step-detail">Use finance handoff, payment audit, and export controls without leaving the club shell.</div>
-                        </div>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & close</button>
-                    </div>
-                </div>
-            </section>
-        `;
+        return `<section class="card"><div class="empty-state">This golf panel is not available in the current club context.</div></section>`;
     }
 
     async function operationsBundle() {
@@ -3929,8 +4196,8 @@
                     ])}
                     <div class="button-row">
                         <button type="button" class="button secondary" data-nav-panel="pro_shop">Open Pro Shop</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open revenue & finance</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
                     </div>
                 </section>
                 <section class="dashboard-grid">
@@ -3966,9 +4233,9 @@
                         { label: "Low Stock", value: formatInteger(bundle.products?.low_stock_count || 0), meta: "Products at or below reorder level" },
                     ])}
                     <div class="button-row">
-                        <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open revenue & finance</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>
-                        <button type="button" class="button ghost" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
+                        <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                     </div>
                 </section>
                 <section class="dashboard-grid">
@@ -4250,7 +4517,7 @@
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
                     <button type="button" class="button ghost" data-nav-workspace="communications">Open communications</button>
-                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>` : ""}
+                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
                 </div>
             </article>
         `;
@@ -4555,7 +4822,7 @@
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="members" data-nav-panel="members">Open people & clubs</button>
                     <button type="button" class="button ghost" data-nav-workspace="operations" data-nav-panel="overview">Open operations</button>
-                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export & day close</button>` : ""}
+                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
                 </div>
             </article>
         `;
@@ -4767,7 +5034,7 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>Payment audit</h3>
+                        <h3>Ledger & Reconciliation</h3>
                         <p>Ledger-backed payment history stays visible before export, so clubs can audit the day without leaving the shell.</p>
                     </div>
                 </div>
@@ -4819,7 +5086,7 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>Export & day close</h3>
+                        <h3>Cashbook & Day Close</h3>
                         <p>GreenLink does not need a direct Sage integration to be operationally excellent. It needs club-specific CSV export that matches the ledger books they already run.</p>
                     </div>
                     <div class="inline-actions">
@@ -4839,7 +5106,7 @@
                     ${closeStatus.is_closed
                         ? `<button type="button" class="button ghost" data-reopen-day="${escapeHtml(date)}">Reopen day</button>`
                         : `<button type="button" class="button ghost" data-close-day="${escapeHtml(date)}">Close day</button>`}
-                    <button type="button" class="button ghost" data-nav-workspace="settings" data-nav-panel="imports">Open imports & setup</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                 </div>
             </section>
             <section class="dashboard-grid">
@@ -4908,7 +5175,7 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>Imports & setup</h3>
+                        <h3>Imports & Data Health</h3>
                         <p>Each club can keep its current accounting shape. GreenLink only needs clean imports, clear mappings, and exports that match the ledger format they already use.</p>
                     </div>
                 </div>
@@ -4969,6 +5236,25 @@
         `;
     }
 
+    async function loadImportsWorkspaceBundle(shared = null) {
+        const base = shared || await loadSharedDashboardData();
+        const [imports, golf, proShop, pubSettings] = await Promise.all([
+            fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }),
+        ]);
+        return {
+            dashboard: base.dashboard,
+            imports,
+            importSettings: [golf, proShop, pubSettings],
+            settings: base.settings,
+            closeStatus: base.closeStatus,
+            summary: base.summary,
+            date: base.date,
+        };
+    }
+
     async function reportsBundle() {
         const panel = state.route.panel || "performance";
         if (panel === "ledger") {
@@ -4984,6 +5270,11 @@
                 fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(shared.date)}`, { transaction_count: 0, total_payments: 0 }),
             ]);
             return { panel, ...shared, preview, proShop, date: shared.date };
+        }
+        if (panel === "imports") {
+            const shared = await loadSharedDashboardData();
+            const importsBundle = await loadImportsWorkspaceBundle(shared);
+            return { panel, ...importsBundle };
         }
         const shared = await loadSharedDashboardData();
         const [revenue, targets] = await Promise.all([
@@ -5002,6 +5293,9 @@
         }
         if (panel === "cashbook") {
             return renderCashbookWorkspace(bundle);
+        }
+        if (panel === "imports") {
+            return renderImportsWorkspace(bundle);
         }
         if (panel === "targets") {
             return `
@@ -5072,7 +5366,7 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>Revenue & Finance</h3>
+                        <h3>Finance & Admin</h3>
                         <p>This should read like a live club finance board: revenue trend, imported streams, sync posture, and target pace in one place.</p>
                     </div>
                 </div>
@@ -5159,14 +5453,8 @@
     async function settingsBundle() {
         const panel = state.route.panel || "profile";
         if (panel === "imports") {
-            const shared = await loadSharedDashboardData();
-            const [imports, golf, proShop, pubSettings] = await Promise.all([
-                fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }),
-                fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }),
-                fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }),
-                fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }),
-            ]);
-            return { panel, dashboard: shared.dashboard, imports, importSettings: [golf, proShop, pubSettings], settings: shared.settings, closeStatus: shared.closeStatus, summary: shared.summary, date: shared.date };
+            const importsBundle = await loadImportsWorkspaceBundle();
+            return { panel, ...importsBundle };
         }
         const [profile, bookingWindow, targets] = await Promise.all([
             fetchJson("/api/admin/club-profile"),
@@ -5186,7 +5474,7 @@
                 <section class="hero-card">
                     <div class="panel-head">
                         <div>
-                            <h3>Booking window</h3>
+                            <h3>Booking Rules</h3>
                             <p>Booking rules should stay readable from a setup board, not feel buried in a generic settings form.</p>
                         </div>
                     </div>
@@ -5200,7 +5488,7 @@
                 <form class="form-card" id="booking-window-form">
                     <div class="panel-head">
                         <div>
-                            <h3>Booking window rules</h3>
+                            <h3>Booking rules</h3>
                             <p>Club-side booking rules stay in a dedicated settings area, not mixed into daily operations.</p>
                         </div>
                     </div>
@@ -5211,7 +5499,7 @@
                         <div class="field"><label>Group Cancel Days</label><input name="group_cancel_days" type="number" min="0" max="365" value="${escapeHtml(bundle.bookingWindow?.group_cancel_days || 0)}"></div>
                     </div>
                     <div class="button-row">
-                        <button type="submit" class="button">Save booking window</button>
+                        <button type="submit" class="button">Save booking rules</button>
                     </div>
                 </form>
             `;
@@ -5486,7 +5774,7 @@
             group_cancel_days: Number(form.group_cancel_days.value || 0),
         };
         await postJson("/api/admin/booking-window", payload, { method: "PUT" });
-        showToast("Booking window saved.", "ok");
+        showToast("Booking rules saved.", "ok");
         await renderCurrentWorkspace();
     }
 
@@ -5625,6 +5913,111 @@
         await renderCurrentWorkspace();
     }
 
+    function activeGolfBookingsUi() {
+        return defaultGolfBookingsUi(state.workspaceData?.bookingsUi);
+    }
+
+    function selectedGolfBookingIds() {
+        return activeGolfBookingsUi().selectedIds;
+    }
+
+    function rerenderActiveWorkspaceFromState() {
+        if (state.route?.workspace !== "golf" || state.route?.panel !== "bookings") return;
+        els.root.innerHTML = renderGolfWorkspace(state.workspaceData || {});
+    }
+
+    function updateGolfBookingsUi(patch) {
+        if (!state.workspaceData || state.route?.workspace !== "golf" || state.route?.panel !== "bookings") return;
+        state.workspaceData.bookingsUi = defaultGolfBookingsUi({
+            ...activeGolfBookingsUi(),
+            ...(patch || {}),
+        });
+        rerenderActiveWorkspaceFromState();
+    }
+
+    async function submitGolfBookingsFilterForm(form, submitter) {
+        const action = String(submitter?.value || submitter?.getAttribute?.("value") || "").trim().toLowerCase();
+        if (action === "reset") {
+            updateGolfBookingsUi({
+                q: "",
+                status: "all",
+                integrity: "all",
+                selectedIds: [],
+            });
+            return;
+        }
+        updateGolfBookingsUi({
+            q: String(form.q.value || "").trim(),
+            status: String(form.status.value || "all").trim().toLowerCase(),
+            integrity: String(form.integrity.value || "all").trim().toLowerCase(),
+            selectedIds: [],
+        });
+    }
+
+    function toggleGolfBookingSelection(bookingId, checked) {
+        const current = new Set(selectedGolfBookingIds().map(value => Number(value)));
+        const id = Number(bookingId || 0);
+        if (id <= 0) return;
+        if (checked) current.add(id);
+        else current.delete(id);
+        updateGolfBookingsUi({ selectedIds: Array.from(current) });
+    }
+
+    function selectVisibleGolfBookings() {
+        const ids = visibleGolfBookingRows(state.workspaceData || {}).map(row => Number(row.id)).filter(Boolean);
+        updateGolfBookingsUi({ selectedIds: ids });
+    }
+
+    function clearVisibleGolfBookings() {
+        updateGolfBookingsUi({ selectedIds: [] });
+    }
+
+    async function updateBookingPaymentMethodPrompt(bookingId) {
+        const paymentMethod = String(window.prompt("Payment method (CARD/CASH/EFT/ONLINE/ACCOUNT)", "CARD") || "").trim();
+        if (!paymentMethod) return;
+        await postJson(`/api/admin/bookings/${Number(bookingId)}/payment-method`, { payment_method: paymentMethod }, { method: "PUT" });
+        showToast("Booking payment method updated.", "ok");
+        await renderCurrentWorkspace();
+    }
+
+    async function updateBookingAccountCodePrompt(bookingId) {
+        const accountCode = window.prompt("Account code (leave blank to clear)", "") ?? null;
+        if (accountCode === null) return;
+        await postJson(`/api/admin/bookings/${Number(bookingId)}/account-code`, { account_code: String(accountCode || "").trim() || null }, { method: "PUT" });
+        showToast("Booking account code updated.", "ok");
+        await renderCurrentWorkspace();
+    }
+
+    async function batchUpdateGolfBookings(payload, successMessage) {
+        const bookingIds = selectedGolfBookingIds();
+        if (!bookingIds.length) {
+            showToast("Select at least one booking.", "bad");
+            return;
+        }
+        await postJson("/api/admin/bookings/batch-update", {
+            booking_ids: bookingIds,
+            ...(payload || {}),
+        }, { method: "PUT" });
+        showToast(successMessage || "Bookings updated.", "ok");
+        await renderCurrentWorkspace();
+    }
+
+    async function batchUpdateGolfBookingStatusFromUi() {
+        const select = els.root.querySelector("#golf-bookings-bulk-status");
+        const status = select instanceof HTMLSelectElement ? String(select.value || "").trim().toLowerCase() : "";
+        if (!status) {
+            showToast("Choose a bulk status first.", "bad");
+            return;
+        }
+        await batchUpdateGolfBookings({ status }, "Booking statuses updated.");
+    }
+
+    async function batchUpdateGolfBookingPaymentPrompt() {
+        const paymentMethod = String(window.prompt("Bulk payment method (CARD/CASH/EFT/ONLINE/ACCOUNT)", "CARD") || "").trim();
+        if (!paymentMethod) return;
+        await batchUpdateGolfBookings({ payment_method: paymentMethod }, "Booking payment methods updated.");
+    }
+
     async function exportCashbookCsv(date) {
         await downloadWithAuth(`/cashbook/export-csv?export_date=${encodeURIComponent(date)}`, `Cashbook_Payments_${String(date || todayYmd()).replaceAll("-", "")}.csv`);
         showToast("Daily journal exported.", "ok");
@@ -5654,7 +6047,7 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
@@ -5674,6 +6067,19 @@
         if (target.hasAttribute("data-booking-status")) {
             return updateBookingStatus(Number(target.getAttribute("data-booking-status") || 0), target.getAttribute("data-status-value") || "");
         }
+        if (target.hasAttribute("data-booking-payment")) {
+            return updateBookingPaymentMethodPrompt(Number(target.getAttribute("data-booking-payment") || 0));
+        }
+        if (target.hasAttribute("data-booking-account")) {
+            return updateBookingAccountCodePrompt(Number(target.getAttribute("data-booking-account") || 0));
+        }
+        if (target.hasAttribute("data-booking-select")) {
+            return toggleGolfBookingSelection(target.getAttribute("data-booking-select") || 0, target instanceof HTMLInputElement ? target.checked : true);
+        }
+        if (target.hasAttribute("data-booking-select-visible")) return selectVisibleGolfBookings();
+        if (target.hasAttribute("data-booking-select-clear")) return clearVisibleGolfBookings();
+        if (target.hasAttribute("data-booking-bulk-status")) return batchUpdateGolfBookingStatusFromUi();
+        if (target.hasAttribute("data-booking-bulk-payment")) return batchUpdateGolfBookingPaymentPrompt();
         if (target.hasAttribute("data-nav-workspace") || target.hasAttribute("data-nav-panel")) {
             const partial = {};
             if (target.hasAttribute("data-nav-workspace")) {
@@ -5700,6 +6106,7 @@
             "club-profile-form": submitClubProfileForm,
             "operational-targets-form": submitOperationalTargetsForm,
             "booking-modal-form": submitBookingModal,
+            "golf-bookings-filter-form": submitGolfBookingsFilterForm,
         };
         const handler = handlers[form.id];
         if (!handler) return;
@@ -5707,7 +6114,7 @@
         const submitter = event.submitter instanceof HTMLButtonElement ? event.submitter : null;
         if (submitter) submitter.disabled = true;
         try {
-            await handler(form);
+            await handler(form, submitter);
         } catch (error) {
             showToast(error?.message || "Action failed.", "bad");
         } finally {
