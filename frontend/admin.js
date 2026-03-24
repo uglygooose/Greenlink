@@ -491,39 +491,150 @@
         return route;
     }
 
+    function normalizeRouteObject(route = null) {
+        const source = route && typeof route === "object" ? route : {};
+        const workspace = normalizeWorkspace(source.workspace);
+        const normalized = {
+            workspace,
+            panel: normalizePanel(workspace, source.panel),
+            date: workspace === "golf" ? clampYmd(source.date) : todayYmd(),
+            clubId: positiveInt(source.clubId),
+        };
+        if (state.bootstrap?.club_context_locked) normalized.clubId = null;
+        return normalized;
+    }
+
+    function routesEqualNormalized(left, right) {
+        const a = normalizeRouteObject(left);
+        const b = normalizeRouteObject(right);
+        return (
+            String(a.workspace || "") === String(b.workspace || "")
+            && String(a.panel || "") === String(b.panel || "")
+            && String(a.date || "") === String(b.date || "")
+            && String(a.clubId || "") === String(b.clubId || "")
+        );
+    }
+
+    function currentLocationUrl() {
+        return `${window.location.pathname}${window.location.search}`;
+    }
+
+    function transitionKindForRoutes(fromRoute, toRoute, options = {}) {
+        if (options.forceRefresh) return "forced_refresh";
+        if (options.recovery) return "recovery";
+        const nextRoute = normalizeRouteObject(toRoute);
+        const previousRoute = fromRoute ? normalizeRouteObject(fromRoute) : null;
+        if (!previousRoute || options.initialLoad) return "initial_load";
+        if (routesEqualNormalized(previousRoute, nextRoute)) return "identical_route";
+        if (String(previousRoute.workspace || "") !== String(nextRoute.workspace || "")) return "workspace_change";
+        if (String(previousRoute.date || "") !== String(nextRoute.date || "")) return "same_workspace_date_change";
+        if (String(previousRoute.panel || "") !== String(nextRoute.panel || "")) return "same_workspace_panel_switch";
+        return "same_workspace_refresh";
+    }
+
+    function shouldRefreshBootstrapForRouteTransition({ fromRoute = null, toRoute = null, transitionKind = "", forceRefresh = false, recovery = false } = {}) {
+        if (forceRefresh || recovery) return true;
+        if (!state.bootstrap) return true;
+        if (transitionKind === "initial_load") return true;
+        if (!["club_admin", "staff"].includes(roleShell())) return true;
+        if (!state.bootstrap?.club_context_locked) return true;
+        if (!cachedBootstrapMatchesRoute(state.bootstrap, toRoute || fromRoute || state.route)) return true;
+        if ((Date.now() - Number(state.bootstrapFetchedAt || 0)) >= BOOTSTRAP_REFRESH_TTL_MS) return true;
+        return false;
+    }
+
     function serializeRoute(route) {
         const params = new URLSearchParams();
-        const workspace = normalizeWorkspace(route?.workspace);
-        const panel = normalizePanel(workspace, route?.panel);
+        const normalized = normalizeRouteObject(route);
+        const workspace = normalized.workspace;
+        const panel = normalized.panel;
         params.set("workspace", workspace);
         if (panel) params.set("panel", panel);
-        if (workspace === "golf") params.set("date", clampYmd(route?.date));
-        if (!state.bootstrap?.club_context_locked && roleShell() === "super_admin" && positiveInt(route?.clubId)) {
+        if (workspace === "golf") params.set("date", normalized.date);
+        if (!state.bootstrap?.club_context_locked && roleShell() === "super_admin" && positiveInt(normalized.clubId)) {
             if (["clubs", "onboarding", "demo", "users"].includes(workspace)) {
-                params.set("club_id", String(route.clubId));
+                params.set("club_id", String(normalized.clubId));
             }
         }
         return `${window.location.pathname}?${params.toString()}`;
     }
 
-    function navigate(partial, options = {}) {
-        const nextRoute = {
-            ...state.route,
-            ...partial,
-        };
-        nextRoute.workspace = normalizeWorkspace(nextRoute.workspace);
-        nextRoute.panel = normalizePanel(nextRoute.workspace, nextRoute.panel);
-        if (nextRoute.workspace !== "golf") nextRoute.date = todayYmd();
-        if (state.bootstrap?.club_context_locked) nextRoute.clubId = null;
+    function syncNavActiveState(route = state.route) {
+        const normalized = normalizeRouteObject(route);
+        ensureNavGroupOpenForWorkspace(normalized.workspace);
+        els.nav.querySelectorAll(".nav-item").forEach(node => {
+            if (!(node instanceof HTMLElement)) return;
+            const workspace = String(node.getAttribute("data-nav-workspace") || "").trim().toLowerCase();
+            const panel = String(node.getAttribute("data-nav-panel") || "").trim().toLowerCase();
+            const active = workspace === String(normalized.workspace || "").trim().toLowerCase()
+                && (panel ? panel === String(normalized.panel || "").trim().toLowerCase() : true);
+            node.classList.toggle("active", active);
+        });
+        els.nav.querySelectorAll(".nav-group").forEach(section => {
+            if (!(section instanceof HTMLElement)) return;
+            const toggle = section.querySelector(".nav-group-toggle");
+            const items = section.querySelector(".nav-group-items");
+            const hasActive = Boolean(section.querySelector(".nav-item.active"));
+            section.classList.toggle("active", hasActive);
+            const groupId = String(toggle?.getAttribute("data-nav-group") || "").trim().toLowerCase();
+            const isOpen = state.navOpenGroups.has(groupId);
+            section.classList.toggle("open", isOpen);
+            if (toggle instanceof HTMLElement) {
+                toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+                const caret = toggle.querySelector(".nav-group-caret");
+                if (caret) caret.textContent = isOpen ? "-" : "+";
+            }
+            if (items instanceof HTMLElement) {
+                items.hidden = !isOpen;
+            }
+        });
+    }
+
+    function applyRouteTransition(nextRouteInput, options = {}) {
+        const previousRoute = state.route ? normalizeRouteObject(state.route) : null;
+        const nextRoute = normalizeRouteObject(nextRouteInput);
+        const transitionKind = transitionKindForRoutes(previousRoute, nextRoute, options);
         const nextUrl = serializeRoute(nextRoute);
-        if (options.replace) window.history.replaceState({}, "", nextUrl);
-        else window.history.pushState({}, "", nextUrl);
-        state.route = parseRoute();
+        const currentUrl = currentLocationUrl();
+
+        if (transitionKind === "identical_route" && !options.forceRefresh && !options.recovery) {
+            return false;
+        }
+
+        if (options.historyMode === "replace") {
+            if (nextUrl !== currentUrl) window.history.replaceState({}, "", nextUrl);
+        } else if (options.historyMode === "push") {
+            if (nextUrl !== currentUrl) window.history.pushState({}, "", nextUrl);
+        }
+
+        state.route = nextRoute;
         ensureNavGroupOpenForWorkspace(state.route.workspace);
         if (typeof options.afterNavigate === "function") {
             options.afterNavigate();
         }
-        void renderCurrentWorkspace();
+        void renderCurrentWorkspace({
+            route: nextRoute,
+            previousRoute,
+            transitionKind,
+            forceRefresh: Boolean(options.forceRefresh),
+            recovery: Boolean(options.recovery),
+            initialLoad: Boolean(options.initialLoad),
+        });
+        return true;
+    }
+
+    function navigate(partial, options = {}) {
+        const nextRoute = normalizeRouteObject({
+            ...(state.route || {}),
+            ...(partial || {}),
+        });
+        return applyRouteTransition(nextRoute, {
+            historyMode: options.replace ? "replace" : "push",
+            afterNavigate: options.afterNavigate,
+            forceRefresh: Boolean(options.forceRefresh),
+            recovery: Boolean(options.recovery),
+            initialLoad: Boolean(options.initialLoad),
+        });
     }
 
     function setOverlay(visible) {
@@ -5918,23 +6029,45 @@
         `;
     }
 
-    async function renderCurrentWorkspace() {
+    async function renderCurrentWorkspace(options = {}) {
         const token = ++state.renderToken;
         const requestController = beginRouteRequest();
         const signal = requestController.signal;
-        const optimisticRoute = parseRoute();
+        const optimisticRoute = normalizeRouteObject(options.route || state.route || parseRoute());
+        const previousRoute = options.previousRoute ? normalizeRouteObject(options.previousRoute) : null;
+        const transitionKind = options.transitionKind || transitionKindForRoutes(previousRoute, optimisticRoute, {
+            initialLoad: Boolean(options.initialLoad),
+            forceRefresh: Boolean(options.forceRefresh),
+            recovery: Boolean(options.recovery),
+        });
+        const bootstrapRefreshRequired = shouldRefreshBootstrapForRouteTransition({
+            fromRoute: previousRoute,
+            toRoute: optimisticRoute,
+            transitionKind,
+            forceRefresh: Boolean(options.forceRefresh),
+            recovery: Boolean(options.recovery),
+        });
         const hasExistingWorkspace = Boolean(els.root.children.length || String(els.root.innerHTML || "").trim());
         if (!readWorkspaceCache(optimisticRoute) && !hasExistingWorkspace) {
             renderWorkspaceLoading("Loading role-specific workspace.");
         }
         try {
-            await refreshBootstrap(false);
+            if (bootstrapRefreshRequired) {
+                await refreshBootstrap(Boolean(options.forceRefresh || options.initialLoad || options.recovery));
+            }
             if (roleShell() === "member") {
                 window.location.href = state.bootstrap.landing_path || "/frontend/dashboard.html?view=home";
                 return;
             }
-            state.route = parseRoute();
-            renderChrome();
+            state.route = normalizeRouteObject(optimisticRoute);
+            const canReuseChrome = ["club_admin", "staff"].includes(roleShell())
+                && ["same_workspace_panel_switch", "same_workspace_date_change", "same_workspace_refresh"].includes(transitionKind)
+                && Boolean(els.nav.children.length);
+            if (!canReuseChrome) {
+                renderChrome();
+            } else {
+                syncNavActiveState(state.route);
+            }
 
             let html = "";
             if (roleShell() === "super_admin") {
@@ -6723,11 +6856,10 @@
         document.addEventListener("click", event => { void handleClick(event); });
         document.addEventListener("submit", event => { void handleSubmit(event); });
         window.addEventListener("popstate", () => {
-            state.route = parseRoute();
-            void renderCurrentWorkspace();
+            applyRouteTransition(parseRoute(), { historyMode: "none" });
         });
 
-        await renderCurrentWorkspace();
+        applyRouteTransition(state.route, { historyMode: "none", initialLoad: true });
     }
 
     void initialize().catch(handleInitializationFailure);
