@@ -1480,6 +1480,131 @@ body[data-shell="club_admin"] .tee-priority-row {
     gap: 12px;
 }
 
+.page-system-hero {
+    display: grid;
+    gap: 16px;
+}
+
+.family-subnav {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    position: sticky;
+    top: 12px;
+    z-index: 2;
+    scrollbar-width: thin;
+}
+
+.family-subnav-item {
+    appearance: none;
+    border: 1px solid rgba(6, 79, 50, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--muted);
+    cursor: pointer;
+    min-height: 36px;
+    padding: 0 14px;
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+.family-subnav-item.active {
+    background: linear-gradient(180deg, #ffffff, #f5faf7);
+    border-color: rgba(198, 168, 106, 0.3);
+    color: var(--accent-strong);
+    box-shadow: 0 10px 22px rgba(6, 52, 33, 0.08);
+}
+
+.page-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.workblock-stack {
+    display: grid;
+    gap: 14px;
+}
+
+.workblock {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+body[data-shell="club_admin"] .workblock {
+    background: linear-gradient(180deg, #ffffff, #fbfdfb);
+    border-color: rgba(6, 79, 50, 0.12);
+}
+
+.workblock-summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 20px;
+    cursor: pointer;
+}
+
+.workblock-summary::-webkit-details-marker {
+    display: none;
+}
+
+.workblock-heading {
+    display: grid;
+    gap: 8px;
+}
+
+.workblock-heading h4 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.workblock-heading p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.workblock-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.workblock-caret {
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform 0.18s ease;
+    margin-top: 6px;
+}
+
+.workblock[open] .workblock-caret {
+    transform: rotate(-135deg);
+    margin-top: 10px;
+}
+
+.workblock-body {
+    display: grid;
+    gap: 14px;
+    padding: 0 20px 20px;
+}
+
+.workblock-form {
+    display: grid;
+    gap: 14px;
+}
+
 .launchpad-card {
     appearance: none;
     border: 1px solid #dce8e0;
@@ -1874,11 +1999,16 @@ body[data-shell="club_admin"] .module-card:hover {
     .action-row,
     .detail-row,
     .panel-head,
+    .workblock-summary,
     .booking-row-top,
     .ops-step,
     .tee-priority-row,
     .tee-priority-top {
         display: grid;
+    }
+
+    .family-subnav {
+        gap: 8px;
     }
 
     .golf-command-actions {

@@ -1232,6 +1232,87 @@
         `;
     }
 
+    function renderPageActionRow(actions) {
+        const items = (Array.isArray(actions) ? actions : []).filter(Boolean);
+        if (!items.length) return "";
+        return `
+            <div class="page-action-row">
+                ${items.map(action => renderPageActionButton(action)).join("")}
+            </div>
+        `;
+    }
+
+    function renderPageActionButton(action) {
+        const label = String(action?.label || "").trim() || "Action";
+        const tones = new Set(["secondary", "ghost", "warn"]);
+        const tone = tones.has(String(action?.tone || "").trim().toLowerCase())
+            ? String(action.tone).trim().toLowerCase()
+            : "";
+        const className = ["button", tone].filter(Boolean).join(" ");
+        const attrs = [
+            action?.workspace ? `data-nav-workspace="${escapeHtml(action.workspace)}"` : "",
+            action?.panel ? `data-nav-panel="${escapeHtml(action.panel)}"` : "",
+            action?.workblock ? `data-workblock-toggle="${escapeHtml(action.workblock)}"` : "",
+            action?.attrs || "",
+        ].filter(Boolean).join(" ");
+        return `<button type="button" class="${className}" ${attrs}>${escapeHtml(label)}</button>`;
+    }
+
+    function renderFamilySubnav(workspace, options = {}) {
+        const tabs = navTabsForWorkspace(workspace);
+        if (!tabs.length) return "";
+        const label = String(options.label || `${workspace} pages`).trim();
+        return `
+            <nav class="family-subnav" aria-label="${escapeHtml(label)}">
+                ${tabs.map(tab => `
+                    <button
+                        type="button"
+                        class="family-subnav-item ${state.route.workspace === workspace && state.route.panel === tab.id ? "active" : ""}"
+                        data-nav-workspace="${escapeHtml(workspace)}"
+                        data-nav-panel="${escapeHtml(tab.id)}"
+                        ${state.route.workspace === workspace && state.route.panel === tab.id ? 'aria-current="page"' : ""}
+                    >
+                        ${escapeHtml(tab.label)}
+                    </button>
+                `).join("")}
+            </nav>
+        `;
+    }
+
+    function renderWorkblock(options = {}) {
+        const id = String(options.id || "").trim();
+        const title = String(options.title || "").trim() || "Workblock";
+        const copy = String(options.copy || "").trim();
+        const badge = String(options.badge || "").trim();
+        const body = String(options.body || "");
+        return `
+            <details class="workblock" ${id ? `id="${escapeHtml(id)}"` : ""} ${options.open ? "open" : ""}>
+                <summary class="workblock-summary">
+                    <div class="workblock-heading">
+                        <h4>${escapeHtml(title)}</h4>
+                        ${copy ? `<p>${escapeHtml(copy)}</p>` : ""}
+                    </div>
+                    <div class="workblock-meta">
+                        ${badge ? `<span class="metric-pill">${escapeHtml(badge)}</span>` : ""}
+                        <span class="workblock-caret" aria-hidden="true"></span>
+                    </div>
+                </summary>
+                <div class="workblock-body">
+                    ${body}
+                </div>
+            </details>
+        `;
+    }
+
+    function focusWorkblock(workblockId) {
+        const id = String(workblockId || "").trim();
+        if (!id) return;
+        const node = document.getElementById(id);
+        if (!(node instanceof HTMLDetailsElement)) return;
+        node.open = true;
+        node.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+
     function renderCommunicationsControlCards() {
         const cards = [
             { title: "Communications", copy: "Current club notices and messaging control.", workspace: "communications", panel: null },
@@ -4830,18 +4911,21 @@
         };
     }
 
-    function renderMembersSearchForm(bundle) {
+    function renderMembersSearchForm(bundle, options = {}) {
         const membersUi = defaultMembersUi(bundle.membersUi);
         const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
         const total = Number(bundle.members?.total || rows.length || 0);
+        const embedded = Boolean(options.embedded);
         return `
-            <form class="form-card" id="members-search-form">
-                <div class="panel-head">
-                    <div>
-                        <h3>People search</h3>
-                        <p>Open this workspace ready to search first, then narrow by status without loading a giant raw member dump.</p>
+            <form class="${embedded ? "workblock-form" : "form-card"}" id="members-search-form">
+                ${embedded ? "" : `
+                    <div class="panel-head">
+                        <div>
+                            <h3>People search</h3>
+                            <p>Open this workspace ready to search first, then narrow by status without loading a giant raw member dump.</p>
+                        </div>
                     </div>
-                </div>
+                `}
                 <div class="field-grid">
                     <div class="field">
                         <label>Search people</label>
@@ -5089,6 +5173,132 @@
                     ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
                 </div>
             </article>
+        `;
+    }
+
+    function renderMemberRowsTable(rows, options = {}) {
+        const items = Array.isArray(rows) ? rows : [];
+        const limit = Number(options.limit || 0);
+        const visible = limit > 0 ? items.slice(0, limit) : items;
+        const emptyText = String(options.emptyText || "No members found.").trim();
+        return renderTable(
+            ["Member", "Operation", "Status", "Bookings", "Spend"],
+            visible.length ? visible.map(row => `
+                <tr>
+                    <td><strong>${escapeHtml(row.name || "")}</strong><div class="table-meta">${escapeHtml(row.member_number || row.email || "")}</div></td>
+                    <td>${escapeHtml(MODULE_LABELS[row.primary_operation] || row.primary_operation || "-")}</td>
+                    <td>${escapeHtml(row.membership_status || "-")}</td>
+                    <td>${escapeHtml(formatInteger(row.bookings_count || 0))}</td>
+                    <td>${escapeHtml(formatCurrency(row.total_spent || 0))}</td>
+                </tr>
+            `) : [`<tr><td colspan="5"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
+        );
+    }
+
+    function renderStaffRowsTable(rows, options = {}) {
+        const items = Array.isArray(rows) ? rows : [];
+        const limit = Number(options.limit || 0);
+        const visible = limit > 0 ? items.slice(0, limit) : items;
+        const emptyText = String(options.emptyText || "No staff users found.").trim();
+        return renderTable(
+            ["Name", "Role", "Operational Role", "Email"],
+            visible.length ? visible.map(row => `
+                <tr>
+                    <td><strong>${escapeHtml(row.name || "")}</strong></td>
+                    <td>${escapeHtml(row.role || "")}</td>
+                    <td>${escapeHtml(row.operational_role || row.operation_area || "-")}</td>
+                    <td>${escapeHtml(row.email || "")}</td>
+                </tr>
+            `) : [`<tr><td colspan="4"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
+        );
+    }
+
+    function renderAccountCustomerStack(rows, options = {}) {
+        const items = Array.isArray(rows) ? rows : [];
+        const limit = Number(options.limit || 0);
+        const visible = limit > 0 ? items.slice(0, limit) : items;
+        const emptyText = String(options.emptyText || "No active account customers found.").trim();
+        return `
+            <div class="stack">
+                ${visible.length ? visible.map(row => `
+                    <div class="list-row">
+                        <div class="list-row-top">
+                            <span class="list-title">${escapeHtml(row.name || "Account")}</span>
+                            <span class="metric-pill">${escapeHtml(row.account_code || "No code")}</span>
+                        </div>
+                        <div class="list-meta">${escapeHtml([row.billing_contact || "", row.customer_type || "", row.terms || ""].filter(Boolean).join(" Â· ")) || "No billing contact set."}</div>
+                    </div>
+                `).join("") : `<div class="empty-state">${escapeHtml(emptyText)}</div>`}
+            </div>
+        `;
+    }
+
+    function renderMemberServiceQueueEmbedded(rows) {
+        const queue = buildMemberServiceQueue(rows);
+        return `
+            <div class="stack">
+                ${queue.length ? queue.map(row => `
+                    <div class="list-row">
+                        <div class="list-row-top">
+                            <span class="list-title">${escapeHtml(row.name || "Member")}</span>
+                            ${renderStatusPill("", row.membership_status || "active")}
+                        </div>
+                        <div class="list-meta">${escapeHtml([
+                            row.member_number || row.email || "",
+                            MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
+                            `${formatInteger(row.bookings_count || 0)} booking(s)`,
+                            formatCurrency(row.total_spent || 0),
+                        ].filter(Boolean).join(" Â· "))}</div>
+                        <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
+                    </div>
+                `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
+            </div>
+        `;
+    }
+
+    function renderDebtorWatchEmbedded(accountCustomers) {
+        const rows = buildDebtorWatchRows(accountCustomers);
+        return `
+            <div class="stack">
+                ${rows.length ? rows.map(row => `
+                    <div class="list-row">
+                        <div class="list-row-top">
+                            <span class="list-title">${escapeHtml(row.name || "Account customer")}</span>
+                            <span class="metric-pill">${escapeHtml(row.account_code || "Code missing")}</span>
+                        </div>
+                        <div class="list-meta">${escapeHtml([
+                            row.billing_contact || "Billing contact missing",
+                            row.customer_type || "",
+                            row.terms || "Terms missing",
+                        ].filter(Boolean).join(" Â· "))}</div>
+                        <div class="inline-actions">
+                            ${renderStatusPill("", row._missingCode || row._missingContact ? "missing" : "configured")}
+                        </div>
+                    </div>
+                `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}
+            </div>
+        `;
+    }
+
+    function renderServiceDeskBriefEmbedded(memberRows, accountCustomers) {
+        const members = Array.isArray(memberRows) ? memberRows : [];
+        const debtors = Array.isArray(accountCustomers) ? accountCustomers : [];
+        const flaggedMembers = members.filter(row => ["hold", "inactive", "defaulter", "resigned"].includes(String(row.membership_status || "").toLowerCase())).length;
+        const golfFacing = members.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length;
+        const highActivity = members.filter(row => Number(row.bookings_count || 0) >= 4).length;
+        const configuredDebtors = debtors.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length;
+        return `
+            ${metricCards([
+                { label: "Golf Members", value: formatInteger(golfFacing), meta: "Members likely to touch the tee sheet or golf-day flow" },
+                { label: "High Activity", value: formatInteger(highActivity), meta: "Members with heavy recent booking demand" },
+                { label: "Flagged Members", value: formatInteger(flaggedMembers), meta: "Statuses likely to need manual follow-up" },
+                { label: "Configured Debtors", value: formatInteger(configuredDebtors), meta: "Account customers ready for clean export" },
+            ])}
+            <div class="button-row">
+                <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
+                <button type="button" class="button ghost" data-nav-workspace="communications">Open communications</button>
+                ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
+            </div>
         `;
     }
 
@@ -5350,6 +5560,247 @@
                         `) : [`<tr><td colspan="5"><div class="empty-state">No members found.</div></td></tr>`]
                     )}
                 </section>
+            </section>
+        `;
+    }
+
+    function renderStandardizedMembersWorkspace(bundle) {
+        const panel = bundle.panel || "members";
+        if (panel === "staff" && roleShell() === "club_admin") {
+            const rows = Array.isArray(bundle.staff?.staff) ? bundle.staff.staff : [];
+            const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
+            const memberRows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
+            const activeOperators = rows.filter(row => ["club_staff", "staff"].includes(String(row.role || "").toLowerCase())).length;
+            const golfFacingMembers = memberRows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length;
+            const configuredDebtors = accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length;
+            return `
+                <section class="hero-card page-system-hero">
+                    <div class="panel-head">
+                        <div>
+                            <h3>Staff</h3>
+                            <p>Manage club-side operators from one structured page: identity first, related people pages second, then the service and access blocks that matter.</p>
+                        </div>
+                    </div>
+                    ${renderFamilySubnav("members", { label: "People pages" })}
+                    ${metricCards([
+                        { label: "Staff", value: formatInteger(rows.length), meta: "Staff records in this club" },
+                        { label: "Active Debtors", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
+                        { label: "Members", value: formatInteger((bundle.members?.total || 0)), meta: "Current member records" },
+                        { label: "Club Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Current locked club context" },
+                    ])}
+                    ${renderPageActionRow([
+                        { label: "Open people", tone: "secondary", workspace: "members", panel: "members" },
+                        { label: "Add staff", tone: "ghost", workblock: "staff-add-workblock" },
+                        { label: "Open tee sheet", tone: "ghost", workspace: "golf", panel: "tee-sheet" },
+                        { label: "Open communications", tone: "ghost", workspace: "communications" },
+                    ])}
+                </section>
+                <section class="workblock-stack">
+                    ${renderWorkblock({
+                        id: "staff-board-workblock",
+                        title: "Staff service board",
+                        copy: "Keep operator visibility high before club admins open lower-priority detail.",
+                        badge: "Open",
+                        open: true,
+                        body: renderStaffRowsTable(rows, { limit: 8 }),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-current-workblock",
+                        title: "Current staff",
+                        copy: "Full club staff listing in the current locked club scope.",
+                        badge: "Open",
+                        open: true,
+                        body: renderStaffRowsTable(rows),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-add-workblock",
+                        title: "Add staff",
+                        copy: "Create club staff without mixing club access changes into the primary view.",
+                        badge: "Collapsed",
+                        body: `
+                            <form class="workblock-form" id="club-staff-form">
+                                <div class="field-grid">
+                                    <div class="field"><label>Name</label><input name="name" required></div>
+                                    <div class="field"><label>Email</label><input name="email" type="email" required></div>
+                                    <div class="field"><label>Password</label><input name="password" type="password" required></div>
+                                    <div class="checkbox-card">
+                                        <label><input type="checkbox" name="force_reset" value="1"> Force reset if user exists in this club</label>
+                                        <p>Users cannot be moved across clubs from this shell.</p>
+                                    </div>
+                                </div>
+                                <div class="button-row">
+                                    <button type="submit" class="button">Create staff user</button>
+                                </div>
+                            </form>
+                        `,
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-debtors-workblock",
+                        title: "Debtor accounts",
+                        copy: "Billing and debtor context used in bookings stays nearby, but off the first screen.",
+                        badge: "Collapsed",
+                        body: renderAccountCustomerStack(accountCustomers, { limit: 8, emptyText: "No active debtor accounts found." }),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-queue-workblock",
+                        title: "Member service queue",
+                        copy: "Cross-check staff capacity against the current people follow-up load.",
+                        badge: "Collapsed",
+                        body: renderMemberServiceQueueEmbedded(memberRows),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-posture-workblock",
+                        title: "Team service posture",
+                        copy: "Staff records, debtor readiness, and member demand should read together without dominating the opening view.",
+                        badge: "Collapsed",
+                        body: metricCards([
+                            { label: "Operators", value: formatInteger(activeOperators), meta: "Staff-side operators in this club" },
+                            { label: "Golf-facing Members", value: formatInteger(golfFacingMembers), meta: "Likely to touch tee-sheet or golf-day flow" },
+                            { label: "Configured Debtors", value: formatInteger(configuredDebtors), meta: "Account customers ready for export" },
+                            { label: "Current Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Locked club context" },
+                        ]),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-brief-workblock",
+                        title: "Service desk brief",
+                        copy: "Golf demand and debtor readiness can stay available without occupying the initial screen.",
+                        badge: "Collapsed",
+                        body: renderServiceDeskBriefEmbedded(memberRows, accountCustomers),
+                    })}
+                    ${renderWorkblock({
+                        id: "staff-watch-workblock",
+                        title: "Debtor watch",
+                        copy: "Use this when billing readiness, codes, or contacts need attention.",
+                        badge: "Collapsed",
+                        body: renderDebtorWatchEmbedded(accountCustomers),
+                    })}
+                </section>
+            `;
+        }
+
+        const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
+        const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
+        const activeCount = rows.filter(row => String(row.membership_status || "").toLowerCase() === "active").length;
+        const flaggedCount = rows.filter(row => ["hold", "inactive", "defaulter", "resigned"].includes(String(row.membership_status || "").toLowerCase())).length;
+        const hasQuery = Boolean(String(bundle.membersUi?.query || "").trim());
+        const configuredDebtors = accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length;
+        return `
+            <section class="hero-card page-system-hero">
+                <div class="panel-head">
+                    <div>
+                        <h3>People</h3>
+                        <p>Search first, then act. Related people pages, service state, and the main club actions now sit above the longer member and debtor detail.</p>
+                    </div>
+                </div>
+                ${renderFamilySubnav("members", { label: "People pages" })}
+                ${metricCards([
+                    { label: hasQuery ? "Matches" : "People", value: formatInteger(hasQuery ? (bundle.members?.total || rows.length) : rows.length), meta: hasQuery ? "Matching people in current club scope" : "Recent member rows in club scope" },
+                    { label: "Active", value: formatInteger(activeCount), meta: "Active memberships" },
+                    { label: "Flagged", value: formatInteger(flaggedCount), meta: "Hold, inactive, or defaulter states" },
+                    { label: "Debtor Accounts", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
+                ])}
+                ${renderPageActionRow([
+                    { label: "Search people", tone: "secondary", workblock: "people-search-workblock" },
+                    roleShell() === "club_admin" ? { label: "Add member", tone: "ghost", workblock: "people-add-workblock" } : null,
+                    { label: "Open staff", tone: "ghost", workspace: "members", panel: "staff" },
+                    { label: "Open tee sheet", tone: "ghost", workspace: "golf", panel: "tee-sheet" },
+                    { label: "Open communications", tone: "ghost", workspace: "communications" },
+                ])}
+            </section>
+            <section class="workblock-stack">
+                ${renderWorkblock({
+                    id: "people-search-workblock",
+                    title: "Search",
+                    copy: "Start with search and status filters before opening long member lists.",
+                    badge: "Open",
+                    open: true,
+                    body: renderMembersSearchForm(bundle, { embedded: true }),
+                })}
+                ${renderWorkblock({
+                    id: "people-results-workblock",
+                    title: hasQuery ? "Search results" : "Recent member service board",
+                    copy: hasQuery
+                        ? "Search results stay operational: member context, booking demand, and service risk in one table."
+                        : "Recent activity, spend, and operation context stay available without taking over the opening screen.",
+                    badge: hasQuery ? "Open" : "Collapsed",
+                    open: hasQuery,
+                    body: renderMemberRowsTable(rows, { limit: 10 }),
+                })}
+                ${renderWorkblock({
+                    id: "people-queue-workblock",
+                    title: "Priority service queue",
+                    copy: "Keep likely member follow-up visible before you drill into lower-priority detail.",
+                    badge: !hasQuery ? "Open" : "Collapsed",
+                    open: !hasQuery,
+                    body: renderMemberServiceQueueEmbedded(rows),
+                })}
+                ${renderWorkblock({
+                    id: "people-accounts-workblock",
+                    title: "Account customers",
+                    copy: "Debtor and account-customer context stays available, but off the opening view.",
+                    badge: "Collapsed",
+                    body: renderAccountCustomerStack(accountCustomers, { limit: 8 }),
+                })}
+                ${renderWorkblock({
+                    id: "people-posture-workblock",
+                    title: "Service posture",
+                    copy: "Use this block when member demand, follow-up pressure, and debtor readiness need a quick read.",
+                    badge: "Collapsed",
+                    body: metricCards([
+                        { label: "Golf Members", value: formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
+                        { label: "High Activity", value: formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
+                        { label: "Configured Debtors", value: formatInteger(configuredDebtors), meta: "Account customers ready for export" },
+                        { label: "Comms Follow-up", value: formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
+                    ]),
+                })}
+                ${renderWorkblock({
+                    id: "people-brief-workblock",
+                    title: "Service desk brief",
+                    copy: "Front desk golf demand and debtor readiness stay one click away instead of sitting in the opening stack.",
+                    badge: "Collapsed",
+                    body: renderServiceDeskBriefEmbedded(rows, accountCustomers),
+                })}
+                ${renderWorkblock({
+                    id: "people-watch-workblock",
+                    title: "Debtor watch",
+                    copy: "Open this when codes, contacts, or account terms need follow-up.",
+                    badge: "Collapsed",
+                    body: renderDebtorWatchEmbedded(accountCustomers),
+                })}
+                ${roleShell() === "club_admin" ? renderWorkblock({
+                    id: "people-add-workblock",
+                    title: "Add member",
+                    copy: "Member creation is still available, but it no longer crowds the primary service screen.",
+                    badge: "Collapsed",
+                    body: `
+                        <form class="workblock-form" id="member-form">
+                            <div class="field-grid">
+                                <div class="field"><label>First Name</label><input name="first_name" required></div>
+                                <div class="field"><label>Last Name</label><input name="last_name" required></div>
+                                <div class="field"><label>Email</label><input name="email" type="email"></div>
+                                <div class="field"><label>Member Number</label><input name="member_number"></div>
+                                <div class="field">
+                                    <label>Primary Operation</label>
+                                    <select name="primary_operation">
+                                        <option value="golf">Golf</option>
+                                        ${operationModules().map(key => `<option value="${escapeHtml(key)}">${escapeHtml(MODULE_LABELS[key] || key)}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field"><label>Home Club</label><input name="home_club" value="${escapeHtml(activeClub()?.display_name || activeClub()?.name || "")}"></div>
+                            </div>
+                            <div class="button-row">
+                                <button type="submit" class="button">Create member</button>
+                            </div>
+                        </form>
+                    `,
+                }) : ""}
+                ${renderWorkblock({
+                    id: "people-members-workblock",
+                    title: "Members",
+                    copy: "Full member table remains available for deeper review after the service-first blocks.",
+                    badge: "Collapsed",
+                    body: renderMemberRowsTable(rows, { emptyText: "No members found." }),
+                })}
             </section>
         `;
     }
@@ -6215,7 +6666,7 @@
                     html = renderOperationsWorkspace(bundle);
                 } else if (route.workspace === "members") {
                     bundle = await loadWorkspaceBundle(route, () => membersBundle({ signal }));
-                    html = renderMembersWorkspace(bundle);
+                    html = renderStandardizedMembersWorkspace(bundle);
                 } else if (route.workspace === "communications") {
                     bundle = await loadWorkspaceBundle(route, () => communicationsBundle({ signal }));
                     html = renderCommunicationsWorkspace(bundle);
@@ -6702,7 +7153,7 @@
         if (routeKey !== workspaceRouteKey(state.route)) return;
         state.workspaceData = bundle;
         writeWorkspaceCache(route, bundle);
-        els.root.innerHTML = renderMembersWorkspace(bundle);
+        els.root.innerHTML = renderStandardizedMembersWorkspace(bundle);
     }
 
     function activeGolfBookingsUi() {
@@ -6852,7 +7303,7 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search],[data-workblock-toggle]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
@@ -6873,6 +7324,7 @@
             });
             return refreshActiveMembersWorkspace({ membersUi: { query: "", status: "all" } });
         }
+        if (target.hasAttribute("data-workblock-toggle")) return focusWorkblock(target.getAttribute("data-workblock-toggle") || "");
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });
         if (target.hasAttribute("data-open-booking")) {
             return openBookingModal(
