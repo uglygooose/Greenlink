@@ -153,6 +153,7 @@
         bootstrap: null,
         bootstrapFetchedAt: 0,
         route: null,
+        routeRequestController: null,
         renderToken: 0,
         workspaceData: {},
         modalData: null,
@@ -735,7 +736,9 @@
             },
             body: JSON.stringify(payload || {}),
         });
-        invalidateWorkspaceCache();
+        if (options.invalidateCache !== false) {
+            invalidateWorkspaceCache();
+        }
         return response;
     }
 
@@ -3146,33 +3149,145 @@
         return String(activeClub()?.id || state.route?.clubId || state.bootstrap?.club?.id || "club");
     }
 
-    async function loadSharedDashboardData({ includeCommunications = false, communicationsPublishedOnly = false, includeStaffContext = false } = {}) {
+    function dashboardCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `dashboard:${clubKey}`;
+    }
+
+    function alertsCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `alerts:${clubKey}`;
+    }
+
+    function financeBaseCacheKey(date = todayYmd(), clubKey = activeClubCacheKeyPart()) {
+        return `finance-base:${clubKey}:${clampYmd(date)}`;
+    }
+
+    function golfDayBookingsCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `golf-days:${clubKey}`;
+    }
+
+    function golfTeeRowsCacheKey(date = state.route?.date, clubKey = activeClubCacheKeyPart()) {
+        return `golf-tee-rows:${clubKey}:${clampYmd(date)}`;
+    }
+
+    function isAbortError(error) {
+        return Boolean(error?.name === "AbortError" || error?.code === "ABORT_ERR");
+    }
+
+    function beginRouteRequest() {
+        if (state.routeRequestController) {
+            state.routeRequestController.abort();
+        }
+        const controller = new AbortController();
+        state.routeRequestController = controller;
+        return controller;
+    }
+
+    function routeRequestSignal() {
+        return state.routeRequestController?.signal || null;
+    }
+
+    function deleteSharedCacheKey(key) {
+        const cacheKey = String(key || "").trim();
+        if (!cacheKey) return;
+        state.sharedCache.delete(cacheKey);
+    }
+
+    function deleteWorkspaceCacheWhere(predicate) {
+        if (typeof predicate !== "function") return;
+        for (const key of Array.from(state.workspaceCache.keys())) {
+            let keep = true;
+            try {
+                keep = !predicate(key);
+            } catch {
+                keep = true;
+            }
+            if (!keep) {
+                state.workspaceCache.delete(key);
+            }
+        }
+    }
+
+    function invalidateGolfWorkspaceCaches(date = state.route?.date, panels = null) {
+        const targetDate = clampYmd(date);
+        const allowedPanels = panels instanceof Set ? panels : null;
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, workspace, panel, cachedDate] = String(key || "").split("|");
+            if (shell !== roleShell()) return false;
+            if (workspace !== "golf") return false;
+            if (cachedDate !== targetDate) return false;
+            if (allowedPanels && !allowedPanels.has(panel || "")) return false;
+            return true;
+        });
+    }
+
+    function invalidateGolfSharedData({
+        date = state.route?.date,
+        includeTeeRows = false,
+        includeDashboard = false,
+        includeAlerts = false,
+        includeFinanceBase = false,
+        financeDate = todayYmd(),
+    } = {}) {
+        const clubKey = activeClubCacheKeyPart();
+        if (includeTeeRows) {
+            deleteSharedCacheKey(golfTeeRowsCacheKey(date, clubKey));
+        }
+        if (includeDashboard) {
+            deleteSharedCacheKey(dashboardCacheKey(clubKey));
+        }
+        if (includeAlerts) {
+            deleteSharedCacheKey(alertsCacheKey(clubKey));
+        }
+        if (includeFinanceBase) {
+            deleteSharedCacheKey(financeBaseCacheKey(financeDate, clubKey));
+        }
+    }
+
+    async function loadSharedFinanceBase({ signal } = {}) {
+        const date = todayYmd();
+        const clubKey = activeClubCacheKeyPart();
+        return loadSharedResource(financeBaseCacheKey(date, clubKey), async () => {
+            const [closeStatus, summary, settings] = await Promise.all([
+                fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }, { signal }),
+                fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, { signal }),
+                fetchJsonSafe("/cashbook/settings", {}, { signal }),
+            ]);
+            return { closeStatus, summary, settings };
+        }, 10000);
+    }
+
+    async function loadGolfTeeRows(date, { signal } = {}) {
+        const safeDate = clampYmd(date);
+        const start = `${safeDate}T00:00:00`;
+        const end = `${addDaysYmd(safeDate, 1)}T00:00:00`;
+        const rows = await loadSharedResource(
+            golfTeeRowsCacheKey(safeDate),
+            () => fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { signal }),
+            WORKSPACE_CACHE_TTL_BY_WORKSPACE.golf
+        );
+        return groupTeeRows(rows);
+    }
+
+    async function loadSharedDashboardData({ includeCommunications = false, communicationsPublishedOnly = false, includeStaffContext = false, signal } = {}) {
         const shell = roleShell();
         const date = todayYmd();
         const clubKey = activeClubCacheKeyPart();
-        const dashboard = await loadSharedResource(`dashboard:${clubKey}`, () => fetchJson("/api/admin/dashboard"), 12000);
-        const alerts = await loadSharedResource(`alerts:${clubKey}`, () => fetchJson("/api/admin/operational-alerts"), 8000);
+        const dashboard = await loadSharedResource(dashboardCacheKey(clubKey), () => fetchJson("/api/admin/dashboard", { signal }), 12000);
+        const alerts = await loadSharedResource(alertsCacheKey(clubKey), () => fetchJson("/api/admin/operational-alerts", { signal }), 8000);
         const financeBase = shell === "club_admin"
-            ? await loadSharedResource(`finance-base:${clubKey}:${date}`, async () => {
-                const [closeStatus, summary, settings] = await Promise.all([
-                    fetchJsonSafe(`/cashbook/close-status?summary_date=${encodeURIComponent(date)}`, { date, is_closed: false }),
-                    fetchJsonSafe(`/cashbook/daily-summary?summary_date=${encodeURIComponent(date)}`, { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }),
-                    fetchJsonSafe("/cashbook/settings", {}),
-                ]);
-                return { closeStatus, summary, settings };
-            }, 10000)
+            ? await loadSharedFinanceBase({ signal })
             : { closeStatus: { date, is_closed: false }, summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, settings: {} };
 
         const communications = includeCommunications
             ? await loadSharedResource(
                 `communications:${clubKey}:${communicationsPublishedOnly ? "published" : "all"}`,
-                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6"),
+                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6", { signal }),
                 10000
             )
             : null;
 
         const staffContext = includeStaffContext
-            ? await loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context"), 12000)
+            ? await loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context", { signal }), 12000)
             : null;
 
         return {
@@ -3187,12 +3302,13 @@
         };
     }
 
-    async function dashboardBundle() {
+    async function dashboardBundle(options = {}) {
         const shell = roleShell();
         return loadSharedDashboardData({
             includeCommunications: true,
             communicationsPublishedOnly: shell === "staff",
             includeStaffContext: shell === "staff",
+            signal: options.signal,
         });
     }
 
@@ -3345,12 +3461,23 @@
         });
     }
 
-    async function golfBundle() {
-        const date = clampYmd(state.route.date);
-        const start = `${date}T00:00:00`;
-        const end = `${addDaysYmd(date, 1)}T00:00:00`;
-        const panel = state.route.panel || (tabsForWorkspace("golf")[0]?.id || "tee-sheet");
-        const shared = await loadSharedDashboardData();
+    async function golfBundle(options = {}) {
+        const route = options.route || state.route;
+        const signal = options.signal;
+        const date = clampYmd(route?.date);
+        const panel = route?.panel || (tabsForWorkspace("golf")[0]?.id || "tee-sheet");
+        if (panel === "overview") {
+            const [shared, teeRows] = await Promise.all([
+                loadSharedDashboardData({ signal }),
+                loadGolfTeeRows(date, { signal }),
+            ]);
+            return {
+                panel,
+                ...shared,
+                teeRows,
+                date,
+            };
+        }
         if (panel === "bookings") {
             const query = new URLSearchParams({
                 period: "day",
@@ -3359,10 +3486,9 @@
                 sort: "tee_asc",
                 limit: "100",
             });
-            const bookings = await fetchJson(`/api/admin/bookings?${query.toString()}`);
+            const bookings = await fetchJson(`/api/admin/bookings?${query.toString()}`, { signal });
             return {
                 panel,
-                ...shared,
                 bookings,
                 bookingsUi: {
                     ...defaultGolfBookingsUi(state.workspaceData?.bookingsUi),
@@ -3372,14 +3498,16 @@
             };
         }
         if (panel === "golf-days") {
-            const bookings = await loadSharedResource(`golf-days:${activeClubCacheKeyPart()}`, () => fetchJson("/api/admin/golf-day-bookings"), 8000);
-            return { panel, ...shared, golfDays: bookings, date };
+            const [sharedDashboard, bookings] = await Promise.all([
+                loadSharedDashboardData({ signal }),
+                loadSharedResource(golfDayBookingsCacheKey(activeClubCacheKeyPart()), () => fetchJson("/api/admin/golf-day-bookings", { signal }), 8000),
+            ]);
+            return { panel, ...sharedDashboard, golfDays: bookings, date };
         }
-        const rows = await fetchJson(`/tsheet/staff-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+        const teeRows = await loadGolfTeeRows(date, { signal });
         return {
             panel,
-            ...shared,
-            teeRows: groupTeeRows(rows),
+            teeRows,
             date,
         };
     }
@@ -4012,18 +4140,19 @@
         return `<section class="card"><div class="empty-state">This golf panel is not available in the current club context.</div></section>`;
     }
 
-    async function operationsBundle() {
+    async function operationsBundle(options = {}) {
+        const signal = options.signal;
         const panel = state.route.panel || "overview";
-        const shared = await loadSharedDashboardData();
+        const shared = await loadSharedDashboardData({ signal });
         if (panel === "pro_shop") {
             const [products, sales] = await Promise.all([
-                fetchJson("/api/admin/pro-shop/products?limit=100"),
-                fetchJson("/api/admin/pro-shop/sales?limit=12&days=30"),
+                fetchJson("/api/admin/pro-shop/products?limit=100", { signal }),
+                fetchJson("/api/admin/pro-shop/sales?limit=12&days=30", { signal }),
             ]);
             return { panel, ...shared, products, sales };
         }
         if (["tennis", "bowls"].includes(panel)) {
-            const members = await fetchJson(`/api/admin/members?area=${encodeURIComponent(panel)}&limit=12&sort=recent_activity`);
+            const members = await fetchJson(`/api/admin/members?area=${encodeURIComponent(panel)}&limit=12&sort=recent_activity`, { signal });
             return { panel, ...shared, members };
         }
         return { panel, ...shared };
@@ -4362,19 +4491,20 @@
         return `<section class="card"><div class="empty-state">This operation is not yet enabled for the current club.</div></section>`;
     }
 
-    async function membersBundle() {
+    async function membersBundle(options = {}) {
+        const signal = options.signal;
         const panel = state.route.panel || "members";
         if (panel === "staff" && roleShell() === "club_admin") {
             const [staff, members, accountCustomers] = await Promise.all([
-                fetchJson("/api/admin/staff?limit=50"),
-                fetchJson("/api/admin/members?limit=8&sort=recent_activity"),
-                fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc"),
+                fetchJson("/api/admin/staff?limit=50", { signal }),
+                fetchJson("/api/admin/members?limit=8&sort=recent_activity", { signal }),
+                fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
             ]);
             return { panel, staff, members, accountCustomers };
         }
         const [members, accountCustomers] = await Promise.all([
-            fetchJson("/api/admin/members?limit=50&sort=recent_activity"),
-            fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc"),
+            fetchJson("/api/admin/members?limit=50&sort=recent_activity", { signal }),
+            fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
         ]);
         return { panel: "members", members, accountCustomers };
     }
@@ -4784,13 +4914,14 @@
         `;
     }
 
-    async function communicationsBundle() {
+    async function communicationsBundle(options = {}) {
+        const signal = options.signal;
         const shell = roleShell();
         const query = shell === "staff" ? "/api/admin/communications?status=published&limit=50" : "/api/admin/communications?limit=50";
-        const shared = await loadSharedDashboardData();
+        const shared = await loadSharedDashboardData({ signal });
         const [communications, members] = await Promise.all([
-            fetchJson(query),
-            fetchJson("/api/admin/members?limit=20&sort=recent_activity"),
+            fetchJson(query, { signal }),
+            fetchJson("/api/admin/members?limit=20&sort=recent_activity", { signal }),
         ]);
         return { ...shared, communications, members, date: shared.date };
     }
@@ -5236,13 +5367,14 @@
         `;
     }
 
-    async function loadImportsWorkspaceBundle(shared = null) {
-        const base = shared || await loadSharedDashboardData();
+    async function loadImportsWorkspaceBundle(shared = null, options = {}) {
+        const signal = options.signal;
+        const base = shared || await loadSharedDashboardData({ signal });
         const [imports, golf, proShop, pubSettings] = await Promise.all([
-            fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }),
+            fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }, { signal }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }, { signal }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }, { signal }),
+            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }, { signal }),
         ]);
         return {
             dashboard: base.dashboard,
@@ -5255,31 +5387,32 @@
         };
     }
 
-    async function reportsBundle() {
+    async function reportsBundle(options = {}) {
+        const signal = options.signal;
         const panel = state.route.panel || "performance";
         if (panel === "ledger") {
             const windowRange = recentLedgerWindow();
-            const shared = await loadSharedDashboardData();
-            const ledger = await fetchJson(`/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`);
+            const shared = await loadSharedDashboardData({ signal });
+            const ledger = await fetchJson(`/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`, { signal });
             return { panel, ...shared, ledger, date: shared.date };
         }
         if (panel === "cashbook") {
-            const shared = await loadSharedDashboardData();
+            const shared = await loadSharedDashboardData({ signal });
             const [preview, proShop] = await Promise.all([
-                fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(shared.date)}`, { journal_lines: [] }),
-                fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(shared.date)}`, { transaction_count: 0, total_payments: 0 }),
+                fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(shared.date)}`, { journal_lines: [] }, { signal }),
+                fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(shared.date)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
             ]);
             return { panel, ...shared, preview, proShop, date: shared.date };
         }
         if (panel === "imports") {
-            const shared = await loadSharedDashboardData();
-            const importsBundle = await loadImportsWorkspaceBundle(shared);
+            const shared = await loadSharedDashboardData({ signal });
+            const importsBundle = await loadImportsWorkspaceBundle(shared, { signal });
             return { panel, ...importsBundle };
         }
-        const shared = await loadSharedDashboardData();
+        const shared = await loadSharedDashboardData({ signal });
         const [revenue, targets] = await Promise.all([
-            fetchJson("/api/admin/revenue?period=mtd"),
-            fetchJson("/api/admin/operation-targets"),
+            fetchJson("/api/admin/revenue?period=mtd", { signal }),
+            fetchJson("/api/admin/operation-targets", { signal }),
         ]);
         return { panel, dashboard: shared.dashboard, alerts: shared.alerts, closeStatus: shared.closeStatus, summary: shared.summary, settings: shared.settings, revenue, targets, date: shared.date };
     }
@@ -5450,16 +5583,17 @@
         `;
     }
 
-    async function settingsBundle() {
+    async function settingsBundle(options = {}) {
+        const signal = options.signal;
         const panel = state.route.panel || "profile";
         if (panel === "imports") {
-            const importsBundle = await loadImportsWorkspaceBundle();
+            const importsBundle = await loadImportsWorkspaceBundle(null, { signal });
             return { panel, ...importsBundle };
         }
         const [profile, bookingWindow, targets] = await Promise.all([
-            fetchJson("/api/admin/club-profile"),
-            fetchJson("/api/admin/booking-window"),
-            fetchJson("/api/admin/operation-targets"),
+            fetchJson("/api/admin/club-profile", { signal }),
+            fetchJson("/api/admin/booking-window", { signal }),
+            fetchJson("/api/admin/operation-targets", { signal }),
         ]);
         return { panel, profile, bookingWindow, targets };
     }
@@ -5574,6 +5708,8 @@
 
     async function renderCurrentWorkspace() {
         const token = ++state.renderToken;
+        const requestController = beginRouteRequest();
+        const signal = requestController.signal;
         const optimisticRoute = parseRoute();
         const hasExistingWorkspace = Boolean(els.root.children.length || String(els.root.innerHTML || "").trim());
         if (!readWorkspaceCache(optimisticRoute) && !hasExistingWorkspace) {
@@ -5600,25 +5736,25 @@
                 const route = state.route;
                 let bundle = null;
                 if (route.workspace === "overview" || route.workspace === "today") {
-                    bundle = await loadWorkspaceBundle(route, () => dashboardBundle());
+                    bundle = await loadWorkspaceBundle(route, () => dashboardBundle({ signal }));
                     html = renderDashboardWorkspace(bundle, { mode: route.workspace === "today" ? "today" : "overview" });
                 } else if (route.workspace === "golf") {
-                    bundle = await loadWorkspaceBundle(route, () => golfBundle());
+                    bundle = await loadWorkspaceBundle(route, () => golfBundle({ route, signal }));
                     html = renderGolfWorkspace(bundle);
                 } else if (route.workspace === "operations") {
-                    bundle = await loadWorkspaceBundle(route, () => operationsBundle());
+                    bundle = await loadWorkspaceBundle(route, () => operationsBundle({ signal }));
                     html = renderOperationsWorkspace(bundle);
                 } else if (route.workspace === "members") {
-                    bundle = await loadWorkspaceBundle(route, () => membersBundle());
+                    bundle = await loadWorkspaceBundle(route, () => membersBundle({ signal }));
                     html = renderMembersWorkspace(bundle);
                 } else if (route.workspace === "communications") {
-                    bundle = await loadWorkspaceBundle(route, () => communicationsBundle());
+                    bundle = await loadWorkspaceBundle(route, () => communicationsBundle({ signal }));
                     html = renderCommunicationsWorkspace(bundle);
                 } else if (route.workspace === "reports" && roleShell() === "club_admin") {
-                    bundle = await loadWorkspaceBundle(route, () => reportsBundle());
+                    bundle = await loadWorkspaceBundle(route, () => reportsBundle({ signal }));
                     html = renderReportsWorkspace(bundle);
                 } else if (route.workspace === "settings" && roleShell() === "club_admin") {
-                    bundle = await loadWorkspaceBundle(route, () => settingsBundle());
+                    bundle = await loadWorkspaceBundle(route, () => settingsBundle({ signal }));
                     html = renderSettingsWorkspace(bundle);
                 }
                 if (token !== state.renderToken) return;
@@ -5632,6 +5768,7 @@
             }
             setOverlay(false);
         } catch (error) {
+            if (isAbortError(error) || signal.aborted) return;
             if (token !== state.renderToken) return;
             logClientError("renderCurrentWorkspace", error);
             if (Number(error?.status || 0) === 401) {
@@ -5881,15 +6018,27 @@
             auto_price: true,
             notes: String(form.notes.value || "").trim() || null,
         };
-        await postJson("/tsheet/booking", payload);
+        await postJson("/tsheet/booking", payload, { invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date);
+        invalidateGolfSharedData({
+            date: state.route?.date,
+            includeTeeRows: true,
+            includeDashboard: true,
+        });
         showToast("Booking created.", "ok");
         closeModal();
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function moveBookingToTeeTime(bookingId, toTeeTimeId) {
-        await postJson(`/tsheet/bookings/${Number(bookingId)}/move`, { to_tee_time_id: Number(toTeeTimeId) }, { method: "PUT" });
-        await renderCurrentWorkspace();
+        await postJson(`/tsheet/bookings/${Number(bookingId)}/move`, { to_tee_time_id: Number(toTeeTimeId) }, { method: "PUT", invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date);
+        invalidateGolfSharedData({
+            date: state.route?.date,
+            includeTeeRows: true,
+            includeDashboard: true,
+        });
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function ensureDemoEnvironment() {
@@ -5902,15 +6051,55 @@
     async function checkInBooking(bookingId) {
         const paymentMethod = String(window.prompt("Payment method (CARD/CASH/EFT/ONLINE/ACCOUNT)", "CARD") || "").trim();
         const query = paymentMethod ? `?payment_method=${encodeURIComponent(paymentMethod)}` : "";
-        await postJson(`/checkin/${Number(bookingId)}${query}`, {});
+        await postJson(`/checkin/${Number(bookingId)}${query}`, {}, { invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date);
+        invalidateGolfSharedData({
+            date: state.route?.date,
+            includeTeeRows: true,
+            includeDashboard: true,
+            includeFinanceBase: true,
+        });
         showToast("Booking checked in.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function updateBookingStatus(bookingId, nextStatus) {
-        await postJson(`/api/admin/bookings/${Number(bookingId)}/status`, { status: String(nextStatus || "").trim() }, { method: "PUT" });
+        await postJson(`/api/admin/bookings/${Number(bookingId)}/status`, { status: String(nextStatus || "").trim() }, { method: "PUT", invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date);
+        invalidateGolfSharedData({
+            date: state.route?.date,
+            includeTeeRows: true,
+            includeDashboard: true,
+            includeFinanceBase: true,
+        });
         showToast("Booking status updated.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
+    }
+
+    async function refreshActiveGolfWorkspace(options = {}) {
+        if (state.route?.workspace !== "golf") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await golfBundle({ route, signal });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        if (route.panel === "bookings") {
+            const currentUi = defaultGolfBookingsUi(state.workspaceData?.bookingsUi);
+            bundle.bookingsUi = {
+                ...defaultGolfBookingsUi({
+                    ...currentUi,
+                    ...(options.bookingsUi || {}),
+                }),
+            };
+        }
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderGolfWorkspace(bundle);
+        setupNativeTeeSheetInteractions();
     }
 
     function activeGolfBookingsUi() {
@@ -5975,17 +6164,19 @@
     async function updateBookingPaymentMethodPrompt(bookingId) {
         const paymentMethod = String(window.prompt("Payment method (CARD/CASH/EFT/ONLINE/ACCOUNT)", "CARD") || "").trim();
         if (!paymentMethod) return;
-        await postJson(`/api/admin/bookings/${Number(bookingId)}/payment-method`, { payment_method: paymentMethod }, { method: "PUT" });
+        await postJson(`/api/admin/bookings/${Number(bookingId)}/payment-method`, { payment_method: paymentMethod }, { method: "PUT", invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date, new Set(["bookings"]));
         showToast("Booking payment method updated.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function updateBookingAccountCodePrompt(bookingId) {
         const accountCode = window.prompt("Account code (leave blank to clear)", "") ?? null;
         if (accountCode === null) return;
-        await postJson(`/api/admin/bookings/${Number(bookingId)}/account-code`, { account_code: String(accountCode || "").trim() || null }, { method: "PUT" });
+        await postJson(`/api/admin/bookings/${Number(bookingId)}/account-code`, { account_code: String(accountCode || "").trim() || null }, { method: "PUT", invalidateCache: false });
+        invalidateGolfWorkspaceCaches(state.route?.date, new Set(["bookings"]));
         showToast("Booking account code updated.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function batchUpdateGolfBookings(payload, successMessage) {
@@ -5997,9 +6188,20 @@
         await postJson("/api/admin/bookings/batch-update", {
             booking_ids: bookingIds,
             ...(payload || {}),
-        }, { method: "PUT" });
+        }, { method: "PUT", invalidateCache: false });
+        if (payload?.status) {
+            invalidateGolfWorkspaceCaches(state.route?.date);
+            invalidateGolfSharedData({
+                date: state.route?.date,
+                includeTeeRows: true,
+                includeDashboard: true,
+                includeFinanceBase: true,
+            });
+        } else {
+            invalidateGolfWorkspaceCaches(state.route?.date, new Set(["bookings"]));
+        }
         showToast(successMessage || "Bookings updated.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveGolfWorkspace({ bookingsUi: { selectedIds: [] } });
     }
 
     async function batchUpdateGolfBookingStatusFromUi() {
