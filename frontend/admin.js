@@ -198,16 +198,55 @@
 
     function logClientError(stage, error, extra = {}) {
         try {
-            console.error("[GreenLink admin]", {
+            const route = normalizeRouteObject(extra.route || state.route || null);
+            const name = String(error?.name || "Error");
+            const message = String(error?.message || "Unknown error");
+            const code = String(error?.code || extra.code || "");
+            const status = Number(error?.status || extra.status || 0) || null;
+            const path = String(error?.path || extra.path || "");
+            const detailMessage = String(error?.data?.detail || extra.detail || "");
+            const dataMessage = String(error?.data?.message || "");
+            const loader = String(extra.loader || "");
+            const summaryParts = [
+                `[GreenLink admin] ${String(stage || "runtime")}: ${name}: ${message}`,
+                code ? `code=${code}` : "",
+                status ? `status=${status}` : "",
+                path ? `path=${path}` : "",
+                loader ? `loader=${loader}` : "",
+                route.workspace ? `workspace=${route.workspace}` : "",
+                route.panel ? `panel=${route.panel}` : "",
+                route.date ? `date=${route.date}` : "",
+            ].filter(Boolean);
+            const summary = summaryParts.join(" | ");
+            const cause = error?.cause instanceof Error
+                ? {
+                    name: String(error.cause.name || "Error"),
+                    message: String(error.cause.message || ""),
+                    stack: String(error.cause.stack || ""),
+                }
+                : (error?.cause ?? null);
+            const details = {
                 stage,
-                message: String(error?.message || "Unknown error"),
-                code: String(error?.code || ""),
-                status: Number(error?.status || 0) || null,
+                name,
+                message,
+                code: code || null,
+                status,
+                path: path || null,
+                stack: String(error?.stack || ""),
+                cause,
+                data_detail: detailMessage || null,
+                data_message: dataMessage || null,
                 role_shell: String(state.bootstrap?.role_shell || ""),
-                workspace: String(state.route?.workspace || ""),
-                club_id: positiveInt(state.route?.clubId),
+                workspace: String(route.workspace || ""),
+                panel: String(route.panel || ""),
+                date: String(route.date || ""),
+                club_id: positiveInt(route.clubId),
+                loader: loader || null,
+                raw_error: error,
                 ...extra,
-            });
+            };
+            console.error(summary);
+            console.error("[GreenLink admin] detail", details);
         } catch {
             // Console logging should never block the shell.
         }
@@ -4831,6 +4870,84 @@
         `;
     }
 
+    function importActivityStamp(row) {
+        if (!row || typeof row !== "object") return null;
+        return row.imported_at || row.created_at || row.updated_at || row.completed_at || null;
+    }
+
+    function importActivityText(row) {
+        if (!row || typeof row !== "object") return "";
+        return [
+            row.kind,
+            row.source,
+            row.file_name,
+            row.notes,
+            row.stream,
+            row.stream_key,
+        ].map(value => String(value || "").trim().toLowerCase()).filter(Boolean).join(" ");
+    }
+
+    function summarizeImportsHealth(importRows, settingsRows = []) {
+        const rows = Array.isArray(importRows) ? importRows : [];
+        const mappings = Array.isArray(settingsRows) ? settingsRows : [];
+        const configuredStreams = mappings.filter(row => Boolean(row?.configured)).length;
+        const totalStreams = mappings.length;
+        const mappingGaps = Math.max(0, totalStreams - configuredStreams);
+        const bookingRows = rows.filter(row => importActivityText(row).includes("booking"));
+        const revenueRows = rows.filter(row => !importActivityText(row).includes("booking"));
+        const latestStamp = items => items
+            .map(importActivityStamp)
+            .map(value => toDate(value))
+            .filter(Boolean)
+            .sort((left, right) => right.getTime() - left.getTime())[0] || null;
+        const latestBooking = latestStamp(bookingRows);
+        const latestRevenue = latestStamp(revenueRows);
+        return {
+            configured_streams: configuredStreams,
+            total_streams: totalStreams,
+            stale_streams: mappingGaps,
+            booking_sync_at: latestBooking ? latestBooking.toISOString() : null,
+            revenue_sync_at: latestRevenue ? latestRevenue.toISOString() : null,
+        };
+    }
+
+    function renderImportsHealthCard(bundle) {
+        const summary = bundle.importsHealth || summarizeImportsHealth(bundle.imports?.imports, bundle.importSettings);
+        const recommendations = [];
+        if (Number(summary.stale_streams || 0) > 0) {
+            recommendations.push(`${formatInteger(summary.stale_streams || 0)} revenue stream mapping(s) still need configuration.`);
+        }
+        if (!summary.revenue_sync_at) {
+            recommendations.push("No recent revenue import was found in the visible import history.");
+        }
+        if (!summary.booking_sync_at) {
+            recommendations.push("No recent booking import was found in the visible import history.");
+        }
+        return `
+            <section class="dashboard-card">
+                <div class="panel-head">
+                    <div>
+                        <h4>Import freshness</h4>
+                        <p>Import trust should be readable here without forcing the whole finance dashboard to load first.</p>
+                    </div>
+                </div>
+                ${metricCards([
+                    { label: "Configured Streams", value: formatInteger(summary.configured_streams || 0), meta: `${formatInteger(summary.total_streams || 0)} tracked streams` },
+                    { label: "Mapping Gaps", value: formatInteger(summary.stale_streams || 0), meta: Number(summary.stale_streams || 0) > 0 ? "Streams still need setup" : "Mappings currently aligned" },
+                    { label: "Revenue Sync", value: formatRelativeAge(summary.revenue_sync_at), meta: summary.revenue_sync_at ? formatDateTime(summary.revenue_sync_at) : "No recent revenue import" },
+                    { label: "Booking Sync", value: formatRelativeAge(summary.booking_sync_at), meta: summary.booking_sync_at ? formatDateTime(summary.booking_sync_at) : "No recent booking import" },
+                ])}
+                <div class="stack">
+                    ${recommendations.length ? recommendations.map(item => `
+                        <div class="list-row">
+                            <div class="list-meta">${escapeHtml(item)}</div>
+                        </div>
+                    `).join("") : `<div class="empty-state">Import freshness and mapping posture look stable.</div>`}
+                </div>
+            </section>
+        `;
+    }
+
     function buildMemberServiceQueue(rows) {
         return (Array.isArray(rows) ? rows : [])
             .map(row => {
@@ -5498,11 +5615,12 @@
                     { label: "Pending Export", value: formatInteger(pendingCount), meta: "Rows not yet marked exported" },
                     { label: "Exported", value: formatInteger(exportedCount), meta: "Rows already marked exported" },
                 ])}
+                ${payload._error ? `<div class="empty-state">${escapeHtml(payload._error)}</div>` : ""}
                 ${renderFinanceControlCards()}
             </section>
             <section class="dashboard-grid">
-                ${renderReportingRhythmCard(bundle)}
                 ${renderAccountingHandoffCard(bundle)}
+                ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
             </section>
             <section class="card">
                 <div class="panel-head">
@@ -5624,7 +5742,7 @@
     function renderImportsWorkspace(bundle) {
         const rows = Array.isArray(bundle.imports?.imports) ? bundle.imports.imports : [];
         const settingsRows = Array.isArray(bundle.importSettings) ? bundle.importSettings : [];
-        const summary = bundle.dashboard?.ai_assistant?.import_copilot?.summary || {};
+        const summary = bundle.importsHealth || summarizeImportsHealth(rows, settingsRows);
         return `
             <section class="hero-card">
                 <div class="panel-head">
@@ -5636,9 +5754,10 @@
                 ${metricCards([
                     { label: "Recent Imports", value: formatInteger(rows.length), meta: "Latest import batches in club scope" },
                     { label: "Configured Streams", value: formatInteger(summary.configured_streams || 0), meta: `${formatInteger(summary.total_streams || 0)} tracked streams` },
-                    { label: "Stale Streams", value: formatInteger(summary.stale_streams || 0), meta: "Streams needing attention" },
-                    { label: "Booking Sync", value: formatRelativeAge(bundle.dashboard?.imports?.bookings), meta: bundle.dashboard?.imports?.bookings ? formatDateTime(bundle.dashboard.imports.bookings) : "No recent booking import" },
+                    { label: "Mapping Gaps", value: formatInteger(summary.stale_streams || 0), meta: "Streams needing attention" },
+                    { label: "Booking Sync", value: formatRelativeAge(summary.booking_sync_at), meta: summary.booking_sync_at ? formatDateTime(summary.booking_sync_at) : "No recent booking import" },
                 ])}
+                ${bundle.imports?._error ? `<div class="empty-state">${escapeHtml(bundle.imports._error)}</div>` : ""}
                 ${renderFinanceControlCards()}
             </section>
             <section class="dashboard-grid">
@@ -5661,7 +5780,7 @@
                         `).join("") : `<div class="empty-state">No revenue stream mappings found.</div>`}
                     </div>
                 </article>
-                ${renderImportFreshness(bundle.dashboard || {})}
+                ${renderImportsHealthCard(bundle)}
             </section>
             <section class="dashboard-grid">
                 ${renderAccountingWorkflowCard(bundle)}
@@ -5690,54 +5809,69 @@
         `;
     }
 
-    async function loadImportsWorkspaceBundle(shared = null, options = {}) {
+    async function loadImportsWorkspaceBundle(options = {}) {
         const signal = options.signal;
-        const base = shared || await loadSharedDashboardData({ signal });
+        const financeBase = options.financeBase || await loadSharedFinanceBase({ signal });
         const [imports, golf, proShop, pubSettings] = await Promise.all([
             fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }, { signal }),
             fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }, { signal }),
             fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }, { signal }),
             fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }, { signal }),
         ]);
+        const importSettings = [golf, proShop, pubSettings];
         return {
-            dashboard: base.dashboard,
             imports,
-            importSettings: [golf, proShop, pubSettings],
-            settings: base.settings,
-            closeStatus: base.closeStatus,
-            summary: base.summary,
-            date: base.date,
+            importSettings,
+            importsHealth: summarizeImportsHealth(imports.imports, importSettings),
+            settings: financeBase.settings,
+            closeStatus: financeBase.closeStatus,
+            summary: financeBase.summary,
+            date: financeBase.closeStatus?.date || todayYmd(),
         };
     }
 
     async function reportsBundle(options = {}) {
         const signal = options.signal;
         const panel = state.route.panel || "performance";
-        if (panel === "ledger") {
-            const windowRange = recentLedgerWindow();
+        try {
+            if (panel === "ledger") {
+                const windowRange = recentLedgerWindow();
+                const financeBase = await loadSharedFinanceBase({ signal });
+                const ledger = await fetchJsonSafe(
+                    `/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`,
+                    { ledger_entries: [], total: 0, total_amount: 0 },
+                    { signal }
+                );
+                return { panel, ...financeBase, ledger, date: financeBase.closeStatus?.date || todayYmd() };
+            }
+            if (panel === "cashbook") {
+                const financeBase = await loadSharedFinanceBase({ signal });
+                const financeDate = financeBase.closeStatus?.date || todayYmd();
+                const [preview, proShop] = await Promise.all([
+                    fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(financeDate)}`, { journal_lines: [] }, { signal }),
+                    fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(financeDate)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
+                ]);
+                return { panel, ...financeBase, preview, proShop, date: financeDate };
+            }
+            if (panel === "imports") {
+                const financeBase = await loadSharedFinanceBase({ signal });
+                const importsBundle = await loadImportsWorkspaceBundle({ signal, financeBase });
+                return { panel, ...importsBundle };
+            }
+            if (panel === "targets") {
+                const targets = await fetchJsonSafe("/api/admin/operation-targets", { year: new Date().getFullYear(), targets: [] }, { signal });
+                return { panel, targets };
+            }
             const shared = await loadSharedDashboardData({ signal });
-            const ledger = await fetchJson(`/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`, { signal });
-            return { panel, ...shared, ledger, date: shared.date };
-        }
-        if (panel === "cashbook") {
-            const shared = await loadSharedDashboardData({ signal });
-            const [preview, proShop] = await Promise.all([
-                fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(shared.date)}`, { journal_lines: [] }, { signal }),
-                fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(shared.date)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
+            const [revenue, targets] = await Promise.all([
+                fetchJson("/api/admin/revenue?period=mtd", { signal }),
+                fetchJson("/api/admin/operation-targets", { signal }),
             ]);
-            return { panel, ...shared, preview, proShop, date: shared.date };
+            return { panel, dashboard: shared.dashboard, alerts: shared.alerts, closeStatus: shared.closeStatus, summary: shared.summary, settings: shared.settings, revenue, targets, date: shared.date };
+        } catch (error) {
+            logClientError("reportsBundle", error, { loader: "reportsBundle", panel, route: state.route });
+            throw error;
         }
-        if (panel === "imports") {
-            const shared = await loadSharedDashboardData({ signal });
-            const importsBundle = await loadImportsWorkspaceBundle(shared, { signal });
-            return { panel, ...importsBundle };
-        }
-        const shared = await loadSharedDashboardData({ signal });
-        const [revenue, targets] = await Promise.all([
-            fetchJson("/api/admin/revenue?period=mtd", { signal }),
-            fetchJson("/api/admin/operation-targets", { signal }),
-        ]);
-        return { panel, dashboard: shared.dashboard, alerts: shared.alerts, closeStatus: shared.closeStatus, summary: shared.summary, settings: shared.settings, revenue, targets, date: shared.date };
     }
 
     function renderReportsWorkspace(bundle) {
@@ -5759,39 +5893,26 @@
                     <div class="panel-head">
                         <div>
                             <h3>Operational targets</h3>
-                            <p>Targets should stay inside the club finance board, not drift into detached setup-only pages.</p>
+                            <p>Targets remain available here, but they should not force the rest of Finance &amp; Admin to carry their load path.</p>
                         </div>
                     </div>
                     ${metricCards([
                         { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
-                        { label: "Annual Revenue Target", value: formatCurrency(bundle.revenue?.annual_revenue_target || 0), meta: "Current annual commercial target" },
-                        { label: "Current Pace", value: bundle.revenue?.target_revenue != null ? formatCurrency(bundle.revenue.target_revenue) : "-", meta: `Period ${escapeHtml(String(bundle.revenue?.period || "mtd").toUpperCase())}` },
-                        { label: "Anchor", value: escapeHtml(formatDate(bundle.revenue?.anchor_date || "")), meta: "Target pace anchor date" },
+                        { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
+                        { label: "Finance Link", value: "Summary-first", meta: "Use Finance Dashboard for pacing context" },
+                        { label: "Edit Surface", value: "Targets only", meta: "This panel now carries target data only" },
                     ])}
                 </section>
+                ${bundle.targets?._error ? `<section class="card"><div class="empty-state">${escapeHtml(bundle.targets._error)}</div></section>` : ""}
                 <section class="dashboard-grid">
                     <article class="dashboard-card">
                         <div class="panel-head">
                             <div>
                                 <h4>Finance launchpad</h4>
-                                <p>Keep finance work connected to operations and club setup.</p>
+                                <p>Keep target editing connected to the wider finance area without forcing a broad reload path here.</p>
                             </div>
                         </div>
                         ${renderFinanceControlCards()}
-                    </article>
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Target context</h4>
-                                <p>Commercial posture should stay visible while targets are edited.</p>
-                            </div>
-                        </div>
-                        ${metricCards([
-                            { label: "Today Revenue", value: formatCurrency(bundle.dashboard?.today_revenue || 0), meta: "Current club commercial snapshot" },
-                            { label: "Week Revenue", value: formatCurrency(bundle.dashboard?.week_revenue || 0), meta: "Rolling 7-day performance" },
-                            { label: "Golf Revenue", value: formatCurrency(bundle.dashboard?.golf_revenue_total || 0), meta: "Golf total revenue" },
-                            { label: "Pro Shop Revenue", value: formatCurrency(bundle.dashboard?.pro_shop_revenue_total || 0), meta: "Pro shop total revenue" },
-                        ])}
                     </article>
                 </section>
                 <section class="card">
@@ -5910,15 +6031,18 @@
         const signal = options.signal;
         const panel = state.route.panel || "profile";
         if (panel === "imports") {
-            const importsBundle = await loadImportsWorkspaceBundle(null, { signal });
+            const importsBundle = await loadImportsWorkspaceBundle({ signal });
             return { panel, ...importsBundle };
         }
-        const [profile, bookingWindow, targets] = await Promise.all([
+        if (panel === "targets") {
+            const targets = await fetchJsonSafe("/api/admin/operation-targets", { year: new Date().getFullYear(), targets: [] }, { signal });
+            return { panel, targets };
+        }
+        const [profile, bookingWindow] = await Promise.all([
             fetchJson("/api/admin/club-profile", { signal }),
             fetchJson("/api/admin/booking-window", { signal }),
-            fetchJson("/api/admin/operation-targets", { signal }),
         ]);
-        return { panel, profile, bookingWindow, targets };
+        return { panel, profile, bookingWindow };
     }
 
     function renderSettingsWorkspace(bundle) {
@@ -6115,7 +6239,12 @@
         } catch (error) {
             if (isAbortError(error) || signal.aborted) return;
             if (token !== state.renderToken) return;
-            logClientError("renderCurrentWorkspace", error);
+            logClientError("renderCurrentWorkspace", error, {
+                loader: state.route?.workspace === "reports" ? "reportsBundle" : `${String(state.route?.workspace || "workspace")}Bundle`,
+                panel: state.route?.panel,
+                date: state.route?.date,
+                route: state.route,
+            });
             if (Number(error?.status || 0) === 401) {
                 window.GreenLinkSession.clearSessionState();
                 window.location.href = "/frontend/index.html";
@@ -6817,7 +6946,10 @@
     }
 
     function handleInitializationFailure(error) {
-        logClientError("initialize", error);
+        logClientError("initialize", error, {
+            loader: "initialize",
+            route: state.route,
+        });
         if (Number(error?.status || 0) === 401) {
             window.GreenLinkSession.clearSessionState();
             window.location.href = "/frontend/index.html";
