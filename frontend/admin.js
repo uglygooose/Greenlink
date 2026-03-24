@@ -79,7 +79,7 @@
             },
             members: {
                 kicker: "People",
-                title: "People & Clubs",
+                title: "People",
                 copy: "Work across members, staff, and linked debtor context using the current club scope only.",
                 navCopy: "Members, staff, and linked accounts.",
             },
@@ -320,12 +320,20 @@
         return clubModules().filter(key => !["golf", "golf_days", "members", "communications"].includes(key));
     }
 
+    function visibleOperationModules() {
+        const modules = operationModules();
+        if (roleShell() === "club_admin") {
+            return modules.filter(key => key !== "pub");
+        }
+        return modules;
+    }
+
     function navDisplayLabel(workspace, fallback) {
         const shell = roleShell();
         const key = String(workspace || "").trim().toLowerCase();
         if (shell === "club_admin") {
             if (key === "overview") return "Club Overview";
-            if (key === "members") return "People & Clubs";
+            if (key === "members") return "People";
             if (key === "reports") return "Finance & Admin";
             if (key === "settings") return "Club Setup";
         }
@@ -339,7 +347,7 @@
             return [
                 { id: "overview", label: "Overview", items: items.filter(item => ["overview"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "golf", label: "Golf", items: items.filter(item => ["golf"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "members", label: "People & Clubs", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "members", label: "People", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "operations", label: "Operations", items: items.filter(item => ["operations"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "communications", label: "Communications", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "reports", label: "Finance & Admin", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
@@ -423,7 +431,7 @@
         }
         if (workspace === "reports") {
             return [
-                { id: "performance", label: "Revenue Board" },
+                { id: "performance", label: "Finance Dashboard" },
                 { id: "ledger", label: "Ledger & Reconciliation" },
                 { id: "cashbook", label: "Cashbook & Day Close" },
                 { id: "imports", label: "Imports & Data Health" },
@@ -434,8 +442,6 @@
             return [
                 { id: "profile", label: "Club Profile" },
                 { id: "booking-window", label: "Booking Rules" },
-                { id: "imports", label: "Imports & Data Health" },
-                { id: "targets", label: "Targets" },
             ];
         }
         return [];
@@ -444,6 +450,9 @@
     function navTabsForWorkspace(workspace) {
         const shell = roleShell();
         const tabs = tabsForWorkspace(workspace);
+        if (shell === "club_admin" && workspace === "operations") {
+            return tabs.filter(tab => String(tab.id || "").trim().toLowerCase() !== "pub");
+        }
         if (shell === "club_admin" && workspace === "settings") {
             return tabs.filter(tab => ["profile", "booking-window"].includes(String(tab.id || "").trim().toLowerCase()));
         }
@@ -466,10 +475,15 @@
 
     function parseRoute() {
         const params = new URLSearchParams(window.location.search || "");
-        const workspace = normalizeWorkspace(params.get("workspace"));
+        const rawWorkspace = String(params.get("workspace") || "").trim().toLowerCase();
+        const rawPanel = String(params.get("panel") || "").trim().toLowerCase();
+        const remappedWorkspace = roleShell() === "club_admin" && rawWorkspace === "settings" && ["imports", "targets"].includes(rawPanel)
+            ? "reports"
+            : rawWorkspace;
+        const workspace = normalizeWorkspace(remappedWorkspace);
         const route = {
             workspace,
-            panel: normalizePanel(workspace, params.get("panel")),
+            panel: normalizePanel(workspace, rawPanel),
             date: clampYmd(params.get("date") || todayYmd()),
             clubId: positiveInt(params.get("club_id")),
         };
@@ -957,7 +971,7 @@
 
     function renderFinanceControlCards() {
         const cards = [
-            { title: "Revenue Board", copy: "Keep finance signal, stream mix, and target pace visible.", workspace: "reports", panel: "performance" },
+            { title: "Finance Dashboard", copy: "Keep finance signal, stream mix, and target pace visible.", workspace: "reports", panel: "performance" },
             { title: "Ledger & Reconciliation", copy: "Review ledger-backed payment history before export and close-out.", workspace: "reports", panel: "ledger" },
             { title: "Cashbook & Day Close", copy: "Preview and export club-specific CSV journals for accounting.", workspace: "reports", panel: "cashbook" },
             { title: "Imports & Data Health", copy: "Keep stream mappings and import posture tied to finance.", workspace: "reports", panel: "imports" },
@@ -1526,11 +1540,11 @@
                     { label: "Daily Close", value: closeMeta.label, meta: closeMeta.detail },
                     { label: "Week Revenue", value: formatCurrency(dashboard.week_revenue || 0), meta: "Rolling 7-day club revenue" },
                     { label: "Period Actual", value: formatCurrency(revenue.actual_revenue || summary.total_payments || 0), meta: revenue.actual_revenue != null ? "Current reporting period actuals" : "Today's payment-backed actuals" },
-                    { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use revenue board for period pacing" },
+                    { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use the finance dashboard for period pacing" },
                 ])}
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open revenue board</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance dashboard</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
                 </div>
             </article>
@@ -2077,6 +2091,10 @@
         return status.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
     }
 
+    function isPersistedTeeTimeId(value) {
+        return Number(value || 0) > 0;
+    }
+
     function orderedGolfTeeRows(rows) {
         return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
             const byTime = String(left.tee_time || "").localeCompare(String(right.tee_time || ""));
@@ -2119,23 +2137,34 @@
         }
 
         const slotState = String(row.status || "").trim().toLowerCase() === "blocked" ? "blocked" : "open";
+        const canCreateBooking = isPersistedTeeTimeId(row.id);
+        const isPlaceholderRow = slotState !== "blocked" && !canCreateBooking;
         const slotCopy = slotState === "blocked"
             ? "Blocked for this tee start"
-            : "Open for a new booking";
+            : isPlaceholderRow
+                ? "Placeholder tee start"
+                : "Open for a new booking";
+        const slotMeta = slotState === "blocked"
+            ? "Golf-day or closure rule applied."
+            : canCreateBooking
+                ? "Add booking, then drag between starts without leaving the shell."
+                : "Generate the tee sheet for this day before adding bookings.";
         return `
             <article
-                class="tee-sheet-slot-card ${escapeHtml(slotState)}"
-                data-tee-time-id="${escapeHtml(String(row.id))}"
+                class="${escapeHtml(`tee-sheet-slot-card ${slotState}${isPlaceholderRow ? " placeholder" : ""}`)}"
+                ${canCreateBooking ? `data-tee-time-id="${escapeHtml(String(row.id))}"` : ""}
                 data-slot-number="${escapeHtml(String(slotNumber))}"
             >
                 <div class="tee-sheet-slot-top">
-                    <span class="tee-sheet-slot-status">${escapeHtml(slotState === "blocked" ? "Blocked" : `Slot ${slotNumber}`)}</span>
+                    <span class="tee-sheet-slot-status">${escapeHtml(slotState === "blocked" ? "Blocked" : isPlaceholderRow ? "Placeholder" : `Slot ${slotNumber}`)}</span>
                 </div>
                 <div class="tee-sheet-slot-name">${escapeHtml(slotCopy)}</div>
-                <div class="tee-sheet-slot-meta">${escapeHtml(slotState === "blocked" ? "Golf-day or closure rule applied." : "Add booking, then drag between starts without leaving the shell.")}</div>
+                <div class="tee-sheet-slot-meta">${escapeHtml(slotMeta)}</div>
                 ${slotState === "blocked" ? "" : `
                     <div class="tee-sheet-slot-actions">
-                        <button type="button" class="button secondary" data-open-booking="${escapeHtml(String(row.id))}">Add booking</button>
+                        ${canCreateBooking
+                            ? `<button type="button" class="button secondary" data-open-booking="${escapeHtml(String(row.id))}">Add booking</button>`
+                            : `<button type="button" class="button secondary" disabled title="Generate the tee sheet for this day first.">Add booking</button>`}
                     </div>
                 `}
             </article>
@@ -4160,7 +4189,7 @@
 
     function renderOperationsOverview(bundle) {
         const insightMap = bundle.dashboard?.operation_insights || {};
-        const modules = operationModules();
+        const modules = visibleOperationModules();
         if (!modules.length) {
             return `<section class="card"><div class="empty-state">No non-golf operations are enabled for this club.</div></section>`;
         }
@@ -4203,7 +4232,7 @@
     }
 
     function renderOperationsServiceBoard(bundle) {
-        const modules = operationModules();
+        const modules = visibleOperationModules();
         const insightMap = bundle.dashboard?.operation_insights || {};
         return `
             <section class="dashboard-grid">
@@ -4261,7 +4290,7 @@
                 ])}
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open export &amp; day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open revenue board</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance dashboard</button>
                 </div>
             </article>
         `;
@@ -4308,13 +4337,13 @@
         const insightMap = bundle.dashboard?.operation_insights || {};
         const alerts = bundle.alerts || {};
         if (panel === "overview") {
-            const modules = operationModules();
+            const modules = visibleOperationModules();
             return `
                 <section class="hero-card">
                     <div class="panel-head">
                         <div>
                             <h3>Operations</h3>
-                            <p>Run non-golf operations from one board without losing commercial signal or club context.</p>
+                            <p>Run enabled non-golf service lanes from one board without turning Operations into a dumping ground.</p>
                         </div>
                     </div>
                     ${metricCards([
@@ -4494,19 +4523,80 @@
     async function membersBundle(options = {}) {
         const signal = options.signal;
         const panel = state.route.panel || "members";
+        const membersUi = defaultMembersUi(options.membersUi || state.workspaceData?.membersUi);
         if (panel === "staff" && roleShell() === "club_admin") {
             const [staff, members, accountCustomers] = await Promise.all([
                 fetchJson("/api/admin/staff?limit=50", { signal }),
-                fetchJson("/api/admin/members?limit=8&sort=recent_activity", { signal }),
+                fetchJson("/api/admin/members?limit=6&sort=recent_activity", { signal }),
                 fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
             ]);
-            return { panel, staff, members, accountCustomers };
+            return { panel, staff, members, accountCustomers, membersUi };
         }
+        const membersQuery = new URLSearchParams({
+            limit: membersUi.query ? "24" : "16",
+            sort: membersUi.query ? "name_asc" : "recent_activity",
+        });
+        if (membersUi.query) membersQuery.set("q", membersUi.query);
+        if (membersUi.status !== "all") membersQuery.set("membership_status", membersUi.status);
+        const accountCustomerQuery = new URLSearchParams({
+            active_only: "true",
+            sort: "name_asc",
+        });
+        if (membersUi.query) accountCustomerQuery.set("q", membersUi.query);
         const [members, accountCustomers] = await Promise.all([
-            fetchJson("/api/admin/members?limit=50&sort=recent_activity", { signal }),
-            fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
+            fetchJson(`/api/admin/members?${membersQuery.toString()}`, { signal }),
+            fetchJson(`/api/admin/account-customers?${accountCustomerQuery.toString()}`, { signal }),
         ]);
-        return { panel: "members", members, accountCustomers };
+        return { panel: "members", members, accountCustomers, membersUi };
+    }
+
+    function defaultMembersUi(source = null) {
+        return {
+            query: String(source?.query || "").trim(),
+            status: ["all", "active", "hold", "inactive", "resigned", "defaulter"].includes(String(source?.status || "").trim().toLowerCase())
+                ? String(source.status).trim().toLowerCase()
+                : "all",
+        };
+    }
+
+    function renderMembersSearchForm(bundle) {
+        const membersUi = defaultMembersUi(bundle.membersUi);
+        const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
+        const total = Number(bundle.members?.total || rows.length || 0);
+        return `
+            <form class="form-card" id="members-search-form">
+                <div class="panel-head">
+                    <div>
+                        <h3>People search</h3>
+                        <p>Open this workspace ready to search first, then narrow by status without loading a giant raw member dump.</p>
+                    </div>
+                </div>
+                <div class="field-grid">
+                    <div class="field">
+                        <label>Search people</label>
+                        <input name="q" value="${escapeHtml(membersUi.query)}" placeholder="Name, member number, email, phone">
+                    </div>
+                    <div class="field">
+                        <label>Status</label>
+                        <select name="membership_status">
+                            ${[
+                                ["all", "All statuses"],
+                                ["active", "Active"],
+                                ["hold", "Hold"],
+                                ["inactive", "Inactive"],
+                                ["defaulter", "Defaulter"],
+                                ["resigned", "Resigned"],
+                            ].map(([value, label]) => `<option value="${escapeHtml(value)}" ${membersUi.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+                        </select>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="button">Search people</button>
+                    <button type="button" class="button secondary" data-clear-members-search="1">Clear search</button>
+                    <span class="panel-note">${escapeHtml(membersUi.query ? `Showing ${formatInteger(rows.length)} of ${formatInteger(total)} matching people.` : `Showing ${formatInteger(rows.length)} recent people in club scope.`)}</span>
+                </div>
+            </form>
+        `;
     }
 
     function buildMemberServiceQueue(rows) {
@@ -4663,8 +4753,8 @@
                 <section class="hero-card">
                     <div class="panel-head">
                         <div>
-                            <h3>People & Clubs</h3>
-                            <p>Staff, service context, and debtor visibility should sit together in the club shell, not in separate generic admin pages.</p>
+                            <h3>Staff</h3>
+                            <p>Manage staff access and keep service context nearby without forcing club admins through a generic utilities page.</p>
                         </div>
                     </div>
                     ${metricCards([
@@ -4788,24 +4878,25 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>People & Clubs</h3>
-                        <p>Members, debtor context, and service activity should feel like one operating surface, not a plain table page.</p>
+                        <h3>People</h3>
+                        <p>Search first, then act. Member context, debtor readiness, and service pressure should sit together without opening a giant raw list by default.</p>
                     </div>
                 </div>
                 ${metricCards([
-                    { label: "Members", value: formatInteger(rows.length), meta: "Current member rows in club scope" },
+                    { label: bundle.membersUi?.query ? "Matches" : "People", value: formatInteger(bundle.membersUi?.query ? (bundle.members?.total || rows.length) : rows.length), meta: bundle.membersUi?.query ? "Matching people in current club scope" : "Recent member rows in club scope" },
                     { label: "Active", value: formatInteger(activeCount), meta: "Active memberships" },
                     { label: "Flagged", value: formatInteger(flaggedCount), meta: "Hold, inactive, or defaulter states" },
                     { label: "Debtor Accounts", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
                 ])}
                 ${renderPeopleControlCards()}
             </section>
+            ${renderMembersSearchForm(bundle)}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Member service board</h4>
-                            <p>Recent activity, spend, and operation context should stay visible before you drop into records.</p>
+                            <h4>${bundle.membersUi?.query ? "People search results" : "Recent member service board"}</h4>
+                            <p>${bundle.membersUi?.query ? "Search results stay operational: member context, booking demand, and service risk in one table." : "Recent activity, spend, and operation context stay visible before you drop into full records."}</p>
                         </div>
                     </div>
                     ${renderTable(
@@ -5316,7 +5407,7 @@
                     { label: "Stale Streams", value: formatInteger(summary.stale_streams || 0), meta: "Streams needing attention" },
                     { label: "Booking Sync", value: formatRelativeAge(bundle.dashboard?.imports?.bookings), meta: bundle.dashboard?.imports?.bookings ? formatDateTime(bundle.dashboard.imports.bookings) : "No recent booking import" },
                 ])}
-                ${renderSetupControlCards()}
+                ${renderFinanceControlCards()}
             </section>
             <section class="dashboard-grid">
                 <article class="dashboard-card">
@@ -5499,7 +5590,7 @@
             <section class="hero-card">
                 <div class="panel-head">
                     <div>
-                        <h3>Finance & Admin</h3>
+                        <h3>Finance Dashboard</h3>
                         <p>This should read like a live club finance board: revenue trend, imported streams, sync posture, and target pace in one place.</p>
                     </div>
                 </div>
@@ -5666,13 +5757,13 @@
         }
 
         return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Club setup</h3>
-                        <p>Brand, booking policy, targets, and enabled module value should read as one club setup board, not scattered admin forms.</p>
+                <section class="hero-card">
+                    <div class="panel-head">
+                        <div>
+                            <h3>Club setup</h3>
+                            <p>Keep club setup lean: brand and booking policy only, without dragging operational reporting back into configuration.</p>
+                        </div>
                     </div>
-                </div>
                 ${metricCards([
                     { label: "Club Name", value: escapeHtml(bundle.profile?.display_name || bundle.profile?.club_name || "Club"), meta: "Member-facing club identity" },
                     { label: "Location", value: escapeHtml(bundle.profile?.location || "-"), meta: "Current club location" },
@@ -5712,7 +5803,11 @@
         const signal = requestController.signal;
         const optimisticRoute = parseRoute();
         const hasExistingWorkspace = Boolean(els.root.children.length || String(els.root.innerHTML || "").trim());
-        if (!readWorkspaceCache(optimisticRoute) && !hasExistingWorkspace) {
+        const cachedWorkspace = readWorkspaceCache(optimisticRoute);
+        if (!cachedWorkspace && hasExistingWorkspace) {
+            setOverlay(true);
+        }
+        if (!cachedWorkspace && !hasExistingWorkspace) {
             renderWorkspaceLoading("Loading role-specific workspace.");
         }
         try {
@@ -5868,7 +5963,11 @@
         await postJson("/api/admin/staff", payload);
         showToast("Staff user created.", "ok");
         form.reset();
-        await renderCurrentWorkspace();
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, workspace] = String(key || "").split("|");
+            return shell === roleShell() && workspace === "members";
+        });
+        await refreshActiveMembersWorkspace();
     }
 
     async function submitMemberForm(form) {
@@ -5884,7 +5983,23 @@
         await postJson("/api/admin/members", payload);
         showToast("Member created.", "ok");
         form.reset();
-        await renderCurrentWorkspace();
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, workspace] = String(key || "").split("|");
+            return shell === roleShell() && workspace === "members";
+        });
+        await refreshActiveMembersWorkspace();
+    }
+
+    async function submitMembersSearchForm(form) {
+        const membersUi = defaultMembersUi({
+            query: form.q.value,
+            status: form.membership_status.value,
+        });
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, workspace, panel] = String(key || "").split("|");
+            return shell === roleShell() && workspace === "members" && panel === "members";
+        });
+        await refreshActiveMembersWorkspace({ membersUi });
     }
 
     async function submitCommunicationForm(form) {
@@ -5957,6 +6072,10 @@
     function openBookingModal(teeTimeId) {
         const row = findTeeRow(teeTimeId);
         if (!row) return;
+        if (!isPersistedTeeTimeId(row.id)) {
+            showToast("Generate the tee sheet for this day before adding bookings.", "bad");
+            return;
+        }
         state.modalData = { teeTimeId: Number(teeTimeId) };
         openModal(
             "Create booking",
@@ -6002,8 +6121,12 @@
     }
 
     async function submitBookingModal(form) {
+        const teeTimeId = Number(form.tee_time_id.value || 0);
+        if (!isPersistedTeeTimeId(teeTimeId)) {
+            throw new Error("Generate the tee sheet for this day before adding bookings.");
+        }
         const payload = {
-            tee_time_id: Number(form.tee_time_id.value || 0),
+            tee_time_id: teeTimeId,
             party_size: Number(form.party_size.value || 1),
             member_id: positiveInt(form.member_id.value),
             player_name: String(form.player_name.value || "").trim(),
@@ -6100,6 +6223,28 @@
         writeWorkspaceCache(route, bundle);
         els.root.innerHTML = renderGolfWorkspace(bundle);
         setupNativeTeeSheetInteractions();
+    }
+
+    async function refreshActiveMembersWorkspace(options = {}) {
+        if (state.route?.workspace !== "members") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await membersBundle({
+            signal,
+            membersUi: defaultMembersUi({
+                ...state.workspaceData?.membersUi,
+                ...(options.membersUi || {}),
+            }),
+        });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderMembersWorkspace(bundle);
     }
 
     function activeGolfBookingsUi() {
@@ -6249,7 +6394,7 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
@@ -6263,6 +6408,13 @@
         if (target.hasAttribute("data-export-pro-shop")) return exportProShopCsv(target.getAttribute("data-export-pro-shop") || todayYmd());
         if (target.hasAttribute("data-close-day")) return closeCashbookDay(target.getAttribute("data-close-day") || todayYmd());
         if (target.hasAttribute("data-reopen-day")) return reopenCashbookDay(target.getAttribute("data-reopen-day") || todayYmd());
+        if (target.hasAttribute("data-clear-members-search")) {
+            deleteWorkspaceCacheWhere(key => {
+                const [shell, workspace, panel] = String(key || "").split("|");
+                return shell === roleShell() && workspace === "members" && panel === "members";
+            });
+            return refreshActiveMembersWorkspace({ membersUi: { query: "", status: "all" } });
+        }
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });
         if (target.hasAttribute("data-open-booking")) return openBookingModal(Number(target.getAttribute("data-open-booking") || 0));
         if (target.hasAttribute("data-check-in")) return checkInBooking(Number(target.getAttribute("data-check-in") || 0));
@@ -6309,6 +6461,7 @@
             "operational-targets-form": submitOperationalTargetsForm,
             "booking-modal-form": submitBookingModal,
             "golf-bookings-filter-form": submitGolfBookingsFilterForm,
+            "members-search-form": submitMembersSearchForm,
         };
         const handler = handlers[form.id];
         if (!handler) return;
