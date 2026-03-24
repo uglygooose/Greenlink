@@ -307,6 +307,17 @@
         return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     }
 
+    function toDateTimeLocalValue(value) {
+        const date = toDate(value);
+        if (!date) return "";
+        const pad = part => String(part).padStart(2, "0");
+        return [
+            date.getFullYear(),
+            pad(date.getMonth() + 1),
+            pad(date.getDate()),
+        ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
     function formatInteger(value) {
         const number = Number(value);
         if (!Number.isFinite(number)) return "0";
@@ -1258,6 +1269,33 @@
         return `<button type="button" class="${className}" ${attrs}>${escapeHtml(label)}</button>`;
     }
 
+    function renderPageHero(options = {}) {
+        const title = String(options.title || "").trim() || "Workspace";
+        const copy = String(options.copy || "").trim();
+        const workspace = String(options.workspace || "").trim();
+        const subnavLabel = String(options.subnavLabel || `${workspace} pages`).trim();
+        const metrics = Array.isArray(options.metrics) ? options.metrics.filter(Boolean) : [];
+        const actions = Array.isArray(options.actions) ? options.actions.filter(Boolean) : [];
+        const body = String(options.body || "");
+        const extraClass = String(options.extraClass || "").trim();
+        const meta = String(options.meta || "");
+        return `
+            <section class="hero-card page-system-hero ${escapeHtml(extraClass)}">
+                <div class="panel-head">
+                    <div>
+                        <h3>${escapeHtml(title)}</h3>
+                        ${copy ? `<p>${escapeHtml(copy)}</p>` : ""}
+                    </div>
+                    ${meta ? `<div class="inline-actions">${meta}</div>` : ""}
+                </div>
+                ${workspace ? renderFamilySubnav(workspace, { label: subnavLabel }) : ""}
+                ${metrics.length ? metricCards(metrics) : ""}
+                ${renderPageActionRow(actions)}
+                ${body}
+            </section>
+        `;
+    }
+
     function renderFamilySubnav(workspace, options = {}) {
         const tabs = navTabsForWorkspace(workspace);
         if (!tabs.length) return "";
@@ -1568,7 +1606,6 @@
                                 <div class="ops-step-state">${escapeHtml(item.state)}</div>
                                 <div class="ops-step-detail">${escapeHtml(item.detail)}</div>
                             </div>
-                            <button type="button" class="button ghost ops-step-action" data-nav-workspace="${escapeHtml(item.workspace)}" ${item.panel ? `data-nav-panel="${escapeHtml(item.panel)}"` : ""}>${escapeHtml(item.label)}</button>
                         </div>
                     `).join("")}
                 </div>
@@ -2452,34 +2489,29 @@
             ? `Live across Tee ${teeLabels.join(" and Tee ")} · ${formatInteger(ordered.length)} starts · Four-slot operating grid`
             : "The live day sheet stays in the shell with direct booking, movement, and check-in control.";
         return `
-            <section class="hero-card golf-hero-card native-tee-sheet-hero">
-                <div class="panel-head">
-                    <div>
-                        <h3>Tee Sheet</h3>
-                        <p>This tab is for day-sheet work only: time grid, Tee 1 / Tee 10 starts, booking cards, and fast in-place movement.</p>
+            ${renderPageHero({
+                title: "Tee Sheet",
+                copy: "Run the live golf day here: tee grid, booking cards, fast movement, and check-in.",
+                workspace: "golf",
+                subnavLabel: "Golf pages",
+                extraClass: "golf-hero-card native-tee-sheet-hero",
+                metrics: [
+                    { label: "Starts", value: formatInteger(ordered.length), meta: "Active tee-time rows on this day" },
+                    { label: "Booked Starts", value: formatInteger(bookedStarts), meta: "Rows carrying at least one booking" },
+                    { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} places used` },
+                    { label: "Blocked", value: formatInteger(blockedStarts), meta: "Starts blocked by rules or closure" },
+                ],
+                body: `
+                    <div class="tee-sheet-toolbar">
+                        <div class="tee-sheet-date-controls">
+                            <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
+                            <input type="date" class="tee-sheet-date-input" data-tee-sheet-date value="${escapeHtml(bundle.date)}">
+                            <button type="button" class="button secondary" data-date-shift="1">Next day</button>
+                        </div>
                     </div>
-                </div>
-                <div class="tee-sheet-toolbar">
-                    <div class="tee-sheet-date-controls">
-                        <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
-                        <input type="date" class="tee-sheet-date-input" data-tee-sheet-date value="${escapeHtml(bundle.date)}">
-                        <button type="button" class="button secondary" data-date-shift="1">Next day</button>
-                    </div>
-                    <div class="tee-sheet-toolbar-actions">
-                        <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Export & close</button>
-                    </div>
-                </div>
-                <div class="tee-sheet-ops-plan">${escapeHtml(opsPlan)}</div>
-                <div class="tee-sheet-summary-strip">
-                    ${metricCards([
-                        { label: "Starts", value: formatInteger(ordered.length), meta: "Active tee-time rows on this day" },
-                        { label: "Booked Starts", value: formatInteger(bookedStarts), meta: "Rows carrying at least one booking" },
-                        { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} places used` },
-                        { label: "Blocked", value: formatInteger(blockedStarts), meta: "Starts blocked by rules or closure" },
-                    ])}
-                </div>
-            </section>
+                    <div class="tee-sheet-ops-plan">${escapeHtml(opsPlan)}</div>
+                `,
+            })}
             <section class="card native-tee-sheet-card">
                 <div class="panel-head">
                     <div>
@@ -3616,7 +3648,11 @@
         );
         const alertsPromise = loadSharedResource(
             alertsCacheKey(clubKey),
-            () => fetchJson("/api/admin/operational-alerts", { signal, timeoutMs: 12000 }),
+            () => fetchJsonSafe(
+                "/api/admin/operational-alerts",
+                { alerts: [], summary: { high: 0, medium: 0, low: 0 } },
+                { signal, timeoutMs: 12000 }
+            ),
             8000
         );
         const financeBasePromise = shell === "club_admin"
@@ -3674,24 +3710,13 @@
         const streamLabel = selectedStream === "pro_shop" ? "Pro Shop" : selectedStream === "golf" ? "Golf" : "Club";
 
         return `
-            <section class="hero-card overview-hero">
-                <div class="panel-head">
-                    <div>
-                        <h3>${options.mode === "today" ? "Today's operating board" : "Club overview"}</h3>
-                        <p>${options.mode === "today"
-                            ? escapeHtml(roleContext.role_label ? `${roleContext.role_label}. Start with the tee sheet, open alerts, and current member demand.` : "Start with the tee sheet, open alerts, and current member demand.")
-                            : "Run the club from here first: dashboards, blockers, revenue posture, AI guidance, and direct links into golf, operations, and finance."}</p>
-                    </div>
-                </div>
-                <div class="button-row">
-                    <button type="button" class="button" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
-                    ${shell === "club_admin"
-                        ? `<button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>`
-                        : `<button type="button" class="button secondary" data-nav-workspace="members" data-nav-panel="members">Open members</button>`}
-                    <button type="button" class="button ghost" data-nav-workspace="operations" data-nav-panel="overview">Open operations</button>
-                    ${shell === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
-                </div>
-            </section>
+            ${renderPageHero({
+                title: options.mode === "today" ? "Today's operating board" : "Club Overview",
+                copy: options.mode === "today"
+                    ? (roleContext.role_label ? `${roleContext.role_label}. Start with alerts, member demand, and the live golf day.` : "Start with alerts, member demand, and the live golf day.")
+                    : "Start the club day here: blockers, revenue, current notices, and close state in one operating view.",
+                extraClass: "overview-hero",
+            })}
             ${renderOverviewStreamCard(dashboard, options)}
             ${renderDashboardStatCards(dashboard, alerts)}
             <section class="dashboard-grid">
@@ -3751,15 +3776,6 @@
             ` : ""}
             <section class="dashboard-grid">
                 ${renderClubManagerBriefCard(bundle)}
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Operations launchpad</h4>
-                            <p>The shell should open the whole club, not only one workspace.</p>
-                        </div>
-                    </div>
-                    ${renderOperationsLaunchpad()}
-                </article>
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
@@ -3849,11 +3865,12 @@
             };
         }
         if (panel === "golf-days") {
-            const [sharedDashboard, bookings] = await Promise.all([
+            const [sharedDashboard, bookings, accountCustomers] = await Promise.all([
                 loadSharedDashboardData({ signal }),
                 loadSharedResource(golfDayBookingsCacheKey(activeClubCacheKeyPart()), () => fetchJson("/api/admin/golf-day-bookings", { signal }), 8000),
+                fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
             ]);
-            return { panel, ...sharedDashboard, golfDays: bookings, date };
+            return { panel, ...sharedDashboard, golfDays: bookings, accountCustomers, date };
         }
         const teeRows = await loadGolfTeeRows(date, { signal, ensureMaterialized: true });
         return {
@@ -4109,9 +4126,6 @@
                     <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
                     <span class="metric-pill">${escapeHtml(formatDate(bundle.date))}</span>
                     <button type="button" class="button secondary" data-date-shift="1">Next day</button>
-                    <button type="button" class="button" data-nav-panel="tee-sheet">Open live sheet</button>
-                    <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Export &amp; close</button>
                 </div>
             </div>
         `;
@@ -4263,26 +4277,19 @@
         });
         const arrivingWork = rows.filter(row => ["booked", "checked_in"].includes(String(row.status || "").trim().toLowerCase()));
         return `
-            <section class="hero-card golf-hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Golf bookings</h3>
-                        <p>Work today's golf-day bookings outside the tee sheet: search, clean up payment/account coding, and push the right status quickly.</p>
-                    </div>
-                </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Bookings",
+                copy: "Use bookings for search, status cleanup, payment method, and account coding without disturbing the live tee grid.",
+                workspace: "golf",
+                subnavLabel: "Golf pages",
+                extraClass: "golf-hero-card",
+                metrics: [
                     { label: "Loaded Bookings", value: formatInteger(rows.length), meta: `Selected golf date ${escapeHtml(formatDate(bundle.date))}` },
                     { label: "Booked / Arriving", value: formatInteger(arrivingWork.length), meta: "Booked or checked-in work still active" },
                     { label: "Paid Statuses", value: formatInteger(paidStatuses.length), meta: "Checked-in or completed bookings" },
                     { label: "Missing Paid Ledger", value: formatInteger(missingPaidLedger.length), meta: "Paid-status bookings without ledger rows" },
-                ])}
-                <div class="button-row">
-                    <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
-                    <button type="button" class="button secondary" data-nav-panel="overview">Open golf dashboard</button>
-                    <button type="button" class="button ghost" data-nav-panel="golf-days">Golf days</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Cashbook &amp; day close</button>
-                </div>
-            </section>
+                ],
+            })}
             <form class="form-card" id="golf-bookings-filter-form">
                 <div class="panel-head">
                     <div>
@@ -4350,21 +4357,20 @@
             };
 
             return `
-                <section class="hero-card golf-hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Golf command centre</h3>
-                            <p>Golf should feel immediate, premium, and operational. The tee sheet stays at the center, with the next actions and handoff state visible before the live sheet opens.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Golf Dashboard",
+                    copy: "Read golf load, current capacity pressure, and golf-day commercial state before moving into live work.",
+                    workspace: "golf",
+                    subnavLabel: "Golf pages",
+                    extraClass: "golf-hero-card",
+                    metrics: [
                         { label: "Slots", value: formatInteger(rows.length), meta: "Rendered for the selected day" },
                         { label: "Booked Slots", value: formatInteger(bookedSlots), meta: "Slots carrying at least one booking" },
                         { label: "Occupancy", value: capacity ? formatPercent(occupied / capacity) : "0%", meta: `${formatInteger(occupied)}/${formatInteger(capacity)} player places used` },
                         { label: "Blocked Slots", value: formatInteger(blockedSlots), meta: "Blocked by closure or golf-day rules" },
-                    ])}
-                    ${renderGolfCommandStrip(bundle, rows)}
-                </section>
+                    ],
+                    body: renderGolfCommandStrip(bundle, rows),
+                })}
                 <section class="dashboard-grid">
                     <article class="dashboard-card">
                         <div class="panel-head">
@@ -4402,12 +4408,6 @@
                             { label: "Open Events", value: formatInteger(golfPipeline.open), meta: "Pending or partial events" },
                             { label: "Golf Revenue Today", value: formatCurrency(golfPipeline.revenue), meta: "Current golf revenue snapshot" },
                         ])}
-                        <div class="button-row">
-                            <button type="button" class="button secondary" data-nav-panel="bookings">Open bookings</button>
-                            <button type="button" class="button ghost" data-nav-panel="golf-days">Open golf days</button>
-                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger &amp; reconciliation</button>
-                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook &amp; day close</button>
-                        </div>
                     </article>
                 </section>
                 <section class="dashboard-grid">
@@ -4433,43 +4433,6 @@
                         ${renderAccountingHandoffCard(bundle)}
                     </section>
                 ` : ""}
-                <section class="card golf-sheet-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Live tee-sheet access</h4>
-                            <p>Golf overview keeps the priorities and commercial signal. The actual day sheet now opens in its own shell-native tee-sheet tab instead of being buried at the bottom here.</p>
-                        </div>
-                    </div>
-                    <div class="ops-cadence">
-                        <div class="ops-step">
-                            <div class="ops-step-index">1</div>
-                            <div class="ops-step-copy">
-                                <div class="ops-step-title">Open the live tee sheet</div>
-                                <div class="ops-step-state">${escapeHtml(formatDate(bundle.date))}</div>
-                                <div class="ops-step-detail">Run booking cards, drag-drop movement, check-in, and status changes in the dedicated Tee Sheet panel.</div>
-                            </div>
-                            <button type="button" class="button" data-nav-panel="tee-sheet">Open tee sheet</button>
-                        </div>
-                        <div class="ops-step">
-                            <div class="ops-step-index">2</div>
-                            <div class="ops-step-copy">
-                                <div class="ops-step-title">Work the golf booking queue</div>
-                                <div class="ops-step-state">${escapeHtml(formatInteger(bundle.dashboard?.today_bookings || 0))} booking(s)</div>
-                                <div class="ops-step-detail">Use the Bookings panel for search, status cleanup, payment method, and account coding without disturbing the live sheet.</div>
-                            </div>
-                            <button type="button" class="button secondary" data-nav-panel="bookings">Open bookings</button>
-                        </div>
-                        <div class="ops-step">
-                            <div class="ops-step-index">3</div>
-                            <div class="ops-step-copy">
-                                <div class="ops-step-title">Then close the golf handoff</div>
-                                <div class="ops-step-state">${escapeHtml(bundle.closeStatus?.is_closed ? "Day closed" : "Day open")}</div>
-                                <div class="ops-step-detail">Use finance handoff, ledger review, and export controls without leaving the club shell.</div>
-                            </div>
-                            <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook &amp; close</button>
-                        </div>
-                    </div>
-                </section>
             `;
         }
         if (panel === "tee-sheet") {
@@ -4482,25 +4445,23 @@
             const golfDays = bundle.golfDays || {};
             const rows = Array.isArray(golfDays.bookings) ? golfDays.bookings : [];
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Golf day pipeline</h3>
-                            <p>Golf days now sit in a dedicated sub-workspace instead of being buried inside a generic dashboard.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Golf Day Operations",
+                    copy: "Move events from setup to tee-sheet allocation and payment completion without losing current golf-day context.",
+                    workspace: "golf",
+                    subnavLabel: "Golf pages",
+                    metrics: [
                         { label: "Open Events", value: formatInteger(golfDays.total || 0), meta: "Current golf-day bookings" },
                         { label: "Pipeline Value", value: formatCurrency(golfDays.total_amount || 0), meta: "Gross booked value" },
                         { label: "Outstanding", value: formatCurrency(golfDays.outstanding_balance || 0), meta: "Remaining balance due" },
                         { label: "Golf Revenue Today", value: formatCurrency(bundle.dashboard?.golf_revenue_today || 0), meta: "Today's golf revenue snapshot" },
-                    ])}
-                </section>
+                    ],
+                })}
                 <section class="card">
                     <div class="panel-head">
                         <div>
-                            <h4>Current golf-day bookings</h4>
-                            <p>Event pipeline is visible in one place and no longer mixed into long-form sections.</p>
+                            <h4>Active event queue</h4>
+                            <p>Open golf-day events stay visible here first until setup, payment, and allocation all reach a clean state.</p>
                         </div>
                     </div>
                     <div class="stack">
@@ -4563,9 +4524,6 @@
                                 value: formatMaybe(row.value, row.format),
                                 meta: operationServiceCopy(key),
                             })))}
-                            <div class="button-row">
-                                <button type="button" class="button secondary" data-nav-panel="${escapeHtml(key)}">Open ${escapeHtml(MODULE_LABELS[key] || key)}</button>
-                            </div>
                         </article>
                     `;
                 }).join("")}
@@ -4640,10 +4598,6 @@
                     { label: "Card Sales", value: formatInteger(cardSales), meta: "Recent card-payment transactions" },
                     { label: "Recent Sales", value: formatInteger(sales.length), meta: "Visible native pro-shop sales rows" },
                 ])}
-                <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open export &amp; day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance dashboard</button>
-                </div>
             </article>
         `;
     }
@@ -4675,10 +4629,6 @@
                     </div>
                 </div>
                 ${metricCards(summaryCards)}
-                <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="communications">Open communications</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open export &amp; close</button>
-                </div>
             </article>
         `;
     }
@@ -4691,25 +4641,18 @@
         if (panel === "overview") {
             const modules = visibleOperationModules();
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Operations</h3>
-                            <p>Run enabled non-golf service lanes from one board without turning Operations into a dumping ground.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Operations Board",
+                    copy: "Keep enabled non-golf service lanes visible without turning Operations into a launchpad.",
+                    workspace: "operations",
+                    subnavLabel: "Operations pages",
+                    metrics: [
                         { label: "Enabled Modules", value: formatInteger(modules.length), meta: "Operational modules active for this club" },
                         { label: "Pro Shop Today", value: formatCurrency(bundle.dashboard?.pro_shop_revenue_today || 0), meta: "Native pro shop sales today" },
                         { label: "Other Revenue Today", value: formatCurrency(bundle.dashboard?.other_revenue_today || 0), meta: "Imported non-golf operational revenue" },
                         { label: "Week Transactions", value: formatInteger((bundle.dashboard?.revenue_streams?.pro_shop || {}).week_transactions || 0), meta: "Pro shop throughput this week" },
-                    ])}
-                    <div class="button-row">
-                        <button type="button" class="button secondary" data-nav-panel="pro_shop">Open Pro Shop</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
-                    </div>
-                </section>
+                    ],
+                })}
                 <section class="dashboard-grid">
                     ${renderProShopCashupCard(bundle.dashboard || {}, alerts)}
                     ${renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
@@ -4729,25 +4672,18 @@
             const sales = Array.isArray(bundle.sales?.sales) ? bundle.sales.sales : [];
             const inventory = insightMap.pro_shop?.inventory || {};
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Pro Shop</h3>
-                            <p>Low stock, recent sales, and inventory value are grouped into one operational workspace.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Pro Shop",
+                    copy: "Run shop trade, stock pressure, and same-day readiness from one operational page.",
+                    workspace: "operations",
+                    subnavLabel: "Operations pages",
+                    metrics: [
                         { label: "Products", value: formatInteger(inventory.active_products || products.length), meta: "Active products in inventory" },
                         { label: "Stock Units", value: formatInteger(inventory.stock_units || 0), meta: "Units currently on hand" },
                         { label: "Stock Value", value: formatCurrency(inventory.stock_value || 0), meta: "Estimated inventory carrying value" },
                         { label: "Low Stock", value: formatInteger(bundle.products?.low_stock_count || 0), meta: "Products at or below reorder level" },
-                    ])}
-                    <div class="button-row">
-                        <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="performance">Open finance &amp; admin</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
-                        <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
-                    </div>
-                </section>
+                    ],
+                })}
                 <section class="dashboard-grid">
                     ${renderProShopCashupCard(bundle.dashboard || {}, alerts)}
                     ${renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
@@ -4813,19 +4749,17 @@
             const insight = insightMap[panel] || {};
             const members = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>${escapeHtml(MODULE_LABELS[panel] || panel)}</h3>
-                            <p>${escapeHtml(insight.note || "Operational detail for the selected module.")}</p>
-                        </div>
-                    </div>
-                    ${metricCards((insight.cards || []).map(row => ({
+                ${renderPageHero({
+                    title: MODULE_LABELS[panel] || panel,
+                    copy: insight.note || "Operational detail for the selected module.",
+                    workspace: "operations",
+                    subnavLabel: "Operations pages",
+                    metrics: (insight.cards || []).map(row => ({
                         label: row.label,
                         value: formatMaybe(row.value, row.format),
                         meta: "Current club signal",
-                    })))}
-                </section>
+                    })),
+                })}
                 <section class="dashboard-grid">
                     ${renderModuleServiceBrief(panel, bundle, members)}
                     ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
@@ -5589,10 +5523,7 @@
                         { label: "Club Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Current locked club context" },
                     ])}
                     ${renderPageActionRow([
-                        { label: "Open people", tone: "secondary", workspace: "members", panel: "members" },
-                        { label: "Add staff", tone: "ghost", workblock: "staff-add-workblock" },
-                        { label: "Open tee sheet", tone: "ghost", workspace: "golf", panel: "tee-sheet" },
-                        { label: "Open communications", tone: "ghost", workspace: "communications" },
+                        { label: "Add staff", tone: "secondary", workblock: "staff-add-workblock" },
                     ])}
                 </section>
                 <section class="workblock-stack">
@@ -5702,9 +5633,6 @@
                 ${renderPageActionRow([
                     { label: "Search people", tone: "secondary", workblock: "people-search-workblock" },
                     roleShell() === "club_admin" ? { label: "Add member", tone: "ghost", workblock: "people-add-workblock" } : null,
-                    { label: "Open staff", tone: "ghost", workspace: "members", panel: "staff" },
-                    { label: "Open tee sheet", tone: "ghost", workspace: "golf", panel: "tee-sheet" },
-                    { label: "Open communications", tone: "ghost", workspace: "communications" },
                 ])}
             </section>
             <section class="workblock-stack">
@@ -5822,6 +5750,9 @@
         const alerts = payload.alerts || {};
         const closeMeta = closeStatusMeta(payload);
         const highAlerts = Number(alerts?.summary?.high || 0);
+        const alertsMeta = alerts?._error
+            ? "Operational alerts are temporarily unavailable."
+            : "Operational blockers that may require a notice";
         const publishedToday = rows.filter(row => {
             const stamp = toDate(row.published_at || row.updated_at);
             if (!stamp) return false;
@@ -5838,14 +5769,9 @@
                 ${metricCards([
                     { label: "Published Today", value: formatInteger(publishedToday), meta: "Messages pushed during the current day" },
                     { label: "Pinned Notices", value: formatInteger(rows.filter(row => Boolean(row.pinned)).length), meta: "Priority notices still surfaced" },
-                    { label: "High Alerts", value: formatInteger(highAlerts), meta: "Operational blockers that may require a notice" },
+                    { label: "High Alerts", value: formatInteger(highAlerts), meta: alertsMeta },
                     { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
-                <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="members" data-nav-panel="members">Open people & clubs</button>
-                    <button type="button" class="button ghost" data-nav-workspace="operations" data-nav-panel="overview">Open operations</button>
-                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
-                </div>
             </article>
         `;
     }
@@ -5899,21 +5825,16 @@
         const drafts = rows.filter(row => String(row.status || "").toLowerCase() === "draft").length;
         const pinned = rows.filter(row => Boolean(row.pinned)).length;
         return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Communications</h3>
-                        <p>Club messaging should feel like an operating surface tied to members, staff, and daily club context.</p>
-                    </div>
-                </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Communications",
+                copy: "Manage current club notices and message status from one operating page.",
+                metrics: [
                     { label: "Messages", value: formatInteger(rows.length), meta: "Total club communications" },
                     { label: "Published", value: formatInteger(published), meta: "Visible to members or staff" },
                     { label: "Drafts", value: formatInteger(drafts), meta: "Still being prepared" },
                     { label: "Pinned", value: formatInteger(pinned), meta: "Priority notices pinned to the top" },
-                ])}
-                ${renderCommunicationsControlCards()}
-            </section>
+                ],
+            })}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -6050,24 +5971,46 @@
     function renderLedgerWorkspace(bundle) {
         const payload = bundle.ledger || {};
         const rows = Array.isArray(payload.ledger_entries) ? payload.ledger_entries : [];
+        const bookingRows = Array.isArray(bundle.ledgerBookings?.bookings) ? bundle.ledgerBookings.bookings : [];
         const exportedCount = rows.filter(row => Boolean(row.pastel_synced)).length;
         const pendingCount = rows.filter(row => !row.pastel_synced).length;
+        const paidBookings = bookingRows.filter(row => ["checked_in", "completed"].includes(String(row.status || "").trim().toLowerCase()));
+        const unresolved = paidBookings.filter(row => Number(row.ledger_entry_count || 0) <= 0);
         return `
-            <section class="hero-card">
+            ${renderPageHero({
+                title: "Ledger & Reconciliation",
+                copy: "Clear finance exceptions before export so paid booking states and ledger rows stay aligned.",
+                workspace: "reports",
+                subnavLabel: "Finance pages",
+                metrics: [
+                    { label: "Paid Bookings", value: formatInteger(paidBookings.length), meta: `Paid-state golf bookings for ${escapeHtml(formatDate(bundle.date))}` },
+                    { label: "Missing Paid Ledger", value: formatInteger(unresolved.length), meta: unresolved.length ? "Paid-status bookings still need a ledger row" : "No paid booking blockers found" },
+                    { label: "Pending Export", value: formatInteger(pendingCount), meta: "Rows not yet marked exported" },
+                    { label: "Ready for Export", value: unresolved.length ? "Blocked" : "Ready", meta: unresolved.length ? "Resolve exceptions before cashbook export" : "Ledger is clear for export" },
+                ],
+                body: payload._error ? `<div class="empty-state">${escapeHtml(payload._error)}</div>` : "",
+            })}
+            <section class="card">
                 <div class="panel-head">
                     <div>
-                        <h3>Ledger & Reconciliation</h3>
-                        <p>Ledger-backed payment history stays visible before export, so clubs can audit the day without leaving the shell.</p>
+                        <h4>Exceptions to resolve</h4>
+                        <p>Resolve paid bookings missing ledger support before moving to Cashbook &amp; Day Close.</p>
                     </div>
                 </div>
-                ${metricCards([
-                    { label: "Ledger Rows", value: formatInteger(payload.total || rows.length), meta: "Recent payment-backed ledger entries" },
-                    { label: "Ledger Amount", value: formatCurrency(payload.total_amount || 0), meta: "Total amount in the audited window" },
-                    { label: "Pending Export", value: formatInteger(pendingCount), meta: "Rows not yet marked exported" },
-                    { label: "Exported", value: formatInteger(exportedCount), meta: "Rows already marked exported" },
-                ])}
-                ${payload._error ? `<div class="empty-state">${escapeHtml(payload._error)}</div>` : ""}
-                ${renderFinanceControlCards()}
+                <div class="stack">
+                    ${unresolved.length ? unresolved.slice(0, 12).map(row => `
+                        <div class="list-row">
+                            <div class="list-row-top">
+                                <span class="list-title">${escapeHtml(row.player_name || "Booking")}</span>
+                                ${renderStatusPill("", "missing")}
+                            </div>
+                            <div class="list-meta">${escapeHtml(`${formatTime(row.tee_time || "")} | ${row.status || "paid"} | ${formatCurrency(row.price || 0)} | ${row.club_card || "No account code"}`)}</div>
+                            <div class="inline-actions">
+                                <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="bookings">Open bookings</button>
+                            </div>
+                        </div>
+                    `).join("") : `<div class="empty-state">No ledger exceptions need attention for this date.</div>`}
+                </div>
             </section>
             <section class="dashboard-grid">
                 ${renderAccountingHandoffCard(bundle)}
@@ -6106,32 +6049,28 @@
         const previewLines = Array.isArray(preview.journal_lines) ? preview.journal_lines : [];
         const previewError = String(preview._error || "");
         return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Cashbook & Day Close</h3>
-                        <p>GreenLink does not need a direct Sage integration to be operationally excellent. It needs club-specific CSV export that matches the ledger books they already run.</p>
-                    </div>
-                    <div class="inline-actions">
-                        ${renderStatusPill("Day", closeStatus.is_closed ? "closed" : "open")}
-                        <span class="metric-pill">${escapeHtml(formatDate(date))}</span>
-                    </div>
-                </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Cashbook & Day Close",
+                copy: "Preview, export, close, and reopen the selected day without leaving the club finance chain.",
+                workspace: "reports",
+                subnavLabel: "Finance pages",
+                meta: `${renderStatusPill("Day", closeStatus.is_closed ? "closed" : "open")}<span class="metric-pill">${escapeHtml(formatDate(date))}</span>`,
+                metrics: [
                     { label: "Cashbook", value: escapeHtml(settings.cashbook_name || "Not configured"), meta: "Configured export destination" },
                     { label: "Contra GL", value: escapeHtml(settings.cashbook_contra_gl || "-"), meta: "Cashbook contra mapping" },
                     { label: "Journal Preview", value: formatInteger(previewLines.length), meta: previewError ? "Preview currently unavailable" : "Rows ready in preview" },
                     { label: "Pro Shop Payments", value: formatInteger(proShop.transaction_count || 0), meta: "Sales ready for separate export" },
-                ])}
-                <div class="button-row">
-                    <button type="button" class="button" data-export-cashbook="${escapeHtml(date)}">Export daily CSV</button>
-                    <button type="button" class="button secondary" data-export-pro-shop="${escapeHtml(date)}">Export pro shop CSV</button>
-                    ${closeStatus.is_closed
-                        ? `<button type="button" class="button ghost" data-reopen-day="${escapeHtml(date)}">Reopen day</button>`
-                        : `<button type="button" class="button ghost" data-close-day="${escapeHtml(date)}">Close day</button>`}
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
-                </div>
-            </section>
+                ],
+                actions: [
+                    { label: "Export daily CSV" },
+                    { label: "Export pro shop CSV", tone: "secondary", attrs: `data-export-pro-shop="${escapeHtml(date)}"` },
+                    closeStatus.is_closed
+                        ? { label: "Reopen day", tone: "ghost", attrs: `data-reopen-day="${escapeHtml(date)}"` }
+                        : { label: "Close day", tone: "ghost", attrs: `data-close-day="${escapeHtml(date)}"` },
+                ].map(action => action.label === "Export daily CSV"
+                    ? { ...action, attrs: `data-export-cashbook="${escapeHtml(date)}"` }
+                    : action),
+            })}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -6195,22 +6134,19 @@
         const settingsRows = Array.isArray(bundle.importSettings) ? bundle.importSettings : [];
         const summary = bundle.importsHealth || summarizeImportsHealth(rows, settingsRows);
         return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Imports & Data Health</h3>
-                        <p>Each club can keep its current accounting shape. GreenLink only needs clean imports, clear mappings, and exports that match the ledger format they already use.</p>
-                    </div>
-                </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Imports & Data Health",
+                copy: "Keep stream mappings and import history clean enough that finance output can be trusted.",
+                workspace: "reports",
+                subnavLabel: "Finance pages",
+                metrics: [
                     { label: "Recent Imports", value: formatInteger(rows.length), meta: "Latest import batches in club scope" },
                     { label: "Configured Streams", value: formatInteger(summary.configured_streams || 0), meta: `${formatInteger(summary.total_streams || 0)} tracked streams` },
                     { label: "Mapping Gaps", value: formatInteger(summary.stale_streams || 0), meta: "Streams needing attention" },
                     { label: "Booking Sync", value: formatRelativeAge(summary.booking_sync_at), meta: summary.booking_sync_at ? formatDateTime(summary.booking_sync_at) : "No recent booking import" },
-                ])}
-                ${bundle.imports?._error ? `<div class="empty-state">${escapeHtml(bundle.imports._error)}</div>` : ""}
-                ${renderFinanceControlCards()}
-            </section>
+                ],
+                body: bundle.imports?._error ? `<div class="empty-state">${escapeHtml(bundle.imports._error)}</div>` : "",
+            })}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -6260,16 +6196,23 @@
         `;
     }
 
+    function importSettingStreams() {
+        const enabled = new Set(clubModules());
+        return ["golf", "pro_shop", "bowls", "pub", "other"].filter(stream => {
+            if (["golf", "other"].includes(stream)) return true;
+            return enabled.has(stream);
+        });
+    }
+
     async function loadImportsWorkspaceBundle(options = {}) {
         const signal = options.signal;
         const financeBase = options.financeBase || await loadSharedFinanceBase({ signal });
-        const [imports, golf, proShop, pubSettings] = await Promise.all([
+        const streamKeys = importSettingStreams();
+        const [imports, ...settingsRows] = await Promise.all([
             fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }, { signal }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=golf", { stream: "golf", configured: false, settings: {} }, { signal }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pro_shop", { stream: "pro_shop", configured: false, settings: {} }, { signal }),
-            fetchJsonSafe("/api/admin/imports/revenue-settings?stream=pub", { stream: "pub", configured: false, settings: {} }, { signal }),
+            ...streamKeys.map(stream => fetchJsonSafe(`/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`, { stream, configured: false, settings: {} }, { signal })),
         ]);
-        const importSettings = [golf, proShop, pubSettings];
+        const importSettings = settingsRows;
         return {
             imports,
             importSettings,
@@ -6288,12 +6231,20 @@
             if (panel === "ledger") {
                 const windowRange = recentLedgerWindow();
                 const financeBase = await loadSharedFinanceBase({ signal });
-                const ledger = await fetchJsonSafe(
-                    `/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`,
-                    { ledger_entries: [], total: 0, total_amount: 0 },
-                    { signal }
-                );
-                return { panel, ...financeBase, ledger, date: financeBase.closeStatus?.date || todayYmd() };
+                const financeDate = financeBase.closeStatus?.date || todayYmd();
+                const [ledger, ledgerBookings] = await Promise.all([
+                    fetchJsonSafe(
+                        `/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`,
+                        { ledger_entries: [], total: 0, total_amount: 0 },
+                        { signal }
+                    ),
+                    fetchJsonSafe(
+                        `/api/admin/bookings?period=day&anchor_date=${encodeURIComponent(financeDate)}&date_basis=tee_time&sort=tee_asc&limit=100`,
+                        { bookings: [], total: 0 },
+                        { signal }
+                    ),
+                ]);
+                return { panel, ...financeBase, ledger, ledgerBookings, date: financeDate };
             }
             if (panel === "cashbook") {
                 const financeBase = await loadSharedFinanceBase({ signal });
@@ -6340,32 +6291,19 @@
         }
         if (panel === "targets") {
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Operational targets</h3>
-                            <p>Targets remain available here, but they should not force the rest of Finance &amp; Admin to carry their load path.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Targets",
+                    copy: "Keep operational targets available without forcing the rest of Finance & Admin to carry their load.",
+                    workspace: "reports",
+                    subnavLabel: "Finance pages",
+                    metrics: [
                         { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
                         { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
                         { label: "Finance Link", value: "Summary-first", meta: "Use Finance Dashboard for pacing context" },
                         { label: "Edit Surface", value: "Targets only", meta: "This panel now carries target data only" },
-                    ])}
-                </section>
+                    ],
+                })}
                 ${bundle.targets?._error ? `<section class="card"><div class="empty-state">${escapeHtml(bundle.targets._error)}</div></section>` : ""}
-                <section class="dashboard-grid">
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Finance launchpad</h4>
-                                <p>Keep target editing connected to the wider finance area without forcing a broad reload path here.</p>
-                            </div>
-                        </div>
-                        ${renderFinanceControlCards()}
-                    </article>
-                </section>
                 <section class="card">
                     <div class="panel-head">
                         <div>
@@ -6391,21 +6329,18 @@
         const streamRows = Array.isArray(revenue.other_revenue_by_stream) ? revenue.other_revenue_by_stream : [];
         const paceVariance = safeNumber(revenue.actual_revenue) - safeNumber(revenue.target_revenue);
         return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Finance Dashboard</h3>
-                        <p>This should read like a live club finance board: revenue trend, imported streams, sync posture, and target pace in one place.</p>
-                    </div>
-                </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Finance Dashboard",
+                copy: "Read finance signal, import freshness, and target pace without mixing in export actions.",
+                workspace: "reports",
+                subnavLabel: "Finance pages",
+                metrics: [
                     { label: "Period Days", value: formatInteger(revenue.period_days || 0), meta: "Current revenue reporting window" },
                     { label: "Annual Target", value: formatCurrency(revenue.annual_revenue_target || 0), meta: "Configured revenue target" },
                     { label: "Current Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: "Expected position by this point in the year" },
                     { label: "Target Context", value: String(revenue.period || "mtd").toUpperCase(), meta: `Anchor ${escapeHtml(revenue.anchor_date || "-")}` },
-                ])}
-                ${renderFinanceControlCards()}
-            </section>
+                ],
+            })}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -6503,20 +6438,18 @@
         }
         if (panel === "booking-window") {
             return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Booking Rules</h3>
-                            <p>Booking rules should stay readable from a setup board, not feel buried in a generic settings form.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
+                ${renderPageHero({
+                    title: "Booking Rules",
+                    copy: "Keep booking windows and cancellation guardrails readable without mixing them into daily operations.",
+                    workspace: "settings",
+                    subnavLabel: "Club setup pages",
+                    metrics: [
                         { label: "Member Days", value: formatInteger(bundle.bookingWindow?.member_days || 0), meta: "Advance member booking window" },
                         { label: "Affiliated Days", value: formatInteger(bundle.bookingWindow?.affiliated_days || 0), meta: "Affiliated visitor window" },
                         { label: "Non-affiliated Days", value: formatInteger(bundle.bookingWindow?.non_affiliated_days || 0), meta: "Non-affiliated visitor window" },
                         { label: "Group Cancel Days", value: formatInteger(bundle.bookingWindow?.group_cancel_days || 0), meta: "Group cancellation guardrail" },
-                    ])}
-                </section>
+                    ],
+                })}
                 <form class="form-card" id="booking-window-form">
                     <div class="panel-head">
                         <div>
@@ -6540,6 +6473,17 @@
         if (panel === "targets") {
             const targets = Array.isArray(bundle.targets?.targets) ? bundle.targets.targets : [];
             return `
+                ${renderPageHero({
+                    title: "Targets",
+                    copy: "Keep operational targets editable without dragging the rest of setup into this page.",
+                    workspace: "reports",
+                    subnavLabel: "Finance pages",
+                    metrics: [
+                        { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
+                        { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
+                        { label: "Edit Scope", value: "Targets only", meta: "Keep this page intentionally narrow" },
+                    ],
+                })}
                 <form class="form-card" id="operational-targets-form">
                     <div class="panel-head">
                         <div>
@@ -6564,21 +6508,18 @@
         }
 
         return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Club setup</h3>
-                            <p>Keep club setup lean: brand and booking policy only, without dragging operational reporting back into configuration.</p>
-                        </div>
-                    </div>
-                ${metricCards([
+            ${renderPageHero({
+                title: "Club Profile",
+                copy: "Keep club setup lean: operational identity and booking policy only, without opening styling controls.",
+                workspace: "settings",
+                subnavLabel: "Club setup pages",
+                metrics: [
                     { label: "Club Name", value: escapeHtml(bundle.profile?.display_name || bundle.profile?.club_name || "Club"), meta: "Member-facing club identity" },
                     { label: "Location", value: escapeHtml(bundle.profile?.location || "-"), meta: "Current club location" },
                     { label: "Currency", value: escapeHtml(bundle.profile?.currency_symbol || "R"), meta: "Commercial display currency" },
                     { label: "Modules", value: formatInteger((bundle.profile?.enabled_modules || []).length), meta: "Enabled operational modules" },
-                ])}
-                ${renderSetupControlCards()}
-            </section>
+                ],
+            })}
             ${renderModuleValueGrid(bundle.profile?.enabled_modules || [], { mode: "club" })}
             <form class="form-card" id="club-profile-form">
                 <div class="panel-head">
