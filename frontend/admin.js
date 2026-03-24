@@ -2378,10 +2378,7 @@
     }
 
     function cloneWorkspacePayload(value) {
-        if (typeof structuredClone === "function") {
-            return structuredClone(value);
-        }
-        return JSON.parse(JSON.stringify(value));
+        return value;
     }
 
     function workspaceRouteKey(route = state.route) {
@@ -6254,8 +6251,10 @@
         const form = document.getElementById("booking-modal-form");
         if (!(form instanceof HTMLFormElement)) return;
         ["player_type", "holes", "party_size", "cart", "push_cart", "caddy"].forEach(name => {
-            form.elements[name]?.addEventListener?.("change", () => {
-                void updateBookingPricingPreview(form);
+            ["change", "input"].forEach(eventName => {
+                form.elements[name]?.addEventListener?.(eventName, () => {
+                    void updateBookingPricingPreview(form);
+                });
             });
         });
         void updateBookingPricingPreview(form);

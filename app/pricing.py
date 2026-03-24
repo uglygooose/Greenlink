@@ -251,6 +251,10 @@ def _matches(ctx: PricingContext, fee: FeeCategory) -> bool:
 
     if fee.holes is not None and int(fee.holes) != int(ctx.holes):
         return False
+    if fee.holes is None:
+        hinted_holes = _description_holes_hint(getattr(fee, "description", None) or "")
+        if hinted_holes is not None and int(hinted_holes) != int(ctx.holes):
+            return False
 
     if fee.gender is not None:
         if not ctx.gender:
@@ -307,6 +311,17 @@ def _fee_requires_special_tag(description: str, ctx_tags: set[str]) -> bool:
         if any(keyword in description for keyword in keywords) and tag not in ctx_tags:
             return True
     return False
+
+
+def _description_holes_hint(description: str) -> Optional[int]:
+    text = _normalize_str(description)
+    if not text:
+        return None
+    if "9 hole" in text or "9 holes" in text:
+        return 9
+    if "18 hole" in text or "18 holes" in text:
+        return 18
+    return None
 
 
 def select_best_fee_from_list(
