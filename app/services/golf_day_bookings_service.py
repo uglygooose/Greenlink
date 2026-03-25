@@ -54,6 +54,7 @@ def _golf_day_payment_status(payload: GolfDayBookingUpsertPayload) -> str:
 def list_golf_day_bookings_payload(
     db: Session,
     *,
+    club_id: int,
     q: str | None = None,
     status: str | None = "all",
     sort: str | None = "date_asc",
@@ -64,6 +65,7 @@ def list_golf_day_bookings_payload(
             AccountCustomer.name.label("account_customer_name"),
         )
         .outerjoin(AccountCustomer, GolfDayBooking.account_customer_id == AccountCustomer.id)
+        .filter(GolfDayBooking.club_id == int(club_id))
     )
     if q:
         needle = q.strip().lower()

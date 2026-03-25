@@ -2057,9 +2057,11 @@ async def get_golf_day_bookings(
     sort: Optional[str] = "date_asc",
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
 ):
     return list_golf_day_bookings_payload(
         db,
+        club_id=int(club_id),
         q=q,
         status=status,
         sort=sort,

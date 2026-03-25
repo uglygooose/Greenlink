@@ -107,7 +107,7 @@
             today: {
                 kicker: "Daily Operations",
                 title: "Today",
-                copy: "A fast operational landing page for the current club, todayÃ¢â‚¬â„¢s blockers, and the work that needs doing now.",
+                copy: "A fast operational landing page for the current club, today's blockers, and the work that needs doing now.",
                 navCopy: "Today's work and operational alerts.",
             },
             golf: {
@@ -400,19 +400,19 @@
         if (panel === "tennis") {
             const count = sports.tennisCourtCount;
             return count > 0
-                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.tennisSessionMinutes)} min default session`
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured ? ${formatInteger(sports.tennisSessionMinutes)} min default session`
                 : "No tennis courts configured yet";
         }
         if (panel === "padel") {
             const count = sports.padelCourtCount;
             return count > 0
-                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.padelSessionMinutes)} min default session`
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured ? ${formatInteger(sports.padelSessionMinutes)} min default session`
                 : "No padel courts configured yet";
         }
         if (panel === "bowls") {
             const count = sports.bowlsRinkCount;
             return count > 0
-                ? `${formatInteger(count)} rink${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.bowlsSessionMinutes)} min default session`
+                ? `${formatInteger(count)} rink${count === 1 ? "" : "s"} configured ? ${formatInteger(sports.bowlsSessionMinutes)} min default session`
                 : "No bowls rinks configured yet";
         }
         return "";
@@ -421,13 +421,13 @@
     function moduleResourceMeta(panel, profile = activeClub()?.profile || {}) {
         const sports = sportsSetupConfig(profile);
         if (panel === "tennis" && sports.tennisCourtCount > 0) {
-            return `${formatInteger(sports.tennisCourtCount)} court${sports.tennisCourtCount === 1 ? "" : "s"} Ã‚Â· ${sports.tennisOpenTime}-${sports.tennisCloseTime} Ã‚Â· ${formatInteger(sports.tennisSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.tennisCourtNames, "court")}`;
+            return `${formatInteger(sports.tennisCourtCount)} court${sports.tennisCourtCount === 1 ? "" : "s"} ? ${sports.tennisOpenTime}-${sports.tennisCloseTime} ? ${formatInteger(sports.tennisSessionMinutes)} min ? ${namedResourcesMeta(sports.tennisCourtNames, "court")}`;
         }
         if (panel === "padel" && sports.padelCourtCount > 0) {
-            return `${formatInteger(sports.padelCourtCount)} court${sports.padelCourtCount === 1 ? "" : "s"} Ã‚Â· ${sports.padelOpenTime}-${sports.padelCloseTime} Ã‚Â· ${formatInteger(sports.padelSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.padelCourtNames, "court")}`;
+            return `${formatInteger(sports.padelCourtCount)} court${sports.padelCourtCount === 1 ? "" : "s"} ? ${sports.padelOpenTime}-${sports.padelCloseTime} ? ${formatInteger(sports.padelSessionMinutes)} min ? ${namedResourcesMeta(sports.padelCourtNames, "court")}`;
         }
         if (panel === "bowls" && sports.bowlsRinkCount > 0) {
-            return `${formatInteger(sports.bowlsRinkCount)} rink${sports.bowlsRinkCount === 1 ? "" : "s"} Ã‚Â· ${sports.bowlsOpenTime}-${sports.bowlsCloseTime} Ã‚Â· ${formatInteger(sports.bowlsSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.bowlsRinkNames, "rink")}`;
+            return `${formatInteger(sports.bowlsRinkCount)} rink${sports.bowlsRinkCount === 1 ? "" : "s"} ? ${sports.bowlsOpenTime}-${sports.bowlsCloseTime} ? ${formatInteger(sports.bowlsSessionMinutes)} min ? ${namedResourcesMeta(sports.bowlsRinkNames, "rink")}`;
         }
         return moduleCapacityMeta(panel, profile);
     }
@@ -1968,7 +1968,7 @@
                 <div class="panel-head">
                     <div>
                         <h4>Launch readiness</h4>
-                        <p>Keep the selected clubÃ¢â‚¬â„¢s next step visible so super admin can move through setup in a deliberate order.</p>
+                        <p>Keep the selected club's next step visible so super admin can move through setup in a deliberate order.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -2062,7 +2062,7 @@
             },
             {
                 title: "Validate member and booking base",
-                state: `${formatInteger(metrics.members || 0)} members Ã‚Â· ${formatInteger(metrics.bookings_upcoming || 0)} upcoming`,
+                state: `${formatInteger(metrics.members || 0)} members ? ${formatInteger(metrics.bookings_upcoming || 0)} upcoming`,
                 detail: "Imported members and upcoming golf activity should make sense before the club goes live.",
                 workspace: "clubs",
                 label: "Open workspace",
@@ -2160,7 +2160,7 @@
                                     <span class="list-title">${escapeHtml(row.name || "Club")}</span>
                                     ${renderStatusPill("", admins ? "configured" : "missing")}
                                 </div>
-                                <div class="list-meta">${escapeHtml(`${formatInteger(admins)} admin Ã‚Â· ${formatInteger(operators)} staff Ã‚Â· ${row.slug || ""}`)}</div>
+                                <div class="list-meta">${escapeHtml(`${formatInteger(admins)} admin ? ${formatInteger(operators)} staff ? ${row.slug || ""}`)}</div>
                                 <div class="inline-actions">
                                     <button type="button" class="button ghost" data-nav-workspace="users" data-club-id="${escapeHtml(row.id)}">Open access</button>
                                 </div>
@@ -2201,7 +2201,7 @@
                 <div class="panel-head">
                     <div>
                         <h4>Export steps</h4>
-                        <p>GreenLink is not replacing the clubÃ¢â‚¬â„¢s accounting package. It should simply make capture, mapping, and CSV export cleaner for staff.</p>
+                        <p>GreenLink is not replacing the club's accounting package. It should simply make capture, mapping, and CSV export cleaner for staff.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -2212,8 +2212,8 @@
                 ])}
                 <div class="stack">
                     <div class="detail-row"><span class="row-key">1. Capture</span><span class="row-value">Bookings, pro-shop sales, and club revenue are captured in GreenLink.</span></div>
-                    <div class="detail-row"><span class="row-key">2. Map</span><span class="row-value">Revenue streams are matched to the clubÃ¢â‚¬â„¢s current ledger and cashbook layout.</span></div>
-                    <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the clubÃ¢â‚¬â„¢s existing accounting software.</span></div>
+                    <div class="detail-row"><span class="row-key">2. Map</span><span class="row-value">Revenue streams are matched to the club's current ledger and cashbook layout.</span></div>
+                    <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the club's existing accounting software.</span></div>
                 </div>
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
@@ -2363,7 +2363,7 @@
         return ordered.slice(0, 3).map(row => ({
             label: row.label || `${row.operation_key} ${row.metric_key}`,
             value: formatByUnit(row.target_value || 0, row.unit),
-            meta: `Annual target Ã‚Â· ${String(row.unit || "target").replaceAll("_", " ")}`,
+            meta: `Annual target ? ${String(row.unit || "target").replaceAll("_", " ")}`,
         }));
     }
 
@@ -2604,7 +2604,7 @@
                 booking.holes ? `${formatInteger(booking.holes)} holes` : "",
                 paymentState,
                 booking.cart ? "Cart" : "",
-            ].filter(Boolean).join(" Ã‚Â· ");
+            ].filter(Boolean).join(" ? ");
             return `
                 <article
                     class="tee-sheet-slot-card ${escapeHtml(teeSheetSlotState(booking.status || "booked"))}"
@@ -2710,7 +2710,7 @@
         const blockedStarts = ordered.filter(row => String(row.status || "").trim().toLowerCase() === "blocked").length;
         const teeLabels = Array.from(new Set(ordered.map(row => String(row.hole || "").trim()).filter(Boolean)));
         const opsPlan = teeLabels.length
-            ? `Live across Tee ${teeLabels.join(" and Tee ")} Ã‚Â· ${formatInteger(ordered.length)} starts Ã‚Â· Four-slot operating grid`
+            ? `Live across Tee ${teeLabels.join(" and Tee ")} ? ${formatInteger(ordered.length)} starts ? Four-slot operating grid`
             : "The live day sheet stays in the shell with direct booking, movement, and check-in control.";
         return `
             ${renderPageHero({
@@ -2770,7 +2770,7 @@
             <section class="nav-group ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "open" : ""} ${navGroupIsActive(group) ? "active" : ""}">
                 <button type="button" class="nav-group-toggle" data-nav-group="${escapeHtml(group.id || group.label)}" aria-expanded="${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "true" : "false"}">
                     <span class="nav-group-label">${escapeHtml(group.label)}</span>
-                    <span class="nav-group-caret">${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "Ã¢Ë†â€™" : "+"}</span>
+                    <span class="nav-group-caret">${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "-" : "+"}</span>
                 </button>
                 <div class="nav-group-items" ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "" : "hidden"}>
                     ${group.items.flatMap(item => {
@@ -4007,7 +4007,7 @@
     async function loadSharedGolfDayBookings({ signal } = {}) {
         return loadSharedResource(
             golfDayBookingsCacheKey(activeClubCacheKeyPart()),
-            () => fetchJson("/api/admin/golf-day-bookings", { signal, timeoutMs: 25000 }),
+            () => fetchJson("/api/admin/golf-day-bookings", { signal }),
             8000
         );
     }
@@ -4426,7 +4426,7 @@
                 <div class="slot-head">
                     <div>
                         <div class="slot-time">${escapeHtml(formatTime(slot.tee_time))}</div>
-                        <div class="slot-meta">Tee ${escapeHtml(slot.hole || "1")} Ã‚Â· ${escapeHtml(formatInteger(slot.occupied))}/${escapeHtml(formatInteger(slot.capacity))} occupied</div>
+                        <div class="slot-meta">Tee ${escapeHtml(slot.hole || "1")} ? ${escapeHtml(formatInteger(slot.occupied))}/${escapeHtml(formatInteger(slot.capacity))} occupied</div>
                     </div>
                     <div class="inline-actions">
                         ${renderStatusPill("", slot.status || "open")}
@@ -4446,7 +4446,7 @@
                                     booking.holes ? `${booking.holes} holes` : "",
                                     booking.prepaid ? "Prepaid" : "Pay on day",
                                     booking.cart ? "Cart" : "",
-                                ].filter(Boolean).join(" Ã‚Â· "))}
+                                ].filter(Boolean).join(" ? "))}
                             </div>
                             <div class="inline-actions">
                                 <span class="metric-pill">${escapeHtml(formatCurrency(booking.price || 0))}</span>
@@ -4612,7 +4612,7 @@
                                     `${formatInteger(row.occupied || 0)}/${formatInteger(row.capacity || 4)} occupied`,
                                     stateText,
                                     leadBooking?.status ? `Lead ${String(leadBooking.status).replaceAll("_", " ")}` : "",
-                                ].filter(Boolean).join(" Ã‚Â· "))}</div>
+                                ].filter(Boolean).join(" ? "))}</div>
                             </div>
                             <div class="tee-priority-signal">
                                 <span class="metric-pill ${tone}">${escapeHtml(stateText)}</span>
@@ -4643,7 +4643,7 @@
                         {
                             label: "Next live tee time",
                             value: nextLoadedRow ? formatTime(nextLoadedRow.tee_time) : "No live load",
-                            meta: nextLoadedRow ? `${formatInteger(nextLoadedRow.occupied || 0)}/${formatInteger(nextLoadedRow.capacity || 4)} occupied${leadBooking?.player_name ? ` Ã‚Â· ${leadBooking.player_name}` : ""}` : "No loaded starts on this day yet",
+                            meta: nextLoadedRow ? `${formatInteger(nextLoadedRow.occupied || 0)}/${formatInteger(nextLoadedRow.capacity || 4)} occupied${leadBooking?.player_name ? ` ? ${leadBooking.player_name}` : ""}` : "No loaded starts on this day yet",
                         },
                         {
                             label: "Sold-out starts",
@@ -5249,7 +5249,7 @@
                                             <span class="list-title">${escapeHtml(row.name || "Member")}</span>
                                             ${renderStatusPill("", row.membership_status || "active")}
                                         </div>
-                                        <div class="list-meta">${escapeHtml(`${row.primary_operation || ""} Ã‚Â· ${formatInteger(row.bookings_count || 0)} booking(s) Ã‚Â· ${formatCurrency(row.total_spent || 0)}`)}</div>
+                                        <div class="list-meta">${escapeHtml(`${row.primary_operation || ""} ? ${formatInteger(row.bookings_count || 0)} booking(s) ? ${formatCurrency(row.total_spent || 0)}`)}</div>
                                     </div>
                                 `).join("") : `<div class="empty-state">No relevant member records found.</div>`}
                         </div>
@@ -5449,7 +5449,7 @@
                                 MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                                 `${formatInteger(row.bookings_count || 0)} booking(s)`,
                                 formatCurrency(row.total_spent || 0),
-                            ].filter(Boolean).join(" Ã‚Â· "))}</div>
+                            ].filter(Boolean).join(" ? "))}</div>
                             <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
                         </div>
                     `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
@@ -5515,7 +5515,7 @@
                             MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                             `${formatInteger(row.bookings_count || 0)} booking(s)`,
                             formatCurrency(row.total_spent || 0),
-                        ].filter(Boolean).join(" Ãƒâ€šÃ‚Â· "))}</div>
+                        ].filter(Boolean).join(" Ãƒâ€š? "))}</div>
                         <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
                     </div>
                 `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
@@ -6375,7 +6375,7 @@
         state.modalData = { teeTimeId: Number(teeTimeId), defaultPartySize: requestedPartySize };
         openModal(
             "Create booking",
-            `${formatDateTime(row.tee_time)} Ã‚Â· Tee ${row.hole || "1"} Ã‚Â· ${row.available} spot(s) available`,
+            `${formatDateTime(row.tee_time)} ? Tee ${row.hole || "1"} ? ${row.available} spot(s) available`,
             `
                 <form id="booking-modal-form" class="stack">
                     <input type="hidden" name="tee_time_id" value="${escapeHtml(row.id)}">

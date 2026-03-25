@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import json
 import os
 from datetime import datetime, timedelta
@@ -634,10 +635,13 @@ def test_admin_golf_day_bookings_backend_owned_by_service():
     golf_day_service_py = (root / "app" / "services" / "golf_day_bookings_service.py").read_text(encoding="utf-8")
 
     assert "from app.services.golf_day_bookings_service import (" in admin_py
+    assert "club_id: int = Depends(get_active_club_id)" in admin_py
     assert "return list_golf_day_bookings_payload(" in admin_py
+    assert "club_id=int(club_id)" in admin_py
     assert "return create_golf_day_booking_payload(" in admin_py
     assert "return update_golf_day_booking_payload(" in admin_py
     assert "def list_golf_day_bookings_payload(" in golf_day_service_py
+    assert ".filter(GolfDayBooking.club_id == int(club_id))" in golf_day_service_py
     assert "def create_golf_day_booking_payload(" in golf_day_service_py
     assert "def update_golf_day_booking_payload(" in golf_day_service_py
 
@@ -728,12 +732,12 @@ def test_dashboard_view_invalidation_tracks_explicit_phase2_views():
     assert "invalidateSharedDashboardViews([" in admin_js
 
 
-def test_golf_days_bundle_uses_explicit_shared_loader_with_extended_timeout():
+def test_golf_days_bundle_uses_explicit_shared_loader():
     root = Path(__file__).resolve().parents[1]
     admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
 
     assert "async function loadSharedGolfDayBookings(" in admin_js
-    assert 'fetchJson("/api/admin/golf-day-bookings", { signal, timeoutMs: 25000 })' in admin_js
+    assert 'fetchJson("/api/admin/golf-day-bookings", { signal })' in admin_js
     assert "loadSharedGolfDayBookings({ signal })" in admin_js
 
 
@@ -748,6 +752,24 @@ def test_reports_panels_do_not_pull_dashboard_support_fetches():
     assert "async function loadSharedReportsRevenue(" in admin_js
     assert 'deps.loadSharedReportsRevenue({ signal, period: "wtd" })' in reports_js
     assert 'deps.loadSharedReportsRevenue({ signal, period: "mtd" })' in reports_js
+
+
+def test_admin_shell_has_no_known_mojibake_sequences():
+    root = Path(__file__).resolve().parents[1]
+    admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
+    player_js = (root / "frontend" / "player.js").read_text(encoding="utf-8")
+
+    bad_tokens = [
+        codecs.decode(r"\xc3\xa2\xe2\u201a\xac\xe2\u201e\xa2", "unicode_escape"),
+        codecs.decode(r"\xc3\u201a\xc2\xb7", "unicode_escape"),
+        codecs.decode(r"\xc3\u0192\xe2\u20ac\u0161\xc3\u201a\xc2\xb7", "unicode_escape"),
+        codecs.decode(r"\xc3\xa2\xcb\u2020\xe2\u20ac\u2122", "unicode_escape"),
+    ]
+    for token in bad_tokens:
+        assert token not in admin_js
+        assert token not in player_js
+    assert "today's blockers" in admin_js
+    assert "club's accounting package" in admin_js
 
 
 def test_reports_performance_panel_does_not_pull_operational_targets():
@@ -1595,6 +1617,36 @@ def test_admin_can_create_update_and_list_golf_day_booking(client: TestClient, s
     matched = next(row for row in refreshed_rows if int(row["id"]) == golf_day_booking_id)
     assert matched["payment_status"] == "paid"
     assert matched["event_name"] == "Contract Golf Day Updated"
+
+
+def test_admin_golf_day_booking_list_is_club_scoped(client: TestClient, seeded_contract: dict[str, int | str]):
+    token = _login(
+        client,
+        email=str(seeded_contract["admin_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    marker = f"cross-club-golf-day-{uuid4().hex[:8]}"
+
+    with SessionLocal() as db:
+        db.add(
+            models.GolfDayBooking(
+                club_id=int(seeded_contract["club_b_id"]),
+                event_name=marker,
+                event_date=datetime.utcnow().date(),
+                event_date_raw="2026-04-11",
+                amount=1750.0,
+                balance_due=1750.0,
+                payment_status="pending",
+                invoice_reference=f"GD-{uuid4().hex[:6]}",
+            )
+        )
+        db.commit()
+
+    response = client.get(f"/api/admin/golf-day-bookings?q={marker}", headers=headers)
+    assert response.status_code == 200, response.text
+    rows = response.json()["bookings"]
+    assert rows == []
 
 
 def test_admin_can_filter_audit_logs(client: TestClient, seeded_contract: dict[str, int | str]):
