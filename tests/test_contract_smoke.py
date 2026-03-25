@@ -710,6 +710,24 @@ def test_admin_dashboard_fetches_declare_explicit_views():
         assert view in admin_js or view in reports_js
 
 
+def test_dashboard_view_invalidation_tracks_explicit_phase2_views():
+    root = Path(__file__).resolve().parents[1]
+    admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
+
+    assert "function invalidateSharedDashboardViews(" in admin_js
+    for view in [
+        "overview",
+        "today",
+        "golf_overview",
+        "golf_days",
+        "operations_overview",
+        "operations_module",
+        "reports_performance",
+    ]:
+        assert f'"{view}"' in admin_js
+    assert "invalidateSharedDashboardViews([" in admin_js
+
+
 def test_reports_panels_do_not_pull_dashboard_support_fetches():
     root = Path(__file__).resolve().parents[1]
     admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")

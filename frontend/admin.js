@@ -3688,6 +3688,13 @@
         return `dashboard:${clubKey}:${String(view || "legacy_full").trim().toLowerCase() || "legacy_full"}`;
     }
 
+    function invalidateSharedDashboardViews(views, clubKey = activeClubCacheKeyPart()) {
+        const uniqueViews = Array.from(new Set((Array.isArray(views) ? views : [])
+            .map(view => String(view || "").trim().toLowerCase())
+            .filter(Boolean)));
+        uniqueViews.forEach(view => deleteSharedCacheKey(dashboardCacheKey(view, clubKey)));
+    }
+
     function alertsCacheKey(clubKey = activeClubCacheKeyPart()) {
         return `alerts:${clubKey}`;
     }
@@ -3878,7 +3885,15 @@
             deleteSharedCacheKey(golfTeeRowsCacheKey(date, clubKey));
         }
         if (includeDashboard) {
-            deleteSharedCacheKey(dashboardCacheKey(clubKey));
+            invalidateSharedDashboardViews([
+                "overview",
+                "today",
+                "golf_overview",
+                "golf_days",
+                "operations_overview",
+                "operations_module",
+                "reports_performance",
+            ], clubKey);
         }
         if (includeAlerts) {
             deleteSharedCacheKey(alertsCacheKey(clubKey));
@@ -3896,7 +3911,17 @@
         financeDate = todayYmd(),
     } = {}) {
         const clubKey = activeClubCacheKeyPart();
-        if (includeDashboard) deleteSharedCacheKey(dashboardCacheKey(clubKey));
+        if (includeDashboard) {
+            invalidateSharedDashboardViews([
+                "overview",
+                "today",
+                "golf_overview",
+                "golf_days",
+                "operations_overview",
+                "operations_module",
+                "reports_performance",
+            ], clubKey);
+        }
         if (includeAlerts) deleteSharedCacheKey(alertsCacheKey(clubKey));
         if (includeFinanceBase) {
             deleteSharedCacheKey(financeBaseCacheKey(financeDate, clubKey));
