@@ -20,6 +20,8 @@ const state = {
   teeFilter: "open",
   roundsFilter: "action",
   teeTimes: [],
+  teeTimesLoadedDate: "",
+  teeTimesLoading: false,
   notifications: [],
   selectedTeeTime: null,
   bookingDraft: [],
@@ -604,7 +606,7 @@ function pushViewToUrl(view) {
   window.history.replaceState({}, "", next);
 }
 
-function setActiveView(view, { syncUrl = true } = {}) {
+function setActiveView(view, { syncUrl = true, ensureData = true } = {}) {
   const allowed = new Set(["home", "bookings", "news", "messages", "profile"]);
   const next = allowed.has(view) ? view : "home";
   state.activeView = next;
@@ -617,6 +619,9 @@ function setActiveView(view, { syncUrl = true } = {}) {
   });
 
   if (syncUrl) pushViewToUrl(next);
+  if (next === "bookings" && ensureData) {
+    void ensureBookingsViewReady();
+  }
 }
 
 function bookingWindowMaxYmd() {
@@ -1146,6 +1151,10 @@ function renderTeeTimes() {
 
   if (countEl) countEl.textContent = `${formatInteger(filtered.length)} shown (${formatInteger(rows.length)} total)`;
 
+  if (state.teeTimesLoading && !rows.length) {
+    listEl.innerHTML = `<div class="empty-state">Loading tee times for ${escapeHtml(formatDate(state.teeDate))}...</div>`;
+    return;
+  }
   if (!rows.length) {
     listEl.innerHTML = `<div class="empty-state">No tee times available for this day.</div>`;
     return;
@@ -1304,7 +1313,10 @@ function renderAll() {
   renderRounds();
   renderProfileChecklist();
   populateProfileForm();
+  updateStatusBannerFromState();
+}
 
+function updateStatusBannerFromState() {
   const missing = profileCompleteness(state.profile || {});
   const pendingWeather = (state.notifications || []).filter(item => !String(item?.response || "").trim()).length;
   if (pendingWeather > 0) {
@@ -1314,6 +1326,33 @@ function renderAll() {
   } else {
     setStatusBanner("", false);
   }
+}
+
+function rerenderHomeSurface() {
+  renderSummaryChips();
+  renderHome();
+  updateStatusBannerFromState();
+}
+
+function rerenderBookingsSurface() {
+  rerenderHomeSurface();
+  renderRounds();
+}
+
+function rerenderNotificationsSurface() {
+  rerenderHomeSurface();
+  renderWeatherAlerts();
+}
+
+function rerenderFeedSurface() {
+  rerenderHomeSurface();
+  renderClubFeed();
+}
+
+function rerenderProfileSurface() {
+  rerenderHomeSurface();
+  renderProfileChecklist();
+  populateProfileForm();
 }
 
 async function loadProfile() {
@@ -1375,7 +1414,8 @@ async function respondToWeatherNotification(notificationId, action) {
     });
     showToast("Response saved.", "ok");
     await Promise.all([loadNotifications(), loadMyBookings()]);
-    renderAll();
+    rerenderNotificationsSurface();
+    renderRounds();
   } catch (err) {
     showToast(err?.message || "Failed to save response.", "error");
   }
@@ -1387,9 +1427,13 @@ async function loadTeeTimes(forceRefresh = false) {
   const range = buildRangeForDate(state.teeDate);
   if (!range) {
     state.teeTimes = [];
+    state.teeTimesLoadedDate = "";
+    state.teeTimesLoading = false;
     renderTeeTimes();
     return;
   }
+  state.teeTimesLoading = true;
+  renderTeeTimes();
   let hadCachedRows = false;
   if (!forceRefresh) {
     const cachedRows = getCachedTeeRange(range);
@@ -1404,12 +1448,17 @@ async function loadTeeTimes(forceRefresh = false) {
     const response = await api(`/tsheet/range?start=${encodeURIComponent(range.startIso)}&end=${encodeURIComponent(range.endIso)}`);
     state.teeTimes = Array.isArray(response) ? response : [];
     setCachedTeeRange(range, state.teeTimes);
+    state.teeTimesLoadedDate = state.teeDate;
   } catch (err) {
     if (!hadCachedRows) {
       state.teeTimes = [];
+      state.teeTimesLoadedDate = "";
       showToast(err?.message || "Failed to load tee sheet", "error");
+    } else {
+      state.teeTimesLoadedDate = state.teeDate;
     }
   }
+  state.teeTimesLoading = false;
   renderTeeTimes();
   if (state.pendingRouteTeeTimeId) {
     const exists = state.teeTimes.find(tt => Number(tt?.id || 0) === Number(state.pendingRouteTeeTimeId));
@@ -1418,6 +1467,12 @@ async function loadTeeTimes(forceRefresh = false) {
     }
     state.pendingRouteTeeTimeId = null;
   }
+}
+
+async function ensureBookingsViewReady(forceRefresh = false) {
+  const targetDate = clampBookDate(state.teeDate);
+  if (!forceRefresh && state.teeTimesLoadedDate === targetDate) return;
+  await loadTeeTimes(forceRefresh);
 }
 
 function buildSelfDraftRow() {
@@ -1625,7 +1680,7 @@ async function submitBookingDraft() {
       closeSheet("booking");
       invalidateTeeCache();
       await Promise.all([loadTeeTimes(), loadMyBookings()]);
-      renderAll();
+      rerenderBookingsSurface();
     }
     if (errors.length) {
       showToast(errors.slice(0, 2).join(" "), "error");
@@ -1645,7 +1700,7 @@ async function openRound(bookingId, mode) {
     });
     showToast("Round opened.", "ok");
     await loadMyBookings();
-    renderAll();
+    rerenderBookingsSurface();
   } catch (err) {
     showToast(err?.message || "Failed to open round.", "error");
   }
@@ -1692,7 +1747,7 @@ async function submitAdjustedScore() {
     showToast("Score submitted.", "ok");
     closeSheet("score");
     await loadMyBookings();
-    renderAll();
+    rerenderBookingsSurface();
   } catch (err) {
     showToast(err?.message || "Failed to submit score.", "error");
   } finally {
@@ -1706,7 +1761,7 @@ async function markNoReturn(roundId) {
     await api(`/scoring/my-rounds/${Number(roundId)}/no-return`, { method: "POST" });
     showToast("Round marked as No Return.", "ok");
     await loadMyBookings();
-    renderAll();
+    rerenderBookingsSurface();
   } catch (err) {
     showToast(err?.message || "Failed to mark N/R.", "error");
   }
@@ -1747,7 +1802,8 @@ async function saveProfile(event) {
     });
     showToast("Profile saved.", "ok");
     await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings()]);
-    renderAll();
+    rerenderProfileSurface();
+    renderRounds();
   } catch (err) {
     showToast(err?.message || "Failed to save profile.", "error");
   } finally {
@@ -1775,23 +1831,26 @@ function bindEvents() {
 
   document.getElementById("refresh-home-btn")?.addEventListener("click", async () => {
     await Promise.all([loadMyBookings(), loadNotifications(), loadClubFeed()]);
-    renderAll();
+    rerenderHomeSurface();
+    renderWeatherAlerts();
+    renderClubFeed();
+    renderRounds();
   });
   document.getElementById("refresh-rounds-btn")?.addEventListener("click", async () => {
     await loadMyBookings();
-    renderAll();
+    rerenderBookingsSurface();
   });
   document.getElementById("refresh-weather-btn")?.addEventListener("click", async () => {
     await loadNotifications();
-    renderAll();
+    rerenderNotificationsSurface();
   });
   document.getElementById("refresh-club-feed-btn")?.addEventListener("click", async () => {
     await loadClubFeed();
-    renderAll();
+    rerenderFeedSurface();
   });
   document.getElementById("refresh-profile-btn")?.addEventListener("click", async () => {
     await loadProfile();
-    renderAll();
+    rerenderProfileSurface();
   });
 
   document.getElementById("book-date")?.addEventListener("change", async event => {
@@ -1993,18 +2052,26 @@ async function initialize() {
   applyRouteState();
   bindEvents();
   await loadClubConfig();
-  setActiveView(state.pendingRouteTab, { syncUrl: false });
+  setActiveView(state.pendingRouteTab, { syncUrl: false, ensureData: false });
 
-  await Promise.all([loadProfile(), loadBookingWindow(), loadMyBookings(), loadNotifications(), loadClubFeed()]);
+  await Promise.all([loadProfile(), loadBookingWindow()]);
   syncBookDateConstraints();
-  await loadTeeTimes();
   renderAll();
+  hideLoadingOverlay();
 
-  if (state.pendingRouteTab) {
-    setActiveView(state.pendingRouteTab, { syncUrl: true });
+  await Promise.all([loadMyBookings(), loadNotifications(), loadClubFeed()]);
+  rerenderHomeSurface();
+  renderWeatherAlerts();
+  renderClubFeed();
+  renderRounds();
+
+  if (state.pendingRouteTab === "bookings" || state.pendingRouteTeeTimeId) {
+    await ensureBookingsViewReady();
   }
 
-  hideLoadingOverlay();
+  if (state.pendingRouteTab) {
+    setActiveView(state.pendingRouteTab, { syncUrl: true, ensureData: false });
+  }
 }
 
 initialize().catch(err => {

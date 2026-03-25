@@ -107,7 +107,7 @@
             today: {
                 kicker: "Daily Operations",
                 title: "Today",
-                copy: "A fast operational landing page for the current club, today’s blockers, and the work that needs doing now.",
+                copy: "A fast operational landing page for the current club, todayÃ¢â‚¬â„¢s blockers, and the work that needs doing now.",
                 navCopy: "Today's work and operational alerts.",
             },
             golf: {
@@ -400,19 +400,19 @@
         if (panel === "tennis") {
             const count = sports.tennisCourtCount;
             return count > 0
-                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured · ${formatInteger(sports.tennisSessionMinutes)} min default session`
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.tennisSessionMinutes)} min default session`
                 : "No tennis courts configured yet";
         }
         if (panel === "padel") {
             const count = sports.padelCourtCount;
             return count > 0
-                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured · ${formatInteger(sports.padelSessionMinutes)} min default session`
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.padelSessionMinutes)} min default session`
                 : "No padel courts configured yet";
         }
         if (panel === "bowls") {
             const count = sports.bowlsRinkCount;
             return count > 0
-                ? `${formatInteger(count)} rink${count === 1 ? "" : "s"} configured · ${formatInteger(sports.bowlsSessionMinutes)} min default session`
+                ? `${formatInteger(count)} rink${count === 1 ? "" : "s"} configured Ã‚Â· ${formatInteger(sports.bowlsSessionMinutes)} min default session`
                 : "No bowls rinks configured yet";
         }
         return "";
@@ -421,13 +421,13 @@
     function moduleResourceMeta(panel, profile = activeClub()?.profile || {}) {
         const sports = sportsSetupConfig(profile);
         if (panel === "tennis" && sports.tennisCourtCount > 0) {
-            return `${formatInteger(sports.tennisCourtCount)} court${sports.tennisCourtCount === 1 ? "" : "s"} · ${sports.tennisOpenTime}-${sports.tennisCloseTime} · ${formatInteger(sports.tennisSessionMinutes)} min · ${namedResourcesMeta(sports.tennisCourtNames, "court")}`;
+            return `${formatInteger(sports.tennisCourtCount)} court${sports.tennisCourtCount === 1 ? "" : "s"} Ã‚Â· ${sports.tennisOpenTime}-${sports.tennisCloseTime} Ã‚Â· ${formatInteger(sports.tennisSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.tennisCourtNames, "court")}`;
         }
         if (panel === "padel" && sports.padelCourtCount > 0) {
-            return `${formatInteger(sports.padelCourtCount)} court${sports.padelCourtCount === 1 ? "" : "s"} · ${sports.padelOpenTime}-${sports.padelCloseTime} · ${formatInteger(sports.padelSessionMinutes)} min · ${namedResourcesMeta(sports.padelCourtNames, "court")}`;
+            return `${formatInteger(sports.padelCourtCount)} court${sports.padelCourtCount === 1 ? "" : "s"} Ã‚Â· ${sports.padelOpenTime}-${sports.padelCloseTime} Ã‚Â· ${formatInteger(sports.padelSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.padelCourtNames, "court")}`;
         }
         if (panel === "bowls" && sports.bowlsRinkCount > 0) {
-            return `${formatInteger(sports.bowlsRinkCount)} rink${sports.bowlsRinkCount === 1 ? "" : "s"} · ${sports.bowlsOpenTime}-${sports.bowlsCloseTime} · ${formatInteger(sports.bowlsSessionMinutes)} min · ${namedResourcesMeta(sports.bowlsRinkNames, "rink")}`;
+            return `${formatInteger(sports.bowlsRinkCount)} rink${sports.bowlsRinkCount === 1 ? "" : "s"} Ã‚Â· ${sports.bowlsOpenTime}-${sports.bowlsCloseTime} Ã‚Â· ${formatInteger(sports.bowlsSessionMinutes)} min Ã‚Â· ${namedResourcesMeta(sports.bowlsRinkNames, "rink")}`;
         }
         return moduleCapacityMeta(panel, profile);
     }
@@ -1812,6 +1812,9 @@
         const revenue = bundle?.revenue || {};
         const summary = bundle?.summary || {};
         const closeMeta = closeStatusMeta(bundle);
+        const weekRevenue = revenue?.period === "wtd" && revenue?.actual_revenue != null
+            ? revenue.actual_revenue
+            : (dashboard.week_revenue || 0);
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
@@ -1822,7 +1825,7 @@
                 </div>
                 ${metricCards([
                     { label: "Daily Close", value: closeMeta.label, meta: closeMeta.detail },
-                    { label: "Week Revenue", value: formatCurrency(dashboard.week_revenue || 0), meta: "Rolling 7-day club revenue" },
+                    { label: "Week Revenue", value: formatCurrency(weekRevenue), meta: "Rolling 7-day club revenue" },
                     { label: "Period Actual", value: formatCurrency(revenue.actual_revenue || summary.total_payments || 0), meta: revenue.actual_revenue != null ? "Current reporting period actuals" : "Today's payment-backed actuals" },
                     { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use the finance dashboard for period pacing" },
                 ])}
@@ -1965,7 +1968,7 @@
                 <div class="panel-head">
                     <div>
                         <h4>Launch readiness</h4>
-                        <p>Keep the selected club’s next step visible so super admin can move through setup in a deliberate order.</p>
+                        <p>Keep the selected clubÃ¢â‚¬â„¢s next step visible so super admin can move through setup in a deliberate order.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -2059,7 +2062,7 @@
             },
             {
                 title: "Validate member and booking base",
-                state: `${formatInteger(metrics.members || 0)} members · ${formatInteger(metrics.bookings_upcoming || 0)} upcoming`,
+                state: `${formatInteger(metrics.members || 0)} members Ã‚Â· ${formatInteger(metrics.bookings_upcoming || 0)} upcoming`,
                 detail: "Imported members and upcoming golf activity should make sense before the club goes live.",
                 workspace: "clubs",
                 label: "Open workspace",
@@ -2157,7 +2160,7 @@
                                     <span class="list-title">${escapeHtml(row.name || "Club")}</span>
                                     ${renderStatusPill("", admins ? "configured" : "missing")}
                                 </div>
-                                <div class="list-meta">${escapeHtml(`${formatInteger(admins)} admin · ${formatInteger(operators)} staff · ${row.slug || ""}`)}</div>
+                                <div class="list-meta">${escapeHtml(`${formatInteger(admins)} admin Ã‚Â· ${formatInteger(operators)} staff Ã‚Â· ${row.slug || ""}`)}</div>
                                 <div class="inline-actions">
                                     <button type="button" class="button ghost" data-nav-workspace="users" data-club-id="${escapeHtml(row.id)}">Open access</button>
                                 </div>
@@ -2198,7 +2201,7 @@
                 <div class="panel-head">
                     <div>
                         <h4>Export steps</h4>
-                        <p>GreenLink is not replacing the club’s accounting package. It should simply make capture, mapping, and CSV export cleaner for staff.</p>
+                        <p>GreenLink is not replacing the clubÃ¢â‚¬â„¢s accounting package. It should simply make capture, mapping, and CSV export cleaner for staff.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -2209,8 +2212,8 @@
                 ])}
                 <div class="stack">
                     <div class="detail-row"><span class="row-key">1. Capture</span><span class="row-value">Bookings, pro-shop sales, and club revenue are captured in GreenLink.</span></div>
-                    <div class="detail-row"><span class="row-key">2. Map</span><span class="row-value">Revenue streams are matched to the club’s current ledger and cashbook layout.</span></div>
-                    <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the club’s existing accounting software.</span></div>
+                    <div class="detail-row"><span class="row-key">2. Map</span><span class="row-value">Revenue streams are matched to the clubÃ¢â‚¬â„¢s current ledger and cashbook layout.</span></div>
+                    <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the clubÃ¢â‚¬â„¢s existing accounting software.</span></div>
                 </div>
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
@@ -2360,7 +2363,7 @@
         return ordered.slice(0, 3).map(row => ({
             label: row.label || `${row.operation_key} ${row.metric_key}`,
             value: formatByUnit(row.target_value || 0, row.unit),
-            meta: `Annual target · ${String(row.unit || "target").replaceAll("_", " ")}`,
+            meta: `Annual target Ã‚Â· ${String(row.unit || "target").replaceAll("_", " ")}`,
         }));
     }
 
@@ -2601,7 +2604,7 @@
                 booking.holes ? `${formatInteger(booking.holes)} holes` : "",
                 paymentState,
                 booking.cart ? "Cart" : "",
-            ].filter(Boolean).join(" · ");
+            ].filter(Boolean).join(" Ã‚Â· ");
             return `
                 <article
                     class="tee-sheet-slot-card ${escapeHtml(teeSheetSlotState(booking.status || "booked"))}"
@@ -2707,7 +2710,7 @@
         const blockedStarts = ordered.filter(row => String(row.status || "").trim().toLowerCase() === "blocked").length;
         const teeLabels = Array.from(new Set(ordered.map(row => String(row.hole || "").trim()).filter(Boolean)));
         const opsPlan = teeLabels.length
-            ? `Live across Tee ${teeLabels.join(" and Tee ")} · ${formatInteger(ordered.length)} starts · Four-slot operating grid`
+            ? `Live across Tee ${teeLabels.join(" and Tee ")} Ã‚Â· ${formatInteger(ordered.length)} starts Ã‚Â· Four-slot operating grid`
             : "The live day sheet stays in the shell with direct booking, movement, and check-in control.";
         return `
             ${renderPageHero({
@@ -2767,7 +2770,7 @@
             <section class="nav-group ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "open" : ""} ${navGroupIsActive(group) ? "active" : ""}">
                 <button type="button" class="nav-group-toggle" data-nav-group="${escapeHtml(group.id || group.label)}" aria-expanded="${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "true" : "false"}">
                     <span class="nav-group-label">${escapeHtml(group.label)}</span>
-                    <span class="nav-group-caret">${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "−" : "+"}</span>
+                    <span class="nav-group-caret">${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "Ã¢Ë†â€™" : "+"}</span>
                 </button>
                 <div class="nav-group-items" ${state.navOpenGroups.has(String(group.id || "").toLowerCase()) ? "" : "hidden"}>
                     ${group.items.flatMap(item => {
@@ -3681,8 +3684,8 @@
         return String(activeClub()?.id || state.route?.clubId || state.bootstrap?.club?.id || "club");
     }
 
-    function dashboardCacheKey(clubKey = activeClubCacheKeyPart()) {
-        return `dashboard:${clubKey}`;
+    function dashboardCacheKey(view = "legacy_full", clubKey = activeClubCacheKeyPart()) {
+        return `dashboard:${clubKey}:${String(view || "legacy_full").trim().toLowerCase() || "legacy_full"}`;
     }
 
     function alertsCacheKey(clubKey = activeClubCacheKeyPart()) {
@@ -3697,12 +3700,53 @@
         return `operational-targets:${clubKey}:${Number(year || new Date().getFullYear())}`;
     }
 
+    function importsBundleCacheKey({
+        clubKey = activeClubCacheKeyPart(),
+        date = todayYmd(),
+        moduleKeys = clubModules(),
+    } = {}) {
+        const moduleSignature = Array.isArray(moduleKeys)
+            ? moduleKeys.map(value => String(value || "").trim().toLowerCase()).filter(Boolean).sort().join(",")
+            : "";
+        return `imports-bundle:${clubKey}:${clampYmd(date)}:${moduleSignature}`;
+    }
+
     function golfDayBookingsCacheKey(clubKey = activeClubCacheKeyPart()) {
         return `golf-days:${clubKey}`;
     }
 
     function golfTeeRowsCacheKey(date = state.route?.date, clubKey = activeClubCacheKeyPart()) {
         return `golf-tee-rows:${clubKey}:${clampYmd(date)}`;
+    }
+
+    function membersAreaPreviewCacheKey(area, clubKey = activeClubCacheKeyPart()) {
+        const safeArea = String(area || "golf").trim().toLowerCase() || "golf";
+        return `members-area-preview:${clubKey}:${safeArea}`;
+    }
+
+    function activeAccountCustomersCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `account-customers-active:${clubKey}`;
+    }
+
+    function recentMembersPreviewCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `members-recent-preview:${clubKey}`;
+    }
+
+    function staffListCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `staff-list:${clubKey}`;
+    }
+
+    function reportsRevenueCacheKey(period, clubKey = activeClubCacheKeyPart()) {
+        const safePeriod = String(period || "mtd").trim().toLowerCase() || "mtd";
+        return `reports-revenue:${clubKey}:${safePeriod}`;
+    }
+
+    function proShopProductsCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `pro-shop-products:${clubKey}`;
+    }
+
+    function proShopSalesCacheKey(clubKey = activeClubCacheKeyPart()) {
+        return `pro-shop-sales:${clubKey}`;
     }
 
     function teeRowsNeedMaterialization(rows) {
@@ -3854,7 +3898,12 @@
         const clubKey = activeClubCacheKeyPart();
         if (includeDashboard) deleteSharedCacheKey(dashboardCacheKey(clubKey));
         if (includeAlerts) deleteSharedCacheKey(alertsCacheKey(clubKey));
-        if (includeFinanceBase) deleteSharedCacheKey(financeBaseCacheKey(financeDate, clubKey));
+        if (includeFinanceBase) {
+            deleteSharedCacheKey(financeBaseCacheKey(financeDate, clubKey));
+            deleteSharedCacheKey(importsBundleCacheKey({ clubKey, date: financeDate }));
+            deleteSharedCacheKey(reportsRevenueCacheKey("mtd", clubKey));
+            deleteSharedCacheKey(reportsRevenueCacheKey("wtd", clubKey));
+        }
         if (includeOperationalTargets) deleteSharedCacheKey(operationalTargetsCacheKey(new Date().getFullYear(), clubKey));
     }
 
@@ -3877,11 +3926,12 @@
         }, 10000);
     }
 
-    async function loadSharedDashboardPayload({ signal } = {}) {
+    async function loadSharedDashboardPayload({ signal, view = "legacy_full" } = {}) {
         const clubKey = activeClubCacheKeyPart();
+        const safeView = String(view || "legacy_full").trim().toLowerCase() || "legacy_full";
         return loadSharedResource(
-            dashboardCacheKey(clubKey),
-            () => fetchJson("/api/admin/dashboard", { signal, timeoutMs: 25000 }),
+            dashboardCacheKey(safeView, clubKey),
+            () => fetchJson(`/api/admin/dashboard?view=${encodeURIComponent(safeView)}`, { signal, timeoutMs: 25000 }),
             12000
         );
     }
@@ -3894,6 +3944,77 @@
             () => fetchJsonSafe(`/api/admin/operation-targets?year=${encodeURIComponent(targetYear)}`, { year: targetYear, targets: [] }, { signal, timeoutMs: 12000 }),
             15000
         );
+    }
+
+    async function loadSharedMembersAreaPreview({ area, signal } = {}) {
+        const safeArea = String(area || "golf").trim().toLowerCase() || "golf";
+        return loadSharedResource(
+            membersAreaPreviewCacheKey(safeArea, activeClubCacheKeyPart()),
+            () => fetchJson(`/api/admin/members?area=${encodeURIComponent(safeArea)}&limit=12&sort=recent_activity`, { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedActiveAccountCustomers({ signal } = {}) {
+        return loadSharedResource(
+            activeAccountCustomersCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedRecentMembersPreview({ signal } = {}) {
+        return loadSharedResource(
+            recentMembersPreviewCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/members?limit=20&sort=recent_activity", { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedStaffList({ signal } = {}) {
+        return loadSharedResource(
+            staffListCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/staff?limit=50", { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedReportsRevenue({ signal, period = "mtd" } = {}) {
+        const safePeriod = ["mtd", "wtd"].includes(String(period || "").trim().toLowerCase())
+            ? String(period || "").trim().toLowerCase()
+            : "mtd";
+        return loadSharedResource(
+            reportsRevenueCacheKey(safePeriod, activeClubCacheKeyPart()),
+            () => fetchJson(`/api/admin/revenue?period=${encodeURIComponent(safePeriod)}`, { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedProShopProducts({ signal } = {}) {
+        return loadSharedResource(
+            proShopProductsCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/pro-shop/products?limit=100", { signal }),
+            8000
+        );
+    }
+
+    async function loadSharedProShopSales({ signal } = {}) {
+        return loadSharedResource(
+            proShopSalesCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/pro-shop/sales?limit=12&days=30", { signal }),
+            8000
+        );
+    }
+
+    function invalidateProShopPanelSharedData({ includeFinanceBase = false } = {}) {
+        const clubKey = activeClubCacheKeyPart();
+        deleteSharedCacheKey(proShopProductsCacheKey(clubKey));
+        deleteSharedCacheKey(proShopSalesCacheKey(clubKey));
+        invalidateClubSummaryCaches({
+            includeDashboard: true,
+            includeAlerts: true,
+            includeFinanceBase,
+        });
     }
 
     async function loadGolfTeeRows(date, { signal, ensureMaterialized = false } = {}) {
@@ -3923,36 +4044,81 @@
         return groupTeeRows(rows);
     }
 
-    async function loadSharedDashboardData({ includeCommunications = false, communicationsPublishedOnly = false, includeStaffContext = false, signal } = {}) {
-        const shell = roleShell();
-        const date = todayYmd();
-        const clubKey = activeClubCacheKeyPart();
-        const dashboardPromise = loadSharedResource(
-            dashboardCacheKey(clubKey),
-            () => fetchJson("/api/admin/dashboard", { signal, timeoutMs: 25000 }),
-            12000
-        );
-        const alertsPromise = loadSharedResource(
-            alertsCacheKey(clubKey),
+    function emptyAlertsPayload() {
+        return { alerts: [], summary: { total: 0, high: 0, medium: 0, low: 0 } };
+    }
+
+    function emptyFinanceBasePayload(date = todayYmd()) {
+        return {
+            closeStatus: { date, is_closed: false },
+            summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 },
+            settings: {},
+        };
+    }
+
+    async function loadOperationalAlertsShared({ signal } = {}) {
+        return loadSharedResource(
+            alertsCacheKey(activeClubCacheKeyPart()),
             () => fetchJsonSafe(
                 "/api/admin/operational-alerts",
-                { alerts: [], summary: { high: 0, medium: 0, low: 0 } },
+                emptyAlertsPayload(),
                 { signal, timeoutMs: 12000 }
             ),
             8000
         );
+    }
+
+    async function loadCommunicationsPreviewShared({ signal, publishedOnly = false } = {}) {
+        return loadSharedResource(
+            `communications:${activeClubCacheKeyPart()}:${publishedOnly ? "published" : "all"}`,
+            () => fetchJson(
+                publishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6",
+                { signal, timeoutMs: 12000 }
+            ),
+            10000
+        );
+    }
+
+    async function loadSharedCommunicationsWorkspaceList({ signal, publishedOnly = false } = {}) {
+        return loadSharedResource(
+            `communications-workspace:${activeClubCacheKeyPart()}:${publishedOnly ? "published" : "all"}`,
+            () => fetchJson(
+                publishedOnly ? "/api/admin/communications?status=published&limit=50" : "/api/admin/communications?limit=50",
+                { signal, timeoutMs: 12000 }
+            ),
+            10000
+        );
+    }
+
+    function invalidateCommunicationsWorkspaceList() {
+        const clubKey = activeClubCacheKeyPart();
+        deleteSharedCacheKey(`communications-workspace:${clubKey}:all`);
+        deleteSharedCacheKey(`communications-workspace:${clubKey}:published`);
+        deleteSharedCacheKey(`communications:${clubKey}:all`);
+        deleteSharedCacheKey(`communications:${clubKey}:published`);
+    }
+
+    async function loadStaffRoleContextShared({ signal } = {}) {
+        return loadSharedResource(
+            `staff-context:${activeClubCacheKeyPart()}`,
+            () => fetchJson("/api/admin/staff-role-context", { signal, timeoutMs: 15000 }),
+            12000
+        );
+    }
+
+    async function loadSharedDashboardData({ dashboardView = "legacy_full", includeCommunications = false, communicationsPublishedOnly = false, includeStaffContext = false, signal } = {}) {
+        const shell = roleShell();
+        const date = todayYmd();
+        const dashboardPromise = loadSharedDashboardPayload({ signal, view: dashboardView });
+        const alertsPromise = loadOperationalAlertsShared({ signal });
         const financeBasePromise = shell === "club_admin"
             ? loadSharedFinanceBase({ signal })
-            : Promise.resolve({ closeStatus: { date, is_closed: false }, summary: { date, records: [], total_payments: 0, total_tax: 0, transaction_count: 0 }, settings: {} });
+            : Promise.resolve(emptyFinanceBasePayload(date));
         const communicationsPromise = includeCommunications
-            ? loadSharedResource(
-                `communications:${clubKey}:${communicationsPublishedOnly ? "published" : "all"}`,
-                () => fetchJson(communicationsPublishedOnly ? "/api/admin/communications?status=published&limit=6" : "/api/admin/communications?limit=6", { signal, timeoutMs: 12000 }),
-                10000
-            )
+            ? loadCommunicationsPreviewShared({ signal, publishedOnly: communicationsPublishedOnly })
             : Promise.resolve(null);
         const staffContextPromise = includeStaffContext
-            ? loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context", { signal, timeoutMs: 15000 }), 12000)
+            ? loadStaffRoleContextShared({ signal })
             : Promise.resolve(null);
         const operationalTargetsPromise = shell === "club_admin"
             ? loadSharedOperationalTargets({ signal, year: new Date().getFullYear() })
@@ -3980,14 +4146,58 @@
         };
     }
 
-    async function dashboardBundle(options = {}) {
+    async function loadOverviewWorkspaceData({ signal } = {}) {
         const shell = roleShell();
-        return loadSharedDashboardData({
-            includeCommunications: true,
-            communicationsPublishedOnly: shell === "staff",
-            includeStaffContext: shell === "staff",
-            signal: options.signal,
-        });
+        const date = todayYmd();
+        const includeClubAdminFinance = shell === "club_admin";
+        const [dashboard, alerts, communications, financeBase, staffContext, operationalTargets] = await Promise.all([
+            loadSharedDashboardPayload({ signal, view: shell === "staff" ? "today" : "overview" }),
+            loadOperationalAlertsShared({ signal }),
+            loadCommunicationsPreviewShared({ signal, publishedOnly: shell === "staff" }),
+            includeClubAdminFinance ? loadSharedFinanceBase({ signal }) : Promise.resolve(emptyFinanceBasePayload(date)),
+            shell === "staff" ? loadStaffRoleContextShared({ signal }) : Promise.resolve(null),
+            includeClubAdminFinance ? loadSharedOperationalTargets({ signal, year: new Date().getFullYear() }) : Promise.resolve(null),
+        ]);
+        return {
+            dashboard,
+            alerts,
+            closeStatus: financeBase.closeStatus,
+            summary: financeBase.summary,
+            settings: financeBase.settings,
+            communications,
+            staffContext,
+            operationalTargets,
+            date,
+        };
+    }
+
+    async function loadOperationsWorkspaceData({ panel = "overview", signal } = {}) {
+        const shell = roleShell();
+        const date = todayYmd();
+        const safePanel = String(panel || "overview").trim().toLowerCase() || "overview";
+        const needsAlerts = ["overview", "pro_shop", "pub"].includes(safePanel);
+        const needsFinanceBase = shell === "club_admin" && ["overview", "pro_shop", "pub"].includes(safePanel);
+        const needsOperationalTargets = shell === "club_admin" && ["tennis", "padel", "bowls"].includes(safePanel);
+        const [dashboard, alerts, financeBase, operationalTargets] = await Promise.all([
+            loadSharedDashboardPayload({ signal, view: safePanel === "overview" ? "operations_overview" : "operations_module" }),
+            needsAlerts ? loadOperationalAlertsShared({ signal }) : Promise.resolve(emptyAlertsPayload()),
+            needsFinanceBase ? loadSharedFinanceBase({ signal }) : Promise.resolve(emptyFinanceBasePayload(date)),
+            needsOperationalTargets ? loadSharedOperationalTargets({ signal, year: new Date().getFullYear() }) : Promise.resolve(null),
+        ]);
+        return {
+            panel: safePanel,
+            dashboard,
+            alerts,
+            closeStatus: financeBase.closeStatus,
+            summary: financeBase.summary,
+            settings: financeBase.settings,
+            operationalTargets,
+            date,
+        };
+    }
+
+    async function dashboardBundle(options = {}) {
+        return loadOverviewWorkspaceData({ signal: options.signal });
     }
 
     function renderDashboardWorkspace(bundle, options = {}) {
@@ -4132,7 +4342,7 @@
         const panel = route?.panel || (tabsForWorkspace("golf")[0]?.id || "tee-sheet");
         if (panel === "overview") {
             const [shared, teeRows] = await Promise.all([
-                loadSharedDashboardData({ signal }),
+                loadSharedDashboardData({ signal, dashboardView: "golf_overview" }),
                 loadGolfTeeRows(date, { signal }),
             ]);
             return {
@@ -4163,7 +4373,7 @@
         }
         if (panel === "golf-days") {
             const [sharedDashboard, bookings, accountCustomers] = await Promise.all([
-                loadSharedDashboardData({ signal }),
+                loadSharedDashboardData({ signal, dashboardView: "golf_days" }),
                 loadSharedResource(golfDayBookingsCacheKey(activeClubCacheKeyPart()), () => fetchJson("/api/admin/golf-day-bookings", { signal }), 8000),
                 fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
             ]);
@@ -4183,7 +4393,7 @@
                 <div class="slot-head">
                     <div>
                         <div class="slot-time">${escapeHtml(formatTime(slot.tee_time))}</div>
-                        <div class="slot-meta">Tee ${escapeHtml(slot.hole || "1")} · ${escapeHtml(formatInteger(slot.occupied))}/${escapeHtml(formatInteger(slot.capacity))} occupied</div>
+                        <div class="slot-meta">Tee ${escapeHtml(slot.hole || "1")} Ã‚Â· ${escapeHtml(formatInteger(slot.occupied))}/${escapeHtml(formatInteger(slot.capacity))} occupied</div>
                     </div>
                     <div class="inline-actions">
                         ${renderStatusPill("", slot.status || "open")}
@@ -4203,7 +4413,7 @@
                                     booking.holes ? `${booking.holes} holes` : "",
                                     booking.prepaid ? "Prepaid" : "Pay on day",
                                     booking.cart ? "Cart" : "",
-                                ].filter(Boolean).join(" · "))}
+                                ].filter(Boolean).join(" Ã‚Â· "))}
                             </div>
                             <div class="inline-actions">
                                 <span class="metric-pill">${escapeHtml(formatCurrency(booking.price || 0))}</span>
@@ -4369,7 +4579,7 @@
                                     `${formatInteger(row.occupied || 0)}/${formatInteger(row.capacity || 4)} occupied`,
                                     stateText,
                                     leadBooking?.status ? `Lead ${String(leadBooking.status).replaceAll("_", " ")}` : "",
-                                ].filter(Boolean).join(" · "))}</div>
+                                ].filter(Boolean).join(" Ã‚Â· "))}</div>
                             </div>
                             <div class="tee-priority-signal">
                                 <span class="metric-pill ${tone}">${escapeHtml(stateText)}</span>
@@ -4400,7 +4610,7 @@
                         {
                             label: "Next live tee time",
                             value: nextLoadedRow ? formatTime(nextLoadedRow.tee_time) : "No live load",
-                            meta: nextLoadedRow ? `${formatInteger(nextLoadedRow.occupied || 0)}/${formatInteger(nextLoadedRow.capacity || 4)} occupied${leadBooking?.player_name ? ` · ${leadBooking.player_name}` : ""}` : "No loaded starts on this day yet",
+                            meta: nextLoadedRow ? `${formatInteger(nextLoadedRow.occupied || 0)}/${formatInteger(nextLoadedRow.capacity || 4)} occupied${leadBooking?.player_name ? ` Ã‚Â· ${leadBooking.player_name}` : ""}` : "No loaded starts on this day yet",
                         },
                         {
                             label: "Sold-out starts",
@@ -4743,128 +4953,7 @@
             return renderGolfBookingsPanel(bundle);
         }
         if (panel === "golf-days") {
-            const golfDays = bundle.golfDays || {};
-            const rows = Array.isArray(golfDays.bookings) ? golfDays.bookings : [];
-            const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
-            const readyToComplete = rows.filter(row => golfDayLifecycle(row).stage === "Ready to complete").length;
-            const allocatedCount = rows.filter(row => ["allocated", "completed"].includes(String(row.operation_area || "").trim().toLowerCase())).length;
-            return `
-                ${renderPageHero({
-                    title: "Golf Day Operations",
-                    copy: "Move events from setup to tee-sheet allocation and payment completion without losing current golf-day context.",
-                    workspace: "golf",
-                    subnavLabel: "Golf pages",
-                    metrics: [
-                        { label: "Open Events", value: formatInteger(golfDays.total || 0), meta: "Current golf-day bookings" },
-                        { label: "Pipeline Value", value: formatCurrency(golfDays.total_amount || 0), meta: "Gross booked value" },
-                        { label: "Allocated", value: formatInteger(allocatedCount), meta: "Events already reserved on the tee sheet" },
-                        { label: "Ready to Complete", value: formatInteger(readyToComplete), meta: "Settled and allocated events ready to close" },
-                    ],
-                })}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Active event queue</h4>
-                            <p>Open golf-day events stay visible here first until setup, payment, and allocation all reach a clean state.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${rows.length ? rows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(`${row.event_name || "Golf day"} #${row.id || "-"}`)}</span>
-                                    <div class="inline-actions">
-                                        ${renderStatusPill("", row.payment_status || "pending")}
-                                        ${golfDayLifecyclePill(row)}
-                                    </div>
-                                </div>
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-golf-day="${escapeHtml(String(row.id))}">Edit event</button>
-                                    <button type="button" class="button ghost" data-load-golf-day-allocation="${escapeHtml(String(row.id))}">Load allocation</button>
-                                    ${String(row.payment_status || "").trim().toLowerCase() === "paid" ? "" : `<button type="button" class="button ghost" data-golf-day-mark-paid="${escapeHtml(String(row.id))}">Settle paid</button>`}
-                                    ${golfDayLifecycle(row).stage === "Ready to complete" ? `<button type="button" class="button ghost" data-golf-day-complete="${escapeHtml(String(row.id))}">Mark complete</button>` : ""}
-                                </div>
-                                <div class="list-meta">${escapeHtml(`${formatDate(row.event_date)} · ${formatCurrency(row.amount || 0)} · ${row.contact_name || "No contact set"}`)}</div>
-                                <div class="list-meta">${escapeHtml(golfDayLifecycle(row).detail)}</div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No golf-day bookings yet.</div>`}
-                    </div>
-                </section>
-                <section class="split-grid">
-                    <form class="form-card" id="golf-day-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Event setup</h3>
-                                <p>Create or update the event record before allocating starts to the tee sheet.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field"><label>Existing Event ID</label><input name="golf_day_booking_id" type="number" min="1" placeholder="Leave blank to create"></div>
-                            <div class="field"><label>Event Name</label><input name="event_name" required></div>
-                            <div class="field"><label>Contact Name</label><input name="contact_name"></div>
-                            <div class="field"><label>Event Date</label><input name="event_date" type="date"></div>
-                            <div class="field"><label>End Date</label><input name="event_end_date" type="date"></div>
-                            <div class="field"><label>Invoice Reference</label><input name="invoice_reference"></div>
-                            <div class="field">
-                                <label>Account Customer</label>
-                                <select name="account_customer_id">
-                                    <option value="">None selected</option>
-                                    ${accountCustomers.map(row => `<option value="${escapeHtml(String(row.id))}">${escapeHtml(row.name || row.account_code || "Account")}</option>`).join("")}
-                                </select>
-                            </div>
-                            <div class="field"><label>Account Code</label><input name="account_code"></div>
-                            <div class="field"><label>Amount</label><input name="amount" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Balance Due</label><input name="balance_due" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Deposit</label><input name="deposit_amount" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Full Payment</label><input name="full_payment_amount" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field">
-                                <label>Payment Status</label>
-                                <select name="payment_status">
-                                    <option value="pending">Pending</option>
-                                    <option value="partial">Partial</option>
-                                    <option value="paid">Paid</option>
-                                    <option value="cancelled">Cancelled</option>
-                                </select>
-                            </div>
-                            <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Save golf day</button>
-                            <button type="button" class="button secondary" data-clear-golf-day-form="1">Clear</button>
-                        </div>
-                    </form>
-                    <form class="form-card" id="golf-day-allocation-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Allocate to Tee Sheet</h3>
-                                <p>Use the existing bulk-book flow to reserve starts for the selected golf day.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field"><label>Event ID</label><input name="golf_day_booking_id" type="number" min="1" placeholder="Optional link to an existing event"></div>
-                            <div class="field"><label>Group Name</label><input name="group_name" required></div>
-                            <div class="field"><label>Date</label><input name="date" type="date" value="${escapeHtml(bundle.date)}"></div>
-                            <div class="field"><label>Start Time</label><input name="start_time" type="time" value="07:00"></div>
-                            <div class="field"><label>End Time</label><input name="end_time" type="time" value="11:00"></div>
-                            <div class="field"><label>Tees</label><input name="tees" value="1,10"></div>
-                            <div class="field"><label>Slots per Time</label><input name="slots_per_time" type="number" min="1" max="4" value="4"></div>
-                            <div class="field">
-                                <label>Holes</label>
-                                <select name="holes">
-                                    <option value="18">18</option>
-                                    <option value="9">9</option>
-                                </select>
-                            </div>
-                            <div class="field"><label>Account Code</label><input name="account_code"></div>
-                            <div class="field"><label>Price per Slot</label><input name="price" type="number" min="0" step="0.01" value="0"></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Allocate starts</button>
-                            <button type="button" class="button secondary" data-clear-golf-day-allocation-form="1">Clear</button>
-                        </div>
-                    </form>
-                </section>
-            `;
+            return window.GreenLinkAdminGolfDayOps.renderPanel(bundle, golfDayOpsModuleDeps());
         }
 
         return `<section class="card"><div class="empty-state">This golf panel is not available in the current club context.</div></section>`;
@@ -4873,16 +4962,16 @@
     async function operationsBundle(options = {}) {
         const signal = options.signal;
         const panel = state.route.panel || "overview";
-        const shared = await loadSharedDashboardData({ signal });
+        const shared = await loadOperationsWorkspaceData({ signal, panel });
         if (panel === "pro_shop") {
             const [products, sales] = await Promise.all([
-                fetchJson("/api/admin/pro-shop/products?limit=100", { signal }),
-                fetchJson("/api/admin/pro-shop/sales?limit=12&days=30", { signal }),
+                loadSharedProShopProducts({ signal }),
+                loadSharedProShopSales({ signal }),
             ]);
             return { panel, ...shared, products, sales };
         }
         if (["tennis", "padel", "bowls"].includes(panel)) {
-            const members = await fetchJson(`/api/admin/members?area=${encodeURIComponent(panel)}&limit=12&sort=recent_activity`, { signal });
+            const members = await loadSharedMembersAreaPreview({ area: panel, signal });
             return { panel, ...shared, members };
         }
         return { panel, ...shared };
@@ -4966,28 +5055,6 @@
                     `;
                 }).join("")}
             </section>
-        `;
-    }
-
-    function renderProShopDeskBrief(bundle, products, sales) {
-        const lowStock = Array.isArray(products) ? products.filter(row => Number(row.stock_qty || 0) <= Number(row.reorder_level || 0)).length : 0;
-        const cardSales = Array.isArray(sales) ? sales.filter(row => String(row.payment_method || "").toLowerCase().includes("card")).length : 0;
-        const walkIns = Array.isArray(sales) ? sales.filter(row => !String(row.customer_name || "").trim()).length : 0;
-        return `
-            <article class="dashboard-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Shop summary</h4>
-                        <p>The pro shop should open with a clear trade summary: stock pressure, walk-in mix, card volume, and next close steps.</p>
-                    </div>
-                </div>
-                ${metricCards([
-                    { label: "Low Stock", value: formatInteger(lowStock), meta: "Products already at or below reorder level" },
-                    { label: "Walk-in Sales", value: formatInteger(walkIns), meta: "Sales without a named customer in the current window" },
-                    { label: "Card Sales", value: formatInteger(cardSales), meta: "Recent card-payment transactions" },
-                    { label: "Recent Sales", value: formatInteger(sales.length), meta: "Visible native pro-shop sales rows" },
-                ])}
-            </article>
         `;
     }
 
@@ -5086,167 +5153,9 @@
             `;
         }
         if (panel === "pro_shop") {
-            const products = Array.isArray(bundle.products?.products) ? bundle.products.products : [];
-            const sales = Array.isArray(bundle.sales?.sales) ? bundle.sales.sales : [];
-            const inventory = insightMap.pro_shop?.inventory || {};
-            return `
-                ${renderPageHero({
-                    title: "Pro Shop",
-                    copy: "Run shop trade, stock pressure, and same-day readiness from one operational page.",
-                    workspace: "operations",
-                    subnavLabel: "Operations pages",
-                    metrics: [
-                        { label: "Products", value: formatInteger(inventory.active_products || products.length), meta: "Active products in inventory" },
-                        { label: "Stock Units", value: formatInteger(inventory.stock_units || 0), meta: "Units currently on hand" },
-                        { label: "Stock Value", value: formatCurrency(inventory.stock_value || 0), meta: "Estimated inventory carrying value" },
-                        { label: "Low Stock", value: formatInteger(bundle.products?.low_stock_count || 0), meta: "Products at or below reorder level" },
-                    ],
-                })}
-                <section class="dashboard-grid">
-                    ${renderProShopCashupCard(bundle.dashboard || {}, alerts)}
-                    ${renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
-                </section>
-                ${shell === "club_admin" ? `
-                    <section class="dashboard-grid">
-                        ${renderOperationsCadenceCard(bundle, { context: "pro_shop" })}
-                        ${renderAccountingHandoffCard(bundle)}
-                    </section>
-                ` : ""}
-                <section class="dashboard-grid">
-                    ${renderProShopDeskBrief(bundle, products, sales)}
-                    ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
-                </section>
-                <section class="split-grid">
-                    <article class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Inventory watch</h4>
-                                <p>Quick visibility into products needing attention.</p>
-                            </div>
-                        </div>
-                        <div class="stack">
-                            ${products.slice(0, 14).map(row => `
-                                <div class="product-row">
-                                    <div>
-                                        <div class="list-title">${escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</div>
-                                        <div class="list-meta">${escapeHtml(row.category || "Uncategorised")} · ${escapeHtml(row.sku || "")}</div>
-                                    </div>
-                                    <div class="inline-actions">
-                                        <span class="metric-pill">${escapeHtml(formatCurrency(row.unit_price || 0))}</span>
-                                        ${renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
-                                        <span class="metric-pill">${escapeHtml(formatInteger(row.stock_qty || 0))} in stock</span>
-                                    </div>
-                                </div>
-                            `).join("") || `<div class="empty-state">No products found.</div>`}
-                        </div>
-                    </article>
-                    <article class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Recent sales</h4>
-                                <p>Native pro-shop throughput over the current period.</p>
-                            </div>
-                        </div>
-                        <div class="stack">
-                            ${sales.map(row => `
-                                <div class="list-row">
-                                    <div class="list-row-top">
-                                        <span class="list-title">${escapeHtml(`${row.customer_name || "Walk-in sale"} #${row.id || "-"}`)}</span>
-                                        <span class="metric-pill">${escapeHtml(formatCurrency(row.total || 0))}</span>
-                                    </div>
-                                    <div class="list-meta">${escapeHtml(`${formatDateTime(row.sold_at)} · ${(row.items || []).length} line item(s) · ${row.payment_method || ""}`)}</div>
-                                </div>
-                            `).join("") || `<div class="empty-state">No recent pro-shop sales.</div>`}
-                        </div>
-                    </article>
-                </section>
-                <section class="split-grid">
-                    <form class="form-card" id="pro-shop-sale-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Record sale</h3>
-                                <p>Post a new pro-shop sale directly from this page using the current native product list.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field">
-                                <label>Product</label>
-                                <select name="product_id">
-                                    ${products.map(row => `<option value="${escapeHtml(String(row.id))}">${escapeHtml(`${row.name || row.sku || "Product"} (${formatCurrency(row.unit_price || 0)})`)}</option>`).join("")}
-                                </select>
-                            </div>
-                            <div class="field"><label>Quantity</label><input name="quantity" type="number" min="1" value="1"></div>
-                            <div class="field"><label>Customer</label><input name="customer_name" placeholder="Optional customer name"></div>
-                            <div class="field">
-                                <label>Payment</label>
-                                <select name="payment_method">
-                                    <option value="card">Card</option>
-                                    <option value="cash">Cash</option>
-                                    <option value="eft">EFT</option>
-                                    <option value="account">Account</option>
-                                    <option value="online">Online</option>
-                                </select>
-                            </div>
-                            <div class="field"><label>Discount</label><input name="discount" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Tax</label><input name="tax" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field" style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes"></textarea></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Record sale</button>
-                        </div>
-                    </form>
-                    <form class="form-card" id="pro-shop-product-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Add or update product</h3>
-                                <p>Create products here, or enter an existing product ID to update stock and pricing fields.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field"><label>Existing Product ID</label><input name="product_id" type="number" min="1" placeholder="Leave blank to create"></div>
-                            <div class="field"><label>SKU</label><input name="sku" required></div>
-                            <div class="field"><label>Name</label><input name="name" required></div>
-                            <div class="field"><label>Category</label><input name="category"></div>
-                            <div class="field"><label>Unit Price</label><input name="unit_price" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Cost Price</label><input name="cost_price" type="number" min="0" step="0.01" value="0"></div>
-                            <div class="field"><label>Stock Qty</label><input name="stock_qty" type="number" min="0" value="0"></div>
-                            <div class="field"><label>Reorder Level</label><input name="reorder_level" type="number" min="0" value="0"></div>
-                            <div class="checkbox-card">
-                                <label><input type="checkbox" name="active" value="1" checked> Active product</label>
-                                <p>Inactive products stay out of current sales but remain in the catalog.</p>
-                            </div>
-                            <div class="field"><label>Stock Adjust Delta</label><input name="stock_delta" type="number" step="1" value="0"></div>
-                            <div class="field"><label>Stock Adjust Reason</label><input name="stock_reason" placeholder="Optional reason"></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Save product</button>
-                        </div>
-                    </form>
-                </section>
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Product actions</h3>
-                            <p>Use current product IDs to update records, or apply quick stock adjustments from this action list.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${products.length ? products.slice(0, 20).map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</span>
-                                    ${renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
-                                </div>
-                                <div class="list-meta">${escapeHtml(`${row.sku || ""} · ${formatCurrency(row.unit_price || 0)} · ${formatInteger(row.stock_qty || 0)} in stock`)}</div>
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-pro-shop-product="${escapeHtml(String(row.id))}">Edit product</button>
-                                    <button type="button" class="button ghost" data-adjust-pro-shop-stock="${escapeHtml(String(row.id))}">Adjust stock</button>
-                                </div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No products available for action.</div>`}
-                    </div>
-                </section>
-            `;
+
+            return window.GreenLinkAdminProShop.renderPanel({ ...bundle, insightMap }, proShopModuleDeps());
+
         }
 
         if (["tennis", "padel", "bowls", "pub"].includes(panel)) {
@@ -5307,7 +5216,7 @@
                                             <span class="list-title">${escapeHtml(row.name || "Member")}</span>
                                             ${renderStatusPill("", row.membership_status || "active")}
                                         </div>
-                                        <div class="list-meta">${escapeHtml(`${row.primary_operation || ""} · ${formatInteger(row.bookings_count || 0)} booking(s) · ${formatCurrency(row.total_spent || 0)}`)}</div>
+                                        <div class="list-meta">${escapeHtml(`${row.primary_operation || ""} Ã‚Â· ${formatInteger(row.bookings_count || 0)} booking(s) Ã‚Â· ${formatCurrency(row.total_spent || 0)}`)}</div>
                                     </div>
                                 `).join("") : `<div class="empty-state">No relevant member records found.</div>`}
                         </div>
@@ -5324,13 +5233,18 @@
         const panel = state.route.panel || "members";
         const membersUi = defaultMembersUi(options.membersUi || state.workspaceData?.membersUi);
         if (panel === "staff" && roleShell() === "club_admin") {
-            const [staff, members, accountCustomers] = await Promise.all([
-                fetchJson("/api/admin/staff?limit=50", { signal }),
-                fetchJson("/api/admin/members?limit=6&sort=recent_activity", { signal }),
-                fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
+            const [staff, membersPreview, accountCustomers] = await Promise.all([
+                loadSharedStaffList({ signal }),
+                loadSharedRecentMembersPreview({ signal }),
+                loadSharedActiveAccountCustomers({ signal }),
             ]);
+            const members = {
+                ...membersPreview,
+                members: Array.isArray(membersPreview?.members) ? membersPreview.members.slice(0, 6) : [],
+            };
             return { panel, staff, members, accountCustomers, membersUi };
         }
+        const useSharedRecentMembers = !membersUi.query && membersUi.status === "all";
         const membersQuery = new URLSearchParams({
             limit: membersUi.query ? "24" : "16",
             sort: membersUi.query ? "name_asc" : "recent_activity",
@@ -5342,63 +5256,29 @@
             sort: "name_asc",
         });
         if (membersUi.query) accountCustomerQuery.set("q", membersUi.query);
-        const [members, accountCustomers] = await Promise.all([
-            fetchJson(`/api/admin/members?${membersQuery.toString()}`, { signal }),
-            fetchJson(`/api/admin/account-customers?${accountCustomerQuery.toString()}`, { signal }),
+        const [membersSource, accountCustomers] = await Promise.all([
+            useSharedRecentMembers
+                ? loadSharedRecentMembersPreview({ signal })
+                : fetchJson(`/api/admin/members?${membersQuery.toString()}`, { signal }),
+            membersUi.query
+                ? fetchJson(`/api/admin/account-customers?${accountCustomerQuery.toString()}`, { signal })
+                : loadSharedActiveAccountCustomers({ signal }),
         ]);
+        const members = useSharedRecentMembers
+            ? {
+                ...membersSource,
+                members: Array.isArray(membersSource?.members) ? membersSource.members.slice(0, 16) : [],
+            }
+            : membersSource;
         return { panel: "members", members, accountCustomers, membersUi };
     }
 
     function defaultMembersUi(source = null) {
-        return {
-            query: String(source?.query || "").trim(),
-            status: ["all", "active", "hold", "inactive", "resigned", "defaulter"].includes(String(source?.status || "").trim().toLowerCase())
-                ? String(source.status).trim().toLowerCase()
-                : "all",
-        };
+        return window.GreenLinkAdminMembersPanel.defaultMembersUi(source);
     }
 
     function renderMembersSearchForm(bundle, options = {}) {
-        const membersUi = defaultMembersUi(bundle.membersUi);
-        const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
-        const total = Number(bundle.members?.total || rows.length || 0);
-        const embedded = Boolean(options.embedded);
-        return `
-            <form class="${embedded ? "workblock-form" : "form-card"}" id="members-search-form">
-                ${embedded ? "" : `
-                    <div class="panel-head">
-                        <div>
-                            <h3>People search</h3>
-                            <p>Open this workspace ready to search first, then narrow by status without loading a giant raw member dump.</p>
-                        </div>
-                    </div>
-                `}
-                <div class="field-grid">
-                    <div class="field">
-                        <label>Search people</label>
-                        <input name="q" value="${escapeHtml(membersUi.query)}" placeholder="Name, member number, email, phone">
-                    </div>
-                    <div class="field">
-                        <label>Status</label>
-                        <select name="membership_status">
-                            ${[
-                                ["all", "All statuses"],
-                                ["active", "Active"],
-                                ["hold", "Hold"],
-                                ["inactive", "Inactive"],
-                                ["defaulter", "Defaulter"],
-                                ["resigned", "Resigned"],
-                            ].map(([value, label]) => `<option value="${escapeHtml(value)}" ${membersUi.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
-                        </select>
-                    </div>
-                </div>
-                <div class="button-row">
-                    <button type="submit" class="button">Search people</button>
-                    <button type="button" class="button secondary" data-clear-members-search="1">Clear search</button>
-                    <span class="panel-note">${escapeHtml(membersUi.query ? `Showing ${formatInteger(rows.length)} of ${formatInteger(total)} matching people.` : `Showing ${formatInteger(rows.length)} recent people in club scope.`)}</span>
-                </div>
-            </form>
-        `;
+        return window.GreenLinkAdminMembersPanel.renderMembersSearchForm(bundle, membersPanelModuleDeps(), options);
     }
 
     function importActivityStamp(row) {
@@ -5536,7 +5416,7 @@
                                 MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                                 `${formatInteger(row.bookings_count || 0)} booking(s)`,
                                 formatCurrency(row.total_spent || 0),
-                            ].filter(Boolean).join(" · "))}</div>
+                            ].filter(Boolean).join(" Ã‚Â· "))}</div>
                             <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
                         </div>
                     `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
@@ -5545,53 +5425,8 @@
         `;
     }
 
-    function buildDebtorWatchRows(rows) {
-        return (Array.isArray(rows) ? rows : [])
-            .map(row => {
-                const missingCode = !String(row.account_code || "").trim();
-                const missingContact = !String(row.billing_contact || "").trim();
-                const terms = !String(row.terms || "").trim();
-                return {
-                    ...row,
-                    _missingCode: missingCode,
-                    _missingContact: missingContact,
-                    _priority: (missingCode ? 100 : 0) + (missingContact ? 80 : 0) + (terms ? 40 : 0),
-                };
-            })
-            .sort((left, right) => Number(right._priority || 0) - Number(left._priority || 0))
-            .slice(0, 8);
-    }
-
     function renderDebtorWatchCard(accountCustomers) {
-        const rows = buildDebtorWatchRows(accountCustomers);
-        return `
-            <article class="dashboard-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Debtor watch</h4>
-                        <p>Booking-to-account workflows only stay clean when debtor records have code, contact, and terms ready before export.</p>
-                    </div>
-                </div>
-                <div class="stack">
-                    ${rows.length ? rows.map(row => `
-                        <div class="list-row">
-                            <div class="list-row-top">
-                                <span class="list-title">${escapeHtml(row.name || "Account customer")}</span>
-                                <span class="metric-pill">${escapeHtml(row.account_code || "Code missing")}</span>
-                            </div>
-                            <div class="list-meta">${escapeHtml([
-                                row.billing_contact || "Billing contact missing",
-                                row.customer_type || "",
-                                row.terms || "Terms missing",
-                            ].filter(Boolean).join(" · "))}</div>
-                            <div class="inline-actions">
-                                ${renderStatusPill("", row._missingCode || row._missingContact ? "missing" : "configured")}
-                            </div>
-                        </div>
-                    `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}
-                </div>
-            </article>
-        `;
+        return window.GreenLinkAdminAccountCustomers.renderDebtorWatchCard(accountCustomers, accountCustomersModuleDeps());
     }
 
     function renderServiceDeskBriefCard(memberRows, accountCustomers) {
@@ -5625,62 +5460,11 @@
     }
 
     function renderMemberRowsTable(rows, options = {}) {
-        const items = Array.isArray(rows) ? rows : [];
-        const limit = Number(options.limit || 0);
-        const visible = limit > 0 ? items.slice(0, limit) : items;
-        const emptyText = String(options.emptyText || "No members found.").trim();
-        return renderTable(
-            ["Member", "Operation", "Status", "Bookings", "Spend"],
-            visible.length ? visible.map(row => `
-                <tr>
-                    <td><strong>${escapeHtml(row.name || "")}</strong><div class="table-meta">${escapeHtml(row.member_number || row.email || "")}</div></td>
-                    <td>${escapeHtml(MODULE_LABELS[row.primary_operation] || row.primary_operation || "-")}</td>
-                    <td>${escapeHtml(row.membership_status || "-")}</td>
-                    <td>${escapeHtml(formatInteger(row.bookings_count || 0))}</td>
-                    <td>${escapeHtml(formatCurrency(row.total_spent || 0))}</td>
-                </tr>
-            `) : [`<tr><td colspan="5"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
-        );
-    }
-
-    function renderStaffRowsTable(rows, options = {}) {
-        const items = Array.isArray(rows) ? rows : [];
-        const limit = Number(options.limit || 0);
-        const visible = limit > 0 ? items.slice(0, limit) : items;
-        const emptyText = String(options.emptyText || "No staff users found.").trim();
-        const includeActions = typeof options.actions === "function";
-        return renderTable(
-            includeActions ? ["Name", "Role", "Operational Role", "Email", "Actions"] : ["Name", "Role", "Operational Role", "Email"],
-            visible.length ? visible.map(row => `
-                <tr>
-                    <td><strong>${escapeHtml(row.name || "")}</strong></td>
-                    <td>${escapeHtml(row.role || "")}</td>
-                    <td>${escapeHtml(row.operational_role || row.operation_area || "-")}</td>
-                    <td>${escapeHtml(row.email || "")}</td>
-                    ${includeActions ? `<td>${options.actions(row) || ""}</td>` : ""}
-                </tr>
-            `) : [`<tr><td colspan="${includeActions ? "5" : "4"}"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
-        );
+        return window.GreenLinkAdminMembersPanel.renderMemberRowsTable(rows, membersPanelModuleDeps(), options);
     }
 
     function renderAccountCustomerStack(rows, options = {}) {
-        const items = Array.isArray(rows) ? rows : [];
-        const limit = Number(options.limit || 0);
-        const visible = limit > 0 ? items.slice(0, limit) : items;
-        const emptyText = String(options.emptyText || "No active account customers found.").trim();
-        return `
-            <div class="stack">
-                ${visible.length ? visible.map(row => `
-                    <div class="list-row">
-                        <div class="list-row-top">
-                            <span class="list-title">${escapeHtml(row.name || "Account")}</span>
-                            <span class="metric-pill">${escapeHtml(row.account_code || "No code")}</span>
-                        </div>
-                        <div class="list-meta">${escapeHtml([row.billing_contact || "", row.customer_type || "", row.terms || ""].filter(Boolean).join(" Â· ")) || "No billing contact set."}</div>
-                    </div>
-                `).join("") : `<div class="empty-state">${escapeHtml(emptyText)}</div>`}
-            </div>
-        `;
+        return window.GreenLinkAdminAccountCustomers.renderAccountCustomerStack(rows, accountCustomersModuleDeps(), options);
     }
 
     function renderMemberServiceQueueEmbedded(rows) {
@@ -5698,7 +5482,7 @@
                             MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                             `${formatInteger(row.bookings_count || 0)} booking(s)`,
                             formatCurrency(row.total_spent || 0),
-                        ].filter(Boolean).join(" Â· "))}</div>
+                        ].filter(Boolean).join(" Ãƒâ€šÃ‚Â· "))}</div>
                         <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
                     </div>
                 `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
@@ -5707,27 +5491,7 @@
     }
 
     function renderDebtorWatchEmbedded(accountCustomers) {
-        const rows = buildDebtorWatchRows(accountCustomers);
-        return `
-            <div class="stack">
-                ${rows.length ? rows.map(row => `
-                    <div class="list-row">
-                        <div class="list-row-top">
-                            <span class="list-title">${escapeHtml(row.name || "Account customer")}</span>
-                            <span class="metric-pill">${escapeHtml(row.account_code || "Code missing")}</span>
-                        </div>
-                        <div class="list-meta">${escapeHtml([
-                            row.billing_contact || "Billing contact missing",
-                            row.customer_type || "",
-                            row.terms || "Terms missing",
-                        ].filter(Boolean).join(" Â· "))}</div>
-                        <div class="inline-actions">
-                            ${renderStatusPill("", row._missingCode || row._missingContact ? "missing" : "configured")}
-                        </div>
-                    </div>
-                `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}
-            </div>
-        `;
+        return window.GreenLinkAdminAccountCustomers.renderDebtorWatchEmbedded(accountCustomers, accountCustomersModuleDeps());
     }
 
     function renderServiceDeskBriefEmbedded(memberRows, accountCustomers) {
@@ -5755,1352 +5519,352 @@
     function renderMembersWorkspace(bundle) {
         const panel = bundle.panel || "members";
         if (panel === "staff" && roleShell() === "club_admin") {
-            const rows = Array.isArray(bundle.staff?.staff) ? bundle.staff.staff : [];
-            const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
-            const memberRows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
-            return `
-                <section class="hero-card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Staff</h3>
-                            <p>Manage staff access and keep service context nearby without forcing club admins through a generic utilities page.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Staff", value: formatInteger(rows.length), meta: "Staff records in this club" },
-                        { label: "Active Debtors", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
-                        { label: "Members", value: formatInteger((bundle.members?.total || 0)), meta: "Current member records" },
-                        { label: "Club Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Current locked club context" },
-                    ])}
-                    ${renderPeopleControlCards()}
-                </section>
-                <section class="dashboard-grid">
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Staff service board</h4>
-                                <p>Club admin should manage staff from a service board, not a buried utility form.</p>
-                            </div>
-                        </div>
-                        ${renderTable(
-                            ["Name", "Role", "Operational Role", "Email"],
-                            rows.length ? rows.slice(0, 8).map(row => `
-                                <tr>
-                                    <td><strong>${escapeHtml(row.name || "")}</strong></td>
-                                    <td>${escapeHtml(row.role || "")}</td>
-                                    <td>${escapeHtml(row.operational_role || row.operation_area || "-")}</td>
-                                    <td>${escapeHtml(row.email || "")}</td>
-                                </tr>
-                            `) : [`<tr><td colspan="4"><div class="empty-state">No staff users found.</div></td></tr>`]
-                        )}
-                    </article>
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Debtor accounts</h4>
-                                <p>Billing and debtor context used in bookings should stay visible from the people workspace.</p>
-                            </div>
-                        </div>
-                        <div class="stack">
-                            ${accountCustomers.length ? accountCustomers.slice(0, 8).map(row => `
-                                <div class="list-row">
-                                    <div class="list-row-top">
-                                        <span class="list-title">${escapeHtml(row.name || "Account")}</span>
-                                        <span class="metric-pill">${escapeHtml(row.account_code || "No code")}</span>
-                                    </div>
-                                    <div class="list-meta">${escapeHtml([row.billing_contact || "", row.customer_type || "", row.terms || ""].filter(Boolean).join(" · ")) || "No billing contact set."}</div>
-                                </div>
-                            `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}
-                        </div>
-                    </article>
-                </section>
-                <section class="dashboard-grid">
-                    ${renderMemberServiceQueue(memberRows)}
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Team summary</h4>
-                                <p>Staff records, debtor readiness, and member demand should read together before the club opens the day.</p>
-                            </div>
-                        </div>
-                        ${metricCards([
-                            { label: "Operators", value: formatInteger(rows.filter(row => ["club_staff", "staff"].includes(String(row.role || "").toLowerCase())).length), meta: "Staff-side operators in this club" },
-                            { label: "Golf-facing Members", value: formatInteger(memberRows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Likely to touch tee-sheet or golf-day flow" },
-                            { label: "Configured Debtors", value: formatInteger(accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length), meta: "Account customers ready for export" },
-                            { label: "Current Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Locked club context" },
-                        ])}
-                    </article>
-                </section>
-                <section class="dashboard-grid">
-                    ${renderServiceDeskBriefCard(memberRows, accountCustomers)}
-                    ${renderDebtorWatchCard(accountCustomers)}
-                </section>
-                <section class="split-grid">
-                    <form class="form-card" id="club-staff-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Add staff</h3>
-                                <p>Club admin can add staff for the current club only.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field"><label>Name</label><input name="name" required></div>
-                            <div class="field"><label>Email</label><input name="email" type="email" required></div>
-                            <div class="field"><label>Password</label><input name="password" type="password" required></div>
-                            <div class="checkbox-card">
-                                <label><input type="checkbox" name="force_reset" value="1"> Force reset if user exists in this club</label>
-                                <p>Users cannot be moved across clubs from this shell.</p>
-                            </div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Create staff user</button>
-                        </div>
-                    </form>
-                    <section class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Current staff</h3>
-                                <p>Only this club's staff records are shown.</p>
-                            </div>
-                        </div>
-                        ${renderTable(
-                            ["Name", "Role", "Operational Role", "Email"],
-                            rows.length ? rows.map(row => `
-                                <tr>
-                                    <td><strong>${escapeHtml(row.name || "")}</strong></td>
-                                    <td>${escapeHtml(row.role || "")}</td>
-                                    <td>${escapeHtml(row.operational_role || row.operation_area || "-")}</td>
-                                    <td>${escapeHtml(row.email || "")}</td>
-                                </tr>
-                            `) : [`<tr><td colspan="4"><div class="empty-state">No staff users found.</div></td></tr>`]
-                        )}
-                    </section>
-                </section>
-            `;
+            return window.GreenLinkAdminStaffPanel.renderPanel(bundle, staffPanelModuleDeps());
         }
-
-        const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
-        const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
-        const activeCount = rows.filter(row => String(row.membership_status || "").toLowerCase() === "active").length;
-        const flaggedCount = rows.filter(row => ["hold", "inactive", "defaulter", "resigned"].includes(String(row.membership_status || "").toLowerCase())).length;
-        return `
-            <section class="hero-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>People</h3>
-                        <p>Search first, then act. Member context, debtor readiness, and service pressure should sit together without opening a giant raw list by default.</p>
-                    </div>
-                </div>
-                ${metricCards([
-                    { label: bundle.membersUi?.query ? "Matches" : "People", value: formatInteger(bundle.membersUi?.query ? (bundle.members?.total || rows.length) : rows.length), meta: bundle.membersUi?.query ? "Matching people in current club scope" : "Recent member rows in club scope" },
-                    { label: "Active", value: formatInteger(activeCount), meta: "Active memberships" },
-                    { label: "Flagged", value: formatInteger(flaggedCount), meta: "Hold, inactive, or defaulter states" },
-                    { label: "Debtor Accounts", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
-                ])}
-                ${renderPeopleControlCards()}
-            </section>
-            ${renderMembersSearchForm(bundle)}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>${bundle.membersUi?.query ? "People search results" : "Recent member service board"}</h4>
-                            <p>${bundle.membersUi?.query ? "Search results stay operational: member context, booking demand, and service risk in one table." : "Recent activity, spend, and operation context stay visible before you drop into full records."}</p>
-                        </div>
-                    </div>
-                    ${renderTable(
-                        ["Member", "Operation", "Status", "Bookings", "Spend"],
-                        rows.slice(0, 10).length ? rows.slice(0, 10).map(row => `
-                            <tr>
-                                <td><strong>${escapeHtml(row.name || "")}</strong><div class="table-meta">${escapeHtml(row.member_number || row.email || "")}</div></td>
-                                <td>${escapeHtml(MODULE_LABELS[row.primary_operation] || row.primary_operation || "-")}</td>
-                                <td>${escapeHtml(row.membership_status || "-")}</td>
-                                <td>${escapeHtml(formatInteger(row.bookings_count || 0))}</td>
-                                <td>${escapeHtml(formatCurrency(row.total_spent || 0))}</td>
-                            </tr>
-                        `) : [`<tr><td colspan="5"><div class="empty-state">No members found.</div></td></tr>`]
-                    )}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Account customers</h4>
-                            <p>The old debtor/account-customer context needs to stay visible from the member service side.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${accountCustomers.length ? accountCustomers.slice(0, 8).map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(row.name || "Account")}</span>
-                                    <span class="metric-pill">${escapeHtml(row.account_code || "No code")}</span>
-                                </div>
-                                <div class="list-meta">${escapeHtml([row.billing_contact || "", row.customer_type || "", row.terms || ""].filter(Boolean).join(" · ")) || "No billing contact set."}</div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No active account customers found.</div>`}
-                    </div>
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderMemberServiceQueue(rows)}
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Summary</h4>
-                            <p>Member demand, flagged statuses, and debtor readiness should be visible before staff jump into golf, communications, or finance.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Golf Members", value: formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
-                        { label: "High Activity", value: formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
-                        { label: "Configured Debtors", value: formatInteger(accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length), meta: "Account customers ready for export" },
-                        { label: "Comms Follow-up", value: formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
-                    ])}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderServiceDeskBriefCard(rows, accountCustomers)}
-                ${renderDebtorWatchCard(accountCustomers)}
-            </section>
-            <section class="split-grid">
-                ${roleShell() === "club_admin" ? `
-                    <form class="form-card" id="member-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Add member</h3>
-                                <p>Fast club-side member creation with the fields staff actually use first.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field"><label>First Name</label><input name="first_name" required></div>
-                            <div class="field"><label>Last Name</label><input name="last_name" required></div>
-                            <div class="field"><label>Email</label><input name="email" type="email"></div>
-                            <div class="field"><label>Member Number</label><input name="member_number"></div>
-                            <div class="field">
-                                <label>Primary Operation</label>
-                                <select name="primary_operation">
-                                    <option value="golf">Golf</option>
-                                    ${operationModules().map(key => `<option value="${escapeHtml(key)}">${escapeHtml(MODULE_LABELS[key] || key)}</option>`).join("")}
-                                </select>
-                            </div>
-                            <div class="field"><label>Home Club</label><input name="home_club" value="${escapeHtml(activeClub()?.display_name || activeClub()?.name || "")}"></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Create member</button>
-                        </div>
-                    </form>
-                ` : ""}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Members</h3>
-                            <p>Sorted by operational recency to keep service work practical.</p>
-                        </div>
-                    </div>
-                    ${renderTable(
-                        ["Member", "Operation", "Status", "Bookings", "Spend"],
-                        rows.length ? rows.map(row => `
-                            <tr>
-                                <td><strong>${escapeHtml(row.name || "")}</strong><div class="table-meta">${escapeHtml(row.member_number || row.email || "")}</div></td>
-                                <td>${escapeHtml(MODULE_LABELS[row.primary_operation] || row.primary_operation || "-")}</td>
-                                <td>${escapeHtml(row.membership_status || "-")}</td>
-                                <td>${escapeHtml(formatInteger(row.bookings_count || 0))}</td>
-                                <td>${escapeHtml(formatCurrency(row.total_spent || 0))}</td>
-                            </tr>
-                        `) : [`<tr><td colspan="5"><div class="empty-state">No members found.</div></td></tr>`]
-                    )}
-                </section>
-            </section>
-        `;
+        return window.GreenLinkAdminMembersPanel.renderLegacyPanel(bundle, membersPanelModuleDeps());
     }
 
     function renderStandardizedMembersWorkspace(bundle) {
         const panel = bundle.panel || "members";
         if (panel === "staff" && roleShell() === "club_admin") {
-            const rows = Array.isArray(bundle.staff?.staff) ? bundle.staff.staff : [];
-            const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
-            const memberRows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
-            const activeOperators = rows.filter(row => ["club_staff", "staff"].includes(String(row.role || "").toLowerCase())).length;
-            const golfFacingMembers = memberRows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length;
-            const configuredDebtors = accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length;
-            return `
-                <section class="hero-card page-system-hero">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Staff</h3>
-                            <p>Manage club-side operators from one structured page: identity first, related people pages second, then the service and access blocks that matter.</p>
-                        </div>
-                    </div>
-                    ${renderFamilySubnav("members", { label: "People pages" })}
-                    ${metricCards([
-                        { label: "Staff", value: formatInteger(rows.length), meta: "Staff records in this club" },
-                        { label: "Active Debtors", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
-                        { label: "Members", value: formatInteger((bundle.members?.total || 0)), meta: "Current member records" },
-                        { label: "Club Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Current locked club context" },
-                    ])}
-                    ${renderPageActionRow([
-                        { label: "Add staff", tone: "secondary", workblock: "staff-add-workblock" },
-                    ])}
-                </section>
-                <section class="workblock-stack">
-                    ${renderWorkblock({
-                        id: "staff-board-workblock",
-                        title: "Staff service board",
-                        copy: "Keep operator visibility high before club admins open lower-priority detail.",
-                        badge: "Open",
-                        open: true,
-                        body: renderStaffRowsTable(rows, {
-                            limit: 8,
-                            actions: row => `
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-staff="${escapeHtml(String(row.id || 0))}">Edit</button>
-                                </div>
-                            `,
-                        }),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-current-workblock",
-                        title: "Current staff",
-                        copy: "Full club staff listing in the current locked club scope.",
-                        badge: "Open",
-                        open: true,
-                        body: renderStaffRowsTable(rows, {
-                            actions: row => `
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-staff="${escapeHtml(String(row.id || 0))}">Edit</button>
-                                </div>
-                            `,
-                        }),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-add-workblock",
-                        title: "Add or update staff",
-                        copy: "Create new operators or update an existing club staff user without leaving the page.",
-                        badge: "Collapsed",
-                        body: `
-                            <form class="workblock-form" id="club-staff-form">
-                                <input type="hidden" name="user_id" value="">
-                                <div class="field-grid">
-                                    <div class="field"><label>Name</label><input name="name" required></div>
-                                    <div class="field"><label>Email</label><input name="email" type="email" required></div>
-                                    <div class="field"><label>Password</label><input name="password" type="password"></div>
-                                    <div class="checkbox-card">
-                                        <label><input type="checkbox" name="force_reset" value="1"> Force reset if user exists in this club</label>
-                                        <p>Only applies when reusing an existing user in this club. Email stays locked on updates.</p>
-                                    </div>
-                                </div>
-                                <div class="button-row">
-                                    <button type="submit" class="button">Save staff user</button>
-                                    <button type="button" class="button secondary" data-clear-staff-form="1">Clear</button>
-                                </div>
-                            </form>
-                        `,
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-debtors-workblock",
-                        title: "Debtor accounts",
-                        copy: "Billing and debtor context used in bookings stays nearby, but off the first screen.",
-                        badge: "Collapsed",
-                        body: renderAccountCustomerStack(accountCustomers, { limit: 8, emptyText: "No active debtor accounts found." }),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-queue-workblock",
-                        title: "Member service queue",
-                        copy: "Cross-check staff capacity against the current people follow-up load.",
-                        badge: "Collapsed",
-                        body: renderMemberServiceQueueEmbedded(memberRows),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-posture-workblock",
-                        title: "Team summary",
-                        copy: "Staff records, debtor readiness, and member demand should read together without dominating the opening view.",
-                        badge: "Collapsed",
-                        body: metricCards([
-                            { label: "Operators", value: formatInteger(activeOperators), meta: "Staff-side operators in this club" },
-                            { label: "Golf-facing Members", value: formatInteger(golfFacingMembers), meta: "Likely to touch tee-sheet or golf-day flow" },
-                            { label: "Configured Debtors", value: formatInteger(configuredDebtors), meta: "Account customers ready for export" },
-                            { label: "Current Scope", value: escapeHtml(activeClub()?.display_name || activeClub()?.name || "Club"), meta: "Locked club context" },
-                        ]),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-brief-workblock",
-                        title: "Desk summary",
-                        copy: "Golf demand and debtor readiness can stay available without occupying the initial screen.",
-                        badge: "Collapsed",
-                        body: renderServiceDeskBriefEmbedded(memberRows, accountCustomers),
-                    })}
-                    ${renderWorkblock({
-                        id: "staff-watch-workblock",
-                        title: "Debtor watch",
-                        copy: "Use this when billing readiness, codes, or contacts need attention.",
-                        badge: "Collapsed",
-                        body: renderDebtorWatchEmbedded(accountCustomers),
-                    })}
-                </section>
-            `;
+            return window.GreenLinkAdminStaffPanel.renderPanel(bundle, staffPanelModuleDeps());
         }
+        return window.GreenLinkAdminMembersPanel.renderPanel(bundle, membersPanelModuleDeps());
+    }
 
-        const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
-        const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
-        const activeCount = rows.filter(row => String(row.membership_status || "").toLowerCase() === "active").length;
-        const flaggedCount = rows.filter(row => ["hold", "inactive", "defaulter", "resigned"].includes(String(row.membership_status || "").toLowerCase())).length;
-        const hasQuery = Boolean(String(bundle.membersUi?.query || "").trim());
-        const configuredDebtors = accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length;
-        return `
-            <section class="hero-card page-system-hero">
-                <div class="panel-head">
-                    <div>
-                        <h3>People</h3>
-                        <p>Search first, then act. Related people pages, service state, and the main club actions now sit above the longer member and debtor detail.</p>
-                    </div>
-                </div>
-                ${renderFamilySubnav("members", { label: "People pages" })}
-                ${metricCards([
-                    { label: hasQuery ? "Matches" : "People", value: formatInteger(hasQuery ? (bundle.members?.total || rows.length) : rows.length), meta: hasQuery ? "Matching people in current club scope" : "Recent member rows in club scope" },
-                    { label: "Active", value: formatInteger(activeCount), meta: "Active memberships" },
-                    { label: "Flagged", value: formatInteger(flaggedCount), meta: "Hold, inactive, or defaulter states" },
-                    { label: "Debtor Accounts", value: formatInteger(accountCustomers.length), meta: "Active account-customer records" },
-                ])}
-                ${renderPageActionRow([
-                    { label: "Search people", tone: "secondary", workblock: "people-search-workblock" },
-                    roleShell() === "club_admin" ? { label: "Add member", tone: "ghost", workblock: "people-add-workblock" } : null,
-                ])}
-            </section>
-            <section class="workblock-stack">
-                ${renderWorkblock({
-                    id: "people-search-workblock",
-                    title: "Search",
-                    copy: "Start with search and status filters before opening long member lists.",
-                    badge: "Open",
-                    open: true,
-                    body: renderMembersSearchForm(bundle, { embedded: true }),
-                })}
-                ${renderWorkblock({
-                    id: "people-results-workblock",
-                    title: hasQuery ? "Search results" : "Recent member service board",
-                    copy: hasQuery
-                        ? "Search results stay operational: member context, booking demand, and service risk in one table."
-                        : "Recent activity, spend, and operation context stay available without taking over the opening screen.",
-                    badge: hasQuery ? "Open" : "Collapsed",
-                    open: hasQuery,
-                    body: renderMemberRowsTable(rows, { limit: 10 }),
-                })}
-                ${renderWorkblock({
-                    id: "people-queue-workblock",
-                    title: "Priority service queue",
-                    copy: "Keep likely member follow-up visible before you drill into lower-priority detail.",
-                    badge: !hasQuery ? "Open" : "Collapsed",
-                    open: !hasQuery,
-                    body: renderMemberServiceQueueEmbedded(rows),
-                })}
-                ${renderWorkblock({
-                    id: "people-accounts-workblock",
-                    title: "Account customers",
-                    copy: "Debtor and account-customer context stays available, but off the opening view.",
-                    badge: "Collapsed",
-                    body: renderAccountCustomerStack(accountCustomers, { limit: 8 }),
-                })}
-                ${renderWorkblock({
-                    id: "people-posture-workblock",
-                        title: "Summary",
-                    copy: "Use this block when member demand, follow-up pressure, and debtor readiness need a quick read.",
-                    badge: "Collapsed",
-                    body: metricCards([
-                        { label: "Golf Members", value: formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
-                        { label: "High Activity", value: formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
-                        { label: "Configured Debtors", value: formatInteger(configuredDebtors), meta: "Account customers ready for export" },
-                        { label: "Comms Follow-up", value: formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
-                    ]),
-                })}
-                ${renderWorkblock({
-                    id: "people-brief-workblock",
-                        title: "Desk summary",
-                    copy: "Front desk golf demand and debtor readiness stay one click away instead of sitting in the opening stack.",
-                    badge: "Collapsed",
-                    body: renderServiceDeskBriefEmbedded(rows, accountCustomers),
-                })}
-                ${renderWorkblock({
-                    id: "people-watch-workblock",
-                    title: "Debtor watch",
-                    copy: "Open this when codes, contacts, or account terms need follow-up.",
-                    badge: "Collapsed",
-                    body: renderDebtorWatchEmbedded(accountCustomers),
-                })}
-                ${roleShell() === "club_admin" ? renderWorkblock({
-                    id: "people-add-workblock",
-                    title: "Add member",
-                    copy: "Member creation is still available, but it no longer crowds the primary service screen.",
-                    badge: "Collapsed",
-                    body: `
-                        <form class="workblock-form" id="member-form">
-                            <div class="field-grid">
-                                <div class="field"><label>First Name</label><input name="first_name" required></div>
-                                <div class="field"><label>Last Name</label><input name="last_name" required></div>
-                                <div class="field"><label>Email</label><input name="email" type="email"></div>
-                                <div class="field"><label>Member Number</label><input name="member_number"></div>
-                                <div class="field">
-                                    <label>Primary Operation</label>
-                                    <select name="primary_operation">
-                                        <option value="golf">Golf</option>
-                                        ${operationModules().map(key => `<option value="${escapeHtml(key)}">${escapeHtml(MODULE_LABELS[key] || key)}</option>`).join("")}
-                                    </select>
-                                </div>
-                                <div class="field"><label>Home Club</label><input name="home_club" value="${escapeHtml(activeClub()?.display_name || activeClub()?.name || "")}"></div>
-                            </div>
-                            <div class="button-row">
-                                <button type="submit" class="button">Create member</button>
-                            </div>
-                        </form>
-                    `,
-                }) : ""}
-                ${renderWorkblock({
-                    id: "people-members-workblock",
-                    title: "Members",
-                    copy: "Full member table remains available for deeper review after the service-first blocks.",
-                    badge: "Collapsed",
-                    body: renderMemberRowsTable(rows, { emptyText: "No members found." }),
-                })}
-            </section>
-        `;
+    function communicationModuleDeps() {
+        return {
+            MODULE_LABELS,
+            closeStatusMeta,
+            document: window.document,
+            emptyFinanceBasePayload,
+            escapeHtml,
+            fetchJson,
+            formatCurrency,
+            formatDateTime,
+            formatInteger,
+            invalidateCommunicationsWorkspaceList,
+            loadSharedRecentMembersPreview,
+            loadSharedCommunicationsWorkspaceList,
+            loadOperationalAlertsShared,
+            loadSharedFinanceBase,
+            metricCards,
+            positiveInt,
+            postJson,
+            refreshActiveCommunicationsWorkspace,
+            renderPageHero,
+            renderStatusPill,
+            roleShell,
+            showToast,
+            state,
+            todayYmd,
+            toDate,
+            toDateTimeLocalValue,
+        };
     }
 
     async function communicationsBundle(options = {}) {
-        const signal = options.signal;
-        const shell = roleShell();
-        const query = shell === "staff" ? "/api/admin/communications?status=published&limit=50" : "/api/admin/communications?limit=50";
-        const shared = await loadSharedDashboardData({ signal });
-        const [communications, members] = await Promise.all([
-            fetchJson(query, { signal }),
-            fetchJson("/api/admin/members?limit=20&sort=recent_activity", { signal }),
-        ]);
-        return { ...shared, communications, members, date: shared.date };
-    }
-
-    function renderCommunicationsCadenceCard(payload) {
-        const rows = Array.isArray(payload.communications?.communications) ? payload.communications.communications : [];
-        const alerts = payload.alerts || {};
-        const closeMeta = closeStatusMeta(payload);
-        const highAlerts = Number(alerts?.summary?.high || 0);
-        const alertsMeta = alerts?._error
-            ? "Operational alerts are temporarily unavailable."
-            : "Operational blockers that may require a notice";
-        const publishedToday = rows.filter(row => {
-            const stamp = toDate(row.published_at || row.updated_at);
-            if (!stamp) return false;
-            return stamp.toDateString() === new Date().toDateString();
-        }).length;
-        return `
-            <article class="dashboard-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Message summary</h4>
-                        <p>Club communications should support the day’s run-sheet: live notices, operational blockers, and clean handover when finance closes.</p>
-                    </div>
-                </div>
-                ${metricCards([
-                    { label: "Published Today", value: formatInteger(publishedToday), meta: "Messages pushed during the current day" },
-                    { label: "Pinned Notices", value: formatInteger(rows.filter(row => Boolean(row.pinned)).length), meta: "Priority notices still surfaced" },
-                    { label: "High Alerts", value: formatInteger(highAlerts), meta: alertsMeta },
-                    { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
-                ])}
-            </article>
-        `;
-    }
-
-    function renderAudienceFollowupCard(payload) {
-        const rows = Array.isArray(payload.members?.members) ? payload.members.members : [];
-        const flagged = rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase()));
-        const golfDemand = rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf" && Number(row.bookings_count || 0) >= 2);
-        const highValue = rows
-            .slice()
-            .sort((left, right) => Number(right.total_spent || 0) - Number(left.total_spent || 0))
-            .slice(0, 4);
-        return `
-            <article class="dashboard-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Audience follow-up</h4>
-                        <p>Messages should reflect real club demand: flagged members, active golf traffic, and high-value guests who need clean communication.</p>
-                    </div>
-                </div>
-                ${metricCards([
-                    { label: "Flagged Members", value: formatInteger(flagged.length), meta: "Hold, inactive, or defaulter states" },
-                    { label: "Golf Demand", value: formatInteger(golfDemand.length), meta: "Golf-linked members with current booking activity" },
-                    { label: "Recent Members", value: formatInteger(rows.length), meta: "Latest member records in service scope" },
-                    { label: "Top Spenders", value: formatInteger(highValue.length), meta: "Recent high-value member records" },
-                ])}
-                <div class="stack">
-                    ${highValue.length ? highValue.map(row => `
-                        <div class="list-row">
-                            <div class="list-row-top">
-                                <span class="list-title">${escapeHtml(row.name || "Member")}</span>
-                                ${renderStatusPill("", row.membership_status || "active")}
-                            </div>
-                            <div class="list-meta">${escapeHtml([
-                                row.member_number || row.email || "",
-                                MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
-                                `${formatInteger(row.bookings_count || 0)} booking(s)`,
-                                formatCurrency(row.total_spent || 0),
-                            ].filter(Boolean).join(" · "))}</div>
-                        </div>
-                    `).join("") : `<div class="empty-state">No member follow-up records are available yet.</div>`}
-                </div>
-            </article>
-        `;
-    }
-
-    function renderCommunicationsWorkspace(payload) {
-        const rows = Array.isArray(payload.communications?.communications) ? payload.communications.communications : [];
-        const canEdit = roleShell() === "club_admin";
-        const published = rows.filter(row => String(row.status || "").toLowerCase() === "published").length;
-        const drafts = rows.filter(row => String(row.status || "").toLowerCase() === "draft").length;
-        const pinned = rows.filter(row => Boolean(row.pinned)).length;
-        return `
-            ${renderPageHero({
-                title: "Communications",
-                copy: "Manage current club notices and message status from one operating page.",
-                metrics: [
-                    { label: "Messages", value: formatInteger(rows.length), meta: "Total club communications" },
-                    { label: "Published", value: formatInteger(published), meta: "Visible to members or staff" },
-                    { label: "Drafts", value: formatInteger(drafts), meta: "Still being prepared" },
-                    { label: "Pinned", value: formatInteger(pinned), meta: "Priority notices pinned to the top" },
-                ],
-            })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Publishing board</h4>
-                            <p>Show live publishing state clearly, not just an editor and a list.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${rows.length ? rows.slice(0, 8).map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(row.title || "Communication")}</span>
-                                    ${renderStatusPill("", row.status || "draft")}
-                                </div>
-                                <div class="list-meta">${escapeHtml(`${row.kind || ""} · ${row.audience || ""} · ${formatDateTime(row.published_at || row.updated_at)}`)}</div>
-                                <div class="list-meta">${escapeHtml(row.summary || row.body || "")}</div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No communications found for this club.</div>`}
-                    </div>
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Audience summary</h4>
-                            <p>Keep member and staff communication context visible while managing messages.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Members", value: formatInteger(rows.filter(row => ["members", "all"].includes(String(row.audience || "").toLowerCase())).length), meta: "Messages reaching members" },
-                        { label: "Staff", value: formatInteger(rows.filter(row => ["staff", "all"].includes(String(row.audience || "").toLowerCase())).length), meta: "Messages reaching staff" },
-                        { label: "News", value: formatInteger(rows.filter(row => String(row.kind || "").toLowerCase() === "news").length), meta: "News-style communications" },
-                        { label: "Announcements", value: formatInteger(rows.filter(row => String(row.kind || "").toLowerCase() === "announcement").length), meta: "Operational announcements" },
-                        ])}
-                    </article>
-                </section>
-                <section class="dashboard-grid">
-                    ${renderCommunicationsCadenceCard(payload)}
-                    ${renderAudienceFollowupCard(payload)}
-                </section>
-                <section class="split-grid">
-                ${canEdit ? `
-                    <form class="form-card" id="communication-form">
-                        <input type="hidden" name="communication_id" value="">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Create or update communication</h3>
-                                <p>Club communications are grouped into one workspace with draft, publish, pin, and archive control.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field">
-                                <label>Kind</label>
-                                <select name="kind">
-                                    <option value="announcement">Announcement</option>
-                                    <option value="news">News</option>
-                                    <option value="message">Message</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Audience</label>
-                                <select name="audience">
-                                    <option value="members">Members</option>
-                                    <option value="staff">Staff</option>
-                                    <option value="all">All</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Status</label>
-                                <select name="status">
-                                    <option value="draft">Draft</option>
-                                    <option value="published">Published</option>
-                                    <option value="archived">Archived</option>
-                                </select>
-                            </div>
-                            <div class="checkbox-card">
-                                <label><input type="checkbox" name="pinned" value="1"> Pin message</label>
-                                <p>Pinned items stay at the top of member or staff feeds.</p>
-                            </div>
-                            <div class="field"><label>Title</label><input name="title" required></div>
-                            <div class="field"><label>Summary</label><input name="summary"></div>
-                            <div class="field"><label>CTA Label</label><input name="cta_label"></div>
-                            <div class="field"><label>CTA URL</label><input name="cta_url"></div>
-                            <div class="field"><label>Expires At</label><input name="expires_at" type="datetime-local"></div>
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <label>Body</label>
-                                <textarea name="body" required></textarea>
-                            </div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Save communication</button>
-                            <button type="button" class="button secondary" data-clear-communication-form="1">Clear</button>
-                        </div>
-                    </form>
-                ` : `
-                    <section class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Staff view</h3>
-                                <p>Staff can read published club notices without receiving admin-only messaging controls.</p>
-                            </div>
-                        </div>
-                        <div class="detail-row"><span class="row-key">Scope</span><span class="row-value">Published communications only</span></div>
-                    </section>
-                `}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Current communications</h3>
-                            <p>Only this club's communications are shown here.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${rows.length ? rows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(row.title || "Communication")}</span>
-                                    ${renderStatusPill("", row.status || "draft")}
-                                </div>
-                                <div class="list-meta">${escapeHtml(`${row.kind || ""} · ${row.audience || ""} · ${formatDateTime(row.published_at || row.updated_at)}`)}</div>
-                                <div class="list-meta">${escapeHtml(row.summary || row.body || "")}</div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No communications found for this club.</div>`}
-                    </div>
-                </section>
-                ${canEdit ? `
-                    <section class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Manage message state</h3>
-                                <p>Edit the current record, publish it, archive it, or change pin state without leaving the page.</p>
-                            </div>
-                        </div>
-                        <div class="stack">
-                            ${rows.length ? rows.map(row => `
-                                <div class="list-row">
-                                    <div class="list-row-top">
-                                        <span class="list-title">${escapeHtml(`${row.title || "Communication"} #${row.id || "-"}`)}</span>
-                                        ${renderStatusPill("", row.status || "draft")}
-                                    </div>
-                                    <div class="list-meta">${escapeHtml(`${row.kind || ""} · ${row.audience || ""} · ${row.pinned ? "Pinned" : "Not pinned"}`)}</div>
-                                    <div class="inline-actions">
-                                        <button type="button" class="button secondary" data-edit-communication="${escapeHtml(String(row.id))}">Edit</button>
-                                        <button type="button" class="button ghost" data-communication-status="${escapeHtml(String(row.id))}" data-status-value="published">Publish</button>
-                                        <button type="button" class="button ghost" data-communication-status="${escapeHtml(String(row.id))}" data-status-value="archived">Archive</button>
-                                        <button type="button" class="button ghost" data-communication-pin="${escapeHtml(String(row.id))}" data-pin-value="${row.pinned ? "0" : "1"}">${row.pinned ? "Unpin" : "Pin"}</button>
-                                    </div>
-                                </div>
-                            `).join("") : `<div class="empty-state">No communication records available to manage.</div>`}
-                        </div>
-                    </section>
-                ` : ""}
-            </section>
-        `;
-    }
-
-    function recentLedgerWindow() {
-        const end = new Date();
-        const start = new Date(end.getTime() - (14 * 24 * 60 * 60 * 1000));
-        return {
-            start: start.toISOString(),
-            end: end.toISOString(),
-        };
-    }
-
-    function renderLedgerWorkspace(bundle) {
-        const payload = bundle.ledger || {};
-        const rows = Array.isArray(payload.ledger_entries) ? payload.ledger_entries : [];
-        const bookingRows = Array.isArray(bundle.ledgerBookings?.bookings) ? bundle.ledgerBookings.bookings : [];
-        const exportedCount = rows.filter(row => Boolean(row.pastel_synced)).length;
-        const pendingCount = rows.filter(row => !row.pastel_synced).length;
-        const paidBookings = bookingRows.filter(row => ["checked_in", "completed"].includes(String(row.status || "").trim().toLowerCase()));
-        const unresolved = paidBookings.filter(row => Number(row.ledger_entry_count || 0) <= 0);
-        return `
-            ${renderPageHero({
-                title: "Ledger & Reconciliation",
-                copy: "Clear finance exceptions before export so paid booking states and ledger rows stay aligned.",
-                workspace: "reports",
-                subnavLabel: "Finance pages",
-                meta: renderInsightMeta("Ledger integrity and export guidance live"),
-                metrics: [
-                    { label: "Paid Bookings", value: formatInteger(paidBookings.length), meta: `Paid-state golf bookings for ${escapeHtml(formatDate(bundle.date))}` },
-                    { label: "Missing Paid Ledger", value: formatInteger(unresolved.length), meta: unresolved.length ? "Paid-status bookings still need a ledger row" : "No paid booking blockers found" },
-                    { label: "Pending Export", value: formatInteger(pendingCount), meta: "Rows not yet marked exported" },
-                    { label: "Ready for Export", value: unresolved.length ? "Blocked" : "Ready", meta: unresolved.length ? "Resolve exceptions before cashbook export" : "Ledger is clear for export" },
-                ],
-                body: payload._error ? `<div class="empty-state">${escapeHtml(payload._error)}</div>` : "",
-            })}
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Exceptions to resolve</h4>
-                        <p>Resolve paid bookings missing ledger support before moving to Cashbook &amp; Day Close.</p>
-                    </div>
-                </div>
-                ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 2 }))}
-                <div class="stack">
-                    ${unresolved.length ? unresolved.slice(0, 12).map(row => `
-                        <div class="list-row">
-                            <div class="list-row-top">
-                                <span class="list-title">${escapeHtml(row.player_name || "Booking")}</span>
-                                ${renderStatusPill("", "missing")}
-                            </div>
-                            <div class="list-meta">${escapeHtml(`${formatTime(row.tee_time || "")} | ${row.status || "paid"} | ${formatCurrency(row.price || 0)} | ${row.club_card || "No account code"}`)}</div>
-                            <div class="inline-actions">
-                                <button type="button" class="button secondary" data-ledger-repair="${escapeHtml(String(row.id || 0))}" data-ledger-status="${escapeHtml(String(row.status || "checked_in"))}">Repair ledger</button>
-                                <button type="button" class="button ghost" data-ledger-payment="${escapeHtml(String(row.id || 0))}">Payment</button>
-                                <button type="button" class="button ghost" data-ledger-account="${escapeHtml(String(row.id || 0))}">Account</button>
-                            </div>
-                        </div>
-                    `).join("") : `<div class="empty-state">No ledger exceptions need attention for this date.</div>`}
-                </div>
-            </section>
-            <section class="dashboard-grid">
-                ${renderAccountingHandoffCard(bundle)}
-                ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Recent ledger entries</h4>
-                        <p>The payment audit sits between tee-sheet operations and CSV export, exactly where club finance needs it.</p>
-                    </div>
-                </div>
-                ${renderTable(
-                    ["Created", "Booking", "Description", "Amount", "Exported"],
-                    rows.length ? rows.map(row => `
-                        <tr>
-                            <td>${escapeHtml(formatDateTime(row.created_at || ""))}</td>
-                            <td>${escapeHtml(row.booking_id || "-")}</td>
-                            <td>${escapeHtml(row.description || "-")}</td>
-                            <td>${escapeHtml(formatCurrency(row.amount || 0))}</td>
-                            <td>${renderStatusPill("", row.pastel_synced ? "exported" : "pending")}</td>
-                        </tr>
-                    `) : [`<tr><td colspan="5"><div class="empty-state">No ledger entries found in the current audit window.</div></td></tr>`]
-                )}
-            </section>
-        `;
-    }
-
-    function renderCashbookWorkspace(bundle) {
-        const date = bundle.date || todayYmd();
-        const preview = bundle.preview || {};
-        const summary = bundle.summary || {};
-        const proShop = bundle.proShop || {};
-        const ledgerRows = Array.isArray(bundle.cashbookLedger?.ledger_entries) ? bundle.cashbookLedger.ledger_entries : [];
-        const closeStatus = bundle.closeStatus || {};
-        const settings = bundle.settings || {};
-        const previewLines = Array.isArray(preview.journal_lines) ? preview.journal_lines : [];
-        const previewError = String(preview._error || "");
-        const unexportedCount = ledgerRows.filter(row => !row.pastel_synced).length;
-        const exportedCount = ledgerRows.filter(row => Boolean(row.pastel_synced)).length;
-        const exportState = closeStatus.is_closed
-            ? "Closed"
-            : previewError
-                ? "Blocked"
-                : unexportedCount > 0
-                    ? "Needs export"
-                    : exportedCount > 0
-                        ? "Exported"
-                        : "No payments";
-        const closeReady = !previewError && unexportedCount === 0;
-        return `
-            ${renderPageHero({
-                title: "Cashbook & Day Close",
-                copy: "Preview, export, close, and reopen the selected day without leaving the club finance chain.",
-                workspace: "reports",
-                subnavLabel: "Finance pages",
-                meta: `${renderInsightMeta("Close readiness and integrity guidance live")}${renderStatusPill("Day", closeStatus.is_closed ? "closed" : "open")}<span class="metric-pill">${escapeHtml(formatDate(date))}</span>`,
-                metrics: [
-                    { label: "Export State", value: exportState, meta: closeReady ? "Daily journal can be closed after export review" : "Resolve export blockers before close" },
-                    { label: "Journal Preview", value: formatInteger(previewLines.length), meta: previewError ? "Preview currently unavailable" : "Rows ready in preview" },
-                    { label: "Unexported Rows", value: formatInteger(unexportedCount), meta: exportedCount ? `${formatInteger(exportedCount)} already exported` : "Current daily ledger rows" },
-                    { label: "Pro Shop Payments", value: formatInteger(proShop.transaction_count || 0), meta: "Sales ready for separate export" },
-                ],
-                body: !closeReady ? `
-                    <div class="inline-alert bad">
-                        <strong>Close blocked.</strong>
-                        <span>${escapeHtml(previewError || (unexportedCount > 0 ? "Export the daily CSV before closing the day." : "Resolve cashbook blockers before close."))}</span>
-                    </div>
-                ` : "",
-                actions: [
-                    { label: "Export daily CSV" },
-                    { label: "Export pro shop CSV", tone: "secondary", attrs: `data-export-pro-shop="${escapeHtml(date)}"` },
-                    closeStatus.is_closed
-                        ? { label: "Reopen day", tone: "ghost", attrs: `data-reopen-day="${escapeHtml(date)}"` }
-                        : { label: "Close day", tone: "ghost", attrs: `data-close-day="${escapeHtml(date)}"` },
-                ].map(action => action.label === "Export daily CSV"
-                    ? { ...action, attrs: `data-export-cashbook="${escapeHtml(date)}"` }
-                    : action),
-            })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Export readiness</h4>
-                            <p>Accounting settings, export state, and close state need to be readable before the day is handed over.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Daily Payments", value: formatCurrency(summary.total_payments || 0), meta: `${formatInteger(summary.records?.length || 0)} payment records` },
-                        { label: "Tax", value: formatCurrency(summary.total_tax || 0), meta: "Daily tax total" },
-                        { label: "Close State", value: closeStatus.is_closed ? "Closed" : "Open", meta: closeStatus.closed_at ? formatDateTime(closeStatus.closed_at) : "No close recorded" },
-                        { label: "VAT Rate", value: settings.vat_rate != null ? `${Math.round(Number(settings.vat_rate || 0) * 100)}%` : "-", meta: "Accounting settings currently applied" },
-                    ])}
-                    ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 1 }))}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Close controls</h4>
-                            <p>Close should only follow a clean preview and a completed daily export.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        <div class="detail-row"><span class="row-key">Green Fees GL</span><span class="row-value">${escapeHtml(settings.green_fees_gl || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Cashbook</span><span class="row-value">${escapeHtml(settings.cashbook_name || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Close Batch</span><span class="row-value">${escapeHtml(closeStatus.export_batch_id || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Export File</span><span class="row-value">${escapeHtml(closeStatus.export_filename || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Preview State</span><span class="row-value">${escapeHtml(previewError || (closeReady ? "Ready for review" : "Needs action"))}</span></div>
-                    </div>
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
-                ${renderReportingRhythmCard(bundle)}
-                ${renderAccountingHandoffCard(bundle)}
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Journal preview</h4>
-                        <p>Preview what will import before downloading the CSV for the club's accounting package.</p>
-                    </div>
-                </div>
-                ${renderTable(
-                    ["Date", "Reference", "Description", "Account", "Amount"],
-                    previewLines.length ? previewLines.slice(0, 10).map(row => `
-                        <tr>
-                            <td>${escapeHtml(row.transaction_date || row.date || "-")}</td>
-                            <td>${escapeHtml(row.reference || row.ref || "-")}</td>
-                            <td>${escapeHtml(row.description || "-")}</td>
-                            <td>${escapeHtml(row.account || row.gl_account || "-")}</td>
-                            <td>${escapeHtml(String(row.amount || row.debit || row.credit || "-"))}</td>
-                        </tr>
-                    `) : [`<tr><td colspan="5"><div class="empty-state">${escapeHtml(previewError || "No journal preview is available for this date yet.")}</div></td></tr>`]
-                )}
-            </section>
-        `;
+        return window.GreenLinkAdminCommunications.bundle(options, communicationModuleDeps());
     }
 
     function renderImportsWorkspace(bundle) {
-        const rows = Array.isArray(bundle.imports?.imports) ? bundle.imports.imports : [];
-        const settingsRows = Array.isArray(bundle.importSettings) ? bundle.importSettings : [];
-        const summary = bundle.importsHealth || summarizeImportsHealth(rows, settingsRows);
-        const firstSettings = settingsRows[0] || { stream: "other", settings: {} };
-        const initialSettings = firstSettings.settings || {};
-        return `
-            ${renderPageHero({
-                title: "Imports & Data Health",
-                copy: "Keep stream mappings and import history clean enough that finance output can be trusted.",
-                workspace: "reports",
-                subnavLabel: "Finance pages",
-                meta: renderInsightMeta("Import freshness and mapping guidance live"),
-                metrics: [
-                    { label: "Recent Imports", value: formatInteger(rows.length), meta: "Latest import batches in club scope" },
-                    { label: "Configured Streams", value: formatInteger(summary.configured_streams || 0), meta: `${formatInteger(summary.total_streams || 0)} tracked streams` },
-                    { label: "Mapping Gaps", value: formatInteger(summary.stale_streams || 0), meta: "Streams needing attention" },
-                    { label: "Booking Sync", value: formatRelativeAge(summary.booking_sync_at), meta: summary.booking_sync_at ? formatDateTime(summary.booking_sync_at) : "No recent booking import" },
-                ],
-                body: bundle.imports?._error ? `<div class="empty-state">${escapeHtml(bundle.imports._error)}</div>` : "",
-            })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Revenue stream mappings</h4>
-                            <p>Mappings drive the export shape and keep club-specific reporting practical.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${settingsRows.length ? settingsRows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</span>
-                                    ${renderStatusPill("", row.configured ? "configured" : "missing")}
-                                </div>
-                                <div class="list-meta">${escapeHtml(row.settings?.date_field || "No date field")} | ${escapeHtml(row.settings?.amount_field || "No amount field")} | ${escapeHtml(row.settings?.external_id_field || "No external ID field")}</div>
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-import-settings="${escapeHtml(String(row.stream || "other"))}">Edit mapping</button>
-                                </div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No revenue stream mappings found.</div>`}
-                    </div>
-                </article>
-                ${renderImportsHealthCard(bundle)}
-            </section>
-            <section class="split-grid">
-                <form class="form-card" id="import-settings-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Revenue mapping</h3>
-                            <p>Save the fields GreenLink should use before the next revenue import for this stream.</p>
-                        </div>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field">
-                            <label>Stream</label>
-                            <select name="stream">
-                                ${settingsRows.map(row => `<option value="${escapeHtml(String(row.stream || "other"))}" ${row.stream === firstSettings.stream ? "selected" : ""}>${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field"><label>Date Field</label><input name="date_field" value="${escapeHtml(initialSettings.date_field || "")}" required></div>
-                        <div class="field"><label>Amount Field</label><input name="amount_field" value="${escapeHtml(initialSettings.amount_field || "")}" required></div>
-                        <div class="field"><label>Description Field</label><input name="description_field" value="${escapeHtml(initialSettings.description_field || "")}"></div>
-                        <div class="field"><label>Category Field</label><input name="category_field" value="${escapeHtml(initialSettings.category_field || "")}"></div>
-                        <div class="field"><label>External ID Field</label><input name="external_id_field" value="${escapeHtml(initialSettings.external_id_field || "")}"></div>
-                        <div class="field"><label>Stream Field</label><input name="stream_field" value="${escapeHtml(initialSettings.stream_field || "")}"></div>
-                        <div class="field"><label>Tax Field</label><input name="tax_field" value="${escapeHtml(initialSettings.tax_field || "")}"></div>
-                        <div class="field">
-                            <label>Amount Sign</label>
-                            <select name="amount_sign">
-                                ${["as_is", "invert"].map(value => `<option value="${value}" ${String(initialSettings.amount_sign || "as_is") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Amount Basis</label>
-                            <select name="amount_basis">
-                                ${["gross", "net"].map(value => `<option value="${value}" ${String(initialSettings.amount_basis || "gross") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Tax Adjustment</label>
-                            <select name="tax_adjustment">
-                                ${["ignore", "add", "subtract"].map(value => `<option value="${value}" ${String(initialSettings.tax_adjustment || "ignore") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field"><label>Tax Rate</label><input name="tax_rate" type="number" min="0" step="0.01" value="${escapeHtml(initialSettings.tax_rate ?? 0.15)}"></div>
-                        <div class="checkbox-card"><label><input type="checkbox" name="allow_stream_override" value="1" ${initialSettings.allow_stream_override ? "checked" : ""}> Allow stream override</label><p>Use a source field in the file when multiple streams are present.</p></div>
-                        <div class="checkbox-card"><label><input type="checkbox" name="dedupe_without_external_id" value="1" ${initialSettings.dedupe_without_external_id !== false ? "checked" : ""}> Dedupe without external ID</label><p>Create a best-effort fingerprint when the file has no unique transaction ID.</p></div>
-                    </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Save mapping</button>
-                        <button type="button" class="button secondary" data-clear-import-settings-form="1">Reset</button>
-                    </div>
-                </form>
-                <div class="stack">
-                    <form class="form-card" id="import-revenue-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Import revenue CSV</h3>
-                                <p>Run a club-scoped revenue import with current or saved mapping rules.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field">
-                                <label>Stream</label>
-                                <select name="stream">
-                                    ${settingsRows.map(row => `<option value="${escapeHtml(String(row.stream || "other"))}">${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
-                                </select>
-                            </div>
-                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
-                            <div class="checkbox-card"><label><input type="checkbox" name="use_saved_settings" value="1" checked> Use saved settings</label><p>Apply saved mapping rules for this stream where available.</p></div>
-                            <div class="checkbox-card"><label><input type="checkbox" name="save_settings" value="1"> Save settings after import</label><p>Persist the detected or edited field mapping after this import.</p></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Import revenue CSV</button>
-                        </div>
-                    </form>
-                    <form class="form-card" id="import-members-form">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Import members CSV</h3>
-                                <p>Refresh People data from a member export without leaving the finance data-health chain.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Import members CSV</button>
-                        </div>
-                    </form>
-                </div>
-            </section>
-            <section class="dashboard-grid">
-                ${renderAccountingWorkflowCard(bundle)}
-                ${renderAccountingHandoffCard(bundle)}
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Recent import batches</h4>
-                        <p>Import history should stay visible so operations and finance can trust the reporting chain.</p>
-                    </div>
-                </div>
-                ${renderTable(
-                    ["Imported", "Kind", "Source", "Rows", "Notes"],
-                    rows.length ? rows.map(row => `
-                        <tr>
-                            <td>${escapeHtml(formatDateTime(row.imported_at || ""))}</td>
-                            <td>${escapeHtml(row.kind || "-")}</td>
-                            <td>${escapeHtml(row.source || row.file_name || "-")}</td>
-                            <td>${escapeHtml(`${formatInteger(row.rows_inserted || 0)} / ${formatInteger(row.rows_total || 0)}`)}</td>
-                            <td>${escapeHtml(row.notes || "-")}</td>
-                        </tr>
-                    `) : [`<tr><td colspan="5"><div class="empty-state">No import batches found for this club.</div></td></tr>`]
-                )}
-            </section>
-        `;
+
+        return window.GreenLinkAdminImportsWorkspace.renderWorkspace(bundle, importsWorkspaceModuleDeps());
+
     }
 
-    function importSettingStreams() {
-        const enabled = new Set(clubModules());
-        return ["golf", "pro_shop", "bowls", "pub", "other"].filter(stream => {
-            if (["golf", "other"].includes(stream)) return true;
-            return enabled.has(stream);
-        });
-    }
+
 
     async function loadImportsWorkspaceBundle(options = {}) {
-        const signal = options.signal;
-        const financeBase = options.financeBase || await loadSharedFinanceBase({ signal });
-        const streamKeys = importSettingStreams();
-        const [imports, ...settingsRows] = await Promise.all([
-            fetchJsonSafe("/api/admin/imports?limit=12", { imports: [] }, { signal }),
-            ...streamKeys.map(stream => fetchJsonSafe(`/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`, { stream, configured: false, settings: {} }, { signal })),
-        ]);
-        const importSettings = settingsRows;
+        const date = todayYmd();
+        const clubKey = activeClubCacheKeyPart();
+        return loadSharedResource(
+            importsBundleCacheKey({ clubKey, date }),
+            () => window.GreenLinkAdminImportsWorkspace.bundle(options, importsWorkspaceModuleDeps()),
+            8000
+        );
+
+    }
+
+    function financeReportingModuleDeps() {
         return {
-            imports,
-            importSettings,
-            importsHealth: summarizeImportsHealth(imports.imports, importSettings),
-            settings: financeBase.settings,
-            closeStatus: financeBase.closeStatus,
-            summary: financeBase.summary,
-            date: financeBase.closeStatus?.date || todayYmd(),
+            clampYmd,
+            downloadWithAuth,
+            escapeHtml,
+            fetchJson,
+            formatCurrency,
+            formatDate,
+            formatDateTime,
+            formatInteger,
+            formatTime,
+            invalidateClubSummaryCaches,
+            invalidateSummaryDrivenWorkspaceCaches,
+            metricCards,
+            postJson,
+            refreshActiveReportsWorkspace,
+            renderAccountingHandoffCard,
+            renderAccountingWorkflowCard,
+            renderGuidanceStack,
+            renderInsightMeta,
+            renderPageHero,
+            renderReportingRhythmCard,
+            renderStatusPill,
+            renderTable,
+            revenueIntegrityGuidanceRows,
+            showToast,
+            state,
+            todayYmd,
         };
     }
 
+    function reportsWorkspaceModuleDeps() {
+        return {
+            MODULE_LABELS,
+            addDaysYmd,
+            escapeHtml,
+            fetchJson,
+            fetchJsonSafe,
+            formatByUnit,
+            formatCurrency,
+            formatInteger,
+            loadImportsWorkspaceBundle,
+            loadSharedDashboardPayload,
+            loadSharedFinanceBase,
+            loadSharedOperationalTargets,
+            loadSharedReportsRevenue,
+            logClientError,
+            metricCards,
+            recentLedgerWindow: (...args) => window.GreenLinkAdminFinanceReporting.recentLedgerWindow(...args),
+            renderCashbookWorkspace: (bundle) => window.GreenLinkAdminFinanceReporting.renderCashbookWorkspace(bundle, financeReportingModuleDeps()),
+            renderFinanceTrendChart,
+            renderGuidanceStack,
+            renderImportFreshness,
+            renderImportsWorkspace,
+            renderLedgerWorkspace: (bundle) => window.GreenLinkAdminFinanceReporting.renderLedgerWorkspace(bundle, financeReportingModuleDeps()),
+            renderPageHero,
+            renderStatusBreakdown,
+            renderInsightMeta,
+            renderTable,
+            revenueIntegrityGuidanceRows,
+            safeNumber,
+            state,
+            todayYmd,
+        };
+    }
+
+
+
     async function reportsBundle(options = {}) {
-        const signal = options.signal;
-        const panel = state.route.panel || "performance";
-        try {
-            if (panel === "ledger") {
-                const windowRange = recentLedgerWindow();
-                const financeBase = await loadSharedFinanceBase({ signal });
-                const financeDate = financeBase.closeStatus?.date || todayYmd();
-                const [dashboard, ledger, ledgerBookings] = await Promise.all([
-                    loadSharedDashboardPayload({ signal }),
-                    fetchJsonSafe(
-                        `/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`,
-                        { ledger_entries: [], total: 0, total_amount: 0 },
-                        { signal }
-                    ),
-                    fetchJsonSafe(
-                        `/api/admin/bookings?period=day&anchor_date=${encodeURIComponent(financeDate)}&date_basis=tee_time&sort=tee_asc&limit=100`,
-                        { bookings: [], total: 0 },
-                        { signal }
-                    ),
-                ]);
-                return { panel, ...financeBase, dashboard, ledger, ledgerBookings, date: financeDate };
-            }
-            if (panel === "cashbook") {
-                const financeBase = await loadSharedFinanceBase({ signal });
-                const financeDate = financeBase.closeStatus?.date || todayYmd();
-                const dayStart = `${financeDate}T00:00:00.000Z`;
-                const dayEnd = `${addDaysYmd(financeDate, 1)}T00:00:00.000Z`;
-                const [dashboard, preview, proShop, cashbookLedger] = await Promise.all([
-                    loadSharedDashboardPayload({ signal }),
-                    fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(financeDate)}`, { journal_lines: [] }, { signal }),
-                    fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(financeDate)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
-                    fetchJsonSafe(`/api/admin/ledger?limit=300&start=${encodeURIComponent(dayStart)}&end=${encodeURIComponent(dayEnd)}`, { ledger_entries: [], total: 0, total_amount: 0 }, { signal }),
-                ]);
-                return { panel, ...financeBase, dashboard, preview, proShop, cashbookLedger, date: financeDate };
-            }
-            if (panel === "imports") {
-                const financeBase = await loadSharedFinanceBase({ signal });
-                const dashboard = await loadSharedDashboardPayload({ signal });
-                const importsBundle = await loadImportsWorkspaceBundle({ signal, financeBase });
-                return { panel, dashboard, ...importsBundle };
-            }
-            if (panel === "targets") {
-                const targets = await fetchJsonSafe("/api/admin/operation-targets", { year: new Date().getFullYear(), targets: [] }, { signal });
-                return { panel, targets };
-            }
-            const shared = await loadSharedDashboardData({ signal });
-            const [revenue, targets] = await Promise.all([
-                fetchJson("/api/admin/revenue?period=mtd", { signal }),
-                fetchJson("/api/admin/operation-targets", { signal }),
-            ]);
-            return { panel, dashboard: shared.dashboard, alerts: shared.alerts, closeStatus: shared.closeStatus, summary: shared.summary, settings: shared.settings, revenue, targets, date: shared.date };
-        } catch (error) {
-            logClientError("reportsBundle", error, { loader: "reportsBundle", panel, route: state.route });
-            throw error;
-        }
+        return window.GreenLinkAdminReportsWorkspace.bundle(options, reportsWorkspaceModuleDeps());
     }
 
     function renderReportsWorkspace(bundle) {
-        const panel = state.route.panel || "performance";
-        const revenue = bundle.revenue || {};
-        const targets = Array.isArray(bundle.targets?.targets) ? bundle.targets.targets : [];
-        if (panel === "ledger") {
-            return renderLedgerWorkspace(bundle);
-        }
-        if (panel === "cashbook") {
-            return renderCashbookWorkspace(bundle);
-        }
-        if (panel === "imports") {
-            return renderImportsWorkspace(bundle);
-        }
-        if (panel === "targets") {
-            return `
-                ${renderPageHero({
-                    title: "Targets",
-                    copy: "Keep operational targets available without forcing the rest of Finance & Admin to carry their load.",
-                    workspace: "reports",
-                    subnavLabel: "Finance pages",
-                metrics: [
-                    { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
-                    { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
-                    { label: "Finance Link", value: "Live", meta: "Finance and overview pacing read from current targets" },
-                    { label: "Edit Surface", value: "Targets only", meta: "Changes here feed KPI cards and AI guidance" },
-                ],
-            })}
-            ${bundle.targets?._error ? `<section class="card"><div class="empty-state">${escapeHtml(bundle.targets._error)}</div></section>` : ""}
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Operational target table</h3>
-                        <p>Targets stay close to operations. Changes here should immediately influence the overview, finance pace, and AI guidance.</p>
-                    </div>
-                </div>
-                    ${renderTable(
-                        ["Operation", "Metric", "Target", "Unit"],
-                        targets.map(row => `
-                            <tr>
-                                <td>${escapeHtml(MODULE_LABELS[row.operation_key] || row.operation_key)}</td>
-                                <td>${escapeHtml(row.label || row.metric_key || "")}</td>
-                                <td>${escapeHtml(formatByUnit(row.target_value || 0, row.unit))}</td>
-                                <td>${escapeHtml(row.unit || "")}</td>
-                            </tr>
-                        `)
-                    )}
-                </section>
-            `;
-        }
+        return window.GreenLinkAdminReportsWorkspace.renderWorkspace(bundle, reportsWorkspaceModuleDeps());
+    }
 
-        const streamRows = Array.isArray(revenue.other_revenue_by_stream) ? revenue.other_revenue_by_stream : [];
-        const paceVariance = safeNumber(revenue.actual_revenue) - safeNumber(revenue.target_revenue);
-        return `
-            ${renderPageHero({
-                title: "Finance Dashboard",
-                copy: "Read finance signal, import freshness, and target pace without mixing in export actions.",
-                workspace: "reports",
-                subnavLabel: "Finance pages",
-                meta: renderInsightMeta("Pacing and integrity guidance live"),
-                metrics: [
-                    { label: "Period Days", value: formatInteger(revenue.period_days || 0), meta: "Current revenue reporting window" },
-                    { label: "Annual Target", value: formatCurrency(revenue.annual_revenue_target || 0), meta: "Configured revenue target" },
-                    { label: "Current Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: "Expected position by this point in the year" },
-                    { label: "Target Context", value: String(revenue.period || "mtd").toUpperCase(), meta: `Anchor ${escapeHtml(revenue.anchor_date || "-")}` },
-                ],
-            })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Finance trend</h4>
-                            <p>Paid golf plus imported non-booking revenue over the current reporting window.</p>
-                        </div>
-                    </div>
-                    ${renderFinanceTrendChart(revenue)}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Status revenue</h4>
-                            <p>See where booking value is sitting by status across the current reporting window.</p>
-                        </div>
-                    </div>
-                    ${renderStatusBreakdown(bundle.dashboard || {})}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Imported stream mix</h4>
-                            <p>Imported non-golf revenue should stay visible next to golf and booking-driven revenue.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${streamRows.length ? streamRows.map(row => `
-                            <div class="detail-row">
-                                <span class="row-key">${escapeHtml(MODULE_LABELS[row.stream] || row.stream)}</span>
-                                <span class="row-value">${escapeHtml(formatCurrency(row.amount || 0))} | ${escapeHtml(formatInteger(row.transactions || 0))} txns</span>
-                            </div>
-                        `).join("") : `<div class="empty-state">No imported non-golf revenue streams available.</div>`}
-                    </div>
-                </article>
-                ${renderImportFreshness(bundle.dashboard || {})}
-            </section>
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Current revenue snapshot</h4>
-                            <p>Keep today, week, golf, and pro shop revenue visible without leaving finance.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Today Revenue", value: formatCurrency(bundle.dashboard?.today_revenue || 0), meta: "Current club snapshot" },
-                        { label: "Week Revenue", value: formatCurrency(bundle.dashboard?.week_revenue || 0), meta: "Rolling 7-day performance" },
-                        { label: "Golf Revenue", value: formatCurrency(bundle.dashboard?.golf_revenue_total || 0), meta: "Golf revenue total" },
-                        { label: "Pro Shop Revenue", value: formatCurrency(bundle.dashboard?.pro_shop_revenue_total || 0), meta: "Pro shop revenue total" },
-                    ])}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Target pace</h4>
-                            <p>Keep actuals, pace, and variance readable enough to guide action rather than add reporting noise.</p>
-                        </div>
-                    </div>
-                    ${metricCards([
-                        { label: "Actual Revenue", value: formatCurrency(revenue.actual_revenue || 0), meta: "Recorded actuals for this period" },
-                        { label: "Target Pace", value: formatCurrency(revenue.target_revenue || 0), meta: "Expected position at this point" },
-                        { label: "Variance", value: formatCurrency(paceVariance), meta: paceVariance >= 0 ? "Ahead of target pace" : "Behind target pace" },
-                        { label: "Period Days", value: formatInteger(revenue.period_days || 0), meta: "Days in current reporting window" },
-                    ])}
-                    ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 2 }))}
-                </article>
-            </section>
-        `;
+    function clubSettingsModuleDeps() {
+        return {
+            escapeHtml,
+            fetchJson,
+            formatInteger,
+            postJson,
+            refreshActiveSettingsWorkspace,
+            refreshBootstrap,
+            renderModuleValueGrid,
+            renderPageHero,
+            showToast,
+            sportsSetupConfig,
+        };
+    }
+
+    function accountCustomersModuleDeps() {
+        return {
+            escapeHtml,
+            renderStatusPill,
+        };
+    }
+
+    function membersPanelModuleDeps() {
+        return {
+            MODULE_LABELS,
+            activeClub,
+            clearWorkspaceCache: () => {
+                deleteWorkspaceCacheWhere(key => {
+                    const [shell, workspace, panel] = String(key || "").split("|");
+                    return shell === roleShell() && workspace === "members" && panel === "members";
+                });
+            },
+            invalidateMemberAreaPreview: (area = null) => {
+                const clubKey = activeClubCacheKeyPart();
+                const targets = area
+                    ? [String(area || "").trim().toLowerCase()]
+                    : ["tennis", "padel", "bowls"];
+                targets.filter(Boolean).forEach(key => deleteSharedCacheKey(membersAreaPreviewCacheKey(key, clubKey)));
+            },
+            invalidateRecentMembersPreview: () => deleteSharedCacheKey(recentMembersPreviewCacheKey(activeClubCacheKeyPart())),
+            escapeHtml,
+            formatCurrency,
+            formatInteger,
+            metricCards,
+            operationModules,
+            postJson,
+            refreshActiveMembersWorkspace,
+            renderAccountCustomerStack,
+            renderDebtorWatchCard,
+            renderDebtorWatchEmbedded,
+            renderFamilySubnav,
+            renderMemberServiceQueue,
+            renderMemberServiceQueueEmbedded,
+            renderPageActionRow,
+            renderPeopleControlCards,
+            renderServiceDeskBriefCard,
+            renderServiceDeskBriefEmbedded,
+            renderTable,
+            renderWorkblock,
+            roleShell,
+            showToast,
+        };
+    }
+
+    function staffPanelModuleDeps() {
+        return {
+            HTMLFormElement,
+            activeClub,
+            deleteWorkspaceCacheWhere,
+            document,
+            escapeHtml,
+            focusWorkblock,
+            formatInteger,
+            metricCards,
+            positiveInt,
+            postJson,
+            refreshActiveMembersWorkspace,
+            invalidateStaffListPreview: () => deleteSharedCacheKey(staffListCacheKey(activeClubCacheKeyPart())),
+            renderAccountCustomerStack,
+            renderDebtorWatchEmbedded,
+            renderFamilySubnav,
+            renderMemberServiceQueueEmbedded,
+            renderPageActionRow,
+            renderServiceDeskBriefEmbedded,
+            renderTable,
+            renderWorkblock,
+            roleShell,
+            showToast,
+            state,
+        };
+    }
+
+    function golfDayOpsModuleDeps() {
+        return {
+            HTMLFormElement,
+            activeClubCacheKeyPart,
+            clampYmd,
+            deleteSharedCacheKey,
+            document,
+            escapeHtml,
+            formatCurrency,
+            formatDate,
+            formatInteger,
+            golfDayBookingsCacheKey,
+            invalidateGolfSharedData,
+            invalidateGolfWorkspaceCaches,
+            metricCards,
+            positiveInt,
+            postJson,
+            refreshActiveGolfWorkspace,
+            renderPageHero,
+            renderStatusPill,
+            safeNumber,
+            showToast,
+            state,
+            todayYmd,
+        };
+    }
+
+    function proShopModuleDeps() {
+        return {
+            HTMLFormElement,
+            document,
+            escapeHtml,
+            formatCurrency,
+            formatDateTime,
+            formatInteger,
+            invalidateProShopPanelSharedData,
+            metricCards,
+            positiveInt,
+            postJson,
+            renderAccountingHandoffCard,
+            renderAccountingWorkflowCard,
+            refreshActiveOperationsWorkspace,
+            renderHandoverReadinessCard,
+            renderOperationsCadenceCard,
+            renderPageHero,
+            renderProShopCashupCard,
+            renderStatusPill,
+            roleShell,
+            showToast,
+            state,
+            window,
+        };
+    }
+
+    function importsWorkspaceModuleDeps() {
+        return {
+            HTMLFormElement,
+            HTMLInputElement,
+            MODULE_LABELS,
+            clubModules,
+            deleteWorkspaceCacheWhere,
+            document,
+            escapeHtml,
+            fetchJsonSafe,
+            formatDateTime,
+            formatInteger,
+            formatRelativeAge,
+            invalidateClubSummaryCaches,
+            invalidateMemberAreaPreview: (area = null) => {
+                const clubKey = activeClubCacheKeyPart();
+                const targets = area
+                    ? [String(area || "").trim().toLowerCase()]
+                    : ["tennis", "padel", "bowls"];
+                targets.filter(Boolean).forEach(key => deleteSharedCacheKey(membersAreaPreviewCacheKey(key, clubKey)));
+            },
+            invalidateRecentMembersPreview: () => deleteSharedCacheKey(recentMembersPreviewCacheKey(activeClubCacheKeyPart())),
+            invalidateImportsWorkspaceSharedBundle: () => deleteSharedCacheKey(importsBundleCacheKey()),
+            invalidateSummaryDrivenWorkspaceCaches,
+            invalidateWorkspaceScope,
+            loadSharedFinanceBase,
+            postFormData,
+            postJson,
+            refreshActiveReportsWorkspace,
+            refreshActiveSettingsWorkspace,
+            renderAccountingHandoffCard,
+            renderAccountingWorkflowCard,
+            renderImportsHealthCard,
+            renderInsightMeta,
+            renderPageHero,
+            renderStatusPill,
+            renderTable,
+            roleShell,
+            showToast,
+            state,
+            summarizeImportsHealth,
+            todayYmd,
+        };
+    }
+
+    function operationalTargetsModuleDeps() {
+        return {
+            HTMLFormElement,
+            invalidateClubSummaryCaches,
+            invalidateSummaryDrivenWorkspaceCaches,
+            invalidateWorkspaceScope,
+            postJson,
+            refreshActiveReportsWorkspace,
+            refreshActiveSettingsWorkspace,
+            showToast,
+            state,
+        };
     }
 
     async function settingsBundle(options = {}) {
@@ -7111,14 +5875,10 @@
             return { panel, ...importsBundle };
         }
         if (panel === "targets") {
-            const targets = await fetchJsonSafe("/api/admin/operation-targets", { year: new Date().getFullYear(), targets: [] }, { signal });
+            const targets = await loadSharedOperationalTargets({ signal, year: new Date().getFullYear() });
             return { panel, targets };
         }
-        const [profile, bookingWindow] = await Promise.all([
-            fetchJson("/api/admin/club-profile", { signal }),
-            fetchJson("/api/admin/booking-window", { signal }),
-        ]);
-        return { panel, profile, bookingWindow };
+        return window.GreenLinkAdminClubSettings.bundle({ panel, signal }, clubSettingsModuleDeps());
     }
 
     function renderSettingsWorkspace(bundle) {
@@ -7126,40 +5886,6 @@
         if (panel === "imports") {
             return renderImportsWorkspace(bundle);
         }
-        if (panel === "booking-window") {
-            return `
-                ${renderPageHero({
-                    title: "Booking Rules",
-                    copy: "Keep booking windows and cancellation guardrails readable without mixing them into daily operations.",
-                    workspace: "settings",
-                    subnavLabel: "Club setup pages",
-                    metrics: [
-                        { label: "Member Days", value: formatInteger(bundle.bookingWindow?.member_days || 0), meta: "Advance member booking window" },
-                        { label: "Affiliated Days", value: formatInteger(bundle.bookingWindow?.affiliated_days || 0), meta: "Affiliated visitor window" },
-                        { label: "Non-affiliated Days", value: formatInteger(bundle.bookingWindow?.non_affiliated_days || 0), meta: "Non-affiliated visitor window" },
-                        { label: "Group Cancel Days", value: formatInteger(bundle.bookingWindow?.group_cancel_days || 0), meta: "Group cancellation guardrail" },
-                    ],
-                })}
-                <form class="form-card" id="booking-window-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Booking rules</h3>
-                            <p>Club-side booking rules stay in a dedicated settings area, not mixed into daily operations.</p>
-                        </div>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field"><label>Member Days</label><input name="member_days" type="number" min="0" max="365" value="${escapeHtml(bundle.bookingWindow?.member_days || 0)}"></div>
-                        <div class="field"><label>Affiliated Visitor Days</label><input name="affiliated_days" type="number" min="0" max="365" value="${escapeHtml(bundle.bookingWindow?.affiliated_days || 0)}"></div>
-                        <div class="field"><label>Non-affiliated Visitor Days</label><input name="non_affiliated_days" type="number" min="0" max="365" value="${escapeHtml(bundle.bookingWindow?.non_affiliated_days || 0)}"></div>
-                        <div class="field"><label>Group Cancel Days</label><input name="group_cancel_days" type="number" min="0" max="365" value="${escapeHtml(bundle.bookingWindow?.group_cancel_days || 0)}"></div>
-                    </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Save booking rules</button>
-                    </div>
-                </form>
-            `;
-        }
-
         if (panel === "targets") {
             const targets = Array.isArray(bundle.targets?.targets) ? bundle.targets.targets : [];
             return `
@@ -7196,81 +5922,7 @@
                 </form>
             `;
         }
-
-        return `
-            ${renderPageHero({
-                title: "Club Profile",
-                copy: "Keep club setup lean: operational identity and booking policy only, without opening styling controls.",
-                workspace: "settings",
-                subnavLabel: "Club setup pages",
-                metrics: [
-                    { label: "Club Name", value: escapeHtml(bundle.profile?.display_name || bundle.profile?.club_name || "Club"), meta: "Member-facing club identity" },
-                    { label: "Location", value: escapeHtml(bundle.profile?.location || "-"), meta: "Current club location" },
-                    { label: "Currency", value: escapeHtml(bundle.profile?.currency_symbol || "R"), meta: "Commercial display currency" },
-                    { label: "Modules", value: formatInteger((bundle.profile?.enabled_modules || []).length), meta: "Enabled operational modules" },
-                ],
-            })}
-            ${renderModuleValueGrid(bundle.profile?.enabled_modules || [], { mode: "club" })}
-            <form class="form-card" id="club-profile-form">
-                <div class="panel-head">
-                    <div>
-                        <h3>Club profile</h3>
-                        <p>Club-side settings are limited to practical branding and member-facing identity.</p>
-                    </div>
-                </div>
-                <div class="field-grid">
-                    <div class="field"><label>Club Name</label><input name="club_name" value="${escapeHtml(bundle.profile?.club_name || "")}"></div>
-                    <div class="field"><label>Display Name</label><input name="display_name" value="${escapeHtml(bundle.profile?.display_name || "")}"></div>
-                    <div class="field"><label>Tagline</label><input name="tagline" value="${escapeHtml(bundle.profile?.tagline || "")}"></div>
-                    <div class="field"><label>Location</label><input name="location" value="${escapeHtml(bundle.profile?.location || "")}"></div>
-                    <div class="field"><label>Website</label><input name="website" value="${escapeHtml(bundle.profile?.website || "")}"></div>
-                    <div class="field"><label>Contact Email</label><input name="contact_email" type="email" value="${escapeHtml(bundle.profile?.contact_email || "")}"></div>
-                    <div class="field"><label>Contact Phone</label><input name="contact_phone" value="${escapeHtml(bundle.profile?.contact_phone || "")}"></div>
-                    <div class="field"><label>Currency Symbol</label><input name="currency_symbol" value="${escapeHtml(bundle.profile?.currency_symbol || "R")}" maxlength="4"></div>
-                </div>
-                ${(() => {
-                    const enabled = new Set(Array.isArray(bundle.profile?.enabled_modules) ? bundle.profile.enabled_modules : []);
-                    const sports = sportsSetupConfig(bundle.profile || {});
-                    if (!enabled.has("tennis") && !enabled.has("padel") && !enabled.has("bowls")) {
-                        return "";
-                    }
-                    return `
-                        <div class="panel-head" style="margin-top:18px;">
-                            <div>
-                                <h3>Sports setup</h3>
-                                <p>Set the real number of tennis and padel courts, plus bowls rinks, so GreenLink can present honest capacity before member self-service booking goes live.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            ${enabled.has("tennis") ? `
-                                <div class="field"><label>Tennis Courts</label><input name="tennis_court_count" type="number" min="0" max="99" value="${escapeHtml(sports.tennisCourtCount)}"></div>
-                                <div class="field"><label>Tennis Session Minutes</label><input name="tennis_session_minutes" type="number" min="15" max="360" step="15" value="${escapeHtml(sports.tennisSessionMinutes)}"></div>
-                                <div class="field"><label>Tennis Open</label><input name="tennis_open_time" type="time" value="${escapeHtml(sports.tennisOpenTime)}"></div>
-                                <div class="field"><label>Tennis Close</label><input name="tennis_close_time" type="time" value="${escapeHtml(sports.tennisCloseTime)}"></div>
-                                <div class="field" style="grid-column: 1 / -1;"><label>Tennis Court Names</label><textarea name="tennis_court_names" placeholder="Court 1&#10;Court 2">${escapeHtml(sports.tennisCourtNames.join("\n"))}</textarea></div>
-                            ` : ``}
-                            ${enabled.has("padel") ? `
-                                <div class="field"><label>Padel Courts</label><input name="padel_court_count" type="number" min="0" max="99" value="${escapeHtml(sports.padelCourtCount)}"></div>
-                                <div class="field"><label>Padel Session Minutes</label><input name="padel_session_minutes" type="number" min="15" max="360" step="15" value="${escapeHtml(sports.padelSessionMinutes)}"></div>
-                                <div class="field"><label>Padel Open</label><input name="padel_open_time" type="time" value="${escapeHtml(sports.padelOpenTime)}"></div>
-                                <div class="field"><label>Padel Close</label><input name="padel_close_time" type="time" value="${escapeHtml(sports.padelCloseTime)}"></div>
-                                <div class="field" style="grid-column: 1 / -1;"><label>Padel Court Names</label><textarea name="padel_court_names" placeholder="Court 1&#10;Court 2">${escapeHtml(sports.padelCourtNames.join("\n"))}</textarea></div>
-                            ` : ``}
-                            ${enabled.has("bowls") ? `
-                                <div class="field"><label>Bowls Rinks</label><input name="bowls_rink_count" type="number" min="0" max="99" value="${escapeHtml(sports.bowlsRinkCount)}"></div>
-                                <div class="field"><label>Bowls Session Minutes</label><input name="bowls_session_minutes" type="number" min="30" max="480" step="30" value="${escapeHtml(sports.bowlsSessionMinutes)}"></div>
-                                <div class="field"><label>Bowls Open</label><input name="bowls_open_time" type="time" value="${escapeHtml(sports.bowlsOpenTime)}"></div>
-                                <div class="field"><label>Bowls Close</label><input name="bowls_close_time" type="time" value="${escapeHtml(sports.bowlsCloseTime)}"></div>
-                                <div class="field" style="grid-column: 1 / -1;"><label>Bowls Rink Names</label><textarea name="bowls_rink_names" placeholder="Rink 1&#10;Rink 2">${escapeHtml(sports.bowlsRinkNames.join("\n"))}</textarea></div>
-                            ` : ``}
-                        </div>
-                    `;
-                })()}
-                <div class="button-row">
-                    <button type="submit" class="button">Save club profile</button>
-                </div>
-            </form>
-        `;
+        return window.GreenLinkAdminClubSettings.renderWorkspace(bundle, clubSettingsModuleDeps());
     }
 
     async function renderCurrentWorkspace(options = {}) {
@@ -7452,690 +6104,152 @@
     }
 
     async function submitClubStaffForm(form) {
-        const userId = positiveInt(form.user_id?.value);
-        const password = String(form.password.value || "").trim();
-        if (!userId && !password) {
-            throw new Error("Password is required for a new staff user.");
-        }
-        const payload = {
-            name: String(form.name.value || "").trim(),
-            email: String(form.email.value || "").trim(),
-            password: password || null,
-            role: "club_staff",
-            force_reset: Boolean(form.force_reset.checked),
-        };
-        if (userId) {
-            await postJson(`/api/admin/staff/${userId}`, payload, { method: "PUT" });
-            showToast("Staff user updated.", "ok");
-        } else {
-            await postJson("/api/admin/staff", payload);
-            showToast("Staff user created.", "ok");
-        }
-        resetClubStaffForm(form);
-        deleteWorkspaceCacheWhere(key => {
-            const [shell, workspace] = String(key || "").split("|");
-            return shell === roleShell() && workspace === "members";
-        });
-        await refreshActiveMembersWorkspace();
+        return window.GreenLinkAdminStaffPanel.submitForm(form, staffPanelModuleDeps());
     }
 
     async function submitMemberForm(form) {
-        const payload = {
-            first_name: String(form.first_name.value || "").trim(),
-            last_name: String(form.last_name.value || "").trim(),
-            email: String(form.email.value || "").trim() || null,
-            member_number: String(form.member_number.value || "").trim() || null,
-            primary_operation: String(form.primary_operation.value || "golf").trim(),
-            home_club: String(form.home_club.value || "").trim() || null,
-            active: true,
-        };
-        await postJson("/api/admin/members", payload);
-        showToast("Member created.", "ok");
-        form.reset();
-        deleteWorkspaceCacheWhere(key => {
-            const [shell, workspace] = String(key || "").split("|");
-            return shell === roleShell() && workspace === "members";
-        });
-        await refreshActiveMembersWorkspace();
-    }
-
-    function currentStaffRows() {
-        return Array.isArray(state.workspaceData?.staff?.staff) ? state.workspaceData.staff.staff : [];
-    }
-
-    function findStaffRow(userId) {
-        return currentStaffRows().find(row => Number(row.id) === Number(userId)) || null;
+        return window.GreenLinkAdminMembersPanel.submitMemberForm(form, membersPanelModuleDeps());
     }
 
     function resetClubStaffForm(form = document.getElementById("club-staff-form")) {
-        if (!(form instanceof HTMLFormElement)) return;
-        form.reset();
-        if (form.user_id) form.user_id.value = "";
-        if (form.email) form.email.readOnly = false;
-        if (form.password) form.password.required = false;
-        if (form.force_reset) form.force_reset.checked = false;
+        return window.GreenLinkAdminStaffPanel.resetForm(form);
     }
 
     function editStaffUser(userId) {
-        const row = findStaffRow(userId);
-        const form = document.getElementById("club-staff-form");
-        if (!row || !(form instanceof HTMLFormElement)) return;
-        form.user_id.value = String(row.id || "");
-        form.name.value = String(row.name || "");
-        form.email.value = String(row.email || "");
-        form.email.readOnly = true;
-        form.password.value = "";
-        form.password.required = false;
-        form.force_reset.checked = false;
-        focusWorkblock("staff-add-workblock");
-        form.scrollIntoView({ behavior: "smooth", block: "start" });
+        return window.GreenLinkAdminStaffPanel.editUser(userId, staffPanelModuleDeps());
     }
 
     async function submitMembersSearchForm(form) {
-        const membersUi = defaultMembersUi({
-            query: form.q.value,
-            status: form.membership_status.value,
-        });
-        deleteWorkspaceCacheWhere(key => {
-            const [shell, workspace, panel] = String(key || "").split("|");
-            return shell === roleShell() && workspace === "members" && panel === "members";
-        });
-        await refreshActiveMembersWorkspace({ membersUi });
+        return window.GreenLinkAdminMembersPanel.submitSearchForm(form, membersPanelModuleDeps());
     }
 
-    function currentCommunicationRows() {
-        return Array.isArray(state.workspaceData?.communications?.communications) ? state.workspaceData.communications.communications : [];
-    }
-
-    function findCommunicationRecord(communicationId) {
-        return currentCommunicationRows().find(row => Number(row.id) === Number(communicationId)) || null;
+    // Compatibility shim: communications ownership now lives in frontend/js/admin/communications.js.
+    function renderCommunicationsWorkspace(payload) {
+        return window.GreenLinkAdminCommunications.renderWorkspace(payload, communicationModuleDeps());
     }
 
     function resetCommunicationForm(form = document.getElementById("communication-form")) {
-        if (!(form instanceof HTMLFormElement)) return;
-        form.reset();
-        if (form.communication_id) form.communication_id.value = "";
-        if (form.status) form.status.value = "draft";
-        if (form.audience) form.audience.value = "members";
-        if (form.kind) form.kind.value = "announcement";
-        if (form.expires_at) form.expires_at.value = "";
+        return window.GreenLinkAdminCommunications.resetForm(form);
     }
 
     function editCommunicationRecord(communicationId) {
-        const row = findCommunicationRecord(communicationId);
-        const form = document.getElementById("communication-form");
-        if (!row || !(form instanceof HTMLFormElement)) return;
-        form.communication_id.value = String(row.id || "");
-        form.kind.value = String(row.kind || "announcement");
-        form.audience.value = String(row.audience || "members");
-        form.status.value = String(row.status || "draft");
-        form.title.value = String(row.title || "");
-        form.summary.value = String(row.summary || "");
-        form.body.value = String(row.body || "");
-        form.cta_label.value = String(row.cta_label || "");
-        form.cta_url.value = String(row.cta_url || "");
-        form.expires_at.value = toDateTimeLocalValue(row.expires_at);
-        form.pinned.checked = Boolean(row.pinned);
-        form.scrollIntoView({ behavior: "smooth", block: "start" });
+        return window.GreenLinkAdminCommunications.editRecord(communicationId, communicationModuleDeps());
     }
 
     async function updateCommunicationState(communicationId, patch = {}) {
-        const row = findCommunicationRecord(communicationId);
-        if (!row) throw new Error("Communication not found.");
-        const payload = {
-            kind: String(row.kind || "announcement"),
-            audience: String(row.audience || "members"),
-            status: String(patch.status || row.status || "draft"),
-            title: String(row.title || ""),
-            summary: String(row.summary || "").trim() || null,
-            body: String(row.body || ""),
-            cta_label: String(row.cta_label || "").trim() || null,
-            cta_url: String(row.cta_url || "").trim() || null,
-            pinned: Object.prototype.hasOwnProperty.call(patch, "pinned") ? Boolean(patch.pinned) : Boolean(row.pinned),
-            published_at: row.published_at || null,
-            expires_at: row.expires_at || null,
-        };
-        await postJson(`/api/admin/communications/${Number(communicationId)}`, payload, { method: "PUT" });
-        showToast("Communication updated.", "ok");
-        await renderCurrentWorkspace();
+        return window.GreenLinkAdminCommunications.updateState(communicationId, patch, communicationModuleDeps());
     }
 
     async function submitCommunicationForm(form) {
-        const communicationId = positiveInt(form.communication_id?.value);
-        const payload = {
-            kind: String(form.kind.value || "announcement").trim(),
-            audience: String(form.audience.value || "members").trim(),
-            status: String(form.status.value || "draft").trim(),
-            title: String(form.title.value || "").trim(),
-            summary: String(form.summary.value || "").trim() || null,
-            body: String(form.body.value || "").trim(),
-            cta_label: String(form.cta_label?.value || "").trim() || null,
-            cta_url: String(form.cta_url?.value || "").trim() || null,
-            pinned: Boolean(form.pinned.checked),
-            expires_at: form.expires_at?.value ? new Date(form.expires_at.value).toISOString() : null,
-        };
-        if (communicationId) {
-            await postJson(`/api/admin/communications/${communicationId}`, payload, { method: "PUT" });
-            showToast("Communication updated.", "ok");
-        } else {
-            await postJson("/api/admin/communications", payload);
-            showToast("Communication saved.", "ok");
-        }
-        resetCommunicationForm(form);
-        await renderCurrentWorkspace();
-    }
-
-    function currentProShopProducts() {
-        return Array.isArray(state.workspaceData?.products?.products) ? state.workspaceData.products.products : [];
-    }
-
-    function findProShopProduct(productId) {
-        return currentProShopProducts().find(row => Number(row.id) === Number(productId)) || null;
+        return window.GreenLinkAdminCommunications.submitForm(form, communicationModuleDeps());
     }
 
     function editProShopProduct(productId) {
-        const row = findProShopProduct(productId);
-        const form = document.getElementById("pro-shop-product-form");
-        if (!row || !(form instanceof HTMLFormElement)) return;
-        form.product_id.value = String(row.id || "");
-        form.sku.value = String(row.sku || "");
-        form.name.value = String(row.name || "");
-        form.category.value = String(row.category || "");
-        form.unit_price.value = String(row.unit_price ?? 0);
-        form.cost_price.value = String(row.cost_price ?? 0);
-        form.stock_qty.value = String(row.stock_qty ?? 0);
-        form.reorder_level.value = String(row.reorder_level ?? 0);
-        form.stock_delta.value = "0";
-        form.stock_reason.value = "";
-        form.active.checked = Boolean(row.active);
-        form.scrollIntoView({ behavior: "smooth", block: "start" });
+
+        return window.GreenLinkAdminProShop.editProduct(productId, proShopModuleDeps());
+
     }
+
+
 
     async function adjustProShopStockPrompt(productId) {
-        const row = findProShopProduct(productId);
-        if (!row) throw new Error("Product not found.");
-        const delta = Number(window.prompt(`Stock adjustment for ${row.name || row.sku} (use negative to reduce).`, "1") || 0);
-        if (!Number.isFinite(delta) || delta === 0) return;
-        const reason = String(window.prompt("Reason for stock adjustment", "") || "").trim() || null;
-        await postJson(`/api/admin/pro-shop/products/${Number(productId)}/adjust-stock`, { delta, reason });
-        showToast("Stock adjusted.", "ok");
-        await renderCurrentWorkspace();
+
+        return window.GreenLinkAdminProShop.adjustStockPrompt(productId, proShopModuleDeps());
+
     }
+
+
 
     async function submitProShopProductForm(form) {
-        const productId = positiveInt(form.product_id?.value);
-        const payload = {
-            sku: String(form.sku.value || "").trim(),
-            name: String(form.name.value || "").trim(),
-            category: String(form.category.value || "").trim() || null,
-            unit_price: Number(form.unit_price.value || 0),
-            cost_price: form.cost_price.value === "" ? null : Number(form.cost_price.value || 0),
-            stock_qty: Number(form.stock_qty.value || 0),
-            reorder_level: Number(form.reorder_level.value || 0),
-            active: Boolean(form.active.checked),
-        };
-        let savedProductId = productId;
-        if (productId) {
-            const response = await postJson(`/api/admin/pro-shop/products/${productId}`, payload, { method: "PUT" });
-            savedProductId = positiveInt(response?.product?.id) || productId;
-            showToast("Product updated.", "ok");
-        } else {
-            const response = await postJson("/api/admin/pro-shop/products", payload);
-            savedProductId = positiveInt(response?.product?.id) || null;
-            showToast("Product created.", "ok");
-        }
-        const stockDelta = Number(form.stock_delta?.value || 0);
-        const stockReason = String(form.stock_reason?.value || "").trim() || null;
-        if (savedProductId && Number.isFinite(stockDelta) && stockDelta !== 0) {
-            await postJson(`/api/admin/pro-shop/products/${savedProductId}/adjust-stock`, { delta: stockDelta, reason: stockReason });
-            showToast("Product saved and stock adjusted.", "ok");
-        }
-        form.reset();
-        if (form.active) form.active.checked = true;
-        await renderCurrentWorkspace();
+
+        return window.GreenLinkAdminProShop.submitProductForm(form, proShopModuleDeps());
+
     }
+
+
 
     async function submitProShopSaleForm(form) {
-        const payload = {
-            customer_name: String(form.customer_name.value || "").trim() || null,
-            payment_method: String(form.payment_method.value || "card").trim(),
-            notes: String(form.notes.value || "").trim() || null,
-            discount: Number(form.discount.value || 0),
-            tax: Number(form.tax.value || 0),
-            items: [{
-                product_id: Number(form.product_id.value || 0),
-                quantity: Number(form.quantity.value || 1),
-            }],
-        };
-        await postJson("/api/admin/pro-shop/sales", payload);
-        showToast("Sale recorded.", "ok");
-        form.reset();
-        if (form.quantity) form.quantity.value = "1";
-        if (form.discount) form.discount.value = "0";
-        if (form.tax) form.tax.value = "0";
-        await renderCurrentWorkspace();
+
+        return window.GreenLinkAdminProShop.submitSaleForm(form, proShopModuleDeps());
+
     }
 
-    function currentGolfDayRows() {
-        return Array.isArray(state.workspaceData?.golfDays?.bookings) ? state.workspaceData.golfDays.bookings : [];
-    }
 
-    function findGolfDayRecord(golfDayBookingId) {
-        return currentGolfDayRows().find(row => Number(row.id) === Number(golfDayBookingId)) || null;
-    }
-
-    function golfDayLifecycle(row) {
-        const paymentStatus = String(row?.payment_status || "").trim().toLowerCase() || "pending";
-        const operationArea = String(row?.operation_area || "").trim().toLowerCase();
-        const amount = safeNumber(row?.amount || 0);
-        const balanceDue = safeNumber(row?.balance_due ?? amount);
-        const hasAllocation = ["allocated", "completed"].includes(operationArea);
-        const isCompleted = operationArea === "completed";
-        if (paymentStatus === "cancelled") {
-            return { stage: "Cancelled", tone: "bad", detail: "Event is cancelled and should be kept out of active operations." };
-        }
-        if (isCompleted) {
-            return { stage: "Completed", tone: "ok", detail: "Setup, allocation, and settlement are complete." };
-        }
-        if (paymentStatus === "paid" && hasAllocation) {
-            return { stage: "Ready to complete", tone: "warn", detail: "Allocated and settled. Close it out when the event is done." };
-        }
-        if (hasAllocation && paymentStatus === "partial") {
-            return { stage: "Allocated, deposit taken", tone: "warn", detail: "Starts are reserved. Final balance still needs to be settled." };
-        }
-        if (hasAllocation) {
-            return { stage: "Allocated", tone: "ok", detail: "Starts are reserved on the tee sheet. Settlement still needs attention." };
-        }
-        if (paymentStatus === "paid" || (amount > 0 && balanceDue <= 0)) {
-            return { stage: "Settled", tone: "ok", detail: "Payment is complete. Allocate starts or close the event." };
-        }
-        if (paymentStatus === "partial" || safeNumber(row?.deposit_amount || 0) > 0) {
-            return { stage: "Deposit taken", tone: "warn", detail: "The event is partially paid. Allocate starts and settle the balance." };
-        }
-        return { stage: "Needs allocation", tone: "warn", detail: "Event setup exists, but allocation and payment completion are still open." };
-    }
-
-    function golfDayLifecyclePill(row) {
-        const lifecycle = golfDayLifecycle(row);
-        return `<span class="status-pill ${escapeHtml(lifecycle.tone)}">${escapeHtml(lifecycle.stage)}</span>`;
-    }
-
-    function serializeGolfDayPayload(row, overrides = {}) {
-        return {
-            event_name: String(overrides.event_name ?? row?.event_name ?? "").trim(),
-            contact_name: String(overrides.contact_name ?? row?.contact_name ?? "").trim() || null,
-            event_date: String(overrides.event_date ?? row?.event_date ?? "").trim() || null,
-            event_end_date: String(overrides.event_end_date ?? row?.event_end_date ?? "").trim() || null,
-            invoice_reference: String(overrides.invoice_reference ?? row?.invoice_reference ?? "").trim() || null,
-            account_customer_id: positiveInt(overrides.account_customer_id ?? row?.account_customer_id),
-            account_code: String(overrides.account_code ?? row?.account_code ?? "").trim() || null,
-            amount: Number(overrides.amount ?? row?.amount ?? 0),
-            balance_due: Number(overrides.balance_due ?? row?.balance_due ?? 0),
-            deposit_amount: Number(overrides.deposit_amount ?? row?.deposit_amount ?? 0),
-            deposit_received_date: String(overrides.deposit_received_date ?? row?.deposit_received_date ?? "").trim() || null,
-            deposit_received_note: String(overrides.deposit_received_note ?? row?.deposit_received_note ?? "").trim() || null,
-            full_payment_amount: Number(overrides.full_payment_amount ?? row?.full_payment_amount ?? 0),
-            full_payment_date: String(overrides.full_payment_date ?? row?.full_payment_date ?? "").trim() || null,
-            full_payment_note: String(overrides.full_payment_note ?? row?.full_payment_note ?? "").trim() || null,
-            payment_status: String(overrides.payment_status ?? row?.payment_status ?? "pending").trim() || "pending",
-            operation_area: String(overrides.operation_area ?? row?.operation_area ?? "").trim() || null,
-            notes: String(overrides.notes ?? row?.notes ?? "").trim() || null,
-        };
-    }
 
     function resetGolfDayForm(form = document.getElementById("golf-day-form")) {
-        if (!(form instanceof HTMLFormElement)) return;
-        form.reset();
-        if (form.golf_day_booking_id) form.golf_day_booking_id.value = "";
-        if (form.payment_status) form.payment_status.value = "pending";
-        if (form.amount) form.amount.value = "0";
-        if (form.balance_due) form.balance_due.value = "0";
-        if (form.deposit_amount) form.deposit_amount.value = "0";
-        if (form.full_payment_amount) form.full_payment_amount.value = "0";
+        return window.GreenLinkAdminGolfDayOps.resetForm(form);
     }
 
     function loadGolfDayIntoForms(golfDayBookingId) {
-        const row = findGolfDayRecord(golfDayBookingId);
-        const form = document.getElementById("golf-day-form");
-        const allocationForm = document.getElementById("golf-day-allocation-form");
-        if (!row) return;
-        if (form instanceof HTMLFormElement) {
-            form.golf_day_booking_id.value = String(row.id || "");
-            form.event_name.value = String(row.event_name || "");
-            form.contact_name.value = String(row.contact_name || "");
-            form.event_date.value = String(row.event_date || "");
-            form.event_end_date.value = String(row.event_end_date || "");
-            form.invoice_reference.value = String(row.invoice_reference || "");
-            form.account_customer_id.value = row.account_customer_id ? String(row.account_customer_id) : "";
-            form.account_code.value = String(row.account_code || "");
-            form.amount.value = String(row.amount ?? 0);
-            form.balance_due.value = String(row.balance_due ?? 0);
-            form.deposit_amount.value = String(row.deposit_amount ?? 0);
-            form.full_payment_amount.value = String(row.full_payment_amount ?? 0);
-            form.payment_status.value = String(row.payment_status || "pending");
-            form.notes.value = String(row.notes || "");
-            form.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-        if (allocationForm instanceof HTMLFormElement) {
-            allocationForm.golf_day_booking_id.value = String(row.id || "");
-            allocationForm.group_name.value = String(row.event_name || "");
-            allocationForm.date.value = String(row.event_date || state.route.date || todayYmd());
-            allocationForm.account_code.value = String(row.account_code || "");
-        }
+        return window.GreenLinkAdminGolfDayOps.loadIntoForms(golfDayBookingId, golfDayOpsModuleDeps());
     }
 
     function resetGolfDayAllocationForm(form = document.getElementById("golf-day-allocation-form")) {
-        if (!(form instanceof HTMLFormElement)) return;
-        form.reset();
-        if (form.golf_day_booking_id) form.golf_day_booking_id.value = "";
-        if (form.date) form.date.value = state.route?.date || todayYmd();
-        if (form.start_time) form.start_time.value = "07:00";
-        if (form.end_time) form.end_time.value = "11:00";
-        if (form.tees) form.tees.value = "1,10";
-        if (form.slots_per_time) form.slots_per_time.value = "4";
-        if (form.price) form.price.value = "0";
+        return window.GreenLinkAdminGolfDayOps.resetAllocationForm(form, golfDayOpsModuleDeps());
     }
 
     async function submitGolfDayForm(form) {
-        const golfDayBookingId = positiveInt(form.golf_day_booking_id?.value);
-        const overrides = {
-            event_name: String(form.event_name.value || "").trim(),
-            contact_name: String(form.contact_name.value || "").trim() || null,
-            event_date: String(form.event_date.value || "").trim() || null,
-            event_end_date: String(form.event_end_date.value || "").trim() || null,
-            invoice_reference: String(form.invoice_reference.value || "").trim() || null,
-            account_customer_id: positiveInt(form.account_customer_id?.value),
-            account_code: String(form.account_code.value || "").trim() || null,
-            amount: Number(form.amount.value || 0),
-            balance_due: Number(form.balance_due.value || 0),
-            deposit_amount: Number(form.deposit_amount.value || 0),
-            full_payment_amount: Number(form.full_payment_amount.value || 0),
-            payment_status: String(form.payment_status.value || "pending").trim(),
-            notes: String(form.notes.value || "").trim() || null,
-        };
-        if (golfDayBookingId) {
-            const current = findGolfDayRecord(golfDayBookingId);
-            const payload = serializeGolfDayPayload(current, overrides);
-            await postJson(`/api/admin/golf-day-bookings/${golfDayBookingId}`, payload, { method: "PUT" });
-            showToast("Golf day updated.", "ok");
-        } else {
-            const payload = overrides;
-            await postJson("/api/admin/golf-day-bookings", payload);
-            showToast("Golf day created.", "ok");
-        }
-        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
-        invalidateGolfSharedData({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
-        await renderCurrentWorkspace();
-    }
-
-    async function updateGolfDayRecord(golfDayBookingId, overrides = {}, successMessage = "Golf day updated.") {
-        const row = findGolfDayRecord(golfDayBookingId);
-        if (!row) throw new Error("Golf day event not found.");
-        const payload = serializeGolfDayPayload(row, overrides);
-        await postJson(`/api/admin/golf-day-bookings/${Number(golfDayBookingId)}`, payload, { method: "PUT", invalidateCache: false });
-        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
-        invalidateGolfSharedData({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
-        showToast(successMessage, "ok");
-        await renderCurrentWorkspace();
+        return window.GreenLinkAdminGolfDayOps.submitForm(form, golfDayOpsModuleDeps());
     }
 
     async function markGolfDayPaid(golfDayBookingId) {
-        const row = findGolfDayRecord(golfDayBookingId);
-        if (!row) throw new Error("Golf day event not found.");
-        const amount = Math.max(0, safeNumber(row.amount || 0));
-        return updateGolfDayRecord(golfDayBookingId, {
-            full_payment_amount: amount,
-            full_payment_date: todayYmd(),
-            balance_due: 0,
-            payment_status: "paid",
-        }, "Golf day settled as paid.");
+        return window.GreenLinkAdminGolfDayOps.markPaid(golfDayBookingId, golfDayOpsModuleDeps());
     }
 
     async function markGolfDayCompleted(golfDayBookingId) {
-        const row = findGolfDayRecord(golfDayBookingId);
-        if (!row) throw new Error("Golf day event not found.");
-        const lifecycle = golfDayLifecycle(row);
-        if (!["paid", "cancelled"].includes(String(row.payment_status || "").trim().toLowerCase()) && lifecycle.stage !== "Completed") {
-            throw new Error("Settle the golf day before marking it complete.");
-        }
-        return updateGolfDayRecord(golfDayBookingId, {
-            operation_area: "completed",
-        }, "Golf day marked complete.");
+        return window.GreenLinkAdminGolfDayOps.markCompleted(golfDayBookingId, golfDayOpsModuleDeps());
     }
 
     async function submitGolfDayAllocationForm(form) {
-        const golfDayBookingId = positiveInt(form.golf_day_booking_id?.value);
-        const linked = golfDayBookingId ? findGolfDayRecord(golfDayBookingId) : null;
-        const allocationDate = clampYmd(form.date.value || linked?.event_date || state.route?.date || todayYmd());
-        const payload = {
-            date: allocationDate,
-            tees: String(form.tees.value || "1,10").split(",").map(value => String(value || "").trim()).filter(Boolean),
-            start_time: String(form.start_time.value || "07:00").trim(),
-            end_time: String(form.end_time.value || "11:00").trim(),
-            holes: Number(form.holes.value || 18) === 9 ? 9 : 18,
-            slots_per_time: Number(form.slots_per_time.value || 4),
-            group_name: String(form.group_name.value || linked?.event_name || "").trim(),
-            event_type: "golf_day",
-            account_code: String(form.account_code.value || linked?.account_code || "").trim() || null,
-            account_customer_id: linked?.account_customer_id ? Number(linked.account_customer_id) : null,
-            price: Number(form.price.value || 0),
-        };
-        const response = await postJson("/api/admin/tee-sheet/bulk-book", payload, { invalidateCache: false });
-        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
-        invalidateGolfWorkspaceCaches(allocationDate);
-        invalidateGolfSharedData({
-            date: allocationDate,
-            includeTeeRows: true,
-            includeDashboard: true,
-            includeAlerts: true,
-            includeFinanceBase: true,
-        });
-        if (golfDayBookingId && linked) {
-            await postJson(`/api/admin/golf-day-bookings/${golfDayBookingId}`, serializeGolfDayPayload(linked, {
-                operation_area: "allocated",
-            }), { method: "PUT", invalidateCache: false });
-            deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
-        }
-        showToast(`Allocated ${formatInteger(response?.created || 0)} tee-sheet booking(s).`, "ok");
-        await renderCurrentWorkspace();
-    }
-
-    function currentImportSettingsRows() {
-        return Array.isArray(state.workspaceData?.importSettings) ? state.workspaceData.importSettings : [];
-    }
-
-    function findImportSettingsRecord(stream) {
-        const target = String(stream || "").trim().toLowerCase();
-        return currentImportSettingsRows().find(row => String(row.stream || "").trim().toLowerCase() === target) || null;
+        return window.GreenLinkAdminGolfDayOps.submitAllocationForm(form, golfDayOpsModuleDeps());
     }
 
     function resetImportSettingsForm(form = document.getElementById("import-settings-form")) {
-        if (!(form instanceof HTMLFormElement)) return;
-        const row = currentImportSettingsRows()[0] || { stream: "other", settings: {} };
-        const settings = row.settings || {};
-        form.reset();
-        if (form.stream) form.stream.value = String(row.stream || "other");
-        if (form.date_field) form.date_field.value = String(settings.date_field || "");
-        if (form.amount_field) form.amount_field.value = String(settings.amount_field || "");
-        if (form.description_field) form.description_field.value = String(settings.description_field || "");
-        if (form.category_field) form.category_field.value = String(settings.category_field || "");
-        if (form.external_id_field) form.external_id_field.value = String(settings.external_id_field || "");
-        if (form.stream_field) form.stream_field.value = String(settings.stream_field || "");
-        if (form.tax_field) form.tax_field.value = String(settings.tax_field || "");
-        if (form.amount_sign) form.amount_sign.value = String(settings.amount_sign || "as_is");
-        if (form.amount_basis) form.amount_basis.value = String(settings.amount_basis || "gross");
-        if (form.tax_adjustment) form.tax_adjustment.value = String(settings.tax_adjustment || "ignore");
-        if (form.tax_rate) form.tax_rate.value = String(settings.tax_rate ?? 0.15);
-        if (form.allow_stream_override) form.allow_stream_override.checked = Boolean(settings.allow_stream_override);
-        if (form.dedupe_without_external_id) form.dedupe_without_external_id.checked = settings.dedupe_without_external_id !== false;
+
+        return window.GreenLinkAdminImportsWorkspace.resetSettingsForm(form, importsWorkspaceModuleDeps());
+
     }
+
+
 
     function loadImportSettingsIntoForm(stream) {
-        const row = findImportSettingsRecord(stream);
-        const form = document.getElementById("import-settings-form");
-        if (!row || !(form instanceof HTMLFormElement)) return;
-        const settings = row.settings || {};
-        form.stream.value = String(row.stream || "other");
-        form.date_field.value = String(settings.date_field || "");
-        form.amount_field.value = String(settings.amount_field || "");
-        form.description_field.value = String(settings.description_field || "");
-        form.category_field.value = String(settings.category_field || "");
-        form.external_id_field.value = String(settings.external_id_field || "");
-        form.stream_field.value = String(settings.stream_field || "");
-        form.tax_field.value = String(settings.tax_field || "");
-        form.amount_sign.value = String(settings.amount_sign || "as_is");
-        form.amount_basis.value = String(settings.amount_basis || "gross");
-        form.tax_adjustment.value = String(settings.tax_adjustment || "ignore");
-        form.tax_rate.value = String(settings.tax_rate ?? 0.15);
-        form.allow_stream_override.checked = Boolean(settings.allow_stream_override);
-        form.dedupe_without_external_id.checked = settings.dedupe_without_external_id !== false;
-        form.scrollIntoView({ behavior: "smooth", block: "start" });
+
+        return window.GreenLinkAdminImportsWorkspace.loadSettingsIntoForm(stream, importsWorkspaceModuleDeps());
+
     }
+
+
 
     async function submitImportSettingsForm(form) {
-        const stream = String(form.stream.value || "other").trim().toLowerCase();
-        const payload = {
-            date_field: String(form.date_field.value || "").trim() || null,
-            amount_field: String(form.amount_field.value || "").trim() || null,
-            description_field: String(form.description_field.value || "").trim() || null,
-            category_field: String(form.category_field.value || "").trim() || null,
-            external_id_field: String(form.external_id_field.value || "").trim() || null,
-            stream_field: String(form.stream_field.value || "").trim() || null,
-            tax_field: String(form.tax_field.value || "").trim() || null,
-            amount_sign: String(form.amount_sign.value || "as_is").trim() || "as_is",
-            amount_basis: String(form.amount_basis.value || "gross").trim() || "gross",
-            tax_adjustment: String(form.tax_adjustment.value || "ignore").trim() || "ignore",
-            tax_rate: Number(form.tax_rate.value || 0.15),
-            allow_stream_override: Boolean(form.allow_stream_override.checked),
-            dedupe_without_external_id: Boolean(form.dedupe_without_external_id.checked),
-        };
-        await postJson(`/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`, payload, { method: "PUT", invalidateCache: false });
-        invalidateWorkspaceScope("reports", { panel: "imports" });
-        invalidateWorkspaceScope("settings", { panel: "imports" });
-        showToast(`${MODULE_LABELS[stream] || stream} mapping saved.`, "ok");
-        if (state.route?.workspace === "reports") {
-            await refreshActiveReportsWorkspace();
-        } else if (state.route?.workspace === "settings") {
-            await refreshActiveSettingsWorkspace();
-        } else {
-            await renderCurrentWorkspace();
-        }
+
+        return window.GreenLinkAdminImportsWorkspace.submitSettingsForm(form, importsWorkspaceModuleDeps());
+
     }
+
+
 
     async function submitImportRevenueForm(form) {
-        const file = form.file instanceof HTMLInputElement ? form.file.files?.[0] : null;
-        if (!file) throw new Error("Choose a revenue CSV file first.");
-        const stream = String(form.stream.value || "other").trim().toLowerCase();
-        const query = new URLSearchParams({
-            stream,
-            use_saved_settings: form.use_saved_settings?.checked ? "true" : "false",
-            save_settings: form.save_settings?.checked ? "true" : "false",
-        });
-        const body = new FormData();
-        body.append("file", file);
-        const result = await postFormData(`/api/admin/imports/revenue-csv?${query.toString()}`, body, { invalidateCache: false });
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateWorkspaceScope("settings", { panel: "imports" });
-        invalidateClubSummaryCaches({ includeDashboard: true, includeAlerts: true });
-        showToast(`Revenue import saved: ${formatInteger(result?.rows_inserted || 0)} inserted, ${formatInteger(result?.rows_updated || 0)} updated.`, "ok");
-        form.reset();
-        if (form.use_saved_settings) form.use_saved_settings.checked = true;
-        if (state.route?.workspace === "reports") {
-            await refreshActiveReportsWorkspace();
-        } else if (state.route?.workspace === "settings") {
-            await refreshActiveSettingsWorkspace();
-        } else {
-            await renderCurrentWorkspace();
-        }
+
+        return window.GreenLinkAdminImportsWorkspace.submitRevenueForm(form, importsWorkspaceModuleDeps());
+
     }
 
+
+
     async function submitImportMembersForm(form) {
-        const file = form.file instanceof HTMLInputElement ? form.file.files?.[0] : null;
-        if (!file) throw new Error("Choose a members CSV file first.");
-        const body = new FormData();
-        body.append("file", file);
-        const result = await postFormData("/api/admin/imports/members-csv", body, { invalidateCache: false });
-        invalidateWorkspaceScope("reports", { panel: "imports" });
-        invalidateWorkspaceScope("settings", { panel: "imports" });
-        showToast(`Members import saved: ${formatInteger(result?.rows_inserted || 0)} inserted, ${formatInteger(result?.rows_updated || 0)} updated.`, "ok");
-        form.reset();
-        deleteWorkspaceCacheWhere(key => {
-            const [shell, workspace] = String(key || "").split("|");
-            return shell === roleShell() && workspace === "members";
-        });
-        if (state.route?.workspace === "reports") {
-            await refreshActiveReportsWorkspace();
-        } else if (state.route?.workspace === "settings") {
-            await refreshActiveSettingsWorkspace();
-        } else {
-            await renderCurrentWorkspace();
-        }
+        return window.GreenLinkAdminImportsWorkspace.submitMembersForm(form, importsWorkspaceModuleDeps());
     }
 
     async function submitBookingWindowForm(form) {
-        const payload = {
-            member_days: Number(form.member_days.value || 0),
-            affiliated_days: Number(form.affiliated_days.value || 0),
-            non_affiliated_days: Number(form.non_affiliated_days.value || 0),
-            group_cancel_days: Number(form.group_cancel_days.value || 0),
-        };
-        await postJson("/api/admin/booking-window", payload, { method: "PUT" });
-        showToast("Booking rules saved.", "ok");
-        await renderCurrentWorkspace();
+        return window.GreenLinkAdminClubSettings.submitBookingWindowForm(form, clubSettingsModuleDeps());
     }
 
     async function submitClubProfileForm(form) {
-        const parseLines = value => String(value || "").split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
-        const payload = {
-            club_name: String(form.club_name.value || "").trim(),
-            display_name: String(form.display_name.value || "").trim() || null,
-            tagline: String(form.tagline.value || "").trim() || null,
-            location: String(form.location.value || "").trim() || null,
-            website: String(form.website.value || "").trim() || null,
-            contact_email: String(form.contact_email.value || "").trim() || null,
-            contact_phone: String(form.contact_phone.value || "").trim() || null,
-            currency_symbol: String(form.currency_symbol.value || "").trim() || null,
-            tennis_court_count: form.tennis_court_count ? Number(form.tennis_court_count.value || 0) : null,
-            tennis_session_minutes: form.tennis_session_minutes ? Number(form.tennis_session_minutes.value || 60) : null,
-            tennis_open_time: form.tennis_open_time ? String(form.tennis_open_time.value || "").trim() || null : null,
-            tennis_close_time: form.tennis_close_time ? String(form.tennis_close_time.value || "").trim() || null : null,
-            tennis_court_names: form.tennis_court_names ? parseLines(form.tennis_court_names.value) : null,
-            padel_court_count: form.padel_court_count ? Number(form.padel_court_count.value || 0) : null,
-            padel_session_minutes: form.padel_session_minutes ? Number(form.padel_session_minutes.value || 60) : null,
-            padel_open_time: form.padel_open_time ? String(form.padel_open_time.value || "").trim() || null : null,
-            padel_close_time: form.padel_close_time ? String(form.padel_close_time.value || "").trim() || null : null,
-            padel_court_names: form.padel_court_names ? parseLines(form.padel_court_names.value) : null,
-            bowls_rink_count: form.bowls_rink_count ? Number(form.bowls_rink_count.value || 0) : null,
-            bowls_session_minutes: form.bowls_session_minutes ? Number(form.bowls_session_minutes.value || 120) : null,
-            bowls_open_time: form.bowls_open_time ? String(form.bowls_open_time.value || "").trim() || null : null,
-            bowls_close_time: form.bowls_close_time ? String(form.bowls_close_time.value || "").trim() || null : null,
-            bowls_rink_names: form.bowls_rink_names ? parseLines(form.bowls_rink_names.value) : null,
-        };
-        await postJson("/api/admin/club-profile", payload, { method: "PUT" });
-        showToast("Club profile saved.", "ok");
-        await refreshBootstrap(true);
-        await renderCurrentWorkspace();
+        return window.GreenLinkAdminClubSettings.submitClubProfileForm(form, clubSettingsModuleDeps());
     }
 
     async function submitOperationalTargetsForm(form) {
-        const current = Array.isArray(state.workspaceData.targets?.targets) ? state.workspaceData.targets.targets : [];
-        const payload = {
-            year: Number(form.year.value || new Date().getFullYear()),
-            targets: current.map(row => ({
-                operation_key: row.operation_key,
-                metric_key: row.metric_key,
-                target_value: Number(form[`target__${row.operation_key}__${row.metric_key}`].value || 0),
-                unit: row.unit,
-                notes: row.notes || null,
-            })),
-        };
-        await postJson("/api/admin/operation-targets", payload, { method: "PUT", invalidateCache: false });
-        invalidateWorkspaceScope("settings", { panel: "targets" });
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateWorkspaceScope("reports");
-        invalidateClubSummaryCaches({ includeDashboard: true, includeOperationalTargets: true });
-        showToast("Operational targets saved.", "ok");
-        await renderCurrentWorkspace();
+        return window.GreenLinkAdminOperationalTargets.submitForm(form, operationalTargetsModuleDeps());
     }
 
     function findTeeRow(teeTimeId) {
@@ -8228,7 +6342,7 @@
         state.modalData = { teeTimeId: Number(teeTimeId), defaultPartySize: requestedPartySize };
         openModal(
             "Create booking",
-            `${formatDateTime(row.tee_time)} · Tee ${row.hole || "1"} · ${row.available} spot(s) available`,
+            `${formatDateTime(row.tee_time)} Ã‚Â· Tee ${row.hole || "1"} Ã‚Â· ${row.available} spot(s) available`,
             `
                 <form id="booking-modal-form" class="stack">
                     <input type="hidden" name="tee_time_id" value="${escapeHtml(row.id)}">
@@ -8375,7 +6489,28 @@
         state.workspaceData = bundle;
         writeWorkspaceCache(route, bundle);
         els.root.innerHTML = renderGolfWorkspace(bundle);
-        setupNativeTeeSheetInteractions();
+        if (route.panel === "tee-sheet") {
+            setupNativeTeeSheetInteractions();
+        }
+    }
+
+    async function refreshActiveOverviewWorkspace() {
+        if (!["overview", "today"].includes(state.route?.workspace || "")) {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await dashboardBundle({ signal });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderDashboardWorkspace(
+            bundle,
+            { mode: route.workspace === "today" ? "today" : "overview" }
+        );
     }
 
     async function refreshActiveMembersWorkspace(options = {}) {
@@ -8432,6 +6567,49 @@
         els.root.innerHTML = renderSettingsWorkspace(bundle);
     }
 
+    async function refreshActiveCommunicationsWorkspace() {
+        if (state.route?.workspace !== "communications") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await loadWorkspaceBundle(route, () => communicationsBundle({ signal }));
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderCommunicationsWorkspace(bundle);
+    }
+
+    async function refreshActiveOperationsWorkspace() {
+        if (state.route?.workspace !== "operations") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await operationsBundle({ signal });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderOperationsWorkspace(bundle);
+    }
+
+    async function refreshCurrentWorkspaceFromScope() {
+        const workspace = state.route?.workspace || "";
+        if (["overview", "today"].includes(workspace)) return refreshActiveOverviewWorkspace();
+        if (workspace === "members") return refreshActiveMembersWorkspace();
+        if (workspace === "reports") return refreshActiveReportsWorkspace();
+        if (workspace === "settings") return refreshActiveSettingsWorkspace();
+        if (workspace === "communications") return refreshActiveCommunicationsWorkspace();
+        if (workspace === "operations") return refreshActiveOperationsWorkspace();
+        return renderCurrentWorkspace();
+    }
+
     function activeGolfBookingsUi() {
         return defaultGolfBookingsUi(state.workspaceData?.bookingsUi);
     }
@@ -8443,6 +6621,16 @@
     function rerenderActiveWorkspaceFromState() {
         if (state.route?.workspace !== "golf" || state.route?.panel !== "bookings") return;
         els.root.innerHTML = renderGolfWorkspace(state.workspaceData || {});
+    }
+
+    function rerenderActiveOverviewWorkspaceFromState() {
+        if (!state.workspaceData) return false;
+        if (!["overview", "today"].includes(state.route?.workspace || "")) return false;
+        els.root.innerHTML = renderDashboardWorkspace(
+            state.workspaceData || {},
+            { mode: state.route.workspace === "today" ? "today" : "overview" }
+        );
+        return true;
     }
 
     function updateGolfBookingsUi(patch) {
@@ -8556,92 +6744,23 @@
         await batchUpdateGolfBookings({ account_code: accountCode }, "Booking account codes updated.");
     }
 
-    async function repairLedgerBooking(bookingId, status) {
-        const normalizedStatus = String(status || "").trim().toLowerCase();
-        const allowedStatus = ["checked_in", "completed"].includes(normalizedStatus) ? normalizedStatus : "checked_in";
-        await postJson("/api/admin/bookings/batch-update", {
-            booking_ids: [Number(bookingId)],
-            status: allowedStatus,
-        }, { invalidateCache: false });
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateClubSummaryCaches({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
-        showToast("Ledger row repaired.", "ok");
-        await refreshActiveReportsWorkspace();
-    }
-
-    async function exportCashbookCsv(date) {
-        await downloadWithAuth(`/cashbook/export-csv?export_date=${encodeURIComponent(date)}`, `Cashbook_Payments_${String(date || todayYmd()).replaceAll("-", "")}.csv`);
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
-        showToast("Daily journal exported.", "ok");
-        await refreshActiveReportsWorkspace();
-    }
-
-    async function exportProShopCsv(date) {
-        await downloadWithAuth(`/cashbook/export-csv-pro-shop?export_date=${encodeURIComponent(date)}`, `PASTEL_JOURNAL_PROSHOP_GREENLINK_${String(date || todayYmd()).replaceAll("-", "")}.csv`);
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
-        showToast("Pro shop journal exported.", "ok");
-        await refreshActiveReportsWorkspace();
-    }
-
-    async function closeCashbookDay(date) {
-        const safeDate = String(date || todayYmd()).trim() || todayYmd();
-        const currentCashbookDate = clampYmd(state.workspaceData?.date || safeDate);
-        const currentPanel = String(state.route?.panel || "").trim().toLowerCase();
-        if (state.route?.workspace === "reports" && currentPanel === "cashbook" && currentCashbookDate === safeDate) {
-            const previewError = String(state.workspaceData?.preview?._error || "").trim();
-            const ledgerRows = Array.isArray(state.workspaceData?.cashbookLedger?.ledger_entries) ? state.workspaceData.cashbookLedger.ledger_entries : [];
-            const unexportedCount = ledgerRows.filter(row => !row.pastel_synced).length;
-            if (previewError) {
-                showToast("Resolve the journal preview error before closing the day.", "bad");
-                return;
-            }
-            if (unexportedCount > 0) {
-                showToast("Export the daily CSV before closing the day.", "bad");
-                return;
-            }
-        }
-        if (!window.confirm(`Close ${safeDate} for day-end handover?`)) return;
-        await fetchJson(`/cashbook/close-day?close_date=${encodeURIComponent(safeDate)}`, { method: "POST" });
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
-        showToast("Day closed.", "ok");
-        await refreshActiveReportsWorkspace();
-    }
-
-    async function reopenCashbookDay(date) {
-        const safeDate = String(date || todayYmd()).trim() || todayYmd();
-        if (!window.confirm(`Reopen ${safeDate} for corrections?`)) return;
-        await fetchJson(`/cashbook/reopen-day?reopen_date=${encodeURIComponent(safeDate)}`, { method: "POST" });
-        invalidateSummaryDrivenWorkspaceCaches();
-        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
-        showToast("Day reopened.", "ok");
-        await refreshActiveReportsWorkspace();
-    }
-
     async function handleClick(event) {
         const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-booking-bulk-account],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search],[data-workblock-toggle],[data-edit-communication],[data-communication-status],[data-communication-pin],[data-clear-communication-form],[data-edit-pro-shop-product],[data-adjust-pro-shop-stock],[data-clear-golf-day-form],[data-clear-golf-day-allocation-form],[data-edit-golf-day],[data-load-golf-day-allocation],[data-golf-day-mark-paid],[data-golf-day-complete],[data-edit-import-settings],[data-clear-import-settings-form],[data-ledger-repair],[data-ledger-payment],[data-ledger-account],[data-edit-staff],[data-clear-staff-form]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
-        if (target.hasAttribute("data-refresh")) return renderCurrentWorkspace();
+        if (target.hasAttribute("data-refresh")) return refreshCurrentWorkspaceFromScope();
         if (target.hasAttribute("data-demo-ensure")) return ensureDemoEnvironment();
         if (target.hasAttribute("data-dashboard-stream")) {
             setDashboardStreamPreference(target.getAttribute("data-dashboard-stream") || "all");
+            if (rerenderActiveOverviewWorkspaceFromState()) return;
             return renderCurrentWorkspace();
         }
-        if (target.hasAttribute("data-export-cashbook")) return exportCashbookCsv(target.getAttribute("data-export-cashbook") || todayYmd());
-        if (target.hasAttribute("data-export-pro-shop")) return exportProShopCsv(target.getAttribute("data-export-pro-shop") || todayYmd());
-        if (target.hasAttribute("data-close-day")) return closeCashbookDay(target.getAttribute("data-close-day") || todayYmd());
-        if (target.hasAttribute("data-reopen-day")) return reopenCashbookDay(target.getAttribute("data-reopen-day") || todayYmd());
-        if (target.hasAttribute("data-clear-members-search")) {
-            deleteWorkspaceCacheWhere(key => {
-                const [shell, workspace, panel] = String(key || "").split("|");
-                return shell === roleShell() && workspace === "members" && panel === "members";
-            });
-            return refreshActiveMembersWorkspace({ membersUi: { query: "", status: "all" } });
-        }
+        if (target.hasAttribute("data-export-cashbook")) return window.GreenLinkAdminFinanceReporting.exportCashbookCsv(target.getAttribute("data-export-cashbook") || todayYmd(), financeReportingModuleDeps());
+        if (target.hasAttribute("data-export-pro-shop")) return window.GreenLinkAdminFinanceReporting.exportProShopCsv(target.getAttribute("data-export-pro-shop") || todayYmd(), financeReportingModuleDeps());
+        if (target.hasAttribute("data-close-day")) return window.GreenLinkAdminFinanceReporting.closeCashbookDay(target.getAttribute("data-close-day") || todayYmd(), financeReportingModuleDeps());
+        if (target.hasAttribute("data-reopen-day")) return window.GreenLinkAdminFinanceReporting.reopenCashbookDay(target.getAttribute("data-reopen-day") || todayYmd(), financeReportingModuleDeps());
+        if (target.hasAttribute("data-clear-members-search")) return window.GreenLinkAdminMembersPanel.clearSearch(membersPanelModuleDeps());
         if (target.hasAttribute("data-workblock-toggle")) return focusWorkblock(target.getAttribute("data-workblock-toggle") || "");
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });
         if (target.hasAttribute("data-edit-communication")) return editCommunicationRecord(Number(target.getAttribute("data-edit-communication") || 0));
@@ -8667,9 +6786,10 @@
         if (target.hasAttribute("data-edit-import-settings")) return loadImportSettingsIntoForm(target.getAttribute("data-edit-import-settings") || "other");
         if (target.hasAttribute("data-clear-import-settings-form")) return resetImportSettingsForm();
         if (target.hasAttribute("data-ledger-repair")) {
-            return repairLedgerBooking(
+            return window.GreenLinkAdminFinanceReporting.repairLedgerBooking(
                 Number(target.getAttribute("data-ledger-repair") || 0),
-                target.getAttribute("data-ledger-status") || "checked_in"
+                target.getAttribute("data-ledger-status") || "checked_in",
+                financeReportingModuleDeps()
             );
         }
         if (target.hasAttribute("data-ledger-payment")) return updateBookingPaymentMethodPrompt(Number(target.getAttribute("data-ledger-payment") || 0));
