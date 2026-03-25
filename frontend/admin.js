@@ -4004,6 +4004,14 @@
         );
     }
 
+    async function loadSharedGolfDayBookings({ signal } = {}) {
+        return loadSharedResource(
+            golfDayBookingsCacheKey(activeClubCacheKeyPart()),
+            () => fetchJson("/api/admin/golf-day-bookings", { signal, timeoutMs: 25000 }),
+            8000
+        );
+    }
+
     async function loadSharedReportsRevenue({ signal, period = "mtd" } = {}) {
         const safePeriod = ["mtd", "wtd"].includes(String(period || "").trim().toLowerCase())
             ? String(period || "").trim().toLowerCase()
@@ -4399,7 +4407,7 @@
         if (panel === "golf-days") {
             const [sharedDashboard, bookings, accountCustomers] = await Promise.all([
                 loadSharedDashboardData({ signal, dashboardView: "golf_days" }),
-                loadSharedResource(golfDayBookingsCacheKey(activeClubCacheKeyPart()), () => fetchJson("/api/admin/golf-day-bookings", { signal }), 8000),
+                loadSharedGolfDayBookings({ signal }),
                 fetchJson("/api/admin/account-customers?active_only=true&sort=name_asc", { signal }),
             ]);
             return { panel, ...sharedDashboard, golfDays: bookings, accountCustomers, date };
