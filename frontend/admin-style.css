@@ -1722,6 +1722,14 @@ body[data-shell="club_admin"] .module-card:hover {
     color: var(--ok);
 }
 
+.ai-inline-cluster {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .slot-grid {
     display: grid;
     gap: 12px;
@@ -1811,6 +1819,24 @@ body[data-shell="club_admin"] .module-card:hover {
     padding: 22px;
     text-align: center;
     color: var(--muted);
+}
+
+.inline-alert {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(32, 106, 93, 0.18);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.inline-alert.bad {
+    border-color: rgba(185, 67, 52, 0.28);
+    background: rgba(255, 244, 242, 0.92);
+    color: #7b241c;
 }
 
 .loading-overlay {

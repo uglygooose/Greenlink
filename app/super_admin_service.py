@@ -356,6 +356,9 @@ def _ensure_demo_pricing_rows(db: Session, club_id: int) -> None:
         {"code": 29103, "description": "Bowls Rink Member", "price": 85.0, "fee_type": FeeType.OTHER, "audience": "member"},
         {"code": 29104, "description": "Bowls Rink Visitor", "price": 125.0, "fee_type": FeeType.OTHER, "audience": "visitor"},
         {"code": 29105, "description": "Golf Day Deposit", "price": 3500.0, "fee_type": FeeType.OTHER, "audience": "other"},
+        {"code": 29106, "description": "Padel Court Hire Member", "price": 320.0, "fee_type": FeeType.OTHER, "audience": "member"},
+        {"code": 29107, "description": "Padel Court Hire Visitor", "price": 400.0, "fee_type": FeeType.OTHER, "audience": "visitor"},
+        {"code": 29108, "description": "Padel Racket Hire", "price": 50.0, "fee_type": FeeType.OTHER, "audience": "other"},
     ]
     for payload in rows:
         existing = (
@@ -1254,7 +1257,7 @@ def ensure_demo_environment(db: Session) -> dict[str, Any]:
     upsert_club_modules(
         db,
         club_id,
-        ["golf", "tennis", "bowls", "pro_shop", "pub", "golf_days", "members", "communications"],
+        ["golf", "tennis", "padel", "bowls", "pro_shop", "pub", "golf_days", "members", "communications"],
     )
     _ensure_demo_pricing_rows(db, club_id)
     _ensure_accounting(db, club_id)
@@ -1273,6 +1276,8 @@ def ensure_demo_environment(db: Session) -> dict[str, Any]:
             {"operation_key": "bowls", "metric_key": "usage", "target_value": 2100, "unit": "uses"},
             {"operation_key": "tennis", "metric_key": "revenue", "target_value": 510000, "unit": "currency"},
             {"operation_key": "tennis", "metric_key": "usage", "target_value": 1680, "unit": "uses"},
+            {"operation_key": "padel", "metric_key": "revenue", "target_value": 620000, "unit": "currency"},
+            {"operation_key": "padel", "metric_key": "usage", "target_value": 1900, "unit": "uses"},
             {"operation_key": "golf_days", "metric_key": "events", "target_value": 34, "unit": "events"},
             {"operation_key": "golf_days", "metric_key": "pipeline", "target_value": 385000, "unit": "currency"},
             {"operation_key": "members", "metric_key": "active_members", "target_value": 780, "unit": "members"},

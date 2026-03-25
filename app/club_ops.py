@@ -23,6 +23,12 @@ _MODULE_CATALOG: tuple[dict[str, Any], ...] = (
         "description": "Tennis member visibility and revenue target tracking.",
     },
     {
+        "key": "padel",
+        "label": "Padel",
+        "default_enabled": False,
+        "description": "Padel court capacity, racket-sport demand, and revenue growth.",
+    },
+    {
         "key": "bowls",
         "label": "Bowls",
         "default_enabled": True,
@@ -73,6 +79,8 @@ _TARGET_CATALOG: tuple[dict[str, Any], ...] = (
     {"operation_key": "bowls", "metric_key": "usage", "label": "Bowls Usage", "unit": "uses"},
     {"operation_key": "tennis", "metric_key": "revenue", "label": "Tennis Revenue", "unit": "currency"},
     {"operation_key": "tennis", "metric_key": "usage", "label": "Tennis Usage", "unit": "uses"},
+    {"operation_key": "padel", "metric_key": "revenue", "label": "Padel Revenue", "unit": "currency"},
+    {"operation_key": "padel", "metric_key": "usage", "label": "Padel Usage", "unit": "uses"},
     {"operation_key": "members", "metric_key": "active_members", "label": "Active Members", "unit": "members"},
 )
 

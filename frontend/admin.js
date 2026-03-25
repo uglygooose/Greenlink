@@ -11,6 +11,7 @@
     const MODULE_LABELS = {
         golf: "Golf",
         tennis: "Tennis",
+        padel: "Padel",
         bowls: "Bowls",
         pro_shop: "Pro Shop",
         pub: "Pub",
@@ -359,6 +360,76 @@
         if (format === "currency") return formatCurrency(value);
         if (format === "percent") return formatPercent(value);
         return formatInteger(value);
+    }
+
+    function formatByUnit(value, unit) {
+        const normalized = String(unit || "").trim().toLowerCase();
+        if (normalized === "currency") return formatCurrency(value);
+        return formatInteger(value);
+    }
+
+    function sportsSetupConfig(profile = activeClub()?.profile || {}) {
+        const sports = profile?.sports_setup || {};
+        return {
+            tennisCourtCount: Math.max(0, Number(profile?.tennis_court_count ?? sports?.tennis_court_count ?? 0) || 0),
+            tennisSessionMinutes: Math.max(15, Number(profile?.tennis_session_minutes ?? sports?.tennis_session_minutes ?? 60) || 60),
+            tennisCourtNames: Array.isArray(profile?.tennis_court_names ?? sports?.tennis_court_names) ? (profile?.tennis_court_names ?? sports?.tennis_court_names).map(item => String(item || "").trim()).filter(Boolean) : [],
+            tennisOpenTime: String(profile?.tennis_open_time ?? sports?.tennis_open_time ?? "06:00"),
+            tennisCloseTime: String(profile?.tennis_close_time ?? sports?.tennis_close_time ?? "18:00"),
+            padelCourtCount: Math.max(0, Number(profile?.padel_court_count ?? sports?.padel_court_count ?? 0) || 0),
+            padelSessionMinutes: Math.max(15, Number(profile?.padel_session_minutes ?? sports?.padel_session_minutes ?? 60) || 60),
+            padelCourtNames: Array.isArray(profile?.padel_court_names ?? sports?.padel_court_names) ? (profile?.padel_court_names ?? sports?.padel_court_names).map(item => String(item || "").trim()).filter(Boolean) : [],
+            padelOpenTime: String(profile?.padel_open_time ?? sports?.padel_open_time ?? "06:00"),
+            padelCloseTime: String(profile?.padel_close_time ?? sports?.padel_close_time ?? "22:00"),
+            bowlsRinkCount: Math.max(0, Number(profile?.bowls_rink_count ?? sports?.bowls_rink_count ?? 0) || 0),
+            bowlsSessionMinutes: Math.max(30, Number(profile?.bowls_session_minutes ?? sports?.bowls_session_minutes ?? 120) || 120),
+            bowlsRinkNames: Array.isArray(profile?.bowls_rink_names ?? sports?.bowls_rink_names) ? (profile?.bowls_rink_names ?? sports?.bowls_rink_names).map(item => String(item || "").trim()).filter(Boolean) : [],
+            bowlsOpenTime: String(profile?.bowls_open_time ?? sports?.bowls_open_time ?? "08:00"),
+            bowlsCloseTime: String(profile?.bowls_close_time ?? sports?.bowls_close_time ?? "18:00"),
+        };
+    }
+
+    function namedResourcesMeta(names = [], singular = "resource") {
+        const rows = Array.isArray(names) ? names.filter(Boolean) : [];
+        if (!rows.length) return `No named ${singular}s set yet`;
+        return rows.slice(0, 3).join(", ") + (rows.length > 3 ? ` +${rows.length - 3} more` : "");
+    }
+
+    function moduleCapacityMeta(panel, profile = activeClub()?.profile || {}) {
+        const sports = sportsSetupConfig(profile);
+        if (panel === "tennis") {
+            const count = sports.tennisCourtCount;
+            return count > 0
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured · ${formatInteger(sports.tennisSessionMinutes)} min default session`
+                : "No tennis courts configured yet";
+        }
+        if (panel === "padel") {
+            const count = sports.padelCourtCount;
+            return count > 0
+                ? `${formatInteger(count)} court${count === 1 ? "" : "s"} configured · ${formatInteger(sports.padelSessionMinutes)} min default session`
+                : "No padel courts configured yet";
+        }
+        if (panel === "bowls") {
+            const count = sports.bowlsRinkCount;
+            return count > 0
+                ? `${formatInteger(count)} rink${count === 1 ? "" : "s"} configured · ${formatInteger(sports.bowlsSessionMinutes)} min default session`
+                : "No bowls rinks configured yet";
+        }
+        return "";
+    }
+
+    function moduleResourceMeta(panel, profile = activeClub()?.profile || {}) {
+        const sports = sportsSetupConfig(profile);
+        if (panel === "tennis" && sports.tennisCourtCount > 0) {
+            return `${formatInteger(sports.tennisCourtCount)} court${sports.tennisCourtCount === 1 ? "" : "s"} · ${sports.tennisOpenTime}-${sports.tennisCloseTime} · ${formatInteger(sports.tennisSessionMinutes)} min · ${namedResourcesMeta(sports.tennisCourtNames, "court")}`;
+        }
+        if (panel === "padel" && sports.padelCourtCount > 0) {
+            return `${formatInteger(sports.padelCourtCount)} court${sports.padelCourtCount === 1 ? "" : "s"} · ${sports.padelOpenTime}-${sports.padelCloseTime} · ${formatInteger(sports.padelSessionMinutes)} min · ${namedResourcesMeta(sports.padelCourtNames, "court")}`;
+        }
+        if (panel === "bowls" && sports.bowlsRinkCount > 0) {
+            return `${formatInteger(sports.bowlsRinkCount)} rink${sports.bowlsRinkCount === 1 ? "" : "s"} · ${sports.bowlsOpenTime}-${sports.bowlsCloseTime} · ${formatInteger(sports.bowlsSessionMinutes)} min · ${namedResourcesMeta(sports.bowlsRinkNames, "rink")}`;
+        }
+        return moduleCapacityMeta(panel, profile);
     }
 
     function clubModules() {
@@ -917,6 +988,18 @@
         return response;
     }
 
+    async function postFormData(path, formData, options = {}) {
+        const response = await fetchJson(path, {
+            ...options,
+            method: options.method || "POST",
+            body: formData,
+        });
+        if (options.invalidateCache !== false) {
+            invalidateWorkspaceCache();
+        }
+        return response;
+    }
+
     async function downloadWithAuth(path, fallbackName) {
         const headers = window.GreenLinkSession.authHeaders();
         const response = await window.fetch(path, {
@@ -983,8 +1066,12 @@
         `;
     }
 
-    function renderDashboardStatCards(dashboard, alerts) {
+    function renderDashboardStatCards(bundle) {
+        const dashboard = bundle?.dashboard || {};
+        const alerts = bundle?.alerts || {};
         const exportBacklog = alertMetric(alerts, "stale_unexported_ledger");
+        const mtd = dashboardTargetPeriod(dashboard, "mtd");
+        const mtdPace = paceVarianceMeta(mtd?.revenue_actual, mtd?.revenue_target);
         return `
             <section class="stats-grid">
                 <article class="stat-card">
@@ -1008,7 +1095,7 @@
                     <div class="stat-content">
                         <div class="stat-label">Revenue Today</div>
                         <div class="stat-value">${escapeHtml(formatCurrency(dashboard.today_revenue || 0))}</div>
-                        <div class="stat-meta">${escapeHtml(formatCurrency(dashboard.week_revenue || 0))} this week</div>
+                        <div class="stat-meta">${escapeHtml(mtd?.revenue_target != null ? mtdPace.detail : `${formatCurrency(dashboard.week_revenue || 0)} this week`)}</div>
                     </div>
                 </article>
                 <article class="stat-card">
@@ -1110,7 +1197,7 @@
                 <div class="panel-head">
                     <div>
                         <h4>Import freshness</h4>
-                        <p>Revenue and bookings sync posture should be visible in the finance board, not hidden in setup.</p>
+                        <p>Revenue and bookings sync state should be visible in the finance board, not hidden in setup.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -1172,7 +1259,8 @@
             members: "Front-desk service layer for members, debtor context, follow-up pressure, and cross-workspace club visibility.",
             communications: "Club-wide notices, audience follow-up, and member/staff messaging from the same operating shell.",
             pro_shop: "Sales, stock pressure, walk-in trade, and day-close readiness for the shop desk.",
-            tennis: "Tennis-side service posture, member relevance, and operational visibility without adding bloated tooling.",
+            tennis: "Tennis activity, member relevance, and operational visibility without adding bloated tooling.",
+            padel: "Padel demand, court visibility, and racket-sport commercial growth without pretending booking is deeper than it is.",
             bowls: "Bowls activity, member service continuity, and club-day operational context.",
             pub: "Hospitality revenue visibility and clean export handoff without pretending GreenLink is the accounting package.",
         };
@@ -1186,6 +1274,7 @@
             communications: "Member experience",
             pro_shop: "Retail control",
             tennis: "Sports desk value",
+            padel: "Growth-sport value",
             bowls: "Club operations value",
             pub: "Hospitality handoff",
         };
@@ -1418,79 +1507,6 @@
         `;
     }
 
-    function renderAiAssistant(bundle) {
-        const assistant = bundle.dashboard?.ai_assistant || {};
-        const shell = roleShell();
-        const noShow = assistant.no_show || {};
-        const revenueIntegrity = assistant.revenue_integrity || {};
-        const importCopilot = assistant.import_copilot || {};
-        const importSummary = importCopilot.summary || {};
-        const panels = [
-            {
-                title: "No-show Watch",
-                status: `${formatInteger(noShow.high_risk_next_72h || 0)} high-risk in next 72h`,
-                severity: safeNumber(noShow.high_risk_next_72h || 0) > 0 ? "warn" : "ok",
-                items: Array.isArray(noShow.recommendations) && noShow.recommendations.length
-                    ? noShow.recommendations.slice(0, 3).map(text => ({ title: "Action", detail: text }))
-                    : [{ title: "Stable", detail: "No urgent no-show actions are flagged right now." }],
-                action: { label: "Open Tee Sheet", workspace: "golf", panel: "tee-sheet" },
-            },
-            {
-                title: "Revenue Integrity",
-                status: `${escapeHtml(String(revenueIntegrity.status || "healthy").replaceAll("_", " "))} | score ${escapeHtml(formatInteger(revenueIntegrity.health_score || 0))}`,
-                severity: revenueIntegrity.status === "healthy" ? "ok" : "warn",
-                items: Array.isArray(revenueIntegrity.alerts) && revenueIntegrity.alerts.length
-                    ? revenueIntegrity.alerts.slice(0, 3).map(item => ({ title: item.title || "Integrity alert", detail: item.detail || item.context || "" }))
-                    : [{ title: "Aligned", detail: "No payment or ledger integrity blockers are active right now." }],
-                action: shell === "club_admin"
-                    ? { label: "Open Ledger & Reconciliation", workspace: "reports", panel: "ledger" }
-                    : { label: "Open Operations", workspace: "operations", panel: "overview" },
-            },
-            {
-                title: "Import Copilot",
-                status: `${formatInteger(importSummary.configured_streams || 0)}/${formatInteger(importSummary.total_streams || 0)} configured | ${formatInteger(importSummary.stale_streams || 0)} stale`,
-                severity: safeNumber(importSummary.stale_streams || 0) > 0 || safeNumber(importSummary.high_failure_streams || 0) > 0 ? "warn" : "ok",
-                items: Array.isArray(importCopilot.recommendations) && importCopilot.recommendations.length
-                    ? importCopilot.recommendations.slice(0, 3).map(text => ({ title: "Import", detail: text }))
-                    : [{ title: "Healthy", detail: "Import mapping and freshness guidance is stable." }],
-                action: shell === "club_admin"
-                    ? { label: "Open Imports & Data Health", workspace: "reports", panel: "imports" }
-                    : { label: "Open Communications", workspace: "communications", panel: null },
-            },
-        ];
-        return `
-            <section class="dashboard-card full-width ai-assistant-card">
-                <div class="panel-head">
-                    <div>
-                        <h3>AI Operations Assistant</h3>
-                        <p>Keep the guidance visible from the club overview instead of hiding it behind a secondary workspace.</p>
-                    </div>
-                </div>
-                <div class="ai-assistant-grid">
-                    ${panels.map(panel => `
-                        <article class="ai-assistant-panel">
-                            <div class="list-row-top">
-                                <h4>${escapeHtml(panel.title)}</h4>
-                                <span class="ai-pill ${escapeHtml(panel.severity)}">${escapeHtml(panel.status)}</span>
-                            </div>
-                            <div class="ai-assistant-list">
-                                ${panel.items.map(item => `
-                                    <div class="ai-assistant-item">
-                                        <div class="title">${escapeHtml(item.title)}</div>
-                                        <div class="detail">${escapeHtml(item.detail)}</div>
-                                    </div>
-                                `).join("")}
-                            </div>
-                            <div class="ai-assistant-actions">
-                                <button type="button" class="button secondary" data-nav-workspace="${escapeHtml(panel.action.workspace)}" data-nav-panel="${escapeHtml(panel.action.panel)}">${escapeHtml(panel.action.label)}</button>
-                            </div>
-                        </article>
-                    `).join("")}
-                </div>
-            </section>
-        `;
-    }
-
     function renderOperationsLaunchpad() {
         const shell = roleShell();
         const cards = shell === "club_admin" ? [
@@ -1560,7 +1576,7 @@
                 label: "Open operations",
             },
             {
-                title: "Member and notice brief",
+                title: "Members and notices",
                 state: `${formatInteger(pinned)} pinned notice(s)`,
                 detail: published.length
                     ? `${formatInteger(published.length)} published communication(s). ${peopleDetail}`
@@ -1572,7 +1588,7 @@
         ];
         items.push(shell === "club_admin"
             ? {
-                title: "Finance handoff",
+                title: "Finance status",
                 state: closeMeta.label,
                 detail: Number(exportBacklog?.metric_value || 0) > 0
                     ? exportBacklog?.message || closeMeta.detail
@@ -1593,7 +1609,7 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Manager's brief</h4>
+                        <h4>What needs attention now</h4>
                         <p>GreenLink should tell the desk what to do next, not ask them to interpret a wall of cards.</p>
                     </div>
                 </div>
@@ -1622,8 +1638,8 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Daily handover readiness</h4>
-                        <p>Before a club closes the day, GreenLink should make import freshness, export backlog, and finance handoff obvious.</p>
+                        <h4>Ready to close?</h4>
+                        <p>Make import freshness, export backlog, and blockers obvious before the day is closed.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -1649,8 +1665,8 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Pro shop cash-up</h4>
-                        <p>Real-world pro shops need fast stock, sales, and export posture before handover, not a generic sales widget.</p>
+                        <h4>Pro shop close status</h4>
+                        <p>Show stock pressure, sales, and export readiness in one place.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -1738,8 +1754,8 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Operating cadence</h4>
-                        <p>Real club operations need a visible run-sheet: open the day, manage live service, cash up, export, then hand over cleanly.</p>
+                        <h4>Run the day</h4>
+                        <p>Show the next operational steps in order: run service, cash up, export, then close.</p>
                     </div>
                 </div>
                 <div class="ops-cadence">
@@ -1772,13 +1788,13 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Accounting handoff</h4>
-                        <p>GreenLink should keep the close-out obvious: club-specific CSV target, payment totals, and close state in one finance-ready card.</p>
+                        <h4>Export setup</h4>
+                        <p>Show the export destination, payment totals, and close state together.</p>
                     </div>
                 </div>
                 ${metricCards([
                     { label: "Cashbook", value: settings.cashbook_name || "Not configured", meta: "Export destination for this club" },
-                    { label: "Contra GL", value: settings.cashbook_contra_gl || "-", meta: "Ledger handoff mapping" },
+                    { label: "Contra GL", value: settings.cashbook_contra_gl || "-", meta: "Export mapping" },
                     { label: "Daily Payments", value: formatCurrency(summary.total_payments || 0), meta: `${formatInteger(summary.transaction_count || summary.records?.length || 0)} payment row(s)` },
                     { label: "Close State", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
@@ -1800,8 +1816,8 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Reporting rhythm</h4>
-                        <p>The finance board should make day, week, and month cadence obvious so clubs can export cleanly without changing their accounting package.</p>
+                        <h4>Period summary</h4>
+                        <p>Keep day, week, and current-period performance readable in one quick scan.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -2181,13 +2197,13 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Accounting workflow</h4>
+                        <h4>Export steps</h4>
                         <p>GreenLink is not replacing the club’s accounting package. It should simply make capture, mapping, and CSV export cleaner for staff.</p>
                     </div>
                 </div>
                 ${metricCards([
                     { label: settingsRows.length ? "Mapped Streams" : "Export Fit", value: mappingValue, meta: mappingMeta },
-                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : "-", meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mapping posture is stable") : "Open Imports & Data Health for stream mapping detail" },
+                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : "-", meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mappings are in place") : "Open Imports & Data Health for stream mapping detail" },
                     { label: "Cashbook Setup", value: summary.cashbookReady ? "Ready" : "Needs setup", meta: summary.cashbookReady ? "Cashbook name and contra GL are configured" : "Cashbook export target still needs setup" },
                     { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
@@ -2225,6 +2241,211 @@
             stream,
             insight: insights[stream] || insights.all || {},
         };
+    }
+
+    function dashboardTargetPeriod(dashboard, period = "mtd") {
+        const periods = dashboard?.targets?.periods || {};
+        return periods[String(period || "").trim().toLowerCase()] || null;
+    }
+
+    function paceVarianceMeta(actual, target, options = {}) {
+        if (target == null) {
+            return {
+                value: null,
+                label: String(options.emptyLabel || "Target not set"),
+                detail: String(options.emptyDetail || "Save targets to unlock pace guidance."),
+            };
+        }
+        const variance = safeNumber(actual) - safeNumber(target);
+        const absVariance = Math.abs(variance);
+        const unit = String(options.unit || "currency").trim().toLowerCase();
+        const formattedVariance = unit === "number"
+            ? formatInteger(absVariance)
+            : formatCurrency(absVariance);
+        return {
+            value: variance,
+            label: variance >= 0 ? "Ahead" : "Behind",
+            detail: `${variance >= 0 ? "Ahead of" : "Behind"} pace by ${formattedVariance}`,
+        };
+    }
+
+    function annualTargetRow(bundle, operationKey, metricKey) {
+        const targets = Array.isArray(bundle?.operationalTargets?.targets) ? bundle.operationalTargets.targets : [];
+        const operationNorm = String(operationKey || "").trim().toLowerCase();
+        const metricNorm = String(metricKey || "").trim().toLowerCase();
+        return targets.find(row => (
+            String(row.operation_key || "").trim().toLowerCase() === operationNorm
+            && String(row.metric_key || "").trim().toLowerCase() === metricNorm
+        )) || null;
+    }
+
+    function currentYearDayProgress() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const start = new Date(year, 0, 1);
+        const next = new Date(year + 1, 0, 1);
+        const elapsed = Math.max(1, Math.floor((now.getTime() - start.getTime()) / 86400000) + 1);
+        const total = Math.max(365, Math.round((next.getTime() - start.getTime()) / 86400000));
+        return { elapsed, total };
+    }
+
+    function yearToDateTarget(annualValue) {
+        const annual = Number(annualValue);
+        if (!Number.isFinite(annual) || annual <= 0) return null;
+        const progress = currentYearDayProgress();
+        return annual * (progress.elapsed / progress.total);
+    }
+
+    function operationalTrackingCard(panel, bundle) {
+        const revenueTarget = annualTargetRow(bundle, panel, "revenue");
+        const usageTarget = annualTargetRow(bundle, panel, "usage");
+        if (panel === "bowls") {
+            const ytdRevenue = safeNumber(bundle?.dashboard?.revenue_streams?.bowls?.ytd_revenue);
+            const ytdTarget = yearToDateTarget(revenueTarget?.target_value);
+            const pace = paceVarianceMeta(ytdRevenue, ytdTarget, {
+                unit: "currency",
+                emptyDetail: "Save an annual bowls revenue target to unlock YTD pace guidance.",
+            });
+            return {
+                label: "YTD Revenue",
+                value: formatCurrency(ytdRevenue),
+                meta: revenueTarget
+                    ? `${pace.detail}. Annual target ${formatByUnit(revenueTarget.target_value || 0, revenueTarget.unit)}.`
+                    : "Imported bowls revenue is visible, but no annual target is configured yet.",
+            };
+        }
+        if (revenueTarget && safeNumber(revenueTarget.target_value || 0) > 0) {
+            return {
+                label: "Annual Revenue Target",
+                value: formatByUnit(revenueTarget.target_value || 0, revenueTarget.unit),
+                meta: "Use target, member activity, and configured capacity until dedicated payment tracking is split out here.",
+            };
+        }
+        if (usageTarget && safeNumber(usageTarget.target_value || 0) > 0) {
+            return {
+                label: "Annual Usage Target",
+                value: formatByUnit(usageTarget.target_value || 0, usageTarget.unit),
+                meta: "Operational usage target for this sport.",
+            };
+        }
+        return {
+            label: "Tracking",
+            value: "Set targets",
+            meta: "Save annual revenue or usage targets so this page can track pace properly.",
+        };
+    }
+
+    function operationalTargetFocusRows(bundle, options = {}) {
+        const selectedStream = String(options.stream || "all").trim().toLowerCase() || "all";
+        const targets = Array.isArray(bundle?.operationalTargets?.targets) ? bundle.operationalTargets.targets : [];
+        if (!targets.length) return [];
+
+        const preferredKeys = selectedStream === "golf"
+            ? ["golf:revenue", "golf:rounds", "golf_days:pipeline"]
+            : selectedStream === "pro_shop"
+                ? ["pro_shop:revenue", "pro_shop:transactions", "members:active_members"]
+                : selectedStream === "bowls"
+                    ? ["bowls:revenue", "bowls:usage", "members:active_members"]
+                    : selectedStream === "tennis"
+                        ? ["tennis:revenue", "tennis:usage", "members:active_members"]
+                        : selectedStream === "padel"
+                            ? ["padel:revenue", "padel:usage", "members:active_members"]
+                : ["golf:revenue", "golf_days:pipeline", "members:active_members", "pro_shop:revenue"];
+
+        const byKey = new Map(targets.map(row => [`${String(row.operation_key || "").trim().toLowerCase()}:${String(row.metric_key || "").trim().toLowerCase()}`, row]));
+        const ordered = preferredKeys
+            .map(key => byKey.get(key))
+            .filter(row => row && safeNumber(row.target_value || 0) > 0);
+
+        return ordered.slice(0, 3).map(row => ({
+            label: row.label || `${row.operation_key} ${row.metric_key}`,
+            value: formatByUnit(row.target_value || 0, row.unit),
+            meta: `Annual target · ${String(row.unit || "target").replaceAll("_", " ")}`,
+        }));
+    }
+
+    function renderOperationalTargetFocus(bundle, options = {}) {
+        const rows = operationalTargetFocusRows(bundle, options);
+        if (!rows.length) return "";
+        return `
+            <div class="stack compact-stack">
+                ${rows.map(row => `
+                    <div class="detail-row">
+                        <span class="row-key">${escapeHtml(row.label)}</span>
+                        <span class="row-value">${escapeHtml(row.value)} <span class="list-meta">${escapeHtml(row.meta)}</span></span>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    }
+
+    function aiTargetSummary(bundle) {
+        const dashboard = bundle?.dashboard || {};
+        const mtd = dashboardTargetPeriod(dashboard, "mtd");
+        const ytd = dashboardTargetPeriod(dashboard, "ytd");
+        const mtdPace = paceVarianceMeta(mtd?.revenue_actual, mtd?.revenue_target);
+        const roundsPace = paceVarianceMeta(ytd?.rounds_actual, ytd?.rounds_target, {
+            unit: "number",
+            emptyDetail: "Save targets to unlock rounds pacing.",
+        });
+        const focusRows = operationalTargetFocusRows(bundle, { stream: "all" });
+        const focusText = focusRows.length
+            ? `${focusRows[0].label} target ${focusRows[0].value}.`
+            : "No operational target focus is configured yet.";
+        if (mtd?.revenue_target == null) {
+            return `No revenue pace target is configured yet. ${focusText}`;
+        }
+        const roundsSentence = ytd?.rounds_target == null
+            ? "Rounds pace is not configured yet."
+            : `YTD rounds are ${roundsPace.label.toLowerCase()} pace by ${formatInteger(Math.abs(roundsPace.value || 0))}.`;
+        return `MTD revenue is ${mtdPace.label.toLowerCase()} pace by ${formatCurrency(Math.abs(mtdPace.value || 0))}. ${roundsSentence} ${focusText}`;
+    }
+
+    function renderInsightMeta(copy) {
+        const detail = String(copy || "").trim() || "Target-aware guidance is active.";
+        return `<span class="metric-pill">${escapeHtml(detail)}</span>`;
+    }
+
+    function noShowGuidanceRows(bundle, options = {}) {
+        const noShow = bundle?.dashboard?.ai_assistant?.no_show || {};
+        const rows = Array.isArray(noShow.recommendations) ? noShow.recommendations.slice(0, Number(options.limit || 2)) : [];
+        return rows.length
+            ? rows.map(text => ({ title: "No-show watch", detail: text }))
+            : [{ title: "No-show watch", detail: "No urgent no-show actions are flagged right now." }];
+    }
+
+    function revenueIntegrityGuidanceRows(bundle, options = {}) {
+        const integrity = bundle?.dashboard?.ai_assistant?.revenue_integrity || {};
+        const rows = Array.isArray(integrity.alerts) ? integrity.alerts.slice(0, Number(options.limit || 2)) : [];
+        return rows.length
+            ? rows.map(item => ({ title: item.title || "Revenue integrity", detail: item.detail || item.context || "" }))
+            : [{ title: "Revenue integrity", detail: "No payment or ledger integrity blockers are active right now." }];
+    }
+
+    function importCopilotGuidanceRows(bundle, options = {}) {
+        const importCopilot = bundle?.dashboard?.ai_assistant?.import_copilot || {};
+        const rows = Array.isArray(importCopilot.recommendations) ? importCopilot.recommendations.slice(0, Number(options.limit || 2)) : [];
+        return rows.length
+            ? rows.map(text => ({ title: "Import guidance", detail: text }))
+            : [{ title: "Import guidance", detail: "Import mapping and freshness guidance is stable." }];
+    }
+
+    function renderGuidanceStack(rows, options = {}) {
+        const items = (Array.isArray(rows) ? rows : []).filter(Boolean);
+        if (!items.length) return "";
+        const extraClass = String(options.extraClass || "").trim();
+        return `
+            <div class="stack compact-stack ${escapeHtml(extraClass)}">
+                ${items.map(item => `
+                    <div class="list-row">
+                        <div class="list-row-top">
+                            <span class="list-title">${escapeHtml(item.title || "Guidance")}</span>
+                        </div>
+                        <div class="list-meta">${escapeHtml(item.detail || "")}</div>
+                    </div>
+                `).join("")}
+            </div>
+        `;
     }
 
     function setDashboardStreamPreference(stream) {
@@ -2679,9 +2900,31 @@
         });
     }
 
+    function deleteWorkspaceCacheKey(route = state.route) {
+        const key = workspaceRouteKey(route);
+        state.workspaceCache.delete(key);
+    }
+
     function invalidateWorkspaceCache() {
         state.workspaceCache.clear();
         state.sharedCache.clear();
+    }
+
+    function invalidateWorkspaceScope(workspace, options = {}) {
+        const targetWorkspace = String(workspace || "").trim().toLowerCase();
+        if (!targetWorkspace) return;
+        const targetPanel = options.panel == null ? null : String(options.panel || "").trim().toLowerCase();
+        const targetDate = options.date == null ? null : String(options.date || "").trim();
+        const targetClubId = options.clubId === undefined ? String(state.route?.clubId || "") : String(options.clubId || "");
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, cachedWorkspace, cachedPanel, cachedDate, cachedClubId] = String(key || "").split("|");
+            if (shell !== roleShell()) return false;
+            if (String(cachedWorkspace || "").trim().toLowerCase() !== targetWorkspace) return false;
+            if (targetPanel !== null && String(cachedPanel || "").trim().toLowerCase() !== targetPanel) return false;
+            if (targetDate !== null && String(cachedDate || "").trim() !== targetDate) return false;
+            if (targetClubId && String(cachedClubId || "") !== targetClubId) return false;
+            return true;
+        });
     }
 
     function readSharedCache(key, ttlMs = WORKSPACE_CACHE_DEFAULT_TTL_MS) {
@@ -3450,6 +3693,10 @@
         return `finance-base:${clubKey}:${clampYmd(date)}`;
     }
 
+    function operationalTargetsCacheKey(year = new Date().getFullYear(), clubKey = activeClubCacheKeyPart()) {
+        return `operational-targets:${clubKey}:${Number(year || new Date().getFullYear())}`;
+    }
+
     function golfDayBookingsCacheKey(clubKey = activeClubCacheKeyPart()) {
         return `golf-days:${clubKey}`;
     }
@@ -3597,6 +3844,26 @@
         }
     }
 
+    function invalidateClubSummaryCaches({
+        includeDashboard = false,
+        includeAlerts = false,
+        includeFinanceBase = false,
+        includeOperationalTargets = false,
+        financeDate = todayYmd(),
+    } = {}) {
+        const clubKey = activeClubCacheKeyPart();
+        if (includeDashboard) deleteSharedCacheKey(dashboardCacheKey(clubKey));
+        if (includeAlerts) deleteSharedCacheKey(alertsCacheKey(clubKey));
+        if (includeFinanceBase) deleteSharedCacheKey(financeBaseCacheKey(financeDate, clubKey));
+        if (includeOperationalTargets) deleteSharedCacheKey(operationalTargetsCacheKey(new Date().getFullYear(), clubKey));
+    }
+
+    function invalidateSummaryDrivenWorkspaceCaches() {
+        ["overview", "today", "golf", "operations", "reports"].forEach(workspace => {
+            invalidateWorkspaceScope(workspace);
+        });
+    }
+
     async function loadSharedFinanceBase({ signal } = {}) {
         const date = todayYmd();
         const clubKey = activeClubCacheKeyPart();
@@ -3608,6 +3875,25 @@
             ]);
             return { closeStatus, summary, settings };
         }, 10000);
+    }
+
+    async function loadSharedDashboardPayload({ signal } = {}) {
+        const clubKey = activeClubCacheKeyPart();
+        return loadSharedResource(
+            dashboardCacheKey(clubKey),
+            () => fetchJson("/api/admin/dashboard", { signal, timeoutMs: 25000 }),
+            12000
+        );
+    }
+
+    async function loadSharedOperationalTargets({ signal, year } = {}) {
+        const targetYear = Number(year || new Date().getFullYear());
+        const clubKey = activeClubCacheKeyPart();
+        return loadSharedResource(
+            operationalTargetsCacheKey(targetYear, clubKey),
+            () => fetchJsonSafe(`/api/admin/operation-targets?year=${encodeURIComponent(targetYear)}`, { year: targetYear, targets: [] }, { signal, timeoutMs: 12000 }),
+            15000
+        );
     }
 
     async function loadGolfTeeRows(date, { signal, ensureMaterialized = false } = {}) {
@@ -3668,13 +3954,17 @@
         const staffContextPromise = includeStaffContext
             ? loadSharedResource(`staff-context:${clubKey}`, () => fetchJson("/api/admin/staff-role-context", { signal, timeoutMs: 15000 }), 12000)
             : Promise.resolve(null);
+        const operationalTargetsPromise = shell === "club_admin"
+            ? loadSharedOperationalTargets({ signal, year: new Date().getFullYear() })
+            : Promise.resolve(null);
 
-        const [dashboard, alerts, financeBase, communications, staffContext] = await Promise.all([
+        const [dashboard, alerts, financeBase, communications, staffContext, operationalTargets] = await Promise.all([
             dashboardPromise,
             alertsPromise,
             financeBasePromise,
             communicationsPromise,
             staffContextPromise,
+            operationalTargetsPromise,
         ]);
 
         return {
@@ -3685,6 +3975,7 @@
             settings: financeBase.settings,
             communications,
             staffContext,
+            operationalTargets,
             date,
         };
     }
@@ -3716,9 +4007,10 @@
                     ? (roleContext.role_label ? `${roleContext.role_label}. Start with alerts, member demand, and the live golf day.` : "Start with alerts, member demand, and the live golf day.")
                     : "Start the club day here: blockers, revenue, current notices, and close state in one operating view.",
                 extraClass: "overview-hero",
+                meta: renderInsightMeta("Target pace and risk guidance live"),
             })}
             ${renderOverviewStreamCard(dashboard, options)}
-            ${renderDashboardStatCards(dashboard, alerts)}
+            ${renderDashboardStatCards(bundle)}
             <section class="dashboard-grid">
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -3733,7 +4025,7 @@
                     <div class="panel-head">
                         <div>
                             <h4>${escapeHtml(streamLabel)} performance board</h4>
-                            <p>${escapeHtml(insight.note || "See the current commercial and operational posture for this stream.")}</p>
+                            <p>${escapeHtml(insight.note || "See the current commercial and operational state for this stream.")}</p>
                         </div>
                     </div>
                     ${metricCards((insight.cards || []).map(row => ({
@@ -3741,6 +4033,7 @@
                         value: formatMaybe(row.value, row.format),
                         meta: selectedStream === "all" ? "Current club signal" : `${streamLabel} current signal`,
                     })))}
+                    ${shell === "club_admin" ? renderOperationalTargetFocus(bundle, { stream: selectedStream }) : ""}
                     ${renderOperationalHighlights(insight.highlights)}
                 </article>
             </section>
@@ -3753,6 +4046,11 @@
                         </div>
                     </div>
                     ${renderAlerts(alerts.alerts)}
+                    ${renderGuidanceStack([
+                        { title: "Target pace", detail: aiTargetSummary(bundle) },
+                        ...noShowGuidanceRows(bundle, { limit: 1 }),
+                        ...revenueIntegrityGuidanceRows(bundle, { limit: 1 }),
+                    ])}
                 </article>
                 <article class="dashboard-card">
                     <div class="panel-head">
@@ -3796,7 +4094,6 @@
                     </div>
                 </article>
             </section>
-            ${renderAiAssistant(bundle)}
             <section class="dashboard-card">
                 <div class="panel-head">
                     <div>
@@ -4214,6 +4511,7 @@
                         <div class="button-row">
                             <button type="button" class="button" data-booking-bulk-status="1">Apply status</button>
                             <button type="button" class="button ghost" data-booking-bulk-payment="1">Set payment</button>
+                            <button type="button" class="button ghost" data-booking-bulk-account="1">Set account</button>
                         </div>
                     </div>
                 </div>
@@ -4363,6 +4661,7 @@
                     workspace: "golf",
                     subnavLabel: "Golf pages",
                     extraClass: "golf-hero-card",
+                    meta: renderInsightMeta("No-show and finance guidance live"),
                     metrics: [
                         { label: "Slots", value: formatInteger(rows.length), meta: "Rendered for the selected day" },
                         { label: "Booked Slots", value: formatInteger(bookedSlots), meta: "Slots carrying at least one booking" },
@@ -4388,17 +4687,18 @@
                                 <p>${escapeHtml(golfInsight.note || "Golf should show live operational signal alongside the day sheet.")}</p>
                             </div>
                         </div>
-                        ${metricCards((golfInsight.cards || []).map(row => ({
-                            label: row.label,
-                            value: formatMaybe(row.value, row.format),
-                            meta: "Current golf signal",
-                        })))}
-                        ${renderOperationalHighlights(golfInsight.highlights)}
-                    </article>
-                    <article class="dashboard-card">
-                        <div class="panel-head">
-                            <div>
-                                <h4>Golf-day pipeline</h4>
+                    ${metricCards((golfInsight.cards || []).map(row => ({
+                        label: row.label,
+                        value: formatMaybe(row.value, row.format),
+                        meta: "Current golf signal",
+                    })))}
+                    ${renderOperationalHighlights(golfInsight.highlights)}
+                    ${renderGuidanceStack(noShowGuidanceRows(bundle, { limit: 2 }))}
+                </article>
+                <article class="dashboard-card">
+                    <div class="panel-head">
+                        <div>
+                            <h4>Golf-day pipeline</h4>
                                 <p>Golf-day commercial context stays inside golf operations, not in a detached report view.</p>
                             </div>
                         </div>
@@ -4415,8 +4715,8 @@
                     <article class="dashboard-card">
                         <div class="panel-head">
                             <div>
-                                <h4>Golf finance bridge</h4>
-                                <p>Golf operations are only complete when tee-sheet work, paid status, and day-end export posture stay linked.</p>
+                                <h4>Golf and finance</h4>
+                                <p>Keep golf activity, paid status, and day-end finance readiness connected.</p>
                             </div>
                         </div>
                         ${metricCards([
@@ -4425,6 +4725,7 @@
                             { label: "Today Bookings", value: formatInteger(bundle.dashboard?.today_bookings || 0), meta: "Current golf booking load" },
                             { label: "Revenue Integrity", value: escapeHtml(String(bundle.dashboard?.ai_assistant?.revenue_integrity?.status || "healthy").replaceAll("_", " ")), meta: `Score ${formatInteger(bundle.dashboard?.ai_assistant?.revenue_integrity?.health_score || 0)}` },
                         ])}
+                        ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 2 }))}
                     </article>
                 </section>
                 ${shell === "club_admin" ? `
@@ -4444,6 +4745,9 @@
         if (panel === "golf-days") {
             const golfDays = bundle.golfDays || {};
             const rows = Array.isArray(golfDays.bookings) ? golfDays.bookings : [];
+            const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
+            const readyToComplete = rows.filter(row => golfDayLifecycle(row).stage === "Ready to complete").length;
+            const allocatedCount = rows.filter(row => ["allocated", "completed"].includes(String(row.operation_area || "").trim().toLowerCase())).length;
             return `
                 ${renderPageHero({
                     title: "Golf Day Operations",
@@ -4453,8 +4757,8 @@
                     metrics: [
                         { label: "Open Events", value: formatInteger(golfDays.total || 0), meta: "Current golf-day bookings" },
                         { label: "Pipeline Value", value: formatCurrency(golfDays.total_amount || 0), meta: "Gross booked value" },
-                        { label: "Outstanding", value: formatCurrency(golfDays.outstanding_balance || 0), meta: "Remaining balance due" },
-                        { label: "Golf Revenue Today", value: formatCurrency(bundle.dashboard?.golf_revenue_today || 0), meta: "Today's golf revenue snapshot" },
+                        { label: "Allocated", value: formatInteger(allocatedCount), meta: "Events already reserved on the tee sheet" },
+                        { label: "Ready to Complete", value: formatInteger(readyToComplete), meta: "Settled and allocated events ready to close" },
                     ],
                 })}
                 <section class="card">
@@ -4468,13 +4772,97 @@
                         ${rows.length ? rows.map(row => `
                             <div class="list-row">
                                 <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(row.event_name || "Golf day")}</span>
-                                    ${renderStatusPill("", row.payment_status || "pending")}
+                                    <span class="list-title">${escapeHtml(`${row.event_name || "Golf day"} #${row.id || "-"}`)}</span>
+                                    <div class="inline-actions">
+                                        ${renderStatusPill("", row.payment_status || "pending")}
+                                        ${golfDayLifecyclePill(row)}
+                                    </div>
+                                </div>
+                                <div class="inline-actions">
+                                    <button type="button" class="button secondary" data-edit-golf-day="${escapeHtml(String(row.id))}">Edit event</button>
+                                    <button type="button" class="button ghost" data-load-golf-day-allocation="${escapeHtml(String(row.id))}">Load allocation</button>
+                                    ${String(row.payment_status || "").trim().toLowerCase() === "paid" ? "" : `<button type="button" class="button ghost" data-golf-day-mark-paid="${escapeHtml(String(row.id))}">Settle paid</button>`}
+                                    ${golfDayLifecycle(row).stage === "Ready to complete" ? `<button type="button" class="button ghost" data-golf-day-complete="${escapeHtml(String(row.id))}">Mark complete</button>` : ""}
                                 </div>
                                 <div class="list-meta">${escapeHtml(`${formatDate(row.event_date)} · ${formatCurrency(row.amount || 0)} · ${row.contact_name || "No contact set"}`)}</div>
+                                <div class="list-meta">${escapeHtml(golfDayLifecycle(row).detail)}</div>
                             </div>
                         `).join("") : `<div class="empty-state">No golf-day bookings yet.</div>`}
                     </div>
+                </section>
+                <section class="split-grid">
+                    <form class="form-card" id="golf-day-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Event setup</h3>
+                                <p>Create or update the event record before allocating starts to the tee sheet.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field"><label>Existing Event ID</label><input name="golf_day_booking_id" type="number" min="1" placeholder="Leave blank to create"></div>
+                            <div class="field"><label>Event Name</label><input name="event_name" required></div>
+                            <div class="field"><label>Contact Name</label><input name="contact_name"></div>
+                            <div class="field"><label>Event Date</label><input name="event_date" type="date"></div>
+                            <div class="field"><label>End Date</label><input name="event_end_date" type="date"></div>
+                            <div class="field"><label>Invoice Reference</label><input name="invoice_reference"></div>
+                            <div class="field">
+                                <label>Account Customer</label>
+                                <select name="account_customer_id">
+                                    <option value="">None selected</option>
+                                    ${accountCustomers.map(row => `<option value="${escapeHtml(String(row.id))}">${escapeHtml(row.name || row.account_code || "Account")}</option>`).join("")}
+                                </select>
+                            </div>
+                            <div class="field"><label>Account Code</label><input name="account_code"></div>
+                            <div class="field"><label>Amount</label><input name="amount" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Balance Due</label><input name="balance_due" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Deposit</label><input name="deposit_amount" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Full Payment</label><input name="full_payment_amount" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field">
+                                <label>Payment Status</label>
+                                <select name="payment_status">
+                                    <option value="pending">Pending</option>
+                                    <option value="partial">Partial</option>
+                                    <option value="paid">Paid</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                            <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Save golf day</button>
+                            <button type="button" class="button secondary" data-clear-golf-day-form="1">Clear</button>
+                        </div>
+                    </form>
+                    <form class="form-card" id="golf-day-allocation-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Allocate to Tee Sheet</h3>
+                                <p>Use the existing bulk-book flow to reserve starts for the selected golf day.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field"><label>Event ID</label><input name="golf_day_booking_id" type="number" min="1" placeholder="Optional link to an existing event"></div>
+                            <div class="field"><label>Group Name</label><input name="group_name" required></div>
+                            <div class="field"><label>Date</label><input name="date" type="date" value="${escapeHtml(bundle.date)}"></div>
+                            <div class="field"><label>Start Time</label><input name="start_time" type="time" value="07:00"></div>
+                            <div class="field"><label>End Time</label><input name="end_time" type="time" value="11:00"></div>
+                            <div class="field"><label>Tees</label><input name="tees" value="1,10"></div>
+                            <div class="field"><label>Slots per Time</label><input name="slots_per_time" type="number" min="1" max="4" value="4"></div>
+                            <div class="field">
+                                <label>Holes</label>
+                                <select name="holes">
+                                    <option value="18">18</option>
+                                    <option value="9">9</option>
+                                </select>
+                            </div>
+                            <div class="field"><label>Account Code</label><input name="account_code"></div>
+                            <div class="field"><label>Price per Slot</label><input name="price" type="number" min="0" step="0.01" value="0"></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Allocate starts</button>
+                            <button type="button" class="button secondary" data-clear-golf-day-allocation-form="1">Clear</button>
+                        </div>
+                    </form>
                 </section>
             `;
         }
@@ -4493,7 +4881,7 @@
             ]);
             return { panel, ...shared, products, sales };
         }
-        if (["tennis", "bowls"].includes(panel)) {
+        if (["tennis", "padel", "bowls"].includes(panel)) {
             const members = await fetchJson(`/api/admin/members?area=${encodeURIComponent(panel)}&limit=12&sort=recent_activity`, { signal });
             return { panel, ...shared, members };
         }
@@ -4533,12 +4921,13 @@
 
     function operationServiceCopy(key) {
         const copyMap = {
-            pro_shop: "Sales, stock, and day-close posture for the shop desk.",
-            tennis: "Member demand and session posture for the tennis desk.",
+            pro_shop: "Sales, stock, and close-readiness for the shop desk.",
+            tennis: "Member demand and session activity for the tennis desk.",
+            padel: "Padel demand and court-side service visibility.",
             bowls: "Bowls activity, member service, and club-day visibility.",
-            pub: "Imported hospitality revenue with clear export and handoff posture.",
+            pub: "Imported hospitality revenue with clear export and close-readiness.",
         };
-        return copyMap[key] || "Operational service posture for this module.";
+        return copyMap[key] || "Operational summary for this module.";
     }
 
     function renderOperationsServiceBoard(bundle) {
@@ -4553,15 +4942,15 @@
                         <article class="dashboard-card">
                             <div class="panel-head">
                                 <div>
-                                    <h4>${escapeHtml(MODULE_LABELS[key] || key)} service lane</h4>
+                                    <h4>${escapeHtml(MODULE_LABELS[key] || key)} summary</h4>
                                     <p>${escapeHtml(operationServiceCopy(key))}</p>
                                 </div>
                             </div>
                             ${metricCards([
                                 {
-                                    label: primaryCard?.label || "Current signal",
+                                    label: primaryCard?.label || "Current activity",
                                     value: formatMaybe(primaryCard?.value || 0, primaryCard?.format),
-                                    meta: primaryCard ? "Primary live signal from this module" : "Signal will appear as the club uses this module",
+                                    meta: primaryCard ? "Primary live measure from this module" : "Activity will appear as the club uses this module",
                                 },
                                 {
                                     label: "Why it matters",
@@ -4588,8 +4977,8 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Shop desk brief</h4>
-                        <p>The pro shop should open with a clear trade brief: stock pressure, walk-in mix, card volume, and next handoff actions.</p>
+                        <h4>Shop summary</h4>
+                        <p>The pro shop should open with a clear trade summary: stock pressure, walk-in mix, card volume, and next close steps.</p>
                     </div>
                 </div>
                 ${metricCards([
@@ -4607,6 +4996,10 @@
         const activeMembers = Array.isArray(members) ? members.filter(row => String(row.membership_status || "").toLowerCase() === "active").length : 0;
         const highActivity = Array.isArray(members) ? members.filter(row => Number(row.bookings_count || 0) >= 2).length : 0;
         const pubRevenue = bundle.dashboard?.revenue_streams?.pub || {};
+        const profile = activeClub()?.profile || {};
+        const capacityMeta = moduleResourceMeta(panel, profile);
+        const sports = sportsSetupConfig(profile);
+        const trackingCard = operationalTrackingCard(panel, bundle);
         const summaryCards = panel === "pub"
             ? [
                 { label: "Revenue Today", value: formatCurrency(pubRevenue.today_revenue || 0), meta: "Imported hospitality revenue for the day" },
@@ -4617,20 +5010,45 @@
             : [
                 { label: "Active Members", value: formatInteger(activeMembers), meta: `${escapeHtml(MODULE_LABELS[panel] || panel)}-relevant active members in current scope` },
                 { label: "High Activity", value: formatInteger(highActivity), meta: "Members likely to need faster service or follow-up" },
-                { label: "Current Signal", value: formatMaybe((insight.cards || [])[0]?.value || 0, (insight.cards || [])[0]?.format), meta: (insight.cards || [])[0]?.label || "Primary live module signal" },
-                { label: "Service Goal", value: panel === "tennis" ? "Fast court-side service" : "Club-day visibility", meta: operationServiceCopy(panel) },
+                { label: panel === "tennis" || panel === "padel" ? "Courts" : panel === "bowls" ? "Rinks" : "Current Activity", value: panel === "tennis" ? formatInteger(sports.tennisCourtCount) : panel === "padel" ? formatInteger(sports.padelCourtCount) : panel === "bowls" ? formatInteger(sports.bowlsRinkCount) : formatMaybe((insight.cards || [])[0]?.value || 0, (insight.cards || [])[0]?.format), meta: capacityMeta || (insight.cards || [])[0]?.label || "Primary live module measure" },
+                trackingCard,
             ];
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>${escapeHtml(MODULE_LABELS[panel] || panel)} service brief</h4>
-                        <p>${escapeHtml(operationServiceCopy(panel))}</p>
+                        <h4>${escapeHtml(MODULE_LABELS[panel] || panel)} summary</h4>
+                        <p>${escapeHtml(capacityMeta || operationServiceCopy(panel))}</p>
                     </div>
                 </div>
                 ${metricCards(summaryCards)}
             </article>
         `;
+    }
+
+    function moduleHeroMetrics(panel, bundle, members = []) {
+        if (panel === "pub") {
+            const insight = (bundle.dashboard?.operation_insights || {})[panel] || {};
+            return (insight.cards || []).map(row => ({
+                label: row.label,
+                value: formatMaybe(row.value, row.format),
+                meta: "Current club signal",
+            }));
+        }
+        const profile = activeClub()?.profile || {};
+        const sports = sportsSetupConfig(profile);
+        const activeMembers = Array.isArray(members) ? members.filter(row => String(row.membership_status || "").toLowerCase() === "active").length : 0;
+        const highActivity = Array.isArray(members) ? members.filter(row => Number(row.bookings_count || 0) >= 2).length : 0;
+        return [
+            { label: "Active Members", value: formatInteger(activeMembers), meta: `${MODULE_LABELS[panel] || panel} members in current club scope` },
+            { label: "High Activity", value: formatInteger(highActivity), meta: "Members likely to need follow-up or faster service" },
+            {
+                label: panel === "bowls" ? "Rinks" : "Courts",
+                value: panel === "bowls" ? formatInteger(sports.bowlsRinkCount) : panel === "padel" ? formatInteger(sports.padelCourtCount) : formatInteger(sports.tennisCourtCount),
+                meta: moduleResourceMeta(panel, profile) || "Configured physical capacity",
+            },
+            operationalTrackingCard(panel, bundle),
+        ];
     }
 
     function renderOperationsWorkspace(bundle) {
@@ -4643,7 +5061,7 @@
             return `
                 ${renderPageHero({
                     title: "Operations Board",
-                    copy: "Keep enabled non-golf service lanes visible without turning Operations into a launchpad.",
+                    copy: "See the non-golf areas that need attention today without leaving the main operating shell.",
                     workspace: "operations",
                     subnavLabel: "Operations pages",
                     metrics: [
@@ -4710,7 +5128,7 @@
                             ${products.slice(0, 14).map(row => `
                                 <div class="product-row">
                                     <div>
-                                        <div class="list-title">${escapeHtml(row.name || row.sku || "Product")}</div>
+                                        <div class="list-title">${escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</div>
                                         <div class="list-meta">${escapeHtml(row.category || "Uncategorised")} · ${escapeHtml(row.sku || "")}</div>
                                     </div>
                                     <div class="inline-actions">
@@ -4733,7 +5151,7 @@
                             ${sales.map(row => `
                                 <div class="list-row">
                                     <div class="list-row-top">
-                                        <span class="list-title">${escapeHtml(row.customer_name || "Walk-in sale")}</span>
+                                        <span class="list-title">${escapeHtml(`${row.customer_name || "Walk-in sale"} #${row.id || "-"}`)}</span>
                                         <span class="metric-pill">${escapeHtml(formatCurrency(row.total || 0))}</span>
                                     </div>
                                     <div class="list-meta">${escapeHtml(`${formatDateTime(row.sold_at)} · ${(row.items || []).length} line item(s) · ${row.payment_method || ""}`)}</div>
@@ -4742,10 +5160,96 @@
                         </div>
                     </article>
                 </section>
+                <section class="split-grid">
+                    <form class="form-card" id="pro-shop-sale-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Record sale</h3>
+                                <p>Post a new pro-shop sale directly from this page using the current native product list.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label>Product</label>
+                                <select name="product_id">
+                                    ${products.map(row => `<option value="${escapeHtml(String(row.id))}">${escapeHtml(`${row.name || row.sku || "Product"} (${formatCurrency(row.unit_price || 0)})`)}</option>`).join("")}
+                                </select>
+                            </div>
+                            <div class="field"><label>Quantity</label><input name="quantity" type="number" min="1" value="1"></div>
+                            <div class="field"><label>Customer</label><input name="customer_name" placeholder="Optional customer name"></div>
+                            <div class="field">
+                                <label>Payment</label>
+                                <select name="payment_method">
+                                    <option value="card">Card</option>
+                                    <option value="cash">Cash</option>
+                                    <option value="eft">EFT</option>
+                                    <option value="account">Account</option>
+                                    <option value="online">Online</option>
+                                </select>
+                            </div>
+                            <div class="field"><label>Discount</label><input name="discount" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Tax</label><input name="tax" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field" style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes"></textarea></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Record sale</button>
+                        </div>
+                    </form>
+                    <form class="form-card" id="pro-shop-product-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Add or update product</h3>
+                                <p>Create products here, or enter an existing product ID to update stock and pricing fields.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field"><label>Existing Product ID</label><input name="product_id" type="number" min="1" placeholder="Leave blank to create"></div>
+                            <div class="field"><label>SKU</label><input name="sku" required></div>
+                            <div class="field"><label>Name</label><input name="name" required></div>
+                            <div class="field"><label>Category</label><input name="category"></div>
+                            <div class="field"><label>Unit Price</label><input name="unit_price" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Cost Price</label><input name="cost_price" type="number" min="0" step="0.01" value="0"></div>
+                            <div class="field"><label>Stock Qty</label><input name="stock_qty" type="number" min="0" value="0"></div>
+                            <div class="field"><label>Reorder Level</label><input name="reorder_level" type="number" min="0" value="0"></div>
+                            <div class="checkbox-card">
+                                <label><input type="checkbox" name="active" value="1" checked> Active product</label>
+                                <p>Inactive products stay out of current sales but remain in the catalog.</p>
+                            </div>
+                            <div class="field"><label>Stock Adjust Delta</label><input name="stock_delta" type="number" step="1" value="0"></div>
+                            <div class="field"><label>Stock Adjust Reason</label><input name="stock_reason" placeholder="Optional reason"></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Save product</button>
+                        </div>
+                    </form>
+                </section>
+                <section class="card">
+                    <div class="panel-head">
+                        <div>
+                            <h3>Product actions</h3>
+                            <p>Use current product IDs to update records, or apply quick stock adjustments from this action list.</p>
+                        </div>
+                    </div>
+                    <div class="stack">
+                        ${products.length ? products.slice(0, 20).map(row => `
+                            <div class="list-row">
+                                <div class="list-row-top">
+                                    <span class="list-title">${escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</span>
+                                    ${renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
+                                </div>
+                                <div class="list-meta">${escapeHtml(`${row.sku || ""} · ${formatCurrency(row.unit_price || 0)} · ${formatInteger(row.stock_qty || 0)} in stock`)}</div>
+                                <div class="inline-actions">
+                                    <button type="button" class="button secondary" data-edit-pro-shop-product="${escapeHtml(String(row.id))}">Edit product</button>
+                                    <button type="button" class="button ghost" data-adjust-pro-shop-stock="${escapeHtml(String(row.id))}">Adjust stock</button>
+                                </div>
+                            </div>
+                        `).join("") : `<div class="empty-state">No products available for action.</div>`}
+                    </div>
+                </section>
             `;
         }
 
-        if (["tennis", "bowls", "pub"].includes(panel)) {
+        if (["tennis", "padel", "bowls", "pub"].includes(panel)) {
             const insight = insightMap[panel] || {};
             const members = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
             return `
@@ -4754,15 +5258,24 @@
                     copy: insight.note || "Operational detail for the selected module.",
                     workspace: "operations",
                     subnavLabel: "Operations pages",
-                    metrics: (insight.cards || []).map(row => ({
+                    metrics: panel === "pub" ? (insight.cards || []).map(row => ({
                         label: row.label,
                         value: formatMaybe(row.value, row.format),
                         meta: "Current club signal",
-                    })),
+                    })) : moduleHeroMetrics(panel, bundle, members),
                 })}
                 <section class="dashboard-grid">
                     ${renderModuleServiceBrief(panel, bundle, members)}
-                    ${renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
+                    ${panel === "pub"
+                        ? renderAccountingWorkflowCard({ ...bundle, importSettings: [] })
+                        : renderWorkblock({
+                            title: "Tracking and revenue",
+                            copy: panel === "bowls"
+                                ? "Use this page to watch member activity, imported bowls revenue, and annual targets in one place."
+                                : "Use this page to watch member activity, configured capacity, and annual targets until direct booking and payment tracking is live.",
+                            open: true,
+                            body: renderOperationalTargetFocus(bundle, { stream: panel }) || `<div class="empty-state">No annual targets are configured for ${escapeHtml(MODULE_LABELS[panel] || panel)} yet.</div>`,
+                        })}
                 </section>
                 <section class="split-grid">
                     <article class="card">
@@ -4777,7 +5290,7 @@
                     <article class="card">
                         <div class="panel-head">
                             <div>
-                                <h4>${panel === "pub" ? "Imported revenue posture" : "Relevant members"}</h4>
+                                <h4>${panel === "pub" ? "Imported revenue summary" : "Relevant members"}</h4>
                                 <p>${panel === "pub"
                                     ? "Pub operations currently use imported revenue visibility rather than direct inventory actions."
                                     : `Recent member activity for ${MODULE_LABELS[panel] || panel}.`}</p>
@@ -4955,12 +5468,13 @@
                     { label: "Revenue Sync", value: formatRelativeAge(summary.revenue_sync_at), meta: summary.revenue_sync_at ? formatDateTime(summary.revenue_sync_at) : "No recent revenue import" },
                     { label: "Booking Sync", value: formatRelativeAge(summary.booking_sync_at), meta: summary.booking_sync_at ? formatDateTime(summary.booking_sync_at) : "No recent booking import" },
                 ])}
+                ${renderGuidanceStack(importCopilotGuidanceRows(bundle, { limit: 2 }))}
                 <div class="stack">
                     ${recommendations.length ? recommendations.map(item => `
                         <div class="list-row">
                             <div class="list-meta">${escapeHtml(item)}</div>
                         </div>
-                    `).join("") : `<div class="empty-state">Import freshness and mapping posture look stable.</div>`}
+                    `).join("") : `<div class="empty-state">Import freshness and mappings look stable.</div>`}
                 </div>
             </section>
         `;
@@ -4995,7 +5509,7 @@
             return `${formatInteger(row.bookings_count || 0)} recent booking(s) in current club scope.`;
         }
         if (String(row.primary_operation || "").trim().toLowerCase() === "golf") {
-            return "Likely to touch tee-sheet, check-in, or golf-day workflow.";
+            return "Likely to need tee-sheet, check-in, or golf-day attention.";
         }
         return "General member service context is stable.";
     }
@@ -5091,7 +5605,7 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Service desk brief</h4>
+                        <h4>Desk summary</h4>
                         <p>Front desk should see service pressure, golf demand, and debtor readiness together before moving into the live club day.</p>
                     </div>
                 </div>
@@ -5134,16 +5648,18 @@
         const limit = Number(options.limit || 0);
         const visible = limit > 0 ? items.slice(0, limit) : items;
         const emptyText = String(options.emptyText || "No staff users found.").trim();
+        const includeActions = typeof options.actions === "function";
         return renderTable(
-            ["Name", "Role", "Operational Role", "Email"],
+            includeActions ? ["Name", "Role", "Operational Role", "Email", "Actions"] : ["Name", "Role", "Operational Role", "Email"],
             visible.length ? visible.map(row => `
                 <tr>
                     <td><strong>${escapeHtml(row.name || "")}</strong></td>
                     <td>${escapeHtml(row.role || "")}</td>
                     <td>${escapeHtml(row.operational_role || row.operation_area || "-")}</td>
                     <td>${escapeHtml(row.email || "")}</td>
+                    ${includeActions ? `<td>${options.actions(row) || ""}</td>` : ""}
                 </tr>
-            `) : [`<tr><td colspan="4"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
+            `) : [`<tr><td colspan="${includeActions ? "5" : "4"}"><div class="empty-state">${escapeHtml(emptyText)}</div></td></tr>`]
         );
     }
 
@@ -5303,7 +5819,7 @@
                     <article class="dashboard-card">
                         <div class="panel-head">
                             <div>
-                                <h4>Team service posture</h4>
+                                <h4>Team summary</h4>
                                 <p>Staff records, debtor readiness, and member demand should read together before the club opens the day.</p>
                             </div>
                         </div>
@@ -5430,7 +5946,7 @@
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Service posture</h4>
+                            <h4>Summary</h4>
                             <p>Member demand, flagged statuses, and debtor readiness should be visible before staff jump into golf, communications, or finance.</p>
                         </div>
                     </div>
@@ -5533,7 +6049,14 @@
                         copy: "Keep operator visibility high before club admins open lower-priority detail.",
                         badge: "Open",
                         open: true,
-                        body: renderStaffRowsTable(rows, { limit: 8 }),
+                        body: renderStaffRowsTable(rows, {
+                            limit: 8,
+                            actions: row => `
+                                <div class="inline-actions">
+                                    <button type="button" class="button secondary" data-edit-staff="${escapeHtml(String(row.id || 0))}">Edit</button>
+                                </div>
+                            `,
+                        }),
                     })}
                     ${renderWorkblock({
                         id: "staff-current-workblock",
@@ -5541,26 +6064,34 @@
                         copy: "Full club staff listing in the current locked club scope.",
                         badge: "Open",
                         open: true,
-                        body: renderStaffRowsTable(rows),
+                        body: renderStaffRowsTable(rows, {
+                            actions: row => `
+                                <div class="inline-actions">
+                                    <button type="button" class="button secondary" data-edit-staff="${escapeHtml(String(row.id || 0))}">Edit</button>
+                                </div>
+                            `,
+                        }),
                     })}
                     ${renderWorkblock({
                         id: "staff-add-workblock",
-                        title: "Add staff",
-                        copy: "Create club staff without mixing club access changes into the primary view.",
+                        title: "Add or update staff",
+                        copy: "Create new operators or update an existing club staff user without leaving the page.",
                         badge: "Collapsed",
                         body: `
                             <form class="workblock-form" id="club-staff-form">
+                                <input type="hidden" name="user_id" value="">
                                 <div class="field-grid">
                                     <div class="field"><label>Name</label><input name="name" required></div>
                                     <div class="field"><label>Email</label><input name="email" type="email" required></div>
-                                    <div class="field"><label>Password</label><input name="password" type="password" required></div>
+                                    <div class="field"><label>Password</label><input name="password" type="password"></div>
                                     <div class="checkbox-card">
                                         <label><input type="checkbox" name="force_reset" value="1"> Force reset if user exists in this club</label>
-                                        <p>Users cannot be moved across clubs from this shell.</p>
+                                        <p>Only applies when reusing an existing user in this club. Email stays locked on updates.</p>
                                     </div>
                                 </div>
                                 <div class="button-row">
-                                    <button type="submit" class="button">Create staff user</button>
+                                    <button type="submit" class="button">Save staff user</button>
+                                    <button type="button" class="button secondary" data-clear-staff-form="1">Clear</button>
                                 </div>
                             </form>
                         `,
@@ -5581,7 +6112,7 @@
                     })}
                     ${renderWorkblock({
                         id: "staff-posture-workblock",
-                        title: "Team service posture",
+                        title: "Team summary",
                         copy: "Staff records, debtor readiness, and member demand should read together without dominating the opening view.",
                         badge: "Collapsed",
                         body: metricCards([
@@ -5593,7 +6124,7 @@
                     })}
                     ${renderWorkblock({
                         id: "staff-brief-workblock",
-                        title: "Service desk brief",
+                        title: "Desk summary",
                         copy: "Golf demand and debtor readiness can stay available without occupying the initial screen.",
                         badge: "Collapsed",
                         body: renderServiceDeskBriefEmbedded(memberRows, accountCustomers),
@@ -5671,7 +6202,7 @@
                 })}
                 ${renderWorkblock({
                     id: "people-posture-workblock",
-                    title: "Service posture",
+                        title: "Summary",
                     copy: "Use this block when member demand, follow-up pressure, and debtor readiness need a quick read.",
                     badge: "Collapsed",
                     body: metricCards([
@@ -5683,7 +6214,7 @@
                 })}
                 ${renderWorkblock({
                     id: "people-brief-workblock",
-                    title: "Service desk brief",
+                        title: "Desk summary",
                     copy: "Front desk golf demand and debtor readiness stay one click away instead of sitting in the opening stack.",
                     badge: "Collapsed",
                     body: renderServiceDeskBriefEmbedded(rows, accountCustomers),
@@ -5762,7 +6293,7 @@
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
-                        <h4>Messaging cadence</h4>
+                        <h4>Message summary</h4>
                         <p>Club communications should support the day’s run-sheet: live notices, operational blockers, and clean handover when finance closes.</p>
                     </div>
                 </div>
@@ -5840,7 +6371,7 @@
                     <div class="panel-head">
                         <div>
                             <h4>Publishing board</h4>
-                            <p>Communications should show live publishing posture, not only an editor and a list.</p>
+                            <p>Show live publishing state clearly, not just an editor and a list.</p>
                         </div>
                     </div>
                     <div class="stack">
@@ -5859,7 +6390,7 @@
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Audience posture</h4>
+                            <h4>Audience summary</h4>
                             <p>Keep member and staff communication context visible while managing messages.</p>
                         </div>
                     </div>
@@ -5878,10 +6409,11 @@
                 <section class="split-grid">
                 ${canEdit ? `
                     <form class="form-card" id="communication-form">
+                        <input type="hidden" name="communication_id" value="">
                         <div class="panel-head">
                             <div>
-                                <h3>Create communication</h3>
-                                <p>Club communications are now grouped into one workspace instead of scattered across generic dashboard blocks.</p>
+                                <h3>Create or update communication</h3>
+                                <p>Club communications are grouped into one workspace with draft, publish, pin, and archive control.</p>
                             </div>
                         </div>
                         <div class="field-grid">
@@ -5915,6 +6447,9 @@
                             </div>
                             <div class="field"><label>Title</label><input name="title" required></div>
                             <div class="field"><label>Summary</label><input name="summary"></div>
+                            <div class="field"><label>CTA Label</label><input name="cta_label"></div>
+                            <div class="field"><label>CTA URL</label><input name="cta_url"></div>
+                            <div class="field"><label>Expires At</label><input name="expires_at" type="datetime-local"></div>
                             <div class="field" style="grid-column: 1 / -1;">
                                 <label>Body</label>
                                 <textarea name="body" required></textarea>
@@ -5922,6 +6457,7 @@
                         </div>
                         <div class="button-row">
                             <button type="submit" class="button">Save communication</button>
+                            <button type="button" class="button secondary" data-clear-communication-form="1">Clear</button>
                         </div>
                     </form>
                 ` : `
@@ -5955,6 +6491,33 @@
                         `).join("") : `<div class="empty-state">No communications found for this club.</div>`}
                     </div>
                 </section>
+                ${canEdit ? `
+                    <section class="card">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Manage message state</h3>
+                                <p>Edit the current record, publish it, archive it, or change pin state without leaving the page.</p>
+                            </div>
+                        </div>
+                        <div class="stack">
+                            ${rows.length ? rows.map(row => `
+                                <div class="list-row">
+                                    <div class="list-row-top">
+                                        <span class="list-title">${escapeHtml(`${row.title || "Communication"} #${row.id || "-"}`)}</span>
+                                        ${renderStatusPill("", row.status || "draft")}
+                                    </div>
+                                    <div class="list-meta">${escapeHtml(`${row.kind || ""} · ${row.audience || ""} · ${row.pinned ? "Pinned" : "Not pinned"}`)}</div>
+                                    <div class="inline-actions">
+                                        <button type="button" class="button secondary" data-edit-communication="${escapeHtml(String(row.id))}">Edit</button>
+                                        <button type="button" class="button ghost" data-communication-status="${escapeHtml(String(row.id))}" data-status-value="published">Publish</button>
+                                        <button type="button" class="button ghost" data-communication-status="${escapeHtml(String(row.id))}" data-status-value="archived">Archive</button>
+                                        <button type="button" class="button ghost" data-communication-pin="${escapeHtml(String(row.id))}" data-pin-value="${row.pinned ? "0" : "1"}">${row.pinned ? "Unpin" : "Pin"}</button>
+                                    </div>
+                                </div>
+                            `).join("") : `<div class="empty-state">No communication records available to manage.</div>`}
+                        </div>
+                    </section>
+                ` : ""}
             </section>
         `;
     }
@@ -5982,6 +6545,7 @@
                 copy: "Clear finance exceptions before export so paid booking states and ledger rows stay aligned.",
                 workspace: "reports",
                 subnavLabel: "Finance pages",
+                meta: renderInsightMeta("Ledger integrity and export guidance live"),
                 metrics: [
                     { label: "Paid Bookings", value: formatInteger(paidBookings.length), meta: `Paid-state golf bookings for ${escapeHtml(formatDate(bundle.date))}` },
                     { label: "Missing Paid Ledger", value: formatInteger(unresolved.length), meta: unresolved.length ? "Paid-status bookings still need a ledger row" : "No paid booking blockers found" },
@@ -5997,6 +6561,7 @@
                         <p>Resolve paid bookings missing ledger support before moving to Cashbook &amp; Day Close.</p>
                     </div>
                 </div>
+                ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 2 }))}
                 <div class="stack">
                     ${unresolved.length ? unresolved.slice(0, 12).map(row => `
                         <div class="list-row">
@@ -6006,7 +6571,9 @@
                             </div>
                             <div class="list-meta">${escapeHtml(`${formatTime(row.tee_time || "")} | ${row.status || "paid"} | ${formatCurrency(row.price || 0)} | ${row.club_card || "No account code"}`)}</div>
                             <div class="inline-actions">
-                                <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="bookings">Open bookings</button>
+                                <button type="button" class="button secondary" data-ledger-repair="${escapeHtml(String(row.id || 0))}" data-ledger-status="${escapeHtml(String(row.status || "checked_in"))}">Repair ledger</button>
+                                <button type="button" class="button ghost" data-ledger-payment="${escapeHtml(String(row.id || 0))}">Payment</button>
+                                <button type="button" class="button ghost" data-ledger-account="${escapeHtml(String(row.id || 0))}">Account</button>
                             </div>
                         </div>
                     `).join("") : `<div class="empty-state">No ledger exceptions need attention for this date.</div>`}
@@ -6044,23 +6611,42 @@
         const preview = bundle.preview || {};
         const summary = bundle.summary || {};
         const proShop = bundle.proShop || {};
+        const ledgerRows = Array.isArray(bundle.cashbookLedger?.ledger_entries) ? bundle.cashbookLedger.ledger_entries : [];
         const closeStatus = bundle.closeStatus || {};
         const settings = bundle.settings || {};
         const previewLines = Array.isArray(preview.journal_lines) ? preview.journal_lines : [];
         const previewError = String(preview._error || "");
+        const unexportedCount = ledgerRows.filter(row => !row.pastel_synced).length;
+        const exportedCount = ledgerRows.filter(row => Boolean(row.pastel_synced)).length;
+        const exportState = closeStatus.is_closed
+            ? "Closed"
+            : previewError
+                ? "Blocked"
+                : unexportedCount > 0
+                    ? "Needs export"
+                    : exportedCount > 0
+                        ? "Exported"
+                        : "No payments";
+        const closeReady = !previewError && unexportedCount === 0;
         return `
             ${renderPageHero({
                 title: "Cashbook & Day Close",
                 copy: "Preview, export, close, and reopen the selected day without leaving the club finance chain.",
                 workspace: "reports",
                 subnavLabel: "Finance pages",
-                meta: `${renderStatusPill("Day", closeStatus.is_closed ? "closed" : "open")}<span class="metric-pill">${escapeHtml(formatDate(date))}</span>`,
+                meta: `${renderInsightMeta("Close readiness and integrity guidance live")}${renderStatusPill("Day", closeStatus.is_closed ? "closed" : "open")}<span class="metric-pill">${escapeHtml(formatDate(date))}</span>`,
                 metrics: [
-                    { label: "Cashbook", value: escapeHtml(settings.cashbook_name || "Not configured"), meta: "Configured export destination" },
-                    { label: "Contra GL", value: escapeHtml(settings.cashbook_contra_gl || "-"), meta: "Cashbook contra mapping" },
+                    { label: "Export State", value: exportState, meta: closeReady ? "Daily journal can be closed after export review" : "Resolve export blockers before close" },
                     { label: "Journal Preview", value: formatInteger(previewLines.length), meta: previewError ? "Preview currently unavailable" : "Rows ready in preview" },
+                    { label: "Unexported Rows", value: formatInteger(unexportedCount), meta: exportedCount ? `${formatInteger(exportedCount)} already exported` : "Current daily ledger rows" },
                     { label: "Pro Shop Payments", value: formatInteger(proShop.transaction_count || 0), meta: "Sales ready for separate export" },
                 ],
+                body: !closeReady ? `
+                    <div class="inline-alert bad">
+                        <strong>Close blocked.</strong>
+                        <span>${escapeHtml(previewError || (unexportedCount > 0 ? "Export the daily CSV before closing the day." : "Resolve cashbook blockers before close."))}</span>
+                    </div>
+                ` : "",
                 actions: [
                     { label: "Export daily CSV" },
                     { label: "Export pro shop CSV", tone: "secondary", attrs: `data-export-pro-shop="${escapeHtml(date)}"` },
@@ -6075,29 +6661,31 @@
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Export posture</h4>
-                            <p>Accounting settings, close state, and payment totals need to be readable before the day is exported.</p>
+                            <h4>Export readiness</h4>
+                            <p>Accounting settings, export state, and close state need to be readable before the day is handed over.</p>
                         </div>
                     </div>
                     ${metricCards([
                         { label: "Daily Payments", value: formatCurrency(summary.total_payments || 0), meta: `${formatInteger(summary.records?.length || 0)} payment records` },
                         { label: "Tax", value: formatCurrency(summary.total_tax || 0), meta: "Daily tax total" },
-                        { label: "Closed At", value: closeStatus.closed_at ? formatDateTime(closeStatus.closed_at) : "Not closed", meta: closeStatus.export_filename || "No close batch recorded" },
+                        { label: "Close State", value: closeStatus.is_closed ? "Closed" : "Open", meta: closeStatus.closed_at ? formatDateTime(closeStatus.closed_at) : "No close recorded" },
                         { label: "VAT Rate", value: settings.vat_rate != null ? `${Math.round(Number(settings.vat_rate || 0) * 100)}%` : "-", meta: "Accounting settings currently applied" },
                     ])}
+                    ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 1 }))}
                 </article>
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Preview notes</h4>
-                            <p>The export remains club-specific. Import mappings define the CSV shape; GreenLink only has to output the right journal.</p>
+                            <h4>Close controls</h4>
+                            <p>Close should only follow a clean preview and a completed daily export.</p>
                         </div>
                     </div>
                     <div class="stack">
                         <div class="detail-row"><span class="row-key">Green Fees GL</span><span class="row-value">${escapeHtml(settings.green_fees_gl || "-")}</span></div>
                         <div class="detail-row"><span class="row-key">Cashbook</span><span class="row-value">${escapeHtml(settings.cashbook_name || "-")}</span></div>
                         <div class="detail-row"><span class="row-key">Close Batch</span><span class="row-value">${escapeHtml(closeStatus.export_batch_id || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Preview State</span><span class="row-value">${escapeHtml(previewError || "Ready for review")}</span></div>
+                        <div class="detail-row"><span class="row-key">Export File</span><span class="row-value">${escapeHtml(closeStatus.export_filename || "-")}</span></div>
+                        <div class="detail-row"><span class="row-key">Preview State</span><span class="row-value">${escapeHtml(previewError || (closeReady ? "Ready for review" : "Needs action"))}</span></div>
                     </div>
                 </article>
             </section>
@@ -6133,12 +6721,15 @@
         const rows = Array.isArray(bundle.imports?.imports) ? bundle.imports.imports : [];
         const settingsRows = Array.isArray(bundle.importSettings) ? bundle.importSettings : [];
         const summary = bundle.importsHealth || summarizeImportsHealth(rows, settingsRows);
+        const firstSettings = settingsRows[0] || { stream: "other", settings: {} };
+        const initialSettings = firstSettings.settings || {};
         return `
             ${renderPageHero({
                 title: "Imports & Data Health",
                 copy: "Keep stream mappings and import history clean enough that finance output can be trusted.",
                 workspace: "reports",
                 subnavLabel: "Finance pages",
+                meta: renderInsightMeta("Import freshness and mapping guidance live"),
                 metrics: [
                     { label: "Recent Imports", value: formatInteger(rows.length), meta: "Latest import batches in club scope" },
                     { label: "Configured Streams", value: formatInteger(summary.configured_streams || 0), meta: `${formatInteger(summary.total_streams || 0)} tracked streams` },
@@ -6162,12 +6753,103 @@
                                     <span class="list-title">${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</span>
                                     ${renderStatusPill("", row.configured ? "configured" : "missing")}
                                 </div>
-                                <div class="list-meta">${escapeHtml(row.settings?.date_field || "No date field")} | ${escapeHtml(row.settings?.amount_field || "No amount field")} | ${escapeHtml(row.settings?.reference_field || "No reference field")}</div>
+                                <div class="list-meta">${escapeHtml(row.settings?.date_field || "No date field")} | ${escapeHtml(row.settings?.amount_field || "No amount field")} | ${escapeHtml(row.settings?.external_id_field || "No external ID field")}</div>
+                                <div class="inline-actions">
+                                    <button type="button" class="button secondary" data-edit-import-settings="${escapeHtml(String(row.stream || "other"))}">Edit mapping</button>
+                                </div>
                             </div>
                         `).join("") : `<div class="empty-state">No revenue stream mappings found.</div>`}
                     </div>
                 </article>
                 ${renderImportsHealthCard(bundle)}
+            </section>
+            <section class="split-grid">
+                <form class="form-card" id="import-settings-form">
+                    <div class="panel-head">
+                        <div>
+                            <h3>Revenue mapping</h3>
+                            <p>Save the fields GreenLink should use before the next revenue import for this stream.</p>
+                        </div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label>Stream</label>
+                            <select name="stream">
+                                ${settingsRows.map(row => `<option value="${escapeHtml(String(row.stream || "other"))}" ${row.stream === firstSettings.stream ? "selected" : ""}>${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
+                            </select>
+                        </div>
+                        <div class="field"><label>Date Field</label><input name="date_field" value="${escapeHtml(initialSettings.date_field || "")}" required></div>
+                        <div class="field"><label>Amount Field</label><input name="amount_field" value="${escapeHtml(initialSettings.amount_field || "")}" required></div>
+                        <div class="field"><label>Description Field</label><input name="description_field" value="${escapeHtml(initialSettings.description_field || "")}"></div>
+                        <div class="field"><label>Category Field</label><input name="category_field" value="${escapeHtml(initialSettings.category_field || "")}"></div>
+                        <div class="field"><label>External ID Field</label><input name="external_id_field" value="${escapeHtml(initialSettings.external_id_field || "")}"></div>
+                        <div class="field"><label>Stream Field</label><input name="stream_field" value="${escapeHtml(initialSettings.stream_field || "")}"></div>
+                        <div class="field"><label>Tax Field</label><input name="tax_field" value="${escapeHtml(initialSettings.tax_field || "")}"></div>
+                        <div class="field">
+                            <label>Amount Sign</label>
+                            <select name="amount_sign">
+                                ${["as_is", "invert"].map(value => `<option value="${value}" ${String(initialSettings.amount_sign || "as_is") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Amount Basis</label>
+                            <select name="amount_basis">
+                                ${["gross", "net"].map(value => `<option value="${value}" ${String(initialSettings.amount_basis || "gross") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Tax Adjustment</label>
+                            <select name="tax_adjustment">
+                                ${["ignore", "add", "subtract"].map(value => `<option value="${value}" ${String(initialSettings.tax_adjustment || "ignore") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+                            </select>
+                        </div>
+                        <div class="field"><label>Tax Rate</label><input name="tax_rate" type="number" min="0" step="0.01" value="${escapeHtml(initialSettings.tax_rate ?? 0.15)}"></div>
+                        <div class="checkbox-card"><label><input type="checkbox" name="allow_stream_override" value="1" ${initialSettings.allow_stream_override ? "checked" : ""}> Allow stream override</label><p>Use a source field in the file when multiple streams are present.</p></div>
+                        <div class="checkbox-card"><label><input type="checkbox" name="dedupe_without_external_id" value="1" ${initialSettings.dedupe_without_external_id !== false ? "checked" : ""}> Dedupe without external ID</label><p>Create a best-effort fingerprint when the file has no unique transaction ID.</p></div>
+                    </div>
+                    <div class="button-row">
+                        <button type="submit" class="button">Save mapping</button>
+                        <button type="button" class="button secondary" data-clear-import-settings-form="1">Reset</button>
+                    </div>
+                </form>
+                <div class="stack">
+                    <form class="form-card" id="import-revenue-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Import revenue CSV</h3>
+                                <p>Run a club-scoped revenue import with current or saved mapping rules.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label>Stream</label>
+                                <select name="stream">
+                                    ${settingsRows.map(row => `<option value="${escapeHtml(String(row.stream || "other"))}">${escapeHtml(MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
+                                </select>
+                            </div>
+                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
+                            <div class="checkbox-card"><label><input type="checkbox" name="use_saved_settings" value="1" checked> Use saved settings</label><p>Apply saved mapping rules for this stream where available.</p></div>
+                            <div class="checkbox-card"><label><input type="checkbox" name="save_settings" value="1"> Save settings after import</label><p>Persist the detected or edited field mapping after this import.</p></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Import revenue CSV</button>
+                        </div>
+                    </form>
+                    <form class="form-card" id="import-members-form">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Import members CSV</h3>
+                                <p>Refresh People data from a member export without leaving the finance data-health chain.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
+                        </div>
+                        <div class="button-row">
+                            <button type="submit" class="button">Import members CSV</button>
+                        </div>
+                    </form>
+                </div>
             </section>
             <section class="dashboard-grid">
                 ${renderAccountingWorkflowCard(bundle)}
@@ -6232,7 +6914,8 @@
                 const windowRange = recentLedgerWindow();
                 const financeBase = await loadSharedFinanceBase({ signal });
                 const financeDate = financeBase.closeStatus?.date || todayYmd();
-                const [ledger, ledgerBookings] = await Promise.all([
+                const [dashboard, ledger, ledgerBookings] = await Promise.all([
+                    loadSharedDashboardPayload({ signal }),
                     fetchJsonSafe(
                         `/api/admin/ledger?limit=30&start=${encodeURIComponent(windowRange.start)}&end=${encodeURIComponent(windowRange.end)}`,
                         { ledger_entries: [], total: 0, total_amount: 0 },
@@ -6244,21 +6927,26 @@
                         { signal }
                     ),
                 ]);
-                return { panel, ...financeBase, ledger, ledgerBookings, date: financeDate };
+                return { panel, ...financeBase, dashboard, ledger, ledgerBookings, date: financeDate };
             }
             if (panel === "cashbook") {
                 const financeBase = await loadSharedFinanceBase({ signal });
                 const financeDate = financeBase.closeStatus?.date || todayYmd();
-                const [preview, proShop] = await Promise.all([
+                const dayStart = `${financeDate}T00:00:00.000Z`;
+                const dayEnd = `${addDaysYmd(financeDate, 1)}T00:00:00.000Z`;
+                const [dashboard, preview, proShop, cashbookLedger] = await Promise.all([
+                    loadSharedDashboardPayload({ signal }),
                     fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(financeDate)}`, { journal_lines: [] }, { signal }),
                     fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(financeDate)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
+                    fetchJsonSafe(`/api/admin/ledger?limit=300&start=${encodeURIComponent(dayStart)}&end=${encodeURIComponent(dayEnd)}`, { ledger_entries: [], total: 0, total_amount: 0 }, { signal }),
                 ]);
-                return { panel, ...financeBase, preview, proShop, date: financeDate };
+                return { panel, ...financeBase, dashboard, preview, proShop, cashbookLedger, date: financeDate };
             }
             if (panel === "imports") {
                 const financeBase = await loadSharedFinanceBase({ signal });
+                const dashboard = await loadSharedDashboardPayload({ signal });
                 const importsBundle = await loadImportsWorkspaceBundle({ signal, financeBase });
-                return { panel, ...importsBundle };
+                return { panel, dashboard, ...importsBundle };
             }
             if (panel === "targets") {
                 const targets = await fetchJsonSafe("/api/admin/operation-targets", { year: new Date().getFullYear(), targets: [] }, { signal });
@@ -6296,28 +6984,28 @@
                     copy: "Keep operational targets available without forcing the rest of Finance & Admin to carry their load.",
                     workspace: "reports",
                     subnavLabel: "Finance pages",
-                    metrics: [
-                        { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
-                        { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
-                        { label: "Finance Link", value: "Summary-first", meta: "Use Finance Dashboard for pacing context" },
-                        { label: "Edit Surface", value: "Targets only", meta: "This panel now carries target data only" },
-                    ],
-                })}
-                ${bundle.targets?._error ? `<section class="card"><div class="empty-state">${escapeHtml(bundle.targets._error)}</div></section>` : ""}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Operational target table</h3>
-                            <p>Targets stay close to operations rather than hiding in generic configuration pages.</p>
-                        </div>
+                metrics: [
+                    { label: "Target Rows", value: formatInteger(targets.length), meta: "Configured operational targets" },
+                    { label: "Target Year", value: escapeHtml(bundle.targets?.year || new Date().getFullYear()), meta: "Current operational target set" },
+                    { label: "Finance Link", value: "Live", meta: "Finance and overview pacing read from current targets" },
+                    { label: "Edit Surface", value: "Targets only", meta: "Changes here feed KPI cards and AI guidance" },
+                ],
+            })}
+            ${bundle.targets?._error ? `<section class="card"><div class="empty-state">${escapeHtml(bundle.targets._error)}</div></section>` : ""}
+            <section class="card">
+                <div class="panel-head">
+                    <div>
+                        <h3>Operational target table</h3>
+                        <p>Targets stay close to operations. Changes here should immediately influence the overview, finance pace, and AI guidance.</p>
                     </div>
+                </div>
                     ${renderTable(
                         ["Operation", "Metric", "Target", "Unit"],
                         targets.map(row => `
                             <tr>
                                 <td>${escapeHtml(MODULE_LABELS[row.operation_key] || row.operation_key)}</td>
                                 <td>${escapeHtml(row.label || row.metric_key || "")}</td>
-                                <td>${escapeHtml(formatInteger(row.target_value || 0))}</td>
+                                <td>${escapeHtml(formatByUnit(row.target_value || 0, row.unit))}</td>
                                 <td>${escapeHtml(row.unit || "")}</td>
                             </tr>
                         `)
@@ -6334,6 +7022,7 @@
                 copy: "Read finance signal, import freshness, and target pace without mixing in export actions.",
                 workspace: "reports",
                 subnavLabel: "Finance pages",
+                meta: renderInsightMeta("Pacing and integrity guidance live"),
                 metrics: [
                     { label: "Period Days", value: formatInteger(revenue.period_days || 0), meta: "Current revenue reporting window" },
                     { label: "Annual Target", value: formatCurrency(revenue.annual_revenue_target || 0), meta: "Configured revenue target" },
@@ -6384,8 +7073,8 @@
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Commercial boundary</h4>
-                            <p>Finance should stay tied to daily club output, not isolated in a passive reporting page.</p>
+                            <h4>Current revenue snapshot</h4>
+                            <p>Keep today, week, golf, and pro shop revenue visible without leaving finance.</p>
                         </div>
                     </div>
                     ${metricCards([
@@ -6398,8 +7087,8 @@
                 <article class="dashboard-card">
                     <div class="panel-head">
                         <div>
-                            <h4>Target posture</h4>
-                            <p>Target pace has to stay readable against actual performance and reporting window length.</p>
+                            <h4>Target pace</h4>
+                            <p>Keep actuals, pace, and variance readable enough to guide action rather than add reporting noise.</p>
                         </div>
                     </div>
                     ${metricCards([
@@ -6408,6 +7097,7 @@
                         { label: "Variance", value: formatCurrency(paceVariance), meta: paceVariance >= 0 ? "Ahead of target pace" : "Behind target pace" },
                         { label: "Period Days", value: formatInteger(revenue.period_days || 0), meta: "Days in current reporting window" },
                     ])}
+                    ${renderGuidanceStack(revenueIntegrityGuidanceRows(bundle, { limit: 2 }))}
                 </article>
             </section>
         `;
@@ -6538,6 +7228,44 @@
                     <div class="field"><label>Contact Phone</label><input name="contact_phone" value="${escapeHtml(bundle.profile?.contact_phone || "")}"></div>
                     <div class="field"><label>Currency Symbol</label><input name="currency_symbol" value="${escapeHtml(bundle.profile?.currency_symbol || "R")}" maxlength="4"></div>
                 </div>
+                ${(() => {
+                    const enabled = new Set(Array.isArray(bundle.profile?.enabled_modules) ? bundle.profile.enabled_modules : []);
+                    const sports = sportsSetupConfig(bundle.profile || {});
+                    if (!enabled.has("tennis") && !enabled.has("padel") && !enabled.has("bowls")) {
+                        return "";
+                    }
+                    return `
+                        <div class="panel-head" style="margin-top:18px;">
+                            <div>
+                                <h3>Sports setup</h3>
+                                <p>Set the real number of tennis and padel courts, plus bowls rinks, so GreenLink can present honest capacity before member self-service booking goes live.</p>
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            ${enabled.has("tennis") ? `
+                                <div class="field"><label>Tennis Courts</label><input name="tennis_court_count" type="number" min="0" max="99" value="${escapeHtml(sports.tennisCourtCount)}"></div>
+                                <div class="field"><label>Tennis Session Minutes</label><input name="tennis_session_minutes" type="number" min="15" max="360" step="15" value="${escapeHtml(sports.tennisSessionMinutes)}"></div>
+                                <div class="field"><label>Tennis Open</label><input name="tennis_open_time" type="time" value="${escapeHtml(sports.tennisOpenTime)}"></div>
+                                <div class="field"><label>Tennis Close</label><input name="tennis_close_time" type="time" value="${escapeHtml(sports.tennisCloseTime)}"></div>
+                                <div class="field" style="grid-column: 1 / -1;"><label>Tennis Court Names</label><textarea name="tennis_court_names" placeholder="Court 1&#10;Court 2">${escapeHtml(sports.tennisCourtNames.join("\n"))}</textarea></div>
+                            ` : ``}
+                            ${enabled.has("padel") ? `
+                                <div class="field"><label>Padel Courts</label><input name="padel_court_count" type="number" min="0" max="99" value="${escapeHtml(sports.padelCourtCount)}"></div>
+                                <div class="field"><label>Padel Session Minutes</label><input name="padel_session_minutes" type="number" min="15" max="360" step="15" value="${escapeHtml(sports.padelSessionMinutes)}"></div>
+                                <div class="field"><label>Padel Open</label><input name="padel_open_time" type="time" value="${escapeHtml(sports.padelOpenTime)}"></div>
+                                <div class="field"><label>Padel Close</label><input name="padel_close_time" type="time" value="${escapeHtml(sports.padelCloseTime)}"></div>
+                                <div class="field" style="grid-column: 1 / -1;"><label>Padel Court Names</label><textarea name="padel_court_names" placeholder="Court 1&#10;Court 2">${escapeHtml(sports.padelCourtNames.join("\n"))}</textarea></div>
+                            ` : ``}
+                            ${enabled.has("bowls") ? `
+                                <div class="field"><label>Bowls Rinks</label><input name="bowls_rink_count" type="number" min="0" max="99" value="${escapeHtml(sports.bowlsRinkCount)}"></div>
+                                <div class="field"><label>Bowls Session Minutes</label><input name="bowls_session_minutes" type="number" min="30" max="480" step="30" value="${escapeHtml(sports.bowlsSessionMinutes)}"></div>
+                                <div class="field"><label>Bowls Open</label><input name="bowls_open_time" type="time" value="${escapeHtml(sports.bowlsOpenTime)}"></div>
+                                <div class="field"><label>Bowls Close</label><input name="bowls_close_time" type="time" value="${escapeHtml(sports.bowlsCloseTime)}"></div>
+                                <div class="field" style="grid-column: 1 / -1;"><label>Bowls Rink Names</label><textarea name="bowls_rink_names" placeholder="Rink 1&#10;Rink 2">${escapeHtml(sports.bowlsRinkNames.join("\n"))}</textarea></div>
+                            ` : ``}
+                        </div>
+                    `;
+                })()}
                 <div class="button-row">
                     <button type="submit" class="button">Save club profile</button>
                 </div>
@@ -6724,16 +7452,26 @@
     }
 
     async function submitClubStaffForm(form) {
+        const userId = positiveInt(form.user_id?.value);
+        const password = String(form.password.value || "").trim();
+        if (!userId && !password) {
+            throw new Error("Password is required for a new staff user.");
+        }
         const payload = {
             name: String(form.name.value || "").trim(),
             email: String(form.email.value || "").trim(),
-            password: String(form.password.value || "").trim(),
+            password: password || null,
             role: "club_staff",
             force_reset: Boolean(form.force_reset.checked),
         };
-        await postJson("/api/admin/staff", payload);
-        showToast("Staff user created.", "ok");
-        form.reset();
+        if (userId) {
+            await postJson(`/api/admin/staff/${userId}`, payload, { method: "PUT" });
+            showToast("Staff user updated.", "ok");
+        } else {
+            await postJson("/api/admin/staff", payload);
+            showToast("Staff user created.", "ok");
+        }
+        resetClubStaffForm(form);
         deleteWorkspaceCacheWhere(key => {
             const [shell, workspace] = String(key || "").split("|");
             return shell === roleShell() && workspace === "members";
@@ -6761,6 +7499,38 @@
         await refreshActiveMembersWorkspace();
     }
 
+    function currentStaffRows() {
+        return Array.isArray(state.workspaceData?.staff?.staff) ? state.workspaceData.staff.staff : [];
+    }
+
+    function findStaffRow(userId) {
+        return currentStaffRows().find(row => Number(row.id) === Number(userId)) || null;
+    }
+
+    function resetClubStaffForm(form = document.getElementById("club-staff-form")) {
+        if (!(form instanceof HTMLFormElement)) return;
+        form.reset();
+        if (form.user_id) form.user_id.value = "";
+        if (form.email) form.email.readOnly = false;
+        if (form.password) form.password.required = false;
+        if (form.force_reset) form.force_reset.checked = false;
+    }
+
+    function editStaffUser(userId) {
+        const row = findStaffRow(userId);
+        const form = document.getElementById("club-staff-form");
+        if (!row || !(form instanceof HTMLFormElement)) return;
+        form.user_id.value = String(row.id || "");
+        form.name.value = String(row.name || "");
+        form.email.value = String(row.email || "");
+        form.email.readOnly = true;
+        form.password.value = "";
+        form.password.required = false;
+        form.force_reset.checked = false;
+        focusWorkblock("staff-add-workblock");
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     async function submitMembersSearchForm(form) {
         const membersUi = defaultMembersUi({
             query: form.q.value,
@@ -6773,7 +7543,65 @@
         await refreshActiveMembersWorkspace({ membersUi });
     }
 
+    function currentCommunicationRows() {
+        return Array.isArray(state.workspaceData?.communications?.communications) ? state.workspaceData.communications.communications : [];
+    }
+
+    function findCommunicationRecord(communicationId) {
+        return currentCommunicationRows().find(row => Number(row.id) === Number(communicationId)) || null;
+    }
+
+    function resetCommunicationForm(form = document.getElementById("communication-form")) {
+        if (!(form instanceof HTMLFormElement)) return;
+        form.reset();
+        if (form.communication_id) form.communication_id.value = "";
+        if (form.status) form.status.value = "draft";
+        if (form.audience) form.audience.value = "members";
+        if (form.kind) form.kind.value = "announcement";
+        if (form.expires_at) form.expires_at.value = "";
+    }
+
+    function editCommunicationRecord(communicationId) {
+        const row = findCommunicationRecord(communicationId);
+        const form = document.getElementById("communication-form");
+        if (!row || !(form instanceof HTMLFormElement)) return;
+        form.communication_id.value = String(row.id || "");
+        form.kind.value = String(row.kind || "announcement");
+        form.audience.value = String(row.audience || "members");
+        form.status.value = String(row.status || "draft");
+        form.title.value = String(row.title || "");
+        form.summary.value = String(row.summary || "");
+        form.body.value = String(row.body || "");
+        form.cta_label.value = String(row.cta_label || "");
+        form.cta_url.value = String(row.cta_url || "");
+        form.expires_at.value = toDateTimeLocalValue(row.expires_at);
+        form.pinned.checked = Boolean(row.pinned);
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function updateCommunicationState(communicationId, patch = {}) {
+        const row = findCommunicationRecord(communicationId);
+        if (!row) throw new Error("Communication not found.");
+        const payload = {
+            kind: String(row.kind || "announcement"),
+            audience: String(row.audience || "members"),
+            status: String(patch.status || row.status || "draft"),
+            title: String(row.title || ""),
+            summary: String(row.summary || "").trim() || null,
+            body: String(row.body || ""),
+            cta_label: String(row.cta_label || "").trim() || null,
+            cta_url: String(row.cta_url || "").trim() || null,
+            pinned: Object.prototype.hasOwnProperty.call(patch, "pinned") ? Boolean(patch.pinned) : Boolean(row.pinned),
+            published_at: row.published_at || null,
+            expires_at: row.expires_at || null,
+        };
+        await postJson(`/api/admin/communications/${Number(communicationId)}`, payload, { method: "PUT" });
+        showToast("Communication updated.", "ok");
+        await renderCurrentWorkspace();
+    }
+
     async function submitCommunicationForm(form) {
+        const communicationId = positiveInt(form.communication_id?.value);
         const payload = {
             kind: String(form.kind.value || "announcement").trim(),
             audience: String(form.audience.value || "members").trim(),
@@ -6781,12 +7609,467 @@
             title: String(form.title.value || "").trim(),
             summary: String(form.summary.value || "").trim() || null,
             body: String(form.body.value || "").trim(),
+            cta_label: String(form.cta_label?.value || "").trim() || null,
+            cta_url: String(form.cta_url?.value || "").trim() || null,
             pinned: Boolean(form.pinned.checked),
+            expires_at: form.expires_at?.value ? new Date(form.expires_at.value).toISOString() : null,
         };
-        await postJson("/api/admin/communications", payload);
-        showToast("Communication saved.", "ok");
-        form.reset();
+        if (communicationId) {
+            await postJson(`/api/admin/communications/${communicationId}`, payload, { method: "PUT" });
+            showToast("Communication updated.", "ok");
+        } else {
+            await postJson("/api/admin/communications", payload);
+            showToast("Communication saved.", "ok");
+        }
+        resetCommunicationForm(form);
         await renderCurrentWorkspace();
+    }
+
+    function currentProShopProducts() {
+        return Array.isArray(state.workspaceData?.products?.products) ? state.workspaceData.products.products : [];
+    }
+
+    function findProShopProduct(productId) {
+        return currentProShopProducts().find(row => Number(row.id) === Number(productId)) || null;
+    }
+
+    function editProShopProduct(productId) {
+        const row = findProShopProduct(productId);
+        const form = document.getElementById("pro-shop-product-form");
+        if (!row || !(form instanceof HTMLFormElement)) return;
+        form.product_id.value = String(row.id || "");
+        form.sku.value = String(row.sku || "");
+        form.name.value = String(row.name || "");
+        form.category.value = String(row.category || "");
+        form.unit_price.value = String(row.unit_price ?? 0);
+        form.cost_price.value = String(row.cost_price ?? 0);
+        form.stock_qty.value = String(row.stock_qty ?? 0);
+        form.reorder_level.value = String(row.reorder_level ?? 0);
+        form.stock_delta.value = "0";
+        form.stock_reason.value = "";
+        form.active.checked = Boolean(row.active);
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function adjustProShopStockPrompt(productId) {
+        const row = findProShopProduct(productId);
+        if (!row) throw new Error("Product not found.");
+        const delta = Number(window.prompt(`Stock adjustment for ${row.name || row.sku} (use negative to reduce).`, "1") || 0);
+        if (!Number.isFinite(delta) || delta === 0) return;
+        const reason = String(window.prompt("Reason for stock adjustment", "") || "").trim() || null;
+        await postJson(`/api/admin/pro-shop/products/${Number(productId)}/adjust-stock`, { delta, reason });
+        showToast("Stock adjusted.", "ok");
+        await renderCurrentWorkspace();
+    }
+
+    async function submitProShopProductForm(form) {
+        const productId = positiveInt(form.product_id?.value);
+        const payload = {
+            sku: String(form.sku.value || "").trim(),
+            name: String(form.name.value || "").trim(),
+            category: String(form.category.value || "").trim() || null,
+            unit_price: Number(form.unit_price.value || 0),
+            cost_price: form.cost_price.value === "" ? null : Number(form.cost_price.value || 0),
+            stock_qty: Number(form.stock_qty.value || 0),
+            reorder_level: Number(form.reorder_level.value || 0),
+            active: Boolean(form.active.checked),
+        };
+        let savedProductId = productId;
+        if (productId) {
+            const response = await postJson(`/api/admin/pro-shop/products/${productId}`, payload, { method: "PUT" });
+            savedProductId = positiveInt(response?.product?.id) || productId;
+            showToast("Product updated.", "ok");
+        } else {
+            const response = await postJson("/api/admin/pro-shop/products", payload);
+            savedProductId = positiveInt(response?.product?.id) || null;
+            showToast("Product created.", "ok");
+        }
+        const stockDelta = Number(form.stock_delta?.value || 0);
+        const stockReason = String(form.stock_reason?.value || "").trim() || null;
+        if (savedProductId && Number.isFinite(stockDelta) && stockDelta !== 0) {
+            await postJson(`/api/admin/pro-shop/products/${savedProductId}/adjust-stock`, { delta: stockDelta, reason: stockReason });
+            showToast("Product saved and stock adjusted.", "ok");
+        }
+        form.reset();
+        if (form.active) form.active.checked = true;
+        await renderCurrentWorkspace();
+    }
+
+    async function submitProShopSaleForm(form) {
+        const payload = {
+            customer_name: String(form.customer_name.value || "").trim() || null,
+            payment_method: String(form.payment_method.value || "card").trim(),
+            notes: String(form.notes.value || "").trim() || null,
+            discount: Number(form.discount.value || 0),
+            tax: Number(form.tax.value || 0),
+            items: [{
+                product_id: Number(form.product_id.value || 0),
+                quantity: Number(form.quantity.value || 1),
+            }],
+        };
+        await postJson("/api/admin/pro-shop/sales", payload);
+        showToast("Sale recorded.", "ok");
+        form.reset();
+        if (form.quantity) form.quantity.value = "1";
+        if (form.discount) form.discount.value = "0";
+        if (form.tax) form.tax.value = "0";
+        await renderCurrentWorkspace();
+    }
+
+    function currentGolfDayRows() {
+        return Array.isArray(state.workspaceData?.golfDays?.bookings) ? state.workspaceData.golfDays.bookings : [];
+    }
+
+    function findGolfDayRecord(golfDayBookingId) {
+        return currentGolfDayRows().find(row => Number(row.id) === Number(golfDayBookingId)) || null;
+    }
+
+    function golfDayLifecycle(row) {
+        const paymentStatus = String(row?.payment_status || "").trim().toLowerCase() || "pending";
+        const operationArea = String(row?.operation_area || "").trim().toLowerCase();
+        const amount = safeNumber(row?.amount || 0);
+        const balanceDue = safeNumber(row?.balance_due ?? amount);
+        const hasAllocation = ["allocated", "completed"].includes(operationArea);
+        const isCompleted = operationArea === "completed";
+        if (paymentStatus === "cancelled") {
+            return { stage: "Cancelled", tone: "bad", detail: "Event is cancelled and should be kept out of active operations." };
+        }
+        if (isCompleted) {
+            return { stage: "Completed", tone: "ok", detail: "Setup, allocation, and settlement are complete." };
+        }
+        if (paymentStatus === "paid" && hasAllocation) {
+            return { stage: "Ready to complete", tone: "warn", detail: "Allocated and settled. Close it out when the event is done." };
+        }
+        if (hasAllocation && paymentStatus === "partial") {
+            return { stage: "Allocated, deposit taken", tone: "warn", detail: "Starts are reserved. Final balance still needs to be settled." };
+        }
+        if (hasAllocation) {
+            return { stage: "Allocated", tone: "ok", detail: "Starts are reserved on the tee sheet. Settlement still needs attention." };
+        }
+        if (paymentStatus === "paid" || (amount > 0 && balanceDue <= 0)) {
+            return { stage: "Settled", tone: "ok", detail: "Payment is complete. Allocate starts or close the event." };
+        }
+        if (paymentStatus === "partial" || safeNumber(row?.deposit_amount || 0) > 0) {
+            return { stage: "Deposit taken", tone: "warn", detail: "The event is partially paid. Allocate starts and settle the balance." };
+        }
+        return { stage: "Needs allocation", tone: "warn", detail: "Event setup exists, but allocation and payment completion are still open." };
+    }
+
+    function golfDayLifecyclePill(row) {
+        const lifecycle = golfDayLifecycle(row);
+        return `<span class="status-pill ${escapeHtml(lifecycle.tone)}">${escapeHtml(lifecycle.stage)}</span>`;
+    }
+
+    function serializeGolfDayPayload(row, overrides = {}) {
+        return {
+            event_name: String(overrides.event_name ?? row?.event_name ?? "").trim(),
+            contact_name: String(overrides.contact_name ?? row?.contact_name ?? "").trim() || null,
+            event_date: String(overrides.event_date ?? row?.event_date ?? "").trim() || null,
+            event_end_date: String(overrides.event_end_date ?? row?.event_end_date ?? "").trim() || null,
+            invoice_reference: String(overrides.invoice_reference ?? row?.invoice_reference ?? "").trim() || null,
+            account_customer_id: positiveInt(overrides.account_customer_id ?? row?.account_customer_id),
+            account_code: String(overrides.account_code ?? row?.account_code ?? "").trim() || null,
+            amount: Number(overrides.amount ?? row?.amount ?? 0),
+            balance_due: Number(overrides.balance_due ?? row?.balance_due ?? 0),
+            deposit_amount: Number(overrides.deposit_amount ?? row?.deposit_amount ?? 0),
+            deposit_received_date: String(overrides.deposit_received_date ?? row?.deposit_received_date ?? "").trim() || null,
+            deposit_received_note: String(overrides.deposit_received_note ?? row?.deposit_received_note ?? "").trim() || null,
+            full_payment_amount: Number(overrides.full_payment_amount ?? row?.full_payment_amount ?? 0),
+            full_payment_date: String(overrides.full_payment_date ?? row?.full_payment_date ?? "").trim() || null,
+            full_payment_note: String(overrides.full_payment_note ?? row?.full_payment_note ?? "").trim() || null,
+            payment_status: String(overrides.payment_status ?? row?.payment_status ?? "pending").trim() || "pending",
+            operation_area: String(overrides.operation_area ?? row?.operation_area ?? "").trim() || null,
+            notes: String(overrides.notes ?? row?.notes ?? "").trim() || null,
+        };
+    }
+
+    function resetGolfDayForm(form = document.getElementById("golf-day-form")) {
+        if (!(form instanceof HTMLFormElement)) return;
+        form.reset();
+        if (form.golf_day_booking_id) form.golf_day_booking_id.value = "";
+        if (form.payment_status) form.payment_status.value = "pending";
+        if (form.amount) form.amount.value = "0";
+        if (form.balance_due) form.balance_due.value = "0";
+        if (form.deposit_amount) form.deposit_amount.value = "0";
+        if (form.full_payment_amount) form.full_payment_amount.value = "0";
+    }
+
+    function loadGolfDayIntoForms(golfDayBookingId) {
+        const row = findGolfDayRecord(golfDayBookingId);
+        const form = document.getElementById("golf-day-form");
+        const allocationForm = document.getElementById("golf-day-allocation-form");
+        if (!row) return;
+        if (form instanceof HTMLFormElement) {
+            form.golf_day_booking_id.value = String(row.id || "");
+            form.event_name.value = String(row.event_name || "");
+            form.contact_name.value = String(row.contact_name || "");
+            form.event_date.value = String(row.event_date || "");
+            form.event_end_date.value = String(row.event_end_date || "");
+            form.invoice_reference.value = String(row.invoice_reference || "");
+            form.account_customer_id.value = row.account_customer_id ? String(row.account_customer_id) : "";
+            form.account_code.value = String(row.account_code || "");
+            form.amount.value = String(row.amount ?? 0);
+            form.balance_due.value = String(row.balance_due ?? 0);
+            form.deposit_amount.value = String(row.deposit_amount ?? 0);
+            form.full_payment_amount.value = String(row.full_payment_amount ?? 0);
+            form.payment_status.value = String(row.payment_status || "pending");
+            form.notes.value = String(row.notes || "");
+            form.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        if (allocationForm instanceof HTMLFormElement) {
+            allocationForm.golf_day_booking_id.value = String(row.id || "");
+            allocationForm.group_name.value = String(row.event_name || "");
+            allocationForm.date.value = String(row.event_date || state.route.date || todayYmd());
+            allocationForm.account_code.value = String(row.account_code || "");
+        }
+    }
+
+    function resetGolfDayAllocationForm(form = document.getElementById("golf-day-allocation-form")) {
+        if (!(form instanceof HTMLFormElement)) return;
+        form.reset();
+        if (form.golf_day_booking_id) form.golf_day_booking_id.value = "";
+        if (form.date) form.date.value = state.route?.date || todayYmd();
+        if (form.start_time) form.start_time.value = "07:00";
+        if (form.end_time) form.end_time.value = "11:00";
+        if (form.tees) form.tees.value = "1,10";
+        if (form.slots_per_time) form.slots_per_time.value = "4";
+        if (form.price) form.price.value = "0";
+    }
+
+    async function submitGolfDayForm(form) {
+        const golfDayBookingId = positiveInt(form.golf_day_booking_id?.value);
+        const overrides = {
+            event_name: String(form.event_name.value || "").trim(),
+            contact_name: String(form.contact_name.value || "").trim() || null,
+            event_date: String(form.event_date.value || "").trim() || null,
+            event_end_date: String(form.event_end_date.value || "").trim() || null,
+            invoice_reference: String(form.invoice_reference.value || "").trim() || null,
+            account_customer_id: positiveInt(form.account_customer_id?.value),
+            account_code: String(form.account_code.value || "").trim() || null,
+            amount: Number(form.amount.value || 0),
+            balance_due: Number(form.balance_due.value || 0),
+            deposit_amount: Number(form.deposit_amount.value || 0),
+            full_payment_amount: Number(form.full_payment_amount.value || 0),
+            payment_status: String(form.payment_status.value || "pending").trim(),
+            notes: String(form.notes.value || "").trim() || null,
+        };
+        if (golfDayBookingId) {
+            const current = findGolfDayRecord(golfDayBookingId);
+            const payload = serializeGolfDayPayload(current, overrides);
+            await postJson(`/api/admin/golf-day-bookings/${golfDayBookingId}`, payload, { method: "PUT" });
+            showToast("Golf day updated.", "ok");
+        } else {
+            const payload = overrides;
+            await postJson("/api/admin/golf-day-bookings", payload);
+            showToast("Golf day created.", "ok");
+        }
+        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
+        invalidateGolfSharedData({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
+        await renderCurrentWorkspace();
+    }
+
+    async function updateGolfDayRecord(golfDayBookingId, overrides = {}, successMessage = "Golf day updated.") {
+        const row = findGolfDayRecord(golfDayBookingId);
+        if (!row) throw new Error("Golf day event not found.");
+        const payload = serializeGolfDayPayload(row, overrides);
+        await postJson(`/api/admin/golf-day-bookings/${Number(golfDayBookingId)}`, payload, { method: "PUT", invalidateCache: false });
+        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
+        invalidateGolfSharedData({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
+        showToast(successMessage, "ok");
+        await renderCurrentWorkspace();
+    }
+
+    async function markGolfDayPaid(golfDayBookingId) {
+        const row = findGolfDayRecord(golfDayBookingId);
+        if (!row) throw new Error("Golf day event not found.");
+        const amount = Math.max(0, safeNumber(row.amount || 0));
+        return updateGolfDayRecord(golfDayBookingId, {
+            full_payment_amount: amount,
+            full_payment_date: todayYmd(),
+            balance_due: 0,
+            payment_status: "paid",
+        }, "Golf day settled as paid.");
+    }
+
+    async function markGolfDayCompleted(golfDayBookingId) {
+        const row = findGolfDayRecord(golfDayBookingId);
+        if (!row) throw new Error("Golf day event not found.");
+        const lifecycle = golfDayLifecycle(row);
+        if (!["paid", "cancelled"].includes(String(row.payment_status || "").trim().toLowerCase()) && lifecycle.stage !== "Completed") {
+            throw new Error("Settle the golf day before marking it complete.");
+        }
+        return updateGolfDayRecord(golfDayBookingId, {
+            operation_area: "completed",
+        }, "Golf day marked complete.");
+    }
+
+    async function submitGolfDayAllocationForm(form) {
+        const golfDayBookingId = positiveInt(form.golf_day_booking_id?.value);
+        const linked = golfDayBookingId ? findGolfDayRecord(golfDayBookingId) : null;
+        const allocationDate = clampYmd(form.date.value || linked?.event_date || state.route?.date || todayYmd());
+        const payload = {
+            date: allocationDate,
+            tees: String(form.tees.value || "1,10").split(",").map(value => String(value || "").trim()).filter(Boolean),
+            start_time: String(form.start_time.value || "07:00").trim(),
+            end_time: String(form.end_time.value || "11:00").trim(),
+            holes: Number(form.holes.value || 18) === 9 ? 9 : 18,
+            slots_per_time: Number(form.slots_per_time.value || 4),
+            group_name: String(form.group_name.value || linked?.event_name || "").trim(),
+            event_type: "golf_day",
+            account_code: String(form.account_code.value || linked?.account_code || "").trim() || null,
+            account_customer_id: linked?.account_customer_id ? Number(linked.account_customer_id) : null,
+            price: Number(form.price.value || 0),
+        };
+        const response = await postJson("/api/admin/tee-sheet/bulk-book", payload, { invalidateCache: false });
+        deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
+        invalidateGolfWorkspaceCaches(allocationDate);
+        invalidateGolfSharedData({
+            date: allocationDate,
+            includeTeeRows: true,
+            includeDashboard: true,
+            includeAlerts: true,
+            includeFinanceBase: true,
+        });
+        if (golfDayBookingId && linked) {
+            await postJson(`/api/admin/golf-day-bookings/${golfDayBookingId}`, serializeGolfDayPayload(linked, {
+                operation_area: "allocated",
+            }), { method: "PUT", invalidateCache: false });
+            deleteSharedCacheKey(golfDayBookingsCacheKey(activeClubCacheKeyPart()));
+        }
+        showToast(`Allocated ${formatInteger(response?.created || 0)} tee-sheet booking(s).`, "ok");
+        await renderCurrentWorkspace();
+    }
+
+    function currentImportSettingsRows() {
+        return Array.isArray(state.workspaceData?.importSettings) ? state.workspaceData.importSettings : [];
+    }
+
+    function findImportSettingsRecord(stream) {
+        const target = String(stream || "").trim().toLowerCase();
+        return currentImportSettingsRows().find(row => String(row.stream || "").trim().toLowerCase() === target) || null;
+    }
+
+    function resetImportSettingsForm(form = document.getElementById("import-settings-form")) {
+        if (!(form instanceof HTMLFormElement)) return;
+        const row = currentImportSettingsRows()[0] || { stream: "other", settings: {} };
+        const settings = row.settings || {};
+        form.reset();
+        if (form.stream) form.stream.value = String(row.stream || "other");
+        if (form.date_field) form.date_field.value = String(settings.date_field || "");
+        if (form.amount_field) form.amount_field.value = String(settings.amount_field || "");
+        if (form.description_field) form.description_field.value = String(settings.description_field || "");
+        if (form.category_field) form.category_field.value = String(settings.category_field || "");
+        if (form.external_id_field) form.external_id_field.value = String(settings.external_id_field || "");
+        if (form.stream_field) form.stream_field.value = String(settings.stream_field || "");
+        if (form.tax_field) form.tax_field.value = String(settings.tax_field || "");
+        if (form.amount_sign) form.amount_sign.value = String(settings.amount_sign || "as_is");
+        if (form.amount_basis) form.amount_basis.value = String(settings.amount_basis || "gross");
+        if (form.tax_adjustment) form.tax_adjustment.value = String(settings.tax_adjustment || "ignore");
+        if (form.tax_rate) form.tax_rate.value = String(settings.tax_rate ?? 0.15);
+        if (form.allow_stream_override) form.allow_stream_override.checked = Boolean(settings.allow_stream_override);
+        if (form.dedupe_without_external_id) form.dedupe_without_external_id.checked = settings.dedupe_without_external_id !== false;
+    }
+
+    function loadImportSettingsIntoForm(stream) {
+        const row = findImportSettingsRecord(stream);
+        const form = document.getElementById("import-settings-form");
+        if (!row || !(form instanceof HTMLFormElement)) return;
+        const settings = row.settings || {};
+        form.stream.value = String(row.stream || "other");
+        form.date_field.value = String(settings.date_field || "");
+        form.amount_field.value = String(settings.amount_field || "");
+        form.description_field.value = String(settings.description_field || "");
+        form.category_field.value = String(settings.category_field || "");
+        form.external_id_field.value = String(settings.external_id_field || "");
+        form.stream_field.value = String(settings.stream_field || "");
+        form.tax_field.value = String(settings.tax_field || "");
+        form.amount_sign.value = String(settings.amount_sign || "as_is");
+        form.amount_basis.value = String(settings.amount_basis || "gross");
+        form.tax_adjustment.value = String(settings.tax_adjustment || "ignore");
+        form.tax_rate.value = String(settings.tax_rate ?? 0.15);
+        form.allow_stream_override.checked = Boolean(settings.allow_stream_override);
+        form.dedupe_without_external_id.checked = settings.dedupe_without_external_id !== false;
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function submitImportSettingsForm(form) {
+        const stream = String(form.stream.value || "other").trim().toLowerCase();
+        const payload = {
+            date_field: String(form.date_field.value || "").trim() || null,
+            amount_field: String(form.amount_field.value || "").trim() || null,
+            description_field: String(form.description_field.value || "").trim() || null,
+            category_field: String(form.category_field.value || "").trim() || null,
+            external_id_field: String(form.external_id_field.value || "").trim() || null,
+            stream_field: String(form.stream_field.value || "").trim() || null,
+            tax_field: String(form.tax_field.value || "").trim() || null,
+            amount_sign: String(form.amount_sign.value || "as_is").trim() || "as_is",
+            amount_basis: String(form.amount_basis.value || "gross").trim() || "gross",
+            tax_adjustment: String(form.tax_adjustment.value || "ignore").trim() || "ignore",
+            tax_rate: Number(form.tax_rate.value || 0.15),
+            allow_stream_override: Boolean(form.allow_stream_override.checked),
+            dedupe_without_external_id: Boolean(form.dedupe_without_external_id.checked),
+        };
+        await postJson(`/api/admin/imports/revenue-settings?stream=${encodeURIComponent(stream)}`, payload, { method: "PUT", invalidateCache: false });
+        invalidateWorkspaceScope("reports", { panel: "imports" });
+        invalidateWorkspaceScope("settings", { panel: "imports" });
+        showToast(`${MODULE_LABELS[stream] || stream} mapping saved.`, "ok");
+        if (state.route?.workspace === "reports") {
+            await refreshActiveReportsWorkspace();
+        } else if (state.route?.workspace === "settings") {
+            await refreshActiveSettingsWorkspace();
+        } else {
+            await renderCurrentWorkspace();
+        }
+    }
+
+    async function submitImportRevenueForm(form) {
+        const file = form.file instanceof HTMLInputElement ? form.file.files?.[0] : null;
+        if (!file) throw new Error("Choose a revenue CSV file first.");
+        const stream = String(form.stream.value || "other").trim().toLowerCase();
+        const query = new URLSearchParams({
+            stream,
+            use_saved_settings: form.use_saved_settings?.checked ? "true" : "false",
+            save_settings: form.save_settings?.checked ? "true" : "false",
+        });
+        const body = new FormData();
+        body.append("file", file);
+        const result = await postFormData(`/api/admin/imports/revenue-csv?${query.toString()}`, body, { invalidateCache: false });
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateWorkspaceScope("settings", { panel: "imports" });
+        invalidateClubSummaryCaches({ includeDashboard: true, includeAlerts: true });
+        showToast(`Revenue import saved: ${formatInteger(result?.rows_inserted || 0)} inserted, ${formatInteger(result?.rows_updated || 0)} updated.`, "ok");
+        form.reset();
+        if (form.use_saved_settings) form.use_saved_settings.checked = true;
+        if (state.route?.workspace === "reports") {
+            await refreshActiveReportsWorkspace();
+        } else if (state.route?.workspace === "settings") {
+            await refreshActiveSettingsWorkspace();
+        } else {
+            await renderCurrentWorkspace();
+        }
+    }
+
+    async function submitImportMembersForm(form) {
+        const file = form.file instanceof HTMLInputElement ? form.file.files?.[0] : null;
+        if (!file) throw new Error("Choose a members CSV file first.");
+        const body = new FormData();
+        body.append("file", file);
+        const result = await postFormData("/api/admin/imports/members-csv", body, { invalidateCache: false });
+        invalidateWorkspaceScope("reports", { panel: "imports" });
+        invalidateWorkspaceScope("settings", { panel: "imports" });
+        showToast(`Members import saved: ${formatInteger(result?.rows_inserted || 0)} inserted, ${formatInteger(result?.rows_updated || 0)} updated.`, "ok");
+        form.reset();
+        deleteWorkspaceCacheWhere(key => {
+            const [shell, workspace] = String(key || "").split("|");
+            return shell === roleShell() && workspace === "members";
+        });
+        if (state.route?.workspace === "reports") {
+            await refreshActiveReportsWorkspace();
+        } else if (state.route?.workspace === "settings") {
+            await refreshActiveSettingsWorkspace();
+        } else {
+            await renderCurrentWorkspace();
+        }
     }
 
     async function submitBookingWindowForm(form) {
@@ -6802,6 +8085,7 @@
     }
 
     async function submitClubProfileForm(form) {
+        const parseLines = value => String(value || "").split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
         const payload = {
             club_name: String(form.club_name.value || "").trim(),
             display_name: String(form.display_name.value || "").trim() || null,
@@ -6811,6 +8095,21 @@
             contact_email: String(form.contact_email.value || "").trim() || null,
             contact_phone: String(form.contact_phone.value || "").trim() || null,
             currency_symbol: String(form.currency_symbol.value || "").trim() || null,
+            tennis_court_count: form.tennis_court_count ? Number(form.tennis_court_count.value || 0) : null,
+            tennis_session_minutes: form.tennis_session_minutes ? Number(form.tennis_session_minutes.value || 60) : null,
+            tennis_open_time: form.tennis_open_time ? String(form.tennis_open_time.value || "").trim() || null : null,
+            tennis_close_time: form.tennis_close_time ? String(form.tennis_close_time.value || "").trim() || null : null,
+            tennis_court_names: form.tennis_court_names ? parseLines(form.tennis_court_names.value) : null,
+            padel_court_count: form.padel_court_count ? Number(form.padel_court_count.value || 0) : null,
+            padel_session_minutes: form.padel_session_minutes ? Number(form.padel_session_minutes.value || 60) : null,
+            padel_open_time: form.padel_open_time ? String(form.padel_open_time.value || "").trim() || null : null,
+            padel_close_time: form.padel_close_time ? String(form.padel_close_time.value || "").trim() || null : null,
+            padel_court_names: form.padel_court_names ? parseLines(form.padel_court_names.value) : null,
+            bowls_rink_count: form.bowls_rink_count ? Number(form.bowls_rink_count.value || 0) : null,
+            bowls_session_minutes: form.bowls_session_minutes ? Number(form.bowls_session_minutes.value || 120) : null,
+            bowls_open_time: form.bowls_open_time ? String(form.bowls_open_time.value || "").trim() || null : null,
+            bowls_close_time: form.bowls_close_time ? String(form.bowls_close_time.value || "").trim() || null : null,
+            bowls_rink_names: form.bowls_rink_names ? parseLines(form.bowls_rink_names.value) : null,
         };
         await postJson("/api/admin/club-profile", payload, { method: "PUT" });
         showToast("Club profile saved.", "ok");
@@ -6830,7 +8129,11 @@
                 notes: row.notes || null,
             })),
         };
-        await postJson("/api/admin/operation-targets", payload, { method: "PUT" });
+        await postJson("/api/admin/operation-targets", payload, { method: "PUT", invalidateCache: false });
+        invalidateWorkspaceScope("settings", { panel: "targets" });
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateWorkspaceScope("reports");
+        invalidateClubSummaryCaches({ includeDashboard: true, includeOperationalTargets: true });
         showToast("Operational targets saved.", "ok");
         await renderCurrentWorkspace();
     }
@@ -7097,6 +8400,38 @@
         els.root.innerHTML = renderStandardizedMembersWorkspace(bundle);
     }
 
+    async function refreshActiveReportsWorkspace() {
+        if (state.route?.workspace !== "reports") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await reportsBundle({ signal });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderReportsWorkspace(bundle);
+    }
+
+    async function refreshActiveSettingsWorkspace() {
+        if (state.route?.workspace !== "settings") {
+            await renderCurrentWorkspace();
+            return;
+        }
+        const route = { ...state.route };
+        const routeKey = workspaceRouteKey(route);
+        const signal = routeRequestSignal();
+        const bundle = await settingsBundle({ signal });
+        if (signal?.aborted) return;
+        if (routeKey !== workspaceRouteKey(state.route)) return;
+        state.workspaceData = bundle;
+        writeWorkspaceCache(route, bundle);
+        els.root.innerHTML = renderSettingsWorkspace(bundle);
+    }
+
     function activeGolfBookingsUi() {
         return defaultGolfBookingsUi(state.workspaceData?.bookingsUi);
     }
@@ -7215,36 +8550,78 @@
         await batchUpdateGolfBookings({ payment_method: paymentMethod }, "Booking payment methods updated.");
     }
 
+    async function batchUpdateGolfBookingAccountPrompt() {
+        const accountCode = String(window.prompt("Bulk account code", "") || "").trim();
+        if (!accountCode) return;
+        await batchUpdateGolfBookings({ account_code: accountCode }, "Booking account codes updated.");
+    }
+
+    async function repairLedgerBooking(bookingId, status) {
+        const normalizedStatus = String(status || "").trim().toLowerCase();
+        const allowedStatus = ["checked_in", "completed"].includes(normalizedStatus) ? normalizedStatus : "checked_in";
+        await postJson("/api/admin/bookings/batch-update", {
+            booking_ids: [Number(bookingId)],
+            status: allowedStatus,
+        }, { invalidateCache: false });
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateClubSummaryCaches({ includeDashboard: true, includeAlerts: true, includeFinanceBase: true });
+        showToast("Ledger row repaired.", "ok");
+        await refreshActiveReportsWorkspace();
+    }
+
     async function exportCashbookCsv(date) {
         await downloadWithAuth(`/cashbook/export-csv?export_date=${encodeURIComponent(date)}`, `Cashbook_Payments_${String(date || todayYmd()).replaceAll("-", "")}.csv`);
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
         showToast("Daily journal exported.", "ok");
+        await refreshActiveReportsWorkspace();
     }
 
     async function exportProShopCsv(date) {
         await downloadWithAuth(`/cashbook/export-csv-pro-shop?export_date=${encodeURIComponent(date)}`, `PASTEL_JOURNAL_PROSHOP_GREENLINK_${String(date || todayYmd()).replaceAll("-", "")}.csv`);
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
         showToast("Pro shop journal exported.", "ok");
+        await refreshActiveReportsWorkspace();
     }
 
     async function closeCashbookDay(date) {
         const safeDate = String(date || todayYmd()).trim() || todayYmd();
+        const currentCashbookDate = clampYmd(state.workspaceData?.date || safeDate);
+        const currentPanel = String(state.route?.panel || "").trim().toLowerCase();
+        if (state.route?.workspace === "reports" && currentPanel === "cashbook" && currentCashbookDate === safeDate) {
+            const previewError = String(state.workspaceData?.preview?._error || "").trim();
+            const ledgerRows = Array.isArray(state.workspaceData?.cashbookLedger?.ledger_entries) ? state.workspaceData.cashbookLedger.ledger_entries : [];
+            const unexportedCount = ledgerRows.filter(row => !row.pastel_synced).length;
+            if (previewError) {
+                showToast("Resolve the journal preview error before closing the day.", "bad");
+                return;
+            }
+            if (unexportedCount > 0) {
+                showToast("Export the daily CSV before closing the day.", "bad");
+                return;
+            }
+        }
         if (!window.confirm(`Close ${safeDate} for day-end handover?`)) return;
         await fetchJson(`/cashbook/close-day?close_date=${encodeURIComponent(safeDate)}`, { method: "POST" });
-        invalidateWorkspaceCache();
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
         showToast("Day closed.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveReportsWorkspace();
     }
 
     async function reopenCashbookDay(date) {
         const safeDate = String(date || todayYmd()).trim() || todayYmd();
         if (!window.confirm(`Reopen ${safeDate} for corrections?`)) return;
         await fetchJson(`/cashbook/reopen-day?reopen_date=${encodeURIComponent(safeDate)}`, { method: "POST" });
-        invalidateWorkspaceCache();
+        invalidateSummaryDrivenWorkspaceCaches();
+        invalidateClubSummaryCaches({ includeAlerts: true, includeFinanceBase: true });
         showToast("Day reopened.", "ok");
-        await renderCurrentWorkspace();
+        await refreshActiveReportsWorkspace();
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search],[data-workblock-toggle]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-booking-bulk-account],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search],[data-workblock-toggle],[data-edit-communication],[data-communication-status],[data-communication-pin],[data-clear-communication-form],[data-edit-pro-shop-product],[data-adjust-pro-shop-stock],[data-clear-golf-day-form],[data-clear-golf-day-allocation-form],[data-edit-golf-day],[data-load-golf-day-allocation],[data-golf-day-mark-paid],[data-golf-day-complete],[data-edit-import-settings],[data-clear-import-settings-form],[data-ledger-repair],[data-ledger-payment],[data-ledger-account],[data-edit-staff],[data-clear-staff-form]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
@@ -7267,6 +8644,38 @@
         }
         if (target.hasAttribute("data-workblock-toggle")) return focusWorkblock(target.getAttribute("data-workblock-toggle") || "");
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });
+        if (target.hasAttribute("data-edit-communication")) return editCommunicationRecord(Number(target.getAttribute("data-edit-communication") || 0));
+        if (target.hasAttribute("data-communication-status")) {
+            return updateCommunicationState(Number(target.getAttribute("data-communication-status") || 0), {
+                status: target.getAttribute("data-status-value") || "draft",
+            });
+        }
+        if (target.hasAttribute("data-communication-pin")) {
+            return updateCommunicationState(Number(target.getAttribute("data-communication-pin") || 0), {
+                pinned: target.getAttribute("data-pin-value") === "1",
+            });
+        }
+        if (target.hasAttribute("data-clear-communication-form")) return resetCommunicationForm();
+        if (target.hasAttribute("data-edit-pro-shop-product")) return editProShopProduct(Number(target.getAttribute("data-edit-pro-shop-product") || 0));
+        if (target.hasAttribute("data-adjust-pro-shop-stock")) return adjustProShopStockPrompt(Number(target.getAttribute("data-adjust-pro-shop-stock") || 0));
+        if (target.hasAttribute("data-clear-golf-day-form")) return resetGolfDayForm();
+        if (target.hasAttribute("data-clear-golf-day-allocation-form")) return resetGolfDayAllocationForm();
+        if (target.hasAttribute("data-edit-golf-day")) return loadGolfDayIntoForms(Number(target.getAttribute("data-edit-golf-day") || 0));
+        if (target.hasAttribute("data-load-golf-day-allocation")) return loadGolfDayIntoForms(Number(target.getAttribute("data-load-golf-day-allocation") || 0));
+        if (target.hasAttribute("data-golf-day-mark-paid")) return markGolfDayPaid(Number(target.getAttribute("data-golf-day-mark-paid") || 0));
+        if (target.hasAttribute("data-golf-day-complete")) return markGolfDayCompleted(Number(target.getAttribute("data-golf-day-complete") || 0));
+        if (target.hasAttribute("data-edit-import-settings")) return loadImportSettingsIntoForm(target.getAttribute("data-edit-import-settings") || "other");
+        if (target.hasAttribute("data-clear-import-settings-form")) return resetImportSettingsForm();
+        if (target.hasAttribute("data-ledger-repair")) {
+            return repairLedgerBooking(
+                Number(target.getAttribute("data-ledger-repair") || 0),
+                target.getAttribute("data-ledger-status") || "checked_in"
+            );
+        }
+        if (target.hasAttribute("data-ledger-payment")) return updateBookingPaymentMethodPrompt(Number(target.getAttribute("data-ledger-payment") || 0));
+        if (target.hasAttribute("data-ledger-account")) return updateBookingAccountCodePrompt(Number(target.getAttribute("data-ledger-account") || 0));
+        if (target.hasAttribute("data-edit-staff")) return editStaffUser(Number(target.getAttribute("data-edit-staff") || 0));
+        if (target.hasAttribute("data-clear-staff-form")) return resetClubStaffForm();
         if (target.hasAttribute("data-open-booking")) {
             return openBookingModal(
                 Number(target.getAttribute("data-open-booking") || 0),
@@ -7290,6 +8699,7 @@
         if (target.hasAttribute("data-booking-select-clear")) return clearVisibleGolfBookings();
         if (target.hasAttribute("data-booking-bulk-status")) return batchUpdateGolfBookingStatusFromUi();
         if (target.hasAttribute("data-booking-bulk-payment")) return batchUpdateGolfBookingPaymentPrompt();
+        if (target.hasAttribute("data-booking-bulk-account")) return batchUpdateGolfBookingAccountPrompt();
         if (target.hasAttribute("data-nav-workspace") || target.hasAttribute("data-nav-panel")) {
             const partial = {};
             if (target.hasAttribute("data-nav-workspace")) {
@@ -7312,6 +8722,13 @@
             "club-staff-form": submitClubStaffForm,
             "member-form": submitMemberForm,
             "communication-form": submitCommunicationForm,
+            "pro-shop-sale-form": submitProShopSaleForm,
+            "pro-shop-product-form": submitProShopProductForm,
+            "golf-day-form": submitGolfDayForm,
+            "golf-day-allocation-form": submitGolfDayAllocationForm,
+            "import-settings-form": submitImportSettingsForm,
+            "import-revenue-form": submitImportRevenueForm,
+            "import-members-form": submitImportMembersForm,
             "booking-window-form": submitBookingWindowForm,
             "club-profile-form": submitClubProfileForm,
             "operational-targets-form": submitOperationalTargetsForm,

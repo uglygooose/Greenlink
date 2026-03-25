@@ -55,6 +55,8 @@ def classify_membership_group(membership_name: Any) -> str:
         return "other"
     if "golf" in value or "academy" in value or "junior" in value or "weekday" in value:
         return "golf"
+    if "padel" in value:
+        return "padel"
     if "bowls" in value:
         return "bowls"
     if "tennis" in value:
@@ -80,6 +82,8 @@ def normalize_primary_operation(value: Any, membership_name: Any = None) -> str:
         return "Pro Shop"
     if "golf" in raw or "academy" in raw or "weekday" in raw or "u35" in raw:
         return "Golf"
+    if "padel" in raw:
+        return "Padel"
     if "tennis" in raw:
         return "Tennis"
     if "bowls" in raw:
@@ -91,6 +95,8 @@ def normalize_primary_operation(value: Any, membership_name: Any = None) -> str:
     group = classify_membership_group(raw)
     if group == "golf":
         return "Golf"
+    if group == "padel":
+        return "Padel"
     if group == "tennis":
         return "Tennis"
     if group == "bowls":

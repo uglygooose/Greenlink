@@ -17,6 +17,23 @@
     },
     home_club_keywords: [],
     suggested_home_clubs: [],
+    sports_setup: {
+      tennis_court_count: 0,
+      tennis_session_minutes: 60,
+      tennis_court_names: [],
+      tennis_open_time: "06:00",
+      tennis_close_time: "18:00",
+      padel_court_count: 0,
+      padel_session_minutes: 60,
+      padel_court_names: [],
+      padel_open_time: "06:00",
+      padel_close_time: "22:00",
+      bowls_rink_count: 0,
+      bowls_session_minutes: 120,
+      bowls_rink_names: [],
+      bowls_open_time: "08:00",
+      bowls_close_time: "18:00",
+    },
   });
 
   let _clubPromise = null;
@@ -132,6 +149,7 @@
           labels: { ...DEFAULT_CFG.labels, ...(data?.labels || {}) },
           home_club_keywords: Array.isArray(data?.home_club_keywords) ? data.home_club_keywords : DEFAULT_CFG.home_club_keywords,
           suggested_home_clubs: Array.isArray(data?.suggested_home_clubs) ? data.suggested_home_clubs : DEFAULT_CFG.suggested_home_clubs,
+          sports_setup: { ...DEFAULT_CFG.sports_setup, ...(data?.sports_setup || {}) },
         };
         _writeCachedConfig(cacheKey, merged);
         return merged;

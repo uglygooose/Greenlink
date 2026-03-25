@@ -40,6 +40,21 @@ _PROFILE_SETTING_KEYS = {
     "website": "club_website",
     "contact_email": "club_contact_email",
     "contact_phone": "club_contact_phone",
+    "tennis_court_count": "club_tennis_court_count",
+    "tennis_session_minutes": "club_tennis_session_minutes",
+    "tennis_court_names": "club_tennis_court_names",
+    "tennis_open_time": "club_tennis_open_time",
+    "tennis_close_time": "club_tennis_close_time",
+    "padel_court_count": "club_padel_court_count",
+    "padel_session_minutes": "club_padel_session_minutes",
+    "padel_court_names": "club_padel_court_names",
+    "padel_open_time": "club_padel_open_time",
+    "padel_close_time": "club_padel_close_time",
+    "bowls_rink_count": "club_bowls_rink_count",
+    "bowls_session_minutes": "club_bowls_session_minutes",
+    "bowls_rink_names": "club_bowls_rink_names",
+    "bowls_open_time": "club_bowls_open_time",
+    "bowls_close_time": "club_bowls_close_time",
     "address_line_1": "club_address_line_1",
     "address_line_2": "club_address_line_2",
     "city": "club_city",
@@ -95,6 +110,18 @@ def apply_club_profile_settings(db: Session, club_id: int, payload: dict[str, An
             "club_suggested_home_clubs",
             _json_text(payload.get("suggested_home_clubs")),
         )
+    for payload_key, setting_key in (
+        ("tennis_court_names", "club_tennis_court_names"),
+        ("padel_court_names", "club_padel_court_names"),
+        ("bowls_rink_names", "club_bowls_rink_names"),
+    ):
+        if payload_key in payload:
+            _upsert_setting(
+                db,
+                int(club_id),
+                setting_key,
+                _json_text(payload.get(payload_key)),
+            )
     invalidate_club_config_cache(int(club_id))
 
 

@@ -104,6 +104,15 @@ function formatTime(value) {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+function isSameCalendarDay(a, b = new Date()) {
+  const left = a instanceof Date ? a : new Date(a);
+  const right = b instanceof Date ? b : new Date(b);
+  if (Number.isNaN(left.getTime()) || Number.isNaN(right.getTime())) return false;
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
 function bookingStatusLabel(status) {
   const key = String(status || "").toLowerCase();
   const labels = {
@@ -165,6 +174,161 @@ function profileCompleteness(profile) {
   return missing;
 }
 
+function clubModuleEnabled(moduleKey) {
+  const key = String(moduleKey || "").trim().toLowerCase();
+  if (!key) return false;
+  const enabled = Array.isArray(state.clubConfig?.enabled_modules) ? state.clubConfig.enabled_modules : [];
+  return enabled.some(item => String(item || "").trim().toLowerCase() === key);
+}
+
+function clubContactHref() {
+  const phone = String(state.clubConfig?.contact_phone || "").trim();
+  if (phone) return `tel:${phone.replace(/[^\d+]/g, "")}`;
+  const email = String(state.clubConfig?.contact_email || "").trim();
+  if (email) return `mailto:${email}`;
+  return "";
+}
+
+function clubContactLabel() {
+  if (String(state.clubConfig?.contact_phone || "").trim()) return "Call club";
+  if (String(state.clubConfig?.contact_email || "").trim()) return "Email club";
+  return "";
+}
+
+function communicationKindLabel(item) {
+  const kind = String(item?.kind || "").trim().toLowerCase();
+  if (!kind) return "Update";
+  if (kind === "event") return "Event";
+  if (kind === "notice") return "Notice";
+  if (kind === "news") return "News";
+  return kind.replaceAll("_", " ");
+}
+
+function isEventLikeCommunication(item) {
+  const text = [
+    String(item?.kind || ""),
+    String(item?.title || ""),
+    String(item?.summary || ""),
+    String(item?.body || ""),
+    String(item?.cta_label || "")
+  ].join(" ").toLowerCase();
+  return [
+    "event",
+    "tournament",
+    "fixture",
+    "programme",
+    "program",
+    "calendar",
+    "clinic",
+    "social",
+    "competition",
+    "golf day",
+    "member evening",
+    "bowls",
+    "tennis"
+  ].some(keyword => text.includes(keyword));
+}
+
+function buildMemberBookingOptions() {
+  const contactHref = clubContactHref();
+  const contactLabel = clubContactLabel();
+  const contactAction = contactHref
+    ? `<a class="btn outline small" href="${escapeHtml(contactHref)}">${escapeHtml(contactLabel || "Contact club")}</a>`
+    : `<span class="muted">Available through the club desk for now.</span>`;
+  const next = upcomingBookings(1)[0] || null;
+  const golfDetail = next
+    ? isSameCalendarDay(next?.tee_time)
+      ? `You play today at ${formatTime(next?.tee_time)}. Open Book to manage this tee time or add another round.`
+      : `Your next tee time is ${formatDateTime(next?.tee_time)}. Open Book to manage it or reserve another round.`
+    : "Reserve a tee time, add guests, and manage upcoming rounds from one place.";
+  const golfActionLabel = next ? "Open Booking" : "Open Book";
+
+  const options = [
+    {
+      title: "Golf tee times",
+      detail: golfDetail,
+      pill: "Live",
+      pillClass: "ok",
+      actionHtml: `<button class="btn primary small" type="button" data-go-view="bookings">${escapeHtml(golfActionLabel)}</button>`
+    }
+  ];
+
+  const describeResourceSetup = ({ names = [], count = 0, openTime = "", closeTime = "", sessionMinutes = 60, typeLabel = "court" }) => {
+    const named = Array.isArray(names) ? names.filter(Boolean) : [];
+    const nameText = named.length
+      ? `${named.slice(0, 3).join(", ")}${named.length > 3 ? ` +${named.length - 3} more` : ""}`
+      : `${formatInteger(count)} ${typeLabel}${count === 1 ? "" : "s"}`;
+    const hoursText = openTime && closeTime ? `${openTime}-${closeTime}` : "club-set hours";
+    return `${nameText}. Default session: ${formatInteger(sessionMinutes)} minutes. Hours: ${hoursText}.`;
+  };
+
+  if (clubModuleEnabled("tennis")) {
+    const courtCount = Math.max(0, Number(state.clubConfig?.tennis_court_count ?? state.clubConfig?.sports_setup?.tennis_court_count ?? 0) || 0);
+    const sessionMinutes = Math.max(15, Number(state.clubConfig?.tennis_session_minutes ?? state.clubConfig?.sports_setup?.tennis_session_minutes ?? 60) || 60);
+    const names = state.clubConfig?.tennis_court_names ?? state.clubConfig?.sports_setup?.tennis_court_names ?? [];
+    const openTime = String(state.clubConfig?.tennis_open_time ?? state.clubConfig?.sports_setup?.tennis_open_time ?? "");
+    const closeTime = String(state.clubConfig?.tennis_close_time ?? state.clubConfig?.sports_setup?.tennis_close_time ?? "");
+    options.push({
+      title: "Tennis",
+      detail: courtCount > 0
+        ? `${describeResourceSetup({ names, count: courtCount, openTime, closeTime, sessionMinutes, typeLabel: "court" })} Self-service court booking will land here when that flow is live.`
+        : "Tennis is active at your club. Member self-service court booking will land here when that flow is live.",
+      pill: "Club assisted",
+      pillClass: "warn",
+      actionHtml: contactAction
+    });
+  }
+  if (clubModuleEnabled("padel")) {
+    const courtCount = Math.max(0, Number(state.clubConfig?.padel_court_count ?? state.clubConfig?.sports_setup?.padel_court_count ?? 0) || 0);
+    const sessionMinutes = Math.max(15, Number(state.clubConfig?.padel_session_minutes ?? state.clubConfig?.sports_setup?.padel_session_minutes ?? 60) || 60);
+    const names = state.clubConfig?.padel_court_names ?? state.clubConfig?.sports_setup?.padel_court_names ?? [];
+    const openTime = String(state.clubConfig?.padel_open_time ?? state.clubConfig?.sports_setup?.padel_open_time ?? "");
+    const closeTime = String(state.clubConfig?.padel_close_time ?? state.clubConfig?.sports_setup?.padel_close_time ?? "");
+    options.push({
+      title: "Padel",
+      detail: courtCount > 0
+        ? `${describeResourceSetup({ names, count: courtCount, openTime, closeTime, sessionMinutes, typeLabel: "court" })} Member self-service booking is still being staged into GreenLink.`
+        : "Padel is active at your club. Member self-service court booking is still being staged into GreenLink.",
+      pill: "Club assisted",
+      pillClass: "warn",
+      actionHtml: contactAction
+    });
+  }
+  if (clubModuleEnabled("bowls")) {
+    const rinkCount = Math.max(0, Number(state.clubConfig?.bowls_rink_count ?? state.clubConfig?.sports_setup?.bowls_rink_count ?? 0) || 0);
+    const sessionMinutes = Math.max(30, Number(state.clubConfig?.bowls_session_minutes ?? state.clubConfig?.sports_setup?.bowls_session_minutes ?? 120) || 120);
+    const names = state.clubConfig?.bowls_rink_names ?? state.clubConfig?.sports_setup?.bowls_rink_names ?? [];
+    const openTime = String(state.clubConfig?.bowls_open_time ?? state.clubConfig?.sports_setup?.bowls_open_time ?? "");
+    const closeTime = String(state.clubConfig?.bowls_close_time ?? state.clubConfig?.sports_setup?.bowls_close_time ?? "");
+    options.push({
+      title: "Bowls",
+      detail: rinkCount > 0
+        ? `${describeResourceSetup({ names, count: rinkCount, openTime, closeTime, sessionMinutes, typeLabel: "rink" })} Member self-service booking is still being staged into GreenLink.`
+        : "Bowls activity is part of your club. Member self-service booking is still being staged into GreenLink.",
+      pill: "Club assisted",
+      pillClass: "warn",
+      actionHtml: contactAction
+    });
+  }
+  return options;
+}
+
+function renderMemberBookingOptions(containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const options = buildMemberBookingOptions();
+  wrap.innerHTML = options.map(item => `
+    <div class="list-row">
+      <div class="list-row-header">
+        <div class="list-row-title">${escapeHtml(item.title)}</div>
+        <span class="pill ${escapeHtml(item.pillClass)}">${escapeHtml(item.pill)}</span>
+      </div>
+      <div class="row-meta">${escapeHtml(item.detail)}</div>
+      <div class="list-row-actions">${item.actionHtml}</div>
+    </div>
+  `).join("");
+}
+
 function setStatusBanner(message = "", show = false) {
   const el = document.getElementById("status-banner");
   if (!el) return;
@@ -194,7 +358,7 @@ function logClientError(stage, error, extra = {}) {
 
 function runtimeFailureMessage(error, fallback) {
   if (error?.code === "BOOTSTRAP_TIMEOUT") {
-    return "Session bootstrap timed out while opening the member shell. Retry or sign in again.";
+    return "Session bootstrap timed out while opening the member app. Retry or sign in again.";
   }
   if (error?.code === "INVALID_BOOTSTRAP") {
     return "Session bootstrap returned invalid data. Your stored session state has been cleared.";
@@ -226,7 +390,7 @@ function renderMemberFatalError(error) {
   if (subtitle) subtitle.textContent = message;
   if (nextCard) {
     nextCard.innerHTML = `
-      <div class="callout-title">Member shell unavailable</div>
+      <div class="callout-title">Member app unavailable</div>
       <div class="callout-meta">${escapeHtml(message)}</div>
       <div class="hero-actions" style="margin-top:12px;">
         <button class="btn primary" type="button" id="member-retry-btn">Retry</button>
@@ -559,25 +723,25 @@ function renderSummaryChips() {
   const roundsIndexChip = document.getElementById("round-index-chip");
 
   if (chipMembership) chipMembership.textContent = `Membership: ${memberLabel}`;
-  if (chipWindow) chipWindow.textContent = `Booking window: ${windowText}`;
+  if (chipWindow) chipWindow.textContent = `Book ahead: ${windowText}`;
   if (chipHna) chipHna.textContent = hnaLabel;
-  if (chipBookWindow) chipBookWindow.textContent = `Window: ${windowText}`;
+  if (chipBookWindow) chipBookWindow.textContent = `Book ahead: ${windowText}`;
   if (roundsMemberChip) {
     roundsMemberChip.textContent = profile?.linked_member
-      ? `Member link: #${profile?.linked_member_id || "linked"}`
-      : "Member link: not linked";
+      ? `Member linked: #${profile?.linked_member_id || "linked"}`
+      : "Member linked: not linked";
   }
   if (roundsIndexChip) {
     const indexBits = [];
     if (profile?.handicap_sa_id) indexBits.push(`HNA ${profile.handicap_sa_id}`);
     if (profile?.handicap_index != null) indexBits.push(`Idx ${profile.handicap_index}`);
-    roundsIndexChip.textContent = indexBits.length ? `HNA/Index: ${indexBits.join(" | ")}` : "HNA/Index: not set";
+    roundsIndexChip.textContent = indexBits.length ? `Handicap: ${indexBits.join(" | ")}` : "Handicap: not set";
   }
 
   const note = document.getElementById("book-window-note");
   if (note) {
     const maxDate = bookingWindow?.max_date ? formatDate(bookingWindow.max_date) : "-";
-    note.textContent = `Your booking access: ${memberLabel}, max booking date ${maxDate}.`;
+    note.textContent = `You can book as ${memberLabel} up to ${maxDate}.`;
   }
 
   syncBookDateConstraints();
@@ -587,24 +751,47 @@ function renderHome() {
   const profile = state.profile || {};
   const greeting = document.getElementById("home-greeting");
   const subtitle = document.getElementById("home-subtitle");
+  const primaryActionBtn = document.getElementById("home-primary-action");
+  const secondaryActionBtn = document.getElementById("home-secondary-action");
+  const messageActionBtn = document.getElementById("home-message-action");
+  const profileActionBtn = document.getElementById("home-profile-action");
+  const attentionList = document.getElementById("home-attention-list");
+  const bookingHubList = document.getElementById("home-booking-options");
   const upcomingList = document.getElementById("upcoming-list");
   const nextCard = document.getElementById("next-booking-card");
+  const highlightsList = document.getElementById("home-highlights-list");
+  const eventsList = document.getElementById("home-events-list");
+  const attentionSection = document.getElementById("section-home-attention");
+  const upcomingSection = document.getElementById("section-home-upcoming");
+  const highlightsSection = document.getElementById("section-home-highlights");
+  const eventsSection = document.getElementById("section-home-events");
   if (greeting) greeting.textContent = `Welcome, ${profile?.name || "Player"}`;
 
   const missing = profileCompleteness(profile);
   if (subtitle) {
     subtitle.textContent = missing.length
-      ? `Complete ${missing.join(", ")} to keep booking and HNA actions reliable.`
-      : `${state.clubConfig?.display_name || state.clubConfig?.club_name || "Your club"} bookings, rounds, news, and messages in one branded member flow.`;
+      ? `Complete ${missing.join(", ")} so booking and handicap actions stay reliable.`
+      : `Book golf, manage rounds, and stay up to date with ${state.clubConfig?.display_name || state.clubConfig?.club_name || "your club"}.`;
   }
 
   const upcoming = upcomingBookings(6);
   const next = upcoming[0] || null;
   const weatherActionCount = (state.notifications || []).filter(item => !String(item?.response || "").trim()).length;
-  const actionCount = (state.bookings || []).filter(bookingNeedsRoundAction).length + weatherActionCount;
+  const roundActionCount = (state.bookings || []).filter(bookingNeedsRoundAction).length;
+  const actionCount = roundActionCount + weatherActionCount;
   const checklist = profileReadinessItems(profile);
   const ready = checklist.filter(item => item.ok).length;
   const readinessPct = checklist.length ? Math.round((ready / checklist.length) * 100) : 0;
+
+  const homeSubtitle = weatherActionCount > 0
+    ? "The club needs a quick response on an upcoming booking so it can plan the day."
+    : roundActionCount > 0
+      ? "Your next round action is ready. Open it to start, submit, or close your scoring."
+      : next
+        ? `You are booked for ${formatDateTime(next?.tee_time)}. Booking updates and club prompts will appear here.`
+        : missing.length
+          ? `Complete ${missing.join(", ")} so booking and handicap actions stay reliable.`
+          : `Book golf, manage rounds, and stay up to date with ${state.clubConfig?.display_name || state.clubConfig?.club_name || "your club"}.`;
 
   const statUpcoming = document.getElementById("home-metric-upcoming");
   const statActions = document.getElementById("home-metric-actions");
@@ -612,39 +799,222 @@ function renderHome() {
   if (statUpcoming) statUpcoming.textContent = formatInteger(upcoming.length);
   if (statActions) statActions.textContent = formatInteger(actionCount);
   if (statProfile) statProfile.textContent = `${readinessPct}%`;
+  if (subtitle) subtitle.textContent = homeSubtitle;
+
+  if (primaryActionBtn) {
+    let label = "Book Golf";
+    let view = "bookings";
+    if (weatherActionCount > 0) {
+      label = "Respond Now";
+      view = "messages";
+    } else if (roundActionCount > 0) {
+      label = "Finish Round";
+      view = "bookings";
+    } else if (next) {
+      label = "View Booking";
+      view = "bookings";
+    }
+    primaryActionBtn.textContent = label;
+    primaryActionBtn.setAttribute("data-go-view", view);
+  }
+  if (secondaryActionBtn) {
+    let label = "Club Updates";
+    let view = "news";
+    if (weatherActionCount > 0 || roundActionCount > 0) {
+      label = "Book Golf";
+      view = "bookings";
+    } else if (next) {
+      label = "Club Updates";
+      view = "news";
+    }
+    secondaryActionBtn.textContent = label;
+    secondaryActionBtn.setAttribute("data-go-view", view);
+  }
+  if (messageActionBtn) {
+    messageActionBtn.textContent = weatherActionCount > 0 ? "Weather" : "Messages";
+    messageActionBtn.setAttribute("data-go-view", "messages");
+  }
+  if (profileActionBtn) {
+    profileActionBtn.textContent = missing.length ? "Complete Profile" : "Profile";
+    profileActionBtn.setAttribute("data-go-view", "profile");
+  }
+
+  const attentionItems = [];
+  if (weatherActionCount > 0) {
+    attentionItems.push({
+      title: `${formatInteger(weatherActionCount)} weather prompt${weatherActionCount === 1 ? "" : "s"} waiting`,
+      detail: "Confirm whether you are still playing or need club help with the booking.",
+      pill: "Action",
+      pillClass: "warn",
+      actionHtml: `<button class="btn outline small" type="button" data-go-view="messages">Open Messages</button>`
+    });
+  }
+  if (roundActionCount > 0) {
+    attentionItems.push({
+      title: `${formatInteger(roundActionCount)} round action${roundActionCount === 1 ? "" : "s"} waiting`,
+      detail: "Open the booking area to start, submit, or finish your scoring flow.",
+      pill: "Action",
+      pillClass: "warn",
+      actionHtml: `<button class="btn outline small" type="button" data-go-view="bookings">Open Book</button>`
+    });
+  }
+  if (missing.length) {
+    attentionItems.push({
+      title: `Complete ${missing.join(", ")}`,
+      detail: "Keeping these details current helps bookings, handicap, and member matching stay accurate.",
+      pill: "Profile",
+      pillClass: "warn",
+      actionHtml: `<button class="btn outline small" type="button" data-go-view="profile">Open Profile</button>`
+    });
+  }
+  if (attentionList) {
+    if (!attentionItems.length) {
+      attentionList.innerHTML = `<div class="empty-state">No urgent actions right now. Your bookings, profile, and club messages are up to date.</div>`;
+    } else {
+      attentionList.innerHTML = attentionItems.map(item => `
+        <div class="list-row">
+          <div class="list-row-header">
+            <div class="list-row-title">${escapeHtml(item.title)}</div>
+            <span class="pill ${escapeHtml(item.pillClass)}">${escapeHtml(item.pill)}</span>
+          </div>
+          <div class="row-meta">${escapeHtml(item.detail)}</div>
+          <div class="list-row-actions">${item.actionHtml}</div>
+        </div>
+      `).join("");
+    }
+  }
+  if (attentionSection) attentionSection.hidden = attentionItems.length === 0;
+
+  if (bookingHubList) renderMemberBookingOptions("home-booking-options");
+  renderMemberBookingOptions("booking-options-list");
 
   if (nextCard) {
     if (!next) {
-      nextCard.innerHTML = `<div class="empty-state">No upcoming tee times. Open Book to reserve your next round.</div>`;
+      const nextActions = [];
+      if (weatherActionCount > 0) {
+        nextActions.push(`<button class="btn outline small" type="button" data-go-view="messages">Open Messages</button>`);
+      }
+      if (missing.length) {
+        nextActions.push(`<button class="btn ghost small" type="button" data-go-view="profile">Complete Profile</button>`);
+      }
+      nextActions.push(`<button class="btn primary small" type="button" data-go-view="bookings">Book Golf</button>`);
+      nextCard.innerHTML = `
+        <div class="callout-title">No tee time booked</div>
+        <div class="callout-meta">Book your next round when you are ready. Club prompts and member actions will still appear here first.</div>
+        <div class="list-row-actions">${nextActions.join("")}</div>
+      `;
     } else {
       const status = bookingStatusLabel(next?.status);
+      const followUp = weatherActionCount > 0
+        ? "There is an open weather response for an upcoming booking."
+        : roundActionCount > 0
+          ? "Your next scoring action is waiting in Book."
+          : "Any booking changes or club prompts will show here first.";
+      const nextActions = [
+        `<button class="btn outline small" type="button" data-go-view="bookings">Open Booking</button>`
+      ];
+      if (weatherActionCount > 0) {
+        nextActions.push(`<button class="btn ghost small" type="button" data-go-view="messages">Open Messages</button>`);
+      } else if (missing.length) {
+        nextActions.push(`<button class="btn ghost small" type="button" data-go-view="profile">Complete Profile</button>`);
+      }
       nextCard.innerHTML = `
         <div class="callout-title">${escapeHtml(formatDateTime(next?.tee_time))}</div>
-        <div class="callout-meta">${escapeHtml(next?.player_name || profile?.name || "Booking")} · ${escapeHtml(status)} · ${escapeHtml(roundStateLabel(next))}</div>
+        <div class="callout-meta">${escapeHtml(next?.player_name || profile?.name || "Booking")} - ${escapeHtml(status)} - ${escapeHtml(roundStateLabel(next))}</div>
+        <div class="row-meta">${escapeHtml(followUp)}</div>
+        <div class="list-row-actions">${nextActions.join("")}</div>
       `;
     }
   }
 
-  if (!upcomingList) return;
-  if (!upcoming.length) {
-    upcomingList.innerHTML = `<div class="empty-state">No upcoming bookings yet. Use the Book tab to reserve a tee time.</div>`;
-    return;
+  if (upcomingList) {
+    if (!upcoming.length) {
+      upcomingList.innerHTML = `<div class="empty-state">No upcoming bookings yet. Open Book Golf to reserve a tee time.</div>`;
+    } else {
+      upcomingList.innerHTML = upcoming.map(item => {
+        const roundLabel = roundStateLabel(item);
+        const roundClass = roundPillClass(item);
+        const status = bookingStatusLabel(item?.status);
+        return `
+          <div class="list-row">
+            <div class="list-row-header">
+              <div class="list-row-title">${escapeHtml(formatDateTime(item?.tee_time))}</div>
+              <span class="pill ${roundClass}">${escapeHtml(roundLabel)}</span>
+            </div>
+            <div class="row-meta">${escapeHtml(status)} - ${escapeHtml(item?.player_name || profile?.name || "Booking")}</div>
+          </div>
+        `;
+      }).join("");
+    }
+  }
+  if (upcomingSection) upcomingSection.hidden = upcoming.length <= 1;
+  if (highlightsList) {
+    const highlightRows = [];
+    (state.clubMessages || []).slice(0, 2).forEach(item => {
+      highlightRows.push({
+        title: String(item?.title || "Club message"),
+        meta: String(item?.body || ""),
+        pill: item?.requires_action ? "Action" : "Message",
+        pillClass: item?.requires_action ? "warn" : "",
+        actions: `<button class="btn ghost small" type="button" data-go-view="messages">Open Messages</button>`
+      });
+    });
+    (state.clubFeed || []).filter(item => !isEventLikeCommunication(item)).slice(0, 2).forEach(item => {
+      const actions = [];
+      if (String(item?.cta_url || "").trim()) {
+        actions.push(`<a class="btn outline small" href="${escapeHtml(String(item.cta_url).trim())}" target="_blank" rel="noopener noreferrer">${escapeHtml(String(item?.cta_label || "Open").trim())}</a>`);
+      }
+      actions.push(`<button class="btn ghost small" type="button" data-go-view="news">Open Updates</button>`);
+      highlightRows.push({
+        title: String(item?.title || "Club update"),
+        meta: String(item?.summary || item?.body || ""),
+        pill: communicationKindLabel(item),
+        pillClass: "",
+        actions: actions.join("")
+      });
+    });
+
+    if (!highlightRows.length) {
+      highlightsList.innerHTML = `<div class="empty-state">Club updates and direct messages will appear here when published.</div>`;
+    } else {
+      highlightsList.innerHTML = highlightRows.slice(0, 4).map(item => `
+        <div class="list-row">
+          <div class="list-row-header">
+            <div class="list-row-title">${escapeHtml(item.title)}</div>
+            <span class="pill ${escapeHtml(item.pillClass)}">${escapeHtml(item.pill)}</span>
+          </div>
+          <div class="row-meta">${escapeHtml(item.meta)}</div>
+          <div class="list-row-actions">${item.actions}</div>
+        </div>
+      `).join("");
+    }
+    if (highlightsSection) highlightsSection.hidden = highlightRows.length === 0;
   }
 
-  upcomingList.innerHTML = upcoming.map(item => {
-    const roundLabel = roundStateLabel(item);
-    const roundClass = roundPillClass(item);
-    const status = bookingStatusLabel(item?.status);
-    return `
-      <div class="list-row">
-        <div class="list-row-header">
-          <div class="list-row-title">${escapeHtml(formatDateTime(item?.tee_time))}</div>
-          <span class="pill ${roundClass}">${escapeHtml(roundLabel)}</span>
-        </div>
-        <div class="row-meta">${escapeHtml(status)} · ${escapeHtml(item?.player_name || profile?.name || "Booking")}</div>
-      </div>
-    `;
-  }).join("");
+  if (eventsList) {
+    const eventRows = (state.clubFeed || []).filter(isEventLikeCommunication).slice(0, 3);
+    if (!eventRows.length) {
+      eventsList.innerHTML = `<div class="empty-state">Upcoming events and member programmes will appear here when the club publishes them.</div>`;
+    } else {
+      eventsList.innerHTML = eventRows.map(item => {
+        const actionHtml = String(item?.cta_url || "").trim()
+          ? `<a class="btn outline small" href="${escapeHtml(String(item.cta_url).trim())}" target="_blank" rel="noopener noreferrer">${escapeHtml(String(item?.cta_label || "Open").trim())}</a>`
+          : `<button class="btn ghost small" type="button" data-go-view="news">Open Updates</button>`;
+        return `
+          <div class="list-row">
+            <div class="list-row-header">
+              <div class="list-row-title">${escapeHtml(item?.title || "Club event")}</div>
+              <span class="pill">${escapeHtml(communicationKindLabel(item))}</span>
+            </div>
+            <div class="row-meta">${escapeHtml(item?.summary || item?.body || "")}</div>
+            <div class="row-meta">${escapeHtml(item?.published_at ? `Published ${formatDate(item.published_at)}` : "Current club notice")}</div>
+            <div class="list-row-actions">${actionHtml}</div>
+          </div>
+        `;
+      }).join("");
+    }
+    if (eventsSection) eventsSection.hidden = eventRows.length === 0;
+  }
 }
 
 function renderWeatherAlerts() {
@@ -681,7 +1051,7 @@ function renderWeatherAlerts() {
           <div class="list-row-title">${escapeHtml(teeTime ? formatDateTime(teeTime) : "Upcoming booking")}</div>
           <span class="pill ${riskClass}">${escapeHtml(riskLabel)}</span>
         </div>
-        <div class="row-meta">Tee ${escapeHtml(teeLabel)} · ${escapeHtml(reasonText)}</div>
+        <div class="row-meta">Tee ${escapeHtml(teeLabel)} - ${escapeHtml(reasonText)}</div>
         <div class="row-meta">${escapeHtml(item?.body || "")}</div>
         <div class="list-row-header">
           <span class="pill ${responseClass}">${escapeHtml(responseLabel)}</span>
@@ -709,9 +1079,16 @@ function renderClubFeed() {
         <div class="list-row">
           <div class="list-row-header">
             <div class="list-row-title">${escapeHtml(item?.title || "Club update")}</div>
-            <span class="pill">${escapeHtml(String(item?.kind || "update").replaceAll("_", " "))}</span>
+            <span class="pill">${escapeHtml(communicationKindLabel(item))}</span>
           </div>
           <div class="row-meta">${escapeHtml(item?.summary || item?.body || "")}</div>
+          ${String(item?.cta_url || "").trim() ? `
+            <div class="list-row-actions">
+              <a class="btn outline small" href="${escapeHtml(String(item.cta_url).trim())}" target="_blank" rel="noopener noreferrer">
+                ${escapeHtml(String(item?.cta_label || "Open").trim())}
+              </a>
+            </div>
+          ` : ``}
         </div>
       `).join("");
     }
@@ -774,7 +1151,7 @@ function renderTeeTimes() {
     return;
   }
   if (!filtered.length) {
-    listEl.innerHTML = `<div class="empty-state">No tee times match this filter. Try “All” or another date.</div>`;
+    listEl.innerHTML = `<div class="empty-state">No tee times match this filter. Try All or another date.</div>`;
     return;
   }
 
@@ -792,7 +1169,7 @@ function renderTeeTimes() {
         <div class="tee-main">
           <div>
             <div class="tee-time">${escapeHtml(formatTime(tt?.tee_time))}</div>
-            <div class="tee-meta">Tee ${escapeHtml(teeLabel)} · ${escapeHtml(formatDate(tt?.tee_time))} · ${state.holes} holes</div>
+            <div class="tee-meta">Tee ${escapeHtml(teeLabel)} - ${escapeHtml(formatDate(tt?.tee_time))} - ${state.holes} holes</div>
           </div>
           <span class="pill ${pillClass}">${escapeHtml(statusText)}</span>
         </div>
@@ -834,7 +1211,7 @@ function renderRounds() {
   });
 
   if (!rows.length) {
-    listEl.innerHTML = `<div class="empty-state">No rounds yet. Book a tee time and open a round when ready.</div>`;
+    listEl.innerHTML = `<div class="empty-state">No rounds yet. Book golf first, then open a round when you arrive.</div>`;
     return;
   }
   if (!filtered.length) {
@@ -866,10 +1243,10 @@ function renderRounds() {
     return `
       <div class="list-row">
         <div class="list-row-header">
-          <div class="list-row-title">${escapeHtml(item?.player_name || "Booking")} · ${escapeHtml(formatDateTime(item?.tee_time))}</div>
+          <div class="list-row-title">${escapeHtml(item?.player_name || "Booking")} - ${escapeHtml(formatDateTime(item?.tee_time))}</div>
           <span class="pill ${roundClass}">${escapeHtml(roundLabel)}</span>
         </div>
-        <div class="row-meta">${escapeHtml(bookingStatusLabel(item?.status))} · Mode: ${escapeHtml(modeLabel)} · Submitted: ${escapeHtml(submitted)}</div>
+        <div class="row-meta">${escapeHtml(bookingStatusLabel(item?.status))} - Mode: ${escapeHtml(modeLabel)} - Submitted: ${escapeHtml(submitted)}</div>
         <div class="round-actions">${actionButtons.join("") || `<span class="muted">No actions available.</span>`}</div>
       </div>
     `;
@@ -1388,6 +1765,14 @@ function bindEvents() {
     btn.addEventListener("click", () => setActiveView(String(btn.dataset.goView || "home")));
   });
 
+  ["home-attention-list", "home-booking-options", "home-highlights-list", "home-events-list"].forEach(id => {
+    document.getElementById(id)?.addEventListener("click", event => {
+      const target = event.target instanceof HTMLElement ? event.target.closest("[data-go-view]") : null;
+      if (!target) return;
+      setActiveView(String(target.getAttribute("data-go-view") || "home"));
+    });
+  });
+
   document.getElementById("refresh-home-btn")?.addEventListener("click", async () => {
     await Promise.all([loadMyBookings(), loadNotifications(), loadClubFeed()]);
     renderAll();
@@ -1634,3 +2019,4 @@ initialize().catch(err => {
   hideLoadingOverlay();
   renderMemberFatalError(err);
 });
+

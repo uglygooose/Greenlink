@@ -35,19 +35,19 @@
     <main class="main">
       <section id="view-home" class="view active" data-view="home">
         <article class="card hero">
-          <p class="eyebrow">Player Dashboard</p>
+          <p class="eyebrow">Member Home</p>
           <h1 id="home-greeting">Welcome</h1>
-          <p id="home-subtitle">Everything for bookings, rounds, and profile in one mobile flow.</p>
+          <p id="home-subtitle">Book golf, manage rounds, and keep your profile ready from one mobile view.</p>
           <div class="chip-row">
             <span class="chip" id="chip-membership">Membership: -</span>
             <span class="chip" id="chip-window">Booking window: -</span>
             <span class="chip" id="chip-hna">HNA: -</span>
           </div>
           <div class="hero-actions">
-            <button class="btn primary" data-go-view="bookings">My Bookings</button>
-            <button class="btn ghost" data-go-view="news">Club News</button>
-            <button class="btn ghost" data-go-view="messages">Messages</button>
-            <button class="btn outline" data-go-view="profile">Profile</button>
+            <button id="home-primary-action" class="btn primary" data-go-view="bookings">Book Golf</button>
+            <button id="home-secondary-action" class="btn ghost" data-go-view="news">Club Updates</button>
+            <button id="home-message-action" class="btn ghost" data-go-view="messages">Messages</button>
+            <button id="home-profile-action" class="btn outline" data-go-view="profile">Profile</button>
           </div>
           <div class="stats-grid">
             <div class="stat-tile">
@@ -65,17 +65,37 @@
           </div>
         </article>
 
-        <article class="card section-card">
+        <article id="section-home-attention" class="card section-card">
+          <div class="section-head">
+            <h2>What Needs Attention</h2>
+            <span class="muted">Only items that need action now</span>
+          </div>
+          <div id="home-attention-list" class="stack-list">
+            <div class="empty-state">Checking for actions...</div>
+          </div>
+        </article>
+
+        <article id="section-home-booking-hub" class="card section-card">
+          <div class="section-head">
+            <h2>Book At The Club</h2>
+            <span class="muted">Golf first, more as the club enables it</span>
+          </div>
+          <div id="home-booking-options" class="stack-list">
+            <div class="empty-state">Loading booking options...</div>
+          </div>
+        </article>
+
+        <article id="section-home-next-booking" class="card section-card">
           <div class="section-head">
             <h2>Next Tee Time</h2>
-            <button class="btn ghost small" type="button" data-go-view="bookings">Open Bookings</button>
+            <button class="btn ghost small" type="button" data-go-view="bookings">Open Book</button>
           </div>
           <div id="next-booking-card" class="callout-card">
             <div class="empty-state">Loading next booking...</div>
           </div>
         </article>
 
-        <article class="card section-card">
+        <article id="section-home-upcoming" class="card section-card">
           <div class="section-head">
             <h2>Upcoming Bookings</h2>
             <button class="btn ghost small" id="refresh-home-btn" type="button">Refresh</button>
@@ -85,12 +105,42 @@
           </div>
         </article>
 
+        <article id="section-home-highlights" class="card section-card">
+          <div class="section-head">
+            <h2>Club Highlights</h2>
+            <button class="btn ghost small" type="button" data-go-view="news">Open Updates</button>
+          </div>
+          <div id="home-highlights-list" class="stack-list">
+            <div class="empty-state">Loading club highlights...</div>
+          </div>
+        </article>
+
+        <article id="section-home-events" class="card section-card">
+          <div class="section-head">
+            <h2>Upcoming Events</h2>
+            <span class="muted">Programmes, tournaments, and member notices</span>
+          </div>
+          <div id="home-events-list" class="stack-list">
+            <div class="empty-state">Loading club events...</div>
+          </div>
+        </article>
+
       </section>
 
       <section id="view-bookings" class="view" data-view="bookings">
         <article class="card section-card">
           <div class="section-head">
-            <h2>My Bookings</h2>
+            <h2>Book At The Club</h2>
+            <span class="muted">Golf is live now</span>
+          </div>
+          <div id="booking-options-list" class="stack-list">
+            <div class="empty-state">Loading booking options...</div>
+          </div>
+        </article>
+
+        <article class="card section-card">
+          <div class="section-head">
+            <h2>Golf Tee Times</h2>
             <button class="btn ghost small" id="refresh-tee-btn" type="button">Refresh</button>
           </div>
           <div class="date-nav">
@@ -156,9 +206,10 @@
       <section id="view-rounds" class="view" data-view="bookings">
         <article class="card section-card">
           <div class="section-head">
-            <h2>My Rounds (HNA Ready)</h2>
+            <h2>My Rounds</h2>
             <button class="btn ghost small" id="refresh-rounds-btn" type="button">Refresh</button>
           </div>
+          <p class="muted-note">Open a round when you arrive, then submit or mark no return when you finish.</p>
           <div class="chip-row">
             <span class="chip" id="round-member-chip">Member link: -</span>
             <span class="chip" id="round-index-chip">HNA/Index: -</span>
@@ -200,7 +251,7 @@
       <section id="view-news" class="view" data-view="news">
         <article class="card section-card">
           <div class="section-head">
-            <h2>Club News & Announcements</h2>
+            <h2>Club Updates</h2>
             <button class="btn ghost small" id="refresh-club-feed-btn" type="button">Refresh</button>
           </div>
           <div id="club-feed-list" class="stack-list">
@@ -212,7 +263,7 @@
       <section id="view-messages" class="view" data-view="messages">
         <article class="card section-card">
           <div class="section-head">
-            <h2>Weather Check</h2>
+            <h2>Weather Responses</h2>
             <button class="btn ghost small" id="refresh-weather-btn" type="button">Refresh</button>
           </div>
           <div id="weather-alert-list" class="stack-list">
@@ -222,7 +273,7 @@
 
         <article class="card section-card">
           <div class="section-head">
-            <h2>Direct Club Messages</h2>
+            <h2>Club Messages</h2>
             <span class="muted">Member only</span>
           </div>
           <div id="club-message-list" class="stack-list">
@@ -325,8 +376,8 @@
 
   <nav class="tabbar" role="tablist" aria-label="Player navigation">
     <button class="tab-btn active" type="button" data-view="home">Home</button>
-    <button class="tab-btn" type="button" data-view="bookings">My Bookings</button>
-    <button class="tab-btn" type="button" data-view="news">Club News</button>
+    <button class="tab-btn" type="button" data-view="bookings">Book</button>
+    <button class="tab-btn" type="button" data-view="news">News</button>
     <button class="tab-btn" type="button" data-view="messages">Messages</button>
     <button class="tab-btn" type="button" data-view="profile">Profile</button>
   </nav>

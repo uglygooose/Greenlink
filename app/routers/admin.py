@@ -504,6 +504,7 @@ def _membership_area_clause(area_norm: str):
         category_col.like("%non golf%"),
         category_col.like("%non-golf%"),
         category_col.like("%bowls%"),
+        category_col.like("%padel%"),
         category_col.like("%tennis%"),
         category_col.like("%squash%"),
         category_col.like("%home owner%"),
@@ -511,7 +512,7 @@ def _membership_area_clause(area_norm: str):
         category_col.like("%house%"),
         category_col.like("%social%"),
         category_col.like("%staff%"),
-        player_col.in_(["bowls", "tennis", "squash", "homeowners", "house", "social", "staff", "other"]),
+        player_col.in_(["bowls", "padel", "tennis", "squash", "homeowners", "house", "social", "staff", "other"]),
     )
     if area_norm == "all":
         return None
@@ -519,6 +520,13 @@ def _membership_area_clause(area_norm: str):
         return or_(primary_op == "golf", Member.golf_access.is_(True), player_col == "golf", ~explicit_non_golf)
     if area_norm == "bowls":
         return or_(primary_op == "bowls", Member.bowls_access.is_(True), player_col == "bowls", category_col.like("%bowls%"))
+    if area_norm == "padel":
+        return or_(
+            primary_op == "padel",
+            player_col == "padel",
+            category_col.like("%padel%"),
+            raw_category_col.like("%padel%"),
+        )
     if area_norm == "tennis":
         return or_(primary_op == "tennis", Member.tennis_access.is_(True), player_col == "tennis", category_col.like("%tennis%"))
     if area_norm == "squash":
@@ -746,6 +754,21 @@ class ClubProfileSettings(BaseModel):
     website: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
+    tennis_court_count: int | None = None
+    tennis_session_minutes: int | None = None
+    tennis_court_names: list[str] | None = None
+    tennis_open_time: str | None = None
+    tennis_close_time: str | None = None
+    padel_court_count: int | None = None
+    padel_session_minutes: int | None = None
+    padel_court_names: list[str] | None = None
+    padel_open_time: str | None = None
+    padel_close_time: str | None = None
+    bowls_rink_count: int | None = None
+    bowls_session_minutes: int | None = None
+    bowls_rink_names: list[str] | None = None
+    bowls_open_time: str | None = None
+    bowls_close_time: str | None = None
     enabled_modules: list[str] | None = None
 
 
@@ -788,6 +811,30 @@ def update_club_profile_settings(
     payload_dict = payload.model_dump(exclude_none=True)
     if "club_name" in payload_dict and not str(payload_dict.get("club_name") or "").strip():
         raise HTTPException(status_code=400, detail="club_name cannot be empty")
+    for key in ("tennis_court_count", "padel_court_count", "bowls_rink_count"):
+        if key in payload_dict:
+            payload_dict[key] = max(0, min(99, int(payload_dict[key] or 0)))
+    for key, minimum, maximum, default in (
+        ("tennis_session_minutes", 15, 360, 60),
+        ("padel_session_minutes", 15, 360, 60),
+        ("bowls_session_minutes", 30, 480, 120),
+    ):
+        if key in payload_dict:
+            try:
+                payload_dict[key] = max(minimum, min(maximum, int(payload_dict[key] or default)))
+            except Exception:
+                payload_dict[key] = default
+    for key, default in (
+        ("tennis_open_time", "06:00"),
+        ("tennis_close_time", "18:00"),
+        ("padel_open_time", "06:00"),
+        ("padel_close_time", "22:00"),
+        ("bowls_open_time", "08:00"),
+        ("bowls_close_time", "18:00"),
+    ):
+        if key in payload_dict:
+            value = str(payload_dict.get(key) or "").strip()
+            payload_dict[key] = value if re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) else default
     apply_club_profile_settings(db, int(club_id), payload_dict)
     if payload.enabled_modules is not None:
         upsert_club_modules(db, int(club_id), list(payload.enabled_modules or []))

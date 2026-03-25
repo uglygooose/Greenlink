@@ -343,6 +343,21 @@ body {
   line-height: 1.45;
 }
 
+.list-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.list-row-actions .btn,
+.list-row-actions a.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -592,7 +607,7 @@ input, select {
   margin: 0 auto;
   padding: 7px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   z-index: 40;
   border-radius: 16px;
@@ -608,7 +623,7 @@ input, select {
   color: var(--muted);
   border-radius: 10px;
   padding: 10px 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.2;
   cursor: pointer;

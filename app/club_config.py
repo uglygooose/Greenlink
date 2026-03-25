@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -158,6 +159,21 @@ class ClubConfig:
     website: str | None
     contact_email: str | None
     contact_phone: str | None
+    tennis_court_count: int
+    tennis_session_minutes: int
+    tennis_court_names: list[str]
+    tennis_open_time: str
+    tennis_close_time: str
+    padel_court_count: int
+    padel_session_minutes: int
+    padel_court_names: list[str]
+    padel_open_time: str
+    padel_close_time: str
+    bowls_rink_count: int
+    bowls_session_minutes: int
+    bowls_rink_names: list[str]
+    bowls_open_time: str
+    bowls_close_time: str
     address_line_1: str | None
     address_line_2: str | None
     city: str | None
@@ -188,6 +204,25 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
             return None
         text = str(value or "").strip()
         return text or None
+
+    def _int_setting(key: str, env_key: str, default: int, *, minimum: int = 0, maximum: int = 999) -> int:
+        raw = _s(key) or _env(env_key)
+        if raw is None:
+            return default
+        try:
+            value = int(float(str(raw).strip()))
+        except Exception:
+            return default
+        return max(minimum, min(maximum, value))
+
+    def _time_setting(key: str, env_key: str, default: str) -> str:
+        raw = _s(key) or _env(env_key)
+        value = str(raw or "").strip()
+        if not value:
+            return default
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+            return default
+        return value
 
     club_name = _s("club_name") or _env("CLUB_NAME") or "GreenLink"
     club_slug = _s("club_slug") or _env("CLUB_SLUG")
@@ -245,6 +280,21 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
     website = _s("club_website") or _env("CLUB_WEBSITE")
     contact_email = _s("club_contact_email") or _env("CLUB_CONTACT_EMAIL")
     contact_phone = _s("club_contact_phone") or _env("CLUB_CONTACT_PHONE")
+    tennis_court_count = _int_setting("club_tennis_court_count", "CLUB_TENNIS_COURT_COUNT", 0, minimum=0, maximum=99)
+    tennis_session_minutes = _int_setting("club_tennis_session_minutes", "CLUB_TENNIS_SESSION_MINUTES", 60, minimum=15, maximum=360)
+    tennis_court_names = _parse_list(_s("club_tennis_court_names") or _env("CLUB_TENNIS_COURT_NAMES"))
+    tennis_open_time = _time_setting("club_tennis_open_time", "CLUB_TENNIS_OPEN_TIME", "06:00")
+    tennis_close_time = _time_setting("club_tennis_close_time", "CLUB_TENNIS_CLOSE_TIME", "18:00")
+    padel_court_count = _int_setting("club_padel_court_count", "CLUB_PADEL_COURT_COUNT", 0, minimum=0, maximum=99)
+    padel_session_minutes = _int_setting("club_padel_session_minutes", "CLUB_PADEL_SESSION_MINUTES", 60, minimum=15, maximum=360)
+    padel_court_names = _parse_list(_s("club_padel_court_names") or _env("CLUB_PADEL_COURT_NAMES"))
+    padel_open_time = _time_setting("club_padel_open_time", "CLUB_PADEL_OPEN_TIME", "06:00")
+    padel_close_time = _time_setting("club_padel_close_time", "CLUB_PADEL_CLOSE_TIME", "22:00")
+    bowls_rink_count = _int_setting("club_bowls_rink_count", "CLUB_BOWLS_RINK_COUNT", 0, minimum=0, maximum=99)
+    bowls_session_minutes = _int_setting("club_bowls_session_minutes", "CLUB_BOWLS_SESSION_MINUTES", 120, minimum=30, maximum=480)
+    bowls_rink_names = _parse_list(_s("club_bowls_rink_names") or _env("CLUB_BOWLS_RINK_NAMES"))
+    bowls_open_time = _time_setting("club_bowls_open_time", "CLUB_BOWLS_OPEN_TIME", "08:00")
+    bowls_close_time = _time_setting("club_bowls_close_time", "CLUB_BOWLS_CLOSE_TIME", "18:00")
     address_line_1 = _s("club_address_line_1") or _env("CLUB_ADDRESS_LINE_1")
     address_line_2 = _s("club_address_line_2") or _env("CLUB_ADDRESS_LINE_2")
     city = _s("club_city") or _env("CLUB_CITY")
@@ -279,6 +329,21 @@ def get_club_config(db: Session | None = None, club_id: int | None = None) -> Cl
         website=website,
         contact_email=contact_email,
         contact_phone=contact_phone,
+        tennis_court_count=tennis_court_count,
+        tennis_session_minutes=tennis_session_minutes,
+        tennis_court_names=tennis_court_names,
+        tennis_open_time=tennis_open_time,
+        tennis_close_time=tennis_close_time,
+        padel_court_count=padel_court_count,
+        padel_session_minutes=padel_session_minutes,
+        padel_court_names=padel_court_names,
+        padel_open_time=padel_open_time,
+        padel_close_time=padel_close_time,
+        bowls_rink_count=bowls_rink_count,
+        bowls_session_minutes=bowls_session_minutes,
+        bowls_rink_names=bowls_rink_names,
+        bowls_open_time=bowls_open_time,
+        bowls_close_time=bowls_close_time,
         address_line_1=address_line_1,
         address_line_2=address_line_2,
         city=city,
@@ -331,6 +396,38 @@ def club_config_response(db: Session | None = None, club_id: int | None = None) 
             "contact_email": cfg.contact_email,
             "contact_phone": cfg.contact_phone,
         },
+        "sports_setup": {
+            "tennis_court_count": cfg.tennis_court_count,
+            "tennis_session_minutes": cfg.tennis_session_minutes,
+            "tennis_court_names": list(cfg.tennis_court_names),
+            "tennis_open_time": cfg.tennis_open_time,
+            "tennis_close_time": cfg.tennis_close_time,
+            "padel_court_count": cfg.padel_court_count,
+            "padel_session_minutes": cfg.padel_session_minutes,
+            "padel_court_names": list(cfg.padel_court_names),
+            "padel_open_time": cfg.padel_open_time,
+            "padel_close_time": cfg.padel_close_time,
+            "bowls_rink_count": cfg.bowls_rink_count,
+            "bowls_session_minutes": cfg.bowls_session_minutes,
+            "bowls_rink_names": list(cfg.bowls_rink_names),
+            "bowls_open_time": cfg.bowls_open_time,
+            "bowls_close_time": cfg.bowls_close_time,
+        },
+        "tennis_court_count": cfg.tennis_court_count,
+        "tennis_session_minutes": cfg.tennis_session_minutes,
+        "tennis_court_names": list(cfg.tennis_court_names),
+        "tennis_open_time": cfg.tennis_open_time,
+        "tennis_close_time": cfg.tennis_close_time,
+        "padel_court_count": cfg.padel_court_count,
+        "padel_session_minutes": cfg.padel_session_minutes,
+        "padel_court_names": list(cfg.padel_court_names),
+        "padel_open_time": cfg.padel_open_time,
+        "padel_close_time": cfg.padel_close_time,
+        "bowls_rink_count": cfg.bowls_rink_count,
+        "bowls_session_minutes": cfg.bowls_session_minutes,
+        "bowls_rink_names": list(cfg.bowls_rink_names),
+        "bowls_open_time": cfg.bowls_open_time,
+        "bowls_close_time": cfg.bowls_close_time,
         "address": {
             "line_1": cfg.address_line_1,
             "line_2": cfg.address_line_2,
