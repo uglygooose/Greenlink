@@ -60,6 +60,12 @@
             },
         },
         club_admin: {
+            today: {
+                kicker: "Today",
+                title: "Today",
+                copy: "Run the club from explicit work, blockers, and fix paths instead of a passive overview.",
+                navCopy: "Today's work, queues, and operational blockers.",
+            },
             overview: {
                 kicker: "Club Overview",
                 title: "Club Overview",
@@ -91,16 +97,16 @@
                 navCopy: "News, notices, and club messaging.",
             },
             reports: {
-                kicker: "Finance & Admin",
-                title: "Finance & Admin",
-                copy: "Keep revenue, targets, imports, and finance posture close to daily operations instead of burying them in passive reporting.",
-                navCopy: "Revenue, imports, and finance posture.",
+                kicker: "Revenue Integrity & Close",
+                title: "Revenue Integrity & Close",
+                copy: "Keep settlement, imports, ledger integrity, and close readiness tied to operational work instead of passive reporting.",
+                navCopy: "Settlement, imports, and close readiness.",
             },
             settings: {
-                kicker: "Club Setup",
-                title: "Club Setup",
-                copy: "Control branding and booking rules without breaking the daily operating shell.",
-                navCopy: "Branding and booking rules.",
+                kicker: "Rules",
+                title: "Rules",
+                copy: "Control booking rules and club profile without turning setup into a module dump.",
+                navCopy: "Booking rules and club profile.",
             },
         },
         staff: {
@@ -453,10 +459,12 @@
         const shell = roleShell();
         const key = String(workspace || "").trim().toLowerCase();
         if (shell === "club_admin") {
-            if (key === "overview") return "Club Overview";
+            if (key === "today") return "Today";
+            if (key === "golf") return "Tee Sheet";
             if (key === "members") return "People";
-            if (key === "reports") return "Finance & Admin";
-            if (key === "settings") return "Club Setup";
+            if (key === "communications") return "Messages";
+            if (key === "reports") return "Revenue Integrity & Close";
+            if (key === "settings") return "Rules";
         }
         return String(fallback || workspace || "Workspace");
     }
@@ -466,13 +474,13 @@
         const items = Array.isArray(nav) ? nav : [];
         if (shell === "club_admin") {
             return [
-                { id: "overview", label: "Overview", items: items.filter(item => ["overview"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "golf", label: "Golf", items: items.filter(item => ["golf"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "today", label: "Today", items: items.filter(item => ["today"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "golf", label: "Tee Sheet", items: items.filter(item => ["golf"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "members", label: "People", items: items.filter(item => ["members"].includes(String(item.workspace || "").toLowerCase())) },
                 { id: "operations", label: "Operations", items: items.filter(item => ["operations"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "communications", label: "Communications", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "reports", label: "Finance & Admin", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
-                { id: "settings", label: "Club Setup", items: items.filter(item => ["settings"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "communications", label: "Messages", items: items.filter(item => ["communications"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "reports", label: "Revenue Integrity & Close", items: items.filter(item => ["reports"].includes(String(item.workspace || "").toLowerCase())) },
+                { id: "settings", label: "Rules", items: items.filter(item => ["settings"].includes(String(item.workspace || "").toLowerCase())) },
             ].filter(group => group.items.length);
         }
         if (shell === "staff") {
@@ -552,10 +560,10 @@
         }
         if (workspace === "reports") {
             return [
-                { id: "performance", label: "Finance Dashboard" },
+                { id: "performance", label: "Revenue Integrity" },
                 { id: "ledger", label: "Ledger & Reconciliation" },
-                { id: "cashbook", label: "Cashbook & Day Close" },
-                { id: "imports", label: "Imports & Data Health" },
+                { id: "cashbook", label: "Settlement & Close" },
+                { id: "imports", label: "Imports & Data Integrity" },
                 { id: "targets", label: "Targets" },
             ];
         }
@@ -1263,10 +1271,10 @@
 
     function renderFinanceControlCards() {
         const cards = [
-            { title: "Finance Dashboard", copy: "Keep finance signal, stream mix, and target pace visible.", workspace: "reports", panel: "performance" },
+            { title: "Revenue Integrity", copy: "See settlement risk, stream mix, and close pressure without drifting into passive finance reporting.", workspace: "reports", panel: "performance" },
             { title: "Ledger & Reconciliation", copy: "Review ledger-backed payment history before export and close-out.", workspace: "reports", panel: "ledger" },
-            { title: "Cashbook & Day Close", copy: "Preview and export club-specific CSV journals for accounting.", workspace: "reports", panel: "cashbook" },
-            { title: "Imports & Data Health", copy: "Keep stream mappings and import posture tied to finance.", workspace: "reports", panel: "imports" },
+            { title: "Settlement & Close", copy: "Preview settlement posture, export readiness, and close blockers without pretending to be an accounting suite.", workspace: "reports", panel: "cashbook" },
+            { title: "Imports & Data Integrity", copy: "Keep stream mappings and import posture tied to revenue integrity, not hidden cleanup.", workspace: "reports", panel: "imports" },
         ];
         return `
             <div class="launchpad-grid">
@@ -1557,7 +1565,7 @@
             { title: "Golf", copy: "Run the tee sheet, golf days, and live golf control from the product's hero workspace.", workspace: "golf", panel: "tee-sheet" },
             { title: "Operations", copy: "Open the service lanes clients switch on for shop, sport, and hospitality value.", workspace: "operations", panel: "overview" },
             { title: "Ledger & Reconciliation", copy: "Check paid bookings, ledger integrity, and accounting handoff before close-out.", workspace: "reports", panel: "ledger" },
-            { title: "Cashbook & Day Close", copy: "Deliver clean club-specific CSV handoff without pretending to replace accounting software.", workspace: "reports", panel: "cashbook" },
+            { title: "Settlement & Close", copy: "Deliver clean club-specific settlement handoff without pretending to replace accounting software.", workspace: "reports", panel: "cashbook" },
         ] : [
             { title: "Golf", copy: "Open the live tee sheet and golf-day work without leaving the club shell.", workspace: "golf", panel: "tee-sheet" },
             { title: "Operations", copy: "See the enabled service modules that matter for today's club floor.", workspace: "operations", panel: "overview" },
@@ -1645,7 +1653,7 @@
                 detail: financeDetail,
                 workspace: "reports",
                 panel: "cashbook",
-                label: "Open cashbook & day close",
+                label: "Open settlement & close",
             }
             : {
                 title: "Pro shop watch",
@@ -1707,9 +1715,9 @@
                     <div class="detail-row"><span class="row-key">High Alerts</span><span class="row-value">${escapeHtml(formatInteger(alertSummary.high || 0))} <span class="list-meta">${escapeHtml(`${formatInteger(alertSummary.total || 0)} active operational alerts`)}</span></span></div>
                 </div>
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger & reconciliation</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports &amp; data integrity</button>
                 </div>
             </article>
         `;
@@ -1743,7 +1751,7 @@
                 ])}
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="operations" data-nav-panel="pro_shop">Open pro shop</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>
                 </div>
             </article>
         `;
@@ -1825,7 +1833,7 @@
                 copy: closeMeta.detail,
                 workspace: "reports",
                 panel: "cashbook",
-                label: "Open cashbook & day close",
+                label: "Open settlement & close",
             },
         ];
         return `
@@ -1881,9 +1889,9 @@
                     { label: "Close State", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger & reconciliation</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports &amp; data integrity</button>
                 </div>
             </article>
         `;
@@ -1909,12 +1917,12 @@
                     { label: "Daily Close", value: closeMeta.label, meta: closeMeta.detail },
                     { label: "Week Revenue", value: formatCurrency(weekRevenue), meta: "Rolling 7-day club revenue" },
                     { label: "Period Actual", value: formatCurrency(revenue.actual_revenue || summary.total_payments || 0), meta: revenue.actual_revenue != null ? "Current reporting period actuals" : `Today's payment-backed actuals · ${financeReadyBlockedMeta(bundle)}` },
-                    { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use the finance dashboard for period pacing" },
+                    { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use the revenue integrity panel for period pacing" },
                 ])}
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open finance dashboard</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="performance">Open revenue integrity</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="imports">Open imports &amp; data integrity</button>
                 </div>
             </article>
         `;
@@ -2293,7 +2301,7 @@
                 </div>
                 ${metricCards([
                     { label: settingsRows.length ? "Mapped Streams" : "Export Fit", value: mappingValue, meta: mappingMeta },
-                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : (summary.exportMappingConfigured ? "0" : "1"), meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mappings are in place") : (summary.exportMappingConfigured ? "Pastel mapping posture is in place" : "Open Imports & Data Health for Pastel layout and mapping setup") },
+                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : (summary.exportMappingConfigured ? "0" : "1"), meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mappings are in place") : (summary.exportMappingConfigured ? "Pastel mapping posture is in place" : "Open Imports & Data Integrity for Pastel layout and mapping setup") },
                     { label: "Cashbook Setup", value: summary.exportSetupReady ? "Ready" : "Needs setup", meta: summary.exportSetupReady ? "Cashbook target and export mapping posture are configured" : (summary.cashbookReady ? "Cashbook target is configured but export mapping still needs setup" : "Cashbook export target still needs setup") },
                     { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
@@ -2303,8 +2311,8 @@
                     <div class="detail-row"><span class="row-key">3. Export</span><span class="row-value">Staff review the preview, export CSV, and import it into the club's existing accounting software.</span></div>
                 </div>
                 <div class="button-row">
-                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="imports">Open imports & data health</button>
-                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
+                    <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="imports">Open imports &amp; data integrity</button>
+                    <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>
                 </div>
             </article>
         `;
@@ -5435,13 +5443,14 @@
                 ? fetchJson(`/api/admin/account-customers?${accountCustomerQuery.toString()}`, { signal })
                 : loadSharedActiveAccountCustomers({ signal }),
         ]);
+        const peopleRepairQueue = await fetchJson("/api/admin/members/repair-queue?limit=12", { signal }).catch(() => ({ total: 0, queue: [] }));
         const members = useSharedRecentMembers
             ? {
                 ...membersSource,
                 members: Array.isArray(membersSource?.members) ? membersSource.members.slice(0, 16) : [],
             }
             : membersSource;
-        return { panel: "members", members, accountCustomers, membersUi };
+        return { panel: "members", members, accountCustomers, membersUi, peopleRepairQueue };
     }
 
     function defaultMembersUi(source = null) {
@@ -5565,32 +5574,54 @@
         return "General member service context is stable.";
     }
 
-    function renderMemberServiceQueue(rows) {
-        const queue = buildMemberServiceQueue(rows);
+    function renderMemberServiceQueue(rows, repairQueue = []) {
+        const useRepairQueue = Array.isArray(repairQueue) && repairQueue.length > 0;
+        const queue = useRepairQueue ? repairQueue : buildMemberServiceQueue(rows);
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
                         <h4>Priority service queue</h4>
-                        <p>Front-desk and pro-shop staff should see who is likely to need attention before drilling into records.</p>
+                        <p>Front-desk and admin staff should see explicit identity and readiness blockers before drilling into records.</p>
                     </div>
                 </div>
                 <div class="stack">
-                    ${queue.length ? queue.map(row => `
-                        <div class="list-row">
-                            <div class="list-row-top">
-                                <span class="list-title">${escapeHtml(row.name || "Member")}</span>
-                                ${renderStatusPill("", row.membership_status || "active")}
-                            </div>
-                            <div class="list-meta">${escapeHtml([
+                    ${queue.length ? queue.map(row => {
+                        const target = useRepairQueue ? (row.target || {}) : row;
+                        const meta = useRepairQueue
+                            ? [
+                                target.member_number || target.email || "",
+                                row.exception_type || "",
+                                row.blocking_surface || "",
+                                row.due_at ? `Due ${formatDateTime(row.due_at)}` : "",
+                            ].filter(Boolean).join(" | ")
+                            : [
                                 row.member_number || row.email || "",
                                 MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                                 `${formatInteger(row.bookings_count || 0)} booking(s)`,
                                 formatCurrency(row.total_spent || 0),
-                            ].filter(Boolean).join(" ? "))}</div>
-                            <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
+                            ].filter(Boolean).join(" | ");
+                        const detail = useRepairQueue ? (row.next_required_action || row.summary || "") : memberServicePosture(row);
+                        const ref = target.primary_ref || null;
+                        const cta = ref?.workspace === "members" && ref?.member_id
+                            ? `<button type="button" class="button ghost" data-nav-workspace="members" data-nav-panel="members">Open member</button>`
+                            : ref?.workspace === "players" && ref?.player_id
+                                ? `<button type="button" class="button ghost" data-nav-workspace="members" data-nav-panel="players">Open player</button>`
+                                : ref?.workspace === "golf"
+                                    ? `<button type="button" class="button ghost" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>`
+                                    : "";
+                        return `
+                        <div class="list-row">
+                            <div class="list-row-top">
+                                <span class="list-title">${escapeHtml(target.name || row.name || "Member")}</span>
+                                ${renderStatusPill("", useRepairQueue ? (row.severity || "active") : (row.membership_status || "active"))}
+                            </div>
+                            <div class="list-meta">${escapeHtml(meta)}</div>
+                            <div class="list-meta">${escapeHtml(detail)}</div>
+                            ${cta ? `<div class="inline-actions">${cta}</div>` : ""}
                         </div>
-                    `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
+                    `;
+                    }).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
                 </div>
             </article>
         `;
@@ -5624,7 +5655,7 @@
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
                     <button type="button" class="button ghost" data-nav-workspace="communications">Open communications</button>
-                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
+                    ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>` : ""}
                 </div>
             </article>
         `;
@@ -5661,6 +5692,51 @@
         `;
     }
 
+    function renderMemberServiceQueueEmbedded(rows, repairQueue = []) {
+        const useRepairQueue = Array.isArray(repairQueue) && repairQueue.length > 0;
+        const queue = useRepairQueue ? repairQueue : buildMemberServiceQueue(rows);
+        return `
+            <div class="stack">
+                ${queue.length ? queue.map(row => {
+                    const target = useRepairQueue ? (row.target || {}) : row;
+                    const meta = useRepairQueue
+                        ? [
+                            target.member_number || target.email || "",
+                            row.exception_type || "",
+                            row.blocking_surface || "",
+                            row.due_at ? `Due ${formatDateTime(row.due_at)}` : "",
+                        ].filter(Boolean).join(" | ")
+                        : [
+                            row.member_number || row.email || "",
+                            MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
+                            `${formatInteger(row.bookings_count || 0)} booking(s)`,
+                            formatCurrency(row.total_spent || 0),
+                        ].filter(Boolean).join(" | ");
+                    const detail = useRepairQueue ? (row.next_required_action || row.summary || "") : memberServicePosture(row);
+                    const ref = target.primary_ref || null;
+                    const cta = ref?.workspace === "members" && ref?.member_id
+                        ? `<button type="button" class="button ghost" data-nav-workspace="members" data-nav-panel="members">Open member</button>`
+                        : ref?.workspace === "players" && ref?.player_id
+                            ? `<button type="button" class="button ghost" data-nav-workspace="members" data-nav-panel="players">Open player</button>`
+                            : ref?.workspace === "golf"
+                                ? `<button type="button" class="button ghost" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>`
+                                : "";
+                    return `
+                    <div class="list-row">
+                        <div class="list-row-top">
+                            <span class="list-title">${escapeHtml(target.name || row.name || "Member")}</span>
+                            ${renderStatusPill("", useRepairQueue ? (row.severity || "active") : (row.membership_status || "active"))}
+                        </div>
+                        <div class="list-meta">${escapeHtml(meta)}</div>
+                        <div class="list-meta">${escapeHtml(detail)}</div>
+                        ${cta ? `<div class="inline-actions">${cta}</div>` : ""}
+                    </div>
+                `;
+                }).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
+            </div>
+        `;
+    }
+
     function renderDebtorWatchEmbedded(accountCustomers) {
         return window.GreenLinkAdminAccountCustomers.renderDebtorWatchEmbedded(accountCustomers, accountCustomersModuleDeps());
     }
@@ -5682,7 +5758,7 @@
             <div class="button-row">
                 <button type="button" class="button secondary" data-nav-workspace="golf" data-nav-panel="tee-sheet">Open tee sheet</button>
                 <button type="button" class="button ghost" data-nav-workspace="communications">Open communications</button>
-                ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>` : ""}
+                ${roleShell() === "club_admin" ? `<button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="cashbook">Open settlement &amp; close</button>` : ""}
             </div>
         `;
     }
@@ -7074,7 +7150,7 @@
             return;
         }
 
-        state.route = { workspace: "overview", panel: null, date: todayYmd(), clubId: positiveInt(new URLSearchParams(window.location.search || "").get("club_id")) };
+        state.route = { workspace: "today", panel: null, date: todayYmd(), clubId: positiveInt(new URLSearchParams(window.location.search || "").get("club_id")) };
         hydrateBootstrapFromCache();
         if (!state.bootstrap) {
             await refreshBootstrap(true);

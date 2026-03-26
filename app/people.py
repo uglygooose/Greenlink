@@ -8,6 +8,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services.identity_integrity_service import sync_member_identity, sync_user_identity
 
 
 def _clean_text(value: Any, *, max_len: int = 255) -> str | None:
@@ -338,6 +339,7 @@ def sync_member_person(
         end_date=getattr(member, "membership_expiration", None),
         is_primary=True,
     )
+    sync_member_identity(db, member, source_system=source_system)
     return person
 
 
@@ -375,6 +377,7 @@ def sync_user_person(
         source_ref=f"user:{int(getattr(user, 'id', 0) or 0)}" if getattr(user, "id", None) else None,
     )
     user.person_id = int(person.id)
+    sync_user_identity(db, user, source_system=source_system)
     return person
 
 

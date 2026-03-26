@@ -76,6 +76,7 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.player)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     person_id = Column(Integer, ForeignKey("people.id"), nullable=True, index=True)
+    global_person_id = Column(Integer, ForeignKey("global_person_records.id"), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     account_type = Column(String(20), nullable=True)  # member | visitor (used for pricing defaults)
     handicap_number = Column(String(50), nullable=True)
@@ -238,6 +239,7 @@ class Member(Base):
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     person_id = Column(Integer, ForeignKey("people.id"), nullable=True, index=True)
+    global_person_id = Column(Integer, ForeignKey("global_person_records.id"), nullable=True, index=True)
     member_number = Column(String(50), nullable=True)
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)
@@ -308,6 +310,8 @@ class Booking(Base):
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     tee_time_id = Column(Integer, ForeignKey("tee_times.id"))
     member_id = Column(Integer, ForeignKey("members.id"), nullable=True)
+    global_person_id = Column(Integer, ForeignKey("global_person_records.id"), nullable=True, index=True)
+    club_relationship_state_id = Column(Integer, ForeignKey("club_relationship_states.id"), nullable=True, index=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     player_name = Column(String(200), nullable=False)
     player_email = Column(String(200), nullable=True, index=True)
@@ -617,4 +621,86 @@ class AuditLog(Base):
     entity_id = Column(String(120), nullable=True, index=True)
     request_id = Column(String(64), nullable=True, index=True)
     payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class GlobalPersonRecord(Base):
+    __tablename__ = "global_person_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    canonical_name = Column(String(240), nullable=False, index=True)
+    first_name = Column(String(120), nullable=True, index=True)
+    last_name = Column(String(120), nullable=True, index=True)
+    email = Column(String(200), nullable=True, unique=True, index=True)
+    phone = Column(String(50), nullable=True, index=True)
+    provenance_json = Column(Text, nullable=True)
+    dedupe_status = Column(String(30), nullable=False, default="trusted", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ClubRelationshipState(Base):
+    __tablename__ = "club_relationship_states"
+    __table_args__ = (
+        UniqueConstraint("club_id", "global_person_id", name="uq_club_relationship_states_club_person"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    global_person_id = Column(Integer, ForeignKey("global_person_records.id"), nullable=False, index=True)
+    relationship_type = Column(String(40), nullable=False, default="visitor", index=True)
+    membership_type = Column(String(160), nullable=True, index=True)
+    pricing_group = Column(String(80), nullable=True, index=True)
+    status = Column(String(40), nullable=False, default="active", index=True)
+    privileges_json = Column(Text, nullable=True)
+    booking_eligibility = Column(String(30), nullable=False, default="allowed", index=True)
+    communication_eligibility = Column(String(30), nullable=False, default="allowed", index=True)
+    revenue_linkage_state = Column(String(30), nullable=False, default="unlinked", index=True)
+    source_system = Column(String(50), nullable=True, index=True)
+    source_ref = Column(String(120), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class OperationalException(Base):
+    __tablename__ = "operational_exceptions"
+    __table_args__ = (
+        UniqueConstraint("club_id", "dedupe_key", name="uq_operational_exceptions_club_key"),
+    )
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    dedupe_key = Column(String(180), nullable=False, index=True)
+    exception_type = Column(String(80), nullable=False, index=True)
+    severity = Column(String(20), nullable=False, default="medium", index=True)
+    blocking_surface = Column(String(80), nullable=False, index=True)
+    source_domain = Column(String(80), nullable=False, index=True)
+    owner_role = Column(String(40), nullable=False, default="admin", index=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    state = Column(String(20), nullable=False, default="open", index=True)
+    next_required_action = Column(String(200), nullable=True)
+    summary = Column(String(255), nullable=False)
+    linked_record_refs_json = Column(Text, nullable=True)
+    details_json = Column(Text, nullable=True)
+    ai_suggestion_json = Column(Text, nullable=True)
+    freshness_at = Column(DateTime, nullable=True, index=True)
+    due_at = Column(DateTime, nullable=True, index=True)
+    audit_ref = Column(String(120), nullable=True, index=True)
+    opened_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, index=True)
+    resolved_at = Column(DateTime, nullable=True, index=True)
+
+
+class TaskTimingEvent(Base):
+    __tablename__ = "task_timing_events"
+
+    id = Column(_SQLITE_BIGINT_PK, primary_key=True, index=True, autoincrement=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    task_key = Column(String(80), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="success", index=True)
+    duration_ms = Column(Integer, nullable=False, default=0)
+    actor_role = Column(String(40), nullable=True, index=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    request_id = Column(String(64), nullable=True, index=True)
+    meta_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from app.people import (
     normalize_primary_operation,
     parse_membership_date,
     parse_yes_no_flag,
+    sync_member_person,
 )
 from app.pricing import (
     PricingContext,
@@ -50,7 +51,14 @@ from app.pricing import (
     select_best_fee_category,
 )
 from app.fee_models import FeeType
+from app.services.identity_integrity_service import (
+    clear_pricing_unresolved_exception,
+    emit_pricing_unresolved_exception,
+    resolve_booking_identity_context,
+    sync_member_identity,
+)
 from app.services import imports_service
+from app.services.task_metrics_service import elapsed_ms, measure_started, record_task_timing
 
 router = APIRouter(prefix="/api/admin/imports", tags=["imports"])
 
@@ -888,6 +896,12 @@ async def import_members_csv(
                 source_row_number = None
             source_file = str(row.get("source_file") or file.filename or "").strip() or None
             import_reference = f"{source_file}:{source_row_number}" if source_file and source_row_number is not None else None
+            if import_reference:
+                touched_import_refs.add(import_reference)
+            if member_number:
+                touched_member_numbers.add(member_number)
+            if email:
+                touched_emails.add(email)
             record_status = str(row.get("record_status") or membership_status).strip() or membership_status
             person_type = str(row.get("person_type") or "Member").strip() or "Member"
             if not home_club and import_reference and "umhlali" in import_reference.lower():
@@ -1017,6 +1031,21 @@ async def import_members_csv(
                 db.bulk_insert_mappings(Member, insert_payloads[start : start + chunk_size])
                 db.flush()
 
+        touched_query = db.query(Member).filter(Member.club_id == club_id)
+        if touched_import_refs:
+            touched_query = touched_query.filter(Member.import_reference.in_(sorted(touched_import_refs)))
+        elif touched_member_numbers or touched_emails:
+            filters = []
+            if touched_member_numbers:
+                filters.append(Member.member_number.in_(sorted(touched_member_numbers)))
+            if touched_emails:
+                filters.append(func.lower(Member.email).in_(sorted(touched_emails)))
+            if filters:
+                touched_query = touched_query.filter(or_(*filters))
+        for touched_member in touched_query.all():
+            sync_member_person(db, touched_member, source_system="members_import")
+            sync_member_identity(db, touched_member, source_system="members_import")
+
         batch.rows_total = total
         batch.rows_inserted = inserted
         batch.rows_updated = updated
@@ -1037,6 +1066,17 @@ async def import_members_csv(
                 "rows_updated": int(updated),
                 "rows_failed": int(failed),
             },
+        )
+        db.commit()
+        record_task_timing(
+            db,
+            club_id=int(club_id),
+            task_key="import_review_time",
+            duration_ms=elapsed_ms(started_at),
+            actor_role="admin",
+            actor_user_id=int(getattr(admin, "id", 0) or 0) or None,
+            request_id=_request_id(request),
+            meta={"kind": "members", "rows_total": int(total)},
         )
         db.commit()
 
@@ -1093,6 +1133,7 @@ async def import_bookings_csv(
     club_id: int = Depends(get_active_club_id),
 ):
     _enforce_import_rate_limit(request, int(club_id), admin)
+    started_at = measure_started()
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -1119,6 +1160,9 @@ async def import_bookings_csv(
     failed = 0
     total = 0
     notes: list[str] = []
+    touched_import_refs: set[str] = set()
+    touched_member_numbers: set[str] = set()
+    touched_emails: set[str] = set()
     touched_tee_ids: set[int] = set()
     pruned = 0
     seen_external_row_ids: set[str] = set()
@@ -1270,10 +1314,11 @@ async def import_bookings_csv(
                 or ""
             ).strip() or None
             account_customer_id = None
+            account_customer = None
             if account_code:
-                acct = account_customer_by_code.get(account_code.lower())
-                if acct:
-                    account_customer_id = int(acct.id)
+                account_customer = account_customer_by_code.get(account_code.lower())
+                if account_customer:
+                    account_customer_id = int(account_customer.id)
 
             pricing_profile = resolve_booking_pricing_profile(
                 tee_time=tt.tee_time,
@@ -1315,8 +1360,42 @@ async def import_bookings_csv(
                     price = float(getattr(fee_category, "price", 0.0) or 0.0)
                 else:
                     price = 0.0
+                    emit_pricing_unresolved_exception(
+                        db,
+                        club_id=int(club_id),
+                        dedupe_suffix=f"{provider_norm}:{external_row_id}",
+                        player_name=player_name,
+                        context={
+                            "external_row_id": external_row_id,
+                            "provider": provider_norm,
+                            "player_type": pricing_profile.player_type,
+                            "membership_label": membership_label,
+                            "player_email": player_email,
+                            "tee_time": tt.tee_time.isoformat(),
+                        },
+                    )
                     if len(notes) < 8:
                         notes.append(f"Row {idx + 2}: no fee matched for {player_name}")
+            else:
+                clear_pricing_unresolved_exception(
+                    db,
+                    club_id=int(club_id),
+                    dedupe_suffix=f"{provider_norm}:{external_row_id}",
+                )
+
+            global_person, relationship_state, _identity_issues = resolve_booking_identity_context(
+                db,
+                club_id=int(club_id),
+                booking_id=None,
+                player_name=player_name,
+                player_email=player_email,
+                member=matched_member,
+                user=None,
+                account_customer=account_customer,
+                player_type=pricing_profile.player_type,
+                source_system="bookings_import",
+                source_ref=f"{provider_norm}:{external_row_id}",
+            )
 
             base_notes = str(row.get("notes") or row.get("comment") or "").strip()
             if membership_label:
@@ -1336,6 +1415,8 @@ async def import_bookings_csv(
             if existing:
                 existing.tee_time_id = tt.id
                 existing.member_id = member_id
+                existing.global_person_id = int(getattr(global_person, "id", 0) or 0) or None
+                existing.club_relationship_state_id = int(getattr(relationship_state, "id", 0) or 0) or None
                 existing.player_name = player_name
                 existing.player_email = player_email
                 existing.source = BookingSource.external
@@ -1360,6 +1441,8 @@ async def import_bookings_csv(
                         club_id=club_id,
                         tee_time_id=tt.id,
                         member_id=member_id,
+                        global_person_id=int(getattr(global_person, "id", 0) or 0) or None,
+                        club_relationship_state_id=int(getattr(relationship_state, "id", 0) or 0) or None,
                         player_name=player_name,
                         player_email=player_email,
                         source=BookingSource.external,
@@ -1459,6 +1542,17 @@ async def import_bookings_csv(
                 "tee_times_touched": len(touched_tee_ids),
                 "play_date": tee_sheet_meta.get("play_date").isoformat() if tee_sheet_meta and tee_sheet_meta.get("play_date") else None,
             },
+        )
+        db.commit()
+        record_task_timing(
+            db,
+            club_id=int(club_id),
+            task_key="import_review_time",
+            duration_ms=elapsed_ms(started_at),
+            actor_role="admin",
+            actor_user_id=int(getattr(admin, "id", 0) or 0) or None,
+            request_id=_request_id(request),
+            meta={"kind": "bookings", "provider": provider_norm, "rows_total": int(total)},
         )
         db.commit()
 

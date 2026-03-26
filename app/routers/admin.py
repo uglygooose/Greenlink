@@ -39,6 +39,7 @@ from app.models import (
     PlayerNotification,
     ClubCommunication,
     GolfDayBooking,
+    ClubRelationshipState,
 )
 from app.fee_models import FeeCategory
 from app.auth import get_current_user, get_db
@@ -159,6 +160,13 @@ from app.services.dashboard_metrics_service import (
     clear_admin_dashboard_metrics_cache,
     get_dashboard_stats_payload,
 )
+from app.services.operational_exceptions_service import (
+    list_operational_exceptions_payload,
+    open_exception_count,
+)
+from app.services.exception_waiver_policy_service import get_exception_waiver_policy_payload
+from app.services.enforcement_proof_service import build_enforcement_proof_payload, run_enforcement_backfill
+from app.services.people_repair_queue_service import list_people_repair_queue_payload
 from app.services.bookings_service import (
     clear_booking_ledger_entries,
     get_booking_or_404,
@@ -166,9 +174,11 @@ from app.services.bookings_service import (
     set_booking_payment_method_meta,
 )
 from app.services.booking_pricing_service import repair_bookings_pricing
+from app.services.identity_integrity_service import clear_booking_integrity_exceptions, sync_booking_integrity
 from app.services.payment_methods import (
     normalize_booking_payment_method,
 )
+from app.services.task_metrics_service import get_task_timing_summary_payload
 from calendar import isleap
 from app.club_config import invalidate_club_config_cache
 from app.club_ops import (
@@ -205,6 +215,22 @@ def _invalidate_admin_caches(club_id: int | None = None) -> None:
     clear_admin_dashboard_metrics_cache()
     clear_admin_operational_alerts_cache()
     clear_admin_finance_reporting_caches()
+
+
+def _sync_booking_integrity_after_mutation(
+    db: Session,
+    booking: Booking | None,
+    *,
+    source_system: str,
+) -> None:
+    if booking is None:
+        return
+    sync_booking_integrity(
+        db,
+        booking,
+        source_system=source_system,
+        source_ref=f"booking:{int(getattr(booking, 'id', 0) or 0) or 'unknown'}",
+    )
     log_event("info", "admin.cache_invalidated", cache="dashboard+alerts", club_id=None)
 
 
@@ -895,6 +921,27 @@ def _create_weather_notifications(
             skipped_unlinked += 1
             continue
 
+        booking = (
+            db.query(Booking)
+            .filter(Booking.id == booking_id, Booking.club_id == int(club_id))
+            .first()
+        )
+        if booking is None:
+            skipped_unlinked += 1
+            continue
+        _sync_booking_integrity_after_mutation(db, booking, source_system="weather_reconfirm")
+        if not getattr(booking, "club_relationship_state_id", None):
+            skipped_unlinked += 1
+            continue
+        relationship = (
+            db.query(ClubRelationshipState)
+            .filter(ClubRelationshipState.id == int(booking.club_relationship_state_id))
+            .first()
+        )
+        if relationship is None or str(getattr(relationship, "communication_eligibility", "") or "").strip().lower() != "allowed":
+            skipped_unlinked += 1
+            continue
+
         title, body, payload_json = build_weather_prompt_payload(item, sender_name=getattr(staff, "name", None))
 
         row = PlayerNotification(
@@ -1235,6 +1282,64 @@ async def get_operational_alerts(
         db,
         club_id=int(club_id),
         lookahead_days=int(lookahead_days),
+    )
+
+
+@router.get("/exceptions")
+async def get_operational_exceptions(
+    state: str = Query("open"),
+    blocking_surface: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    return list_operational_exceptions_payload(
+        db,
+        club_id=int(club_id),
+        state=state,
+        blocking_surface=blocking_surface,
+        limit=int(limit),
+    )
+
+
+@router.get("/exceptions/waiver-policy")
+async def get_operational_exception_waiver_policy(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    return get_exception_waiver_policy_payload()
+
+
+@router.get("/enforcement-proof")
+async def get_enforcement_proof(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    return build_enforcement_proof_payload(db, club_id=int(club_id))
+
+
+@router.post("/enforcement-proof/backfill")
+async def run_enforcement_backfill_for_active_club(
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    return run_enforcement_backfill(db, club_id=int(club_id))
+
+
+@router.get("/task-timings")
+async def get_task_timings(
+    lookback_days: int = Query(14, ge=1, le=60),
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+    club_id: int = Depends(get_active_club_id),
+):
+    return get_task_timing_summary_payload(
+        db,
+        club_id=int(club_id),
+        lookback_days=int(lookback_days),
     )
 
 @router.get("/targets")
@@ -1701,6 +1806,7 @@ async def update_booking_status(
     else:
         # If a booking is moved back to an unpaid state, remove its payment record.
         clear_booking_ledger_entries(db, booking_id=int(booking.id))
+    _sync_booking_integrity_after_mutation(db, booking, source_system="booking_status_update")
 
     _audit_event(
         db,
@@ -1755,6 +1861,11 @@ async def delete_booking(
         "tee_time_id": int(getattr(booking, "tee_time_id", 0) or 0),
     }
 
+    clear_booking_integrity_exceptions(
+        db,
+        club_id=int(getattr(booking, "club_id", 0) or 0),
+        booking_id=int(booking.id),
+    )
     db.delete(booking)
     _audit_event(
         db,
@@ -1779,12 +1890,13 @@ async def update_booking_payment_method(
     db: Session = Depends(get_db),
     staff: User = Depends(verify_staff),
 ):
-    get_booking_or_404(db, int(booking_id))
+    booking = get_booking_or_404(db, int(booking_id))
     ledger_entry_id, method = set_booking_payment_method_meta(
         db,
         booking_id=int(booking_id),
         payment_method=payload.payment_method,
     )
+    _sync_booking_integrity_after_mutation(db, booking, source_system="booking_payment_method_update")
 
     _audit_event(
         db,
@@ -1832,6 +1944,7 @@ async def update_booking_account_code(
     else:
         booking.account_customer_id = None
         booking.club_card = code or None
+    _sync_booking_integrity_after_mutation(db, booking, source_system="booking_account_code_update")
     _audit_event(
         db,
         request,
@@ -1941,6 +2054,7 @@ async def batch_update_bookings(
     if requested_status in paid_statuses:
         for booking in ordered_bookings:
             booking.status = requested_status
+            _sync_booking_integrity_after_mutation(db, booking, source_system="booking_batch_update")
         crud.ensure_paid_ledger_entries(
             db,
             ordered_bookings,
@@ -1950,6 +2064,7 @@ async def batch_update_bookings(
     elif requested_status is not None:
         for booking in ordered_bookings:
             booking.status = requested_status
+            _sync_booking_integrity_after_mutation(db, booking, source_system="booking_batch_update")
         if existing_ledger_ids:
             db.query(LedgerEntryMeta).filter(
                 LedgerEntryMeta.ledger_entry_id.in_(existing_ledger_ids)
@@ -1964,6 +2079,8 @@ async def batch_update_bookings(
             if str(getattr(getattr(booking, "status", None), "value", booking.status) or "").strip().lower()
             in {"checked_in", "completed"}
         ]
+        for booking in ordered_bookings:
+            _sync_booking_integrity_after_mutation(db, booking, source_system="booking_batch_update")
         if paid_bookings:
             crud.ensure_paid_ledger_entries(
                 db,
@@ -2014,6 +2131,7 @@ async def batch_update_bookings(
             booking.club_card = account_code
             booking.account_customer_id = int(selected_account_customer.id) if selected_account_customer is not None else None
             account_updated += 1
+            _sync_booking_integrity_after_mutation(db, booking, source_system="booking_batch_update")
 
         updated_ids.append(int(booking.id))
 
@@ -2195,6 +2313,20 @@ async def get_members(
         sort=sort,
         area=area,
         membership_status=membership_status,
+    )
+
+
+@router.get("/members/repair-queue")
+async def get_member_repair_queue(
+    limit: int = 25,
+    db: Session = Depends(get_db),
+    staff: User = Depends(verify_staff),
+    club_id: int = Depends(get_active_club_id),
+):
+    return list_people_repair_queue_payload(
+        db,
+        club_id=int(club_id),
+        limit=int(limit),
     )
 
 
@@ -2753,6 +2885,7 @@ async def update_player_price(
         for booking in bookings:
             booking.fee_category_id = fee_category.id
             booking.price = fee_category.price
+            _sync_booking_integrity_after_mutation(db, booking, source_system="player_price_update")
             if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
                 crud.ensure_paid_ledger_entry(db, booking)
         
@@ -2783,6 +2916,7 @@ async def update_player_price(
         for booking in bookings:
             booking.price = price_update.custom_price
             booking.fee_category_id = None  # Clear fee category when using custom price
+            _sync_booking_integrity_after_mutation(db, booking, source_system="player_price_update")
             if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
                 crud.ensure_paid_ledger_entry(db, booking)
         
@@ -2889,6 +3023,7 @@ async def update_booking_price(
         
         booking.fee_category_id = fee_category.id
         booking.price = fee_category.price
+        _sync_booking_integrity_after_mutation(db, booking, source_system="booking_price_update")
         if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
             crud.ensure_paid_ledger_entry(db, booking)
         
@@ -2914,6 +3049,7 @@ async def update_booking_price(
         
         booking.price = price_update.custom_price
         booking.fee_category_id = None  # Clear fee category when using custom price
+        _sync_booking_integrity_after_mutation(db, booking, source_system="booking_price_update")
         if booking.status in {BookingStatus.checked_in, BookingStatus.completed}:
             crud.ensure_paid_ledger_entry(db, booking)
         

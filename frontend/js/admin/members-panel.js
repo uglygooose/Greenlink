@@ -182,6 +182,7 @@
     function renderPanel(bundle, deps = {}) {
         const rows = Array.isArray(bundle.members?.members) ? bundle.members.members : [];
         const accountCustomers = Array.isArray(bundle.accountCustomers?.account_customers) ? bundle.accountCustomers.account_customers : [];
+        const peopleRepairQueue = Array.isArray(bundle.peopleRepairQueue?.queue) ? bundle.peopleRepairQueue.queue : [];
         const activeCount = rows.filter(row => String(row.membership_status || "").toLowerCase() === "active").length;
         const flaggedCount = rows.filter(row => ["hold", "inactive", "defaulter", "resigned"].includes(String(row.membership_status || "").toLowerCase())).length;
         const hasQuery = Boolean(String(bundle.membersUi?.query || "").trim());
@@ -228,10 +229,10 @@
                 ${deps.renderWorkblock({
                     id: "people-queue-workblock",
                     title: "Priority service queue",
-                    copy: "Keep likely member follow-up visible before you drill into lower-priority detail.",
+                    copy: "Keep actual identity, readiness, and communication blockers visible before you drill into lower-priority detail.",
                     badge: !hasQuery ? "Open" : "Collapsed",
                     open: !hasQuery,
-                    body: deps.renderMemberServiceQueueEmbedded(rows),
+                    body: deps.renderMemberServiceQueueEmbedded(rows, peopleRepairQueue),
                 })}
                 ${deps.renderWorkblock({
                     id: "people-accounts-workblock",

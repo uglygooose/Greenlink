@@ -24,13 +24,13 @@ _SUPER_ADMIN_NAV = [
     {"workspace": "settings", "label": "Platform Settings"},
 ]
 _CLUB_ADMIN_NAV = [
-    {"workspace": "overview", "label": "Club Overview"},
-    {"workspace": "golf", "label": "Golf"},
+    {"workspace": "today", "label": "Today"},
+    {"workspace": "golf", "label": "Tee Sheet"},
     {"workspace": "operations", "label": "Operations"},
-    {"workspace": "members", "label": "People & Clubs"},
-    {"workspace": "communications", "label": "Communications"},
-    {"workspace": "reports", "label": "Revenue & Finance"},
-    {"workspace": "settings", "label": "Club Setup"},
+    {"workspace": "members", "label": "People"},
+    {"workspace": "communications", "label": "Messages"},
+    {"workspace": "reports", "label": "Revenue Integrity & Close"},
+    {"workspace": "settings", "label": "Rules"},
 ]
 _STAFF_NAV = [
     {"workspace": "today", "label": "Today"},
@@ -48,7 +48,7 @@ _MEMBER_NAV = [
 ]
 _DEFAULT_WORKSPACE = {
     ROLE_SHELL_SUPER_ADMIN: "overview",
-    ROLE_SHELL_CLUB_ADMIN: "overview",
+    ROLE_SHELL_CLUB_ADMIN: "today",
     ROLE_SHELL_STAFF: "today",
     ROLE_SHELL_MEMBER: "home",
 }

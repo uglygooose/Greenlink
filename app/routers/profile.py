@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 import math
 from sqlalchemy import func, or_
 from app.auth import get_db, get_current_user
@@ -11,6 +11,7 @@ from app import models
 from app.club_config import club_config_response
 from app.fee_models import FeeCategory, FeeType
 from app.people import sync_member_person, sync_user_person
+from app.services.player_profile_integrity_service import build_player_profile_readiness_payload, sync_player_profile_exceptions
 from app.tenancy import get_active_club_id
 from app.weather_alerts import append_booking_note, serialize_notification_payload
 
@@ -47,6 +48,7 @@ class PlayerProfileResponse(BaseModel):
     linked_member_id: Optional[int] = None
     linked_member: bool = False
     greenlink_id: Optional[str] = None
+    readiness: dict[str, Any] | None = None
     
     model_config = {"from_attributes": True}
 
@@ -232,7 +234,7 @@ def _upsert_linked_member(
     return member
 
 
-def _build_profile_response(user: models.User, member: models.Member | None) -> PlayerProfileResponse:
+def _build_profile_response(db: Session, user: models.User, member: models.Member | None) -> PlayerProfileResponse:
     age = None
     if getattr(user, "birth_date", None):
         today = datetime.now()
@@ -256,6 +258,7 @@ def _build_profile_response(user: models.User, member: models.Member | None) -> 
         linked_member_id=getattr(member, "id", None),
         linked_member=bool(getattr(member, "id", None)),
         greenlink_id=user.greenlink_id,
+        readiness=build_player_profile_readiness_payload(db, user=user, member=member),
     )
 
 
@@ -269,7 +272,7 @@ def _require_player_user(current_user: models.User = Depends(get_current_user)) 
 def get_my_profile(db: Session = Depends(get_db), current_user: models.User = Depends(_require_player_user)):
     """Get current player's profile"""
     member = _resolve_linked_member(db, current_user)
-    return _build_profile_response(current_user, member)
+    return _build_profile_response(db, current_user, member)
 
 @router.put("/me", response_model=PlayerProfileResponse)
 def update_my_profile(
@@ -319,13 +322,19 @@ def update_my_profile(
 
     sync_user_person(db, user, source_system="player_profile")
     member = _upsert_linked_member(db, user, profile_update)
+    sync_player_profile_exceptions(
+        db,
+        user,
+        member=member,
+        source_system="player_profile",
+    )
     db.commit()
     db.refresh(user)
     if member is not None and getattr(member, "id", None):
         db.refresh(member)
     else:
         member = _resolve_linked_member(db, user, member_number_hint=(profile_update.member_number or None))
-    return _build_profile_response(user, member)
+    return _build_profile_response(db, user, member)
 
 
 @router.get("/notifications")

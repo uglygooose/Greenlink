@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AccountCustomer, GolfDayBooking
 from app.services.account_customers_service import resolve_account_customer
+from app.services.revenue_integrity_service import sync_account_customer_linkage, sync_golf_day_booking_integrity
 
 
 class GolfDayBookingUpsertPayload(BaseModel):
@@ -180,6 +181,20 @@ def create_golf_day_booking_payload(
         notes=str(payload.notes or "").strip() or None,
     )
     db.add(row)
+    db.flush()
+    sync_golf_day_booking_integrity(
+        db,
+        row,
+        source_system="golf_day_booking_create",
+        source_ref=str(getattr(row, "import_reference", None) or getattr(row, "invoice_reference", None) or int(getattr(row, "id", 0) or 0)),
+    )
+    if customer is not None:
+        sync_account_customer_linkage(
+            db,
+            club_id=int(club_id),
+            account_customer_id=int(customer.id),
+            source_system="golf_day_booking_create",
+        )
     if audit_event is not None:
         audit_event(
             action="golf_day_booking.created",
@@ -204,6 +219,7 @@ def update_golf_day_booking_payload(
     row = db.query(GolfDayBooking).filter(GolfDayBooking.id == int(golf_day_booking_id)).first()
     if not row:
         raise HTTPException(status_code=404, detail="Golf day booking not found")
+    previous_account_customer_id = int(getattr(row, "account_customer_id", 0) or 0)
 
     customer = resolve_account_customer(
         db,
@@ -236,6 +252,27 @@ def update_golf_day_booking_payload(
     row.import_reference = str(payload.import_reference or payload.invoice_reference or "").strip() or row.import_reference
     row.notes = str(payload.notes or "").strip() or None
     row.updated_at = datetime.utcnow()
+    sync_golf_day_booking_integrity(
+        db,
+        row,
+        source_system="golf_day_booking_update",
+        source_ref=str(getattr(row, "import_reference", None) or getattr(row, "invoice_reference", None) or int(getattr(row, "id", 0) or 0)),
+    )
+    current_account_customer_id = int(getattr(row, "account_customer_id", 0) or 0)
+    if previous_account_customer_id > 0:
+        sync_account_customer_linkage(
+            db,
+            club_id=int(getattr(row, "club_id", 0) or 0),
+            account_customer_id=previous_account_customer_id,
+            source_system="golf_day_booking_update",
+        )
+    if current_account_customer_id > 0 and current_account_customer_id != previous_account_customer_id:
+        sync_account_customer_linkage(
+            db,
+            club_id=int(getattr(row, "club_id", 0) or 0),
+            account_customer_id=current_account_customer_id,
+            source_system="golf_day_booking_update",
+        )
 
     if audit_event is not None:
         audit_event(

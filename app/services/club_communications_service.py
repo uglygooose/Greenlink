@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.models import ClubCommunication
+from app.services.operational_exceptions_service import open_exception_count
 
 _ALLOWED_COMMUNICATION_KINDS = {"news", "announcement", "message"}
 _ALLOWED_COMMUNICATION_AUDIENCES = {"members", "staff", "all"}
@@ -33,6 +34,26 @@ def _normalize_value(raw: str | None, allowed: set[str], field_name: str) -> str
     if value not in allowed:
         raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
     return value
+
+
+def _assert_publish_targets_trusted(db: Session, *, club_id: int, audience: str, status: str) -> None:
+    if str(status or "").strip().lower() != "published":
+        return
+    if str(audience or "").strip().lower() not in {"members", "all"}:
+        return
+    blocked_count = int(
+        open_exception_count(
+            db,
+            club_id=int(club_id),
+            blocking_surface="communications_publish",
+        )
+        or 0
+    )
+    if blocked_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Publish blocked by {blocked_count} communication target exception(s)",
+        )
 
 
 def serialize_club_communication(row: ClubCommunication) -> dict[str, Any]:
@@ -96,11 +117,19 @@ def create_club_communication(
     admin_user_id: int | None,
     payload: ClubCommunicationInput,
 ) -> dict[str, Any]:
+    audience = _normalize_value(payload.audience, _ALLOWED_COMMUNICATION_AUDIENCES, "audience")
+    status = _normalize_value(payload.status, _ALLOWED_COMMUNICATION_STATUSES, "status")
+    _assert_publish_targets_trusted(
+        db,
+        club_id=int(club_id),
+        audience=audience,
+        status=status,
+    )
     row = ClubCommunication(
         club_id=int(club_id),
         kind=_normalize_value(payload.kind, _ALLOWED_COMMUNICATION_KINDS, "kind"),
-        audience=_normalize_value(payload.audience, _ALLOWED_COMMUNICATION_AUDIENCES, "audience"),
-        status=_normalize_value(payload.status, _ALLOWED_COMMUNICATION_STATUSES, "status"),
+        audience=audience,
+        status=status,
         title=str(payload.title or "").strip(),
         summary=str(payload.summary or "").strip() or None,
         body=str(payload.body or "").strip(),
@@ -137,9 +166,17 @@ def update_club_communication(
     if row is None:
         raise HTTPException(status_code=404, detail="Communication not found")
 
+    audience = _normalize_value(payload.audience, _ALLOWED_COMMUNICATION_AUDIENCES, "audience")
+    status = _normalize_value(payload.status, _ALLOWED_COMMUNICATION_STATUSES, "status")
+    _assert_publish_targets_trusted(
+        db,
+        club_id=int(club_id),
+        audience=audience,
+        status=status,
+    )
     row.kind = _normalize_value(payload.kind, _ALLOWED_COMMUNICATION_KINDS, "kind")
-    row.audience = _normalize_value(payload.audience, _ALLOWED_COMMUNICATION_AUDIENCES, "audience")
-    row.status = _normalize_value(payload.status, _ALLOWED_COMMUNICATION_STATUSES, "status")
+    row.audience = audience
+    row.status = status
     row.title = str(payload.title or "").strip()
     row.summary = str(payload.summary or "").strip() or None
     row.body = str(payload.body or "").strip()

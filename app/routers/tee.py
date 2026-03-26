@@ -16,6 +16,8 @@ from app.auth import get_db, get_current_user
 from app import crud, models, schemas
 from app.booking_rules import get_booking_window_for_user
 from app.services.booking_pricing_service import repair_bookings_pricing
+from app.services.identity_integrity_service import sync_booking_integrity
+from app.services.task_metrics_service import elapsed_ms, measure_started, record_task_timing
 from app.tenancy import get_active_club_id
 from app.tee_profile import load_tee_sheet_profile, tee_sheet_plan_for_date
 
@@ -233,6 +235,7 @@ def move_booking(
     """
     Move a booking to a different tee time (drag-and-drop support).
     """
+    started_at = measure_started()
     booking = (
         db.query(models.Booking)
         .options(selectinload(models.Booking.tee_time))
@@ -280,6 +283,28 @@ def move_booking(
 
     old_id = booking.tee_time_id
     booking.tee_time_id = to_tt.id
+    booking.tee_time = to_tt
+    db.flush()
+    sync_booking_integrity(
+        db,
+        booking,
+        source_system="tee_move",
+        source_ref=f"tee_move:{int(getattr(booking, 'id', 0) or 0)}:{int(old_id or 0)}->{int(getattr(to_tt, 'id', 0) or 0)}",
+    )
+    db.commit()
+    record_task_timing(
+        db,
+        club_id=int(club_id),
+        task_key="tee_move_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role=str(getattr(getattr(staff, "role", None), "value", getattr(staff, "role", None)) or "staff"),
+        actor_user_id=int(getattr(staff, "id", 0) or 0) or None,
+        meta={
+            "booking_id": int(getattr(booking, "id", 0) or 0),
+            "from_tee_time_id": int(old_id or 0) or None,
+            "to_tee_time_id": int(getattr(to_tt, "id", 0) or 0) or None,
+        },
+    )
     db.commit()
 
     return {"status": "success", "booking_id": booking.id, "from_tee_time_id": old_id, "to_tee_time_id": to_tt.id}

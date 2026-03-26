@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.models import Booking, BookingStatus, ImportBatch, LedgerEntry, ProShopProduct, TeeTime
+from app.models import Booking, BookingStatus, ImportBatch, LedgerEntry, OperationalException, ProShopProduct, TeeTime
 from app.ttl_cache import TTLCache
 
 ADMIN_ALERTS_CACHE = TTLCache[str, dict[str, Any]](ttl_seconds=30, max_entries=96)
@@ -190,6 +190,44 @@ def get_operational_alerts_payload(
             metric_key="low_stock_products",
             metric_value=int(low_stock_count),
             context={"out_of_stock": int(out_of_stock_count)},
+        )
+
+    open_identity_exceptions = (
+        db.query(func.count(OperationalException.id))
+        .filter(
+            OperationalException.club_id == club_id,
+            OperationalException.state.in_(["open", "acknowledged", "in_progress", "blocked"]),
+            OperationalException.source_domain == "identity",
+        )
+        .scalar()
+        or 0
+    )
+    if int(open_identity_exceptions) > 0:
+        add_alert(
+            severity="high" if int(open_identity_exceptions) >= 5 else "medium",
+            title="Identity integrity blockers",
+            message=f"{int(open_identity_exceptions)} identity-linked exception(s) need review before downstream work stays trustworthy.",
+            metric_key="identity_integrity_exceptions",
+            metric_value=int(open_identity_exceptions),
+        )
+
+    close_exceptions = (
+        db.query(func.count(OperationalException.id))
+        .filter(
+            OperationalException.club_id == club_id,
+            OperationalException.state.in_(["open", "acknowledged", "in_progress", "blocked"]),
+            OperationalException.blocking_surface == "revenue_integrity_close",
+        )
+        .scalar()
+        or 0
+    )
+    if int(close_exceptions) > 0:
+        add_alert(
+            severity="high",
+            title="Revenue integrity blockers",
+            message=f"{int(close_exceptions)} settlement or pricing exception(s) can still block close readiness.",
+            metric_key="revenue_integrity_exceptions",
+            metric_value=int(close_exceptions),
         )
 
     alerts.sort(

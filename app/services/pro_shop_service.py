@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import ProShopProduct, ProShopSale, ProShopSaleItem, RevenueTransaction
 from app.services.payment_methods import normalize_pro_shop_payment_method
+from app.services.revenue_integrity_service import sync_pro_shop_sale_integrity
 
 
 class ProShopProductUpsertPayload(BaseModel):
@@ -466,6 +467,12 @@ def create_pro_shop_sale_payload(
                 amount=total,
                 created_at=sold_at,
             )
+        )
+        sync_pro_shop_sale_integrity(
+            db,
+            sale,
+            source_system="pro_shop_sale_create",
+            source_ref=f"pro_shop_sale:{int(getattr(sale, 'id', 0) or 0)}",
         )
 
         if audit_event is not None:

@@ -26,6 +26,8 @@ from app.services.finance_semantics_service import (
     get_export_mapping_status,
     summarize_ledger_finance_states,
 )
+from app.services.operational_exceptions_service import open_exception_count
+from app.services.task_metrics_service import elapsed_ms, measure_started, record_task_timing
 from app.tenancy import get_active_club_id
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -2088,6 +2090,7 @@ def get_close_status(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin),
 ):
+    started_at = measure_started()
     if summary_date:
         try:
             target_date = datetime.strptime(summary_date, "%Y-%m-%d").date()
@@ -2124,6 +2127,14 @@ def get_close_status(
     export_ready_rows = max(0, pending_export_rows - missing_payment_method_rows) if mapping_configured else 0
     missing_mapping_rows = pending_export_rows if not mapping_configured else 0
     blocked_rows = max(0, pending_export_rows - export_ready_rows)
+    blocking_exception_count = int(
+        open_exception_count(
+            db,
+            club_id=club_id,
+            blocking_surface="revenue_integrity_close",
+        )
+        or 0
+    )
     finance_state_summary = {
         "total_rows": total_rows,
         "exported_rows": exported_rows,
@@ -2132,29 +2143,47 @@ def get_close_status(
         "blocked_rows": blocked_rows,
         "missing_payment_method_rows": missing_payment_method_rows,
         "missing_mapping_rows": missing_mapping_rows,
+        "blocking_exception_count": blocking_exception_count,
     }
 
     close = db.query(DayClose).filter(DayClose.close_date == target_date).order_by(DayClose.id.desc()).first()
-    if not close:
-        return {
-            "date": target_date.strftime("%Y-%m-%d"),
-            "is_closed": False,
-            "finance_semantics": finance_semantics,
-            "finance_state_summary": finance_state_summary,
-        }
-
-    return {
+    payload = {
         "date": target_date.strftime("%Y-%m-%d"),
-        "is_closed": close.status == "closed",
-        "status": close.status,
-        "closed_at": close.closed_at.isoformat() if close.closed_at else None,
-        "closed_by_user_id": close.closed_by_user_id,
-        "export_batch_id": close.export_batch_id,
-        "export_filename": close.export_filename,
-        "auto_push": bool(close.auto_push),
+        "is_closed": bool(close and close.status == "closed"),
         "finance_semantics": finance_semantics,
         "finance_state_summary": finance_state_summary,
+        "operational_exception_summary": {
+            "blocking_surface": "revenue_integrity_close",
+            "open_count": blocking_exception_count,
+        },
     }
+    if close:
+        payload.update(
+            {
+                "status": close.status,
+                "closed_at": close.closed_at.isoformat() if close.closed_at else None,
+                "closed_by_user_id": close.closed_by_user_id,
+                "export_batch_id": close.export_batch_id,
+                "export_filename": close.export_filename,
+                "auto_push": bool(close.auto_push),
+            }
+        )
+    record_task_timing(
+        db,
+        club_id=int(club_id),
+        task_key="close_review_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        actor_user_id=int(getattr(admin, "id", 0) or 0) or None,
+        request_id=_request_id(None),
+        meta={
+            "date": target_date.isoformat(),
+            "blocked_rows": int(blocked_rows),
+            "blocking_exception_count": int(blocking_exception_count),
+        },
+    )
+    db.commit()
+    return payload
 
 
 @router.get("/settings")
@@ -2214,6 +2243,7 @@ def close_day(
     db: Session = Depends(get_db),
     admin: User = Depends(verify_admin)
 ):
+    started_at = measure_started()
     club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     if club_id <= 0:
         raise HTTPException(status_code=400, detail="club_id is required")
@@ -2232,6 +2262,56 @@ def close_day(
     ).first()
     if existing:
         raise HTTPException(status_code=409, detail="Day is already closed")
+
+    blocking_exception_count = int(
+        open_exception_count(
+            db,
+            club_id=club_id,
+            blocking_surface="revenue_integrity_close",
+        )
+        or 0
+    )
+    if blocking_exception_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Close blocked by {blocking_exception_count} revenue integrity exception(s)",
+        )
+
+    mapping_status = get_export_mapping_status(db, club_id=club_id)
+    mapping_configured = bool(mapping_status.get("configured"))
+    base_ledger_query = db.query(LedgerEntry).filter(
+        LedgerEntry.club_id == club_id,
+        LedgerEntry.booking_id.isnot(None),
+        func.date(LedgerEntry.created_at) == target_date,
+    )
+    total_rows = int(base_ledger_query.count() or 0)
+    exported_rows = int(base_ledger_query.filter(LedgerEntry.pastel_synced == 1).count() or 0)
+    pending_export_rows = max(0, total_rows - exported_rows)
+    missing_payment_method_rows = int(
+        db.query(LedgerEntry)
+        .outerjoin(LedgerEntryMeta, LedgerEntryMeta.ledger_entry_id == LedgerEntry.id)
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+            func.date(LedgerEntry.created_at) == target_date,
+            func.coalesce(LedgerEntry.pastel_synced, 0) != 1,
+            func.length(func.trim(func.coalesce(LedgerEntryMeta.payment_method, ""))) == 0,
+        )
+        .count()
+        or 0
+    )
+    export_ready_rows = max(0, pending_export_rows - missing_payment_method_rows) if mapping_configured else 0
+    missing_mapping_rows = pending_export_rows if not mapping_configured else 0
+    blocked_rows = max(0, pending_export_rows - export_ready_rows)
+    if blocked_rows > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Close blocked by unresolved revenue integrity rows "
+                f"({blocked_rows} blocked, {missing_payment_method_rows} missing payment method, "
+                f"{missing_mapping_rows} missing mapping)"
+            ),
+        )
 
     bookings = get_active_completed_bookings(db, target_date)
     booking_ids = [b.id for b in bookings]
@@ -2276,6 +2356,21 @@ def close_day(
             "batch_id": batch_id,
             "bookings": len(booking_ids),
             "export_filename": filename,
+        },
+    )
+    db.commit()
+    record_task_timing(
+        db,
+        club_id=int(club_id),
+        task_key="close_review_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        actor_user_id=int(getattr(admin, "id", 0) or 0) or None,
+        request_id=_request_id(request),
+        meta={
+            "date": target_date.isoformat(),
+            "action": "close_day",
+            "bookings": len(booking_ids),
         },
     )
     db.commit()

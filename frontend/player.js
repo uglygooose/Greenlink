@@ -169,6 +169,13 @@ function inferPlayerType(profile) {
 }
 
 function profileCompleteness(profile) {
+  const readinessItems = Array.isArray(profile?.readiness?.items) ? profile.readiness.items : [];
+  if (readinessItems.length) {
+    return readinessItems
+      .filter(item => !Boolean(item?.ok))
+      .map(item => String(item?.label || "").trim())
+      .filter(Boolean);
+  }
   const missing = [];
   if (!String(profile?.phone || "").trim()) missing.push("phone");
   if (!String(profile?.birth_date || "").trim()) missing.push("birth date");
@@ -689,15 +696,26 @@ function roundIsClosed(item) {
 }
 
 function profileReadinessItems(profile = state.profile || {}) {
+  const serverItems = Array.isArray(profile?.readiness?.items) ? profile.readiness.items : [];
+  if (serverItems.length) {
+    return serverItems.map(item => ({
+      key: String(item?.key || "").trim(),
+      label: String(item?.label || "").trim() || "Profile item",
+      ok: Boolean(item?.ok),
+      state: String(item?.state || (item?.ok ? "ready" : "missing")).trim().toLowerCase() || (item?.ok ? "ready" : "missing"),
+      reason: String(item?.reason || "").trim(),
+      nextAction: String(item?.next_action || "").trim()
+    }));
+  }
   const inferredType = inferPlayerType(profile);
   const isMember = inferredType === "member";
   const requiresHna = inferredType !== "non_affiliated";
   return [
-    { label: "Phone number", ok: Boolean(String(profile?.phone || "").trim()) },
-    { label: "Birth date", ok: Boolean(String(profile?.birth_date || "").trim()) },
-    { label: "Home club", ok: Boolean(String(profile?.home_course || "").trim()) },
-    { label: "Member number", ok: isMember ? Boolean(String(profile?.member_number || "").trim() || profile?.linked_member) : true },
-    { label: "HNA SA ID", ok: requiresHna ? Boolean(String(profile?.handicap_sa_id || "").trim()) : true }
+    { key: "phone", label: "Phone number", ok: Boolean(String(profile?.phone || "").trim()), state: Boolean(String(profile?.phone || "").trim()) ? "ready" : "missing", reason: "", nextAction: "" },
+    { key: "birth_date", label: "Birth date", ok: Boolean(String(profile?.birth_date || "").trim()), state: Boolean(String(profile?.birth_date || "").trim()) ? "ready" : "missing", reason: "", nextAction: "" },
+    { key: "home_course", label: "Home club", ok: Boolean(String(profile?.home_course || "").trim()), state: Boolean(String(profile?.home_course || "").trim()) ? "ready" : "missing", reason: "", nextAction: "" },
+    { key: "member_number", label: "Member number", ok: isMember ? Boolean(String(profile?.member_number || "").trim() || profile?.linked_member) : true, state: isMember ? (Boolean(String(profile?.member_number || "").trim() || profile?.linked_member) ? "ready" : "missing") : "ready", reason: "", nextAction: "" },
+    { key: "handicap_sa_id", label: "HNA SA ID", ok: requiresHna ? Boolean(String(profile?.handicap_sa_id || "").trim()) : true, state: requiresHna ? (Boolean(String(profile?.handicap_sa_id || "").trim()) ? "ready" : "missing") : "ready", reason: "", nextAction: "" }
   ];
 }
 
@@ -1293,13 +1311,18 @@ function renderProfileChecklist() {
   const label = document.getElementById("profile-readiness");
   if (!wrap) return;
   const items = profileReadinessItems(state.profile || {});
-  const ready = items.filter(item => item.ok).length;
-  const pct = items.length ? Math.round((ready / items.length) * 100) : 0;
-  if (label) label.textContent = `${formatInteger(ready)} / ${formatInteger(items.length)} complete (${pct}%)`;
+  const readiness = state.profile?.readiness || {};
+  const ready = Number.isFinite(Number(readiness?.complete)) ? Number(readiness.complete) : items.filter(item => item.ok).length;
+  const total = Number.isFinite(Number(readiness?.total)) ? Number(readiness.total) : items.length;
+  const pct = Number.isFinite(Number(readiness?.completion_pct))
+    ? Number(readiness.completion_pct)
+    : (items.length ? Math.round((ready / items.length) * 100) : 0);
+  if (label) label.textContent = `${formatInteger(ready)} / ${formatInteger(total)} complete (${pct}%)`;
   wrap.innerHTML = items.map(item => `
     <div class="check-item ${item.ok ? "ok" : "warn"}">
       <span class="check-label">${escapeHtml(item.label)}</span>
-      <span class="check-state">${item.ok ? "Ready" : "Missing"}</span>
+      <span class="check-state">${item.ok ? "Ready" : (item.state === "missing" ? "Missing" : "Blocked")}</span>
+      ${item.ok ? "" : `<div class="row-meta">${escapeHtml(item.reason || item.nextAction || "Needs attention before the club can trust this profile state.")}</div>`}
     </div>
   `).join("");
 }
@@ -1317,10 +1340,16 @@ function renderAll() {
 }
 
 function updateStatusBannerFromState() {
-  const missing = profileCompleteness(state.profile || {});
+  const profile = state.profile || {};
+  const missing = profileCompleteness(profile);
+  const readinessActions = Array.isArray(profile?.readiness?.next_actions)
+    ? profile.readiness.next_actions.map(item => String(item || "").trim()).filter(Boolean)
+    : [];
   const pendingWeather = (state.notifications || []).filter(item => !String(item?.response || "").trim()).length;
   if (pendingWeather > 0) {
     setStatusBanner(`You have ${formatInteger(pendingWeather)} weather prompt${pendingWeather === 1 ? "" : "s"} requiring response.`, true);
+  } else if (readinessActions.length) {
+    setStatusBanner(readinessActions[0], true);
   } else if (missing.length) {
     setStatusBanner(`Complete ${missing.join(", ")} to avoid booking and scoring issues.`, true);
   } else {

@@ -8,13 +8,14 @@ from pydantic import BaseModel
 from sqlalchemy import case, desc, func, or_
 from sqlalchemy.orm import Session, load_only, selectinload
 
-from app.models import Booking, BookingStatus, Member, TeeTime, User, UserRole
+from app.models import Booking, BookingStatus, ClubRelationshipState, Member, TeeTime, User, UserRole
 from app.people import (
     classify_membership_group,
     normalize_membership_status,
     normalize_primary_operation,
     sync_member_person,
 )
+from app.services.task_metrics_service import elapsed_ms, measure_started, record_task_timing
 from app.pricing import (
     normalize_member_pricing_mode,
     pricing_mode_to_player_type,
@@ -118,6 +119,33 @@ def _member_pricing_payload(member: Member, db: Session | None = None) -> dict[s
     }
 
 
+def _club_relationship_payload(db: Session, member: Member) -> dict[str, Any] | None:
+    global_person_id = int(getattr(member, "global_person_id", 0) or 0) or None
+    club_id = int(getattr(member, "club_id", 0) or 0) or None
+    if not global_person_id or not club_id:
+        return None
+    row = (
+        db.query(ClubRelationshipState)
+        .filter(
+            ClubRelationshipState.club_id == int(club_id),
+            ClubRelationshipState.global_person_id == int(global_person_id),
+        )
+        .first()
+    )
+    if row is None:
+        return None
+    return {
+        "id": int(row.id),
+        "relationship_type": row.relationship_type,
+        "membership_type": row.membership_type,
+        "pricing_group": row.pricing_group,
+        "status": row.status,
+        "booking_eligibility": row.booking_eligibility,
+        "communication_eligibility": row.communication_eligibility,
+        "revenue_linkage_state": row.revenue_linkage_state,
+    }
+
+
 def _normalize_membership_area(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     if not value or value in {"all", "any"}:
@@ -215,6 +243,8 @@ def list_members_payload(
     area: str | None = "all",
     membership_status: str | None = "all",
 ) -> dict[str, Any]:
+    started_at = measure_started()
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0) or None
     base_query = db.query(Member)
     area_norm = _normalize_membership_area(area)
     area_clause = _membership_area_clause(area_norm)
@@ -348,11 +378,12 @@ def list_members_payload(
 
     rows = query.order_by(*order).offset(skip).limit(limit).all()
 
-    return {
+    payload = {
         "total": total,
         "members": [
             {
                 "id": m.id,
+                "global_person_id": int(getattr(m, "global_person_id", 0) or 0) or None,
                 "member_number": m.member_number,
                 "first_name": m.first_name,
                 "last_name": m.last_name,
@@ -382,6 +413,7 @@ def list_members_payload(
                 "squash_access": getattr(m, "squash_access", None),
                 "financial_flag": "defaulter" if str(getattr(m, "member_lifecycle_status", "") or "").strip().lower() == "defaulter" else None,
                 "active": bool(m.active),
+                "club_relationship": _club_relationship_payload(db, m),
                 "bookings_count": int(bookings_count or 0),
                 "total_spent": float(total_spent or 0.0),
                 "last_seen": last_seen.isoformat() if last_seen else None,
@@ -389,6 +421,15 @@ def list_members_payload(
             for (m, bookings_count, total_spent, last_seen) in rows
         ],
     }
+    record_task_timing(
+        db,
+        club_id=club_id,
+        task_key="people_search_to_save_time" if q else "people_list_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        meta={"query": bool(q), "returned": len(payload["members"])},
+    )
+    return payload
 
 
 def create_member_payload(
@@ -398,6 +439,7 @@ def create_member_payload(
     payload: MemberUpsertPayload,
     admin_user_id: int | None = None,
 ) -> dict[str, Any]:
+    started_at = measure_started()
     if int(club_id) <= 0:
         raise HTTPException(status_code=400, detail="club_id is required")
 
@@ -475,6 +517,16 @@ def create_member_payload(
         raise HTTPException(status_code=409, detail=f"Member create failed (duplicate?): {msg}")
 
     db.refresh(row)
+    record_task_timing(
+        db,
+        club_id=int(club_id),
+        task_key="people_search_to_save_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        actor_user_id=int(admin_user_id or 0) or None,
+        meta={"action": "create_member", "member_id": int(row.id)},
+    )
+    db.commit()
     return {"status": "success", "member_id": row.id}
 
 
@@ -485,6 +537,7 @@ def update_member_payload(
     payload: MemberUpsertPayload,
     admin_user_id: int | None = None,
 ) -> dict[str, Any]:
+    started_at = measure_started()
     row = db.query(Member).filter(Member.id == int(member_id)).first()
     if not row:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -541,6 +594,16 @@ def update_member_payload(
         msg = str(getattr(exc, "orig", exc) or "")[:180]
         raise HTTPException(status_code=409, detail=f"Member update failed (duplicate?): {msg}")
 
+    record_task_timing(
+        db,
+        club_id=int(getattr(row, "club_id", 0) or 0) or None,
+        task_key="people_search_to_save_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        actor_user_id=int(admin_user_id or 0) or None,
+        meta={"action": "update_member", "member_id": int(row.id)},
+    )
+    db.commit()
     return {"status": "success"}
 
 
@@ -593,6 +656,7 @@ def get_member_detail_payload(db: Session, *, member_id: int) -> dict[str, Any]:
     return {
         "member": {
             "id": member.id,
+            "global_person_id": int(getattr(member, "global_person_id", 0) or 0) or None,
             "member_number": member.member_number,
             "first_name": member.first_name,
             "last_name": member.last_name,
@@ -626,6 +690,7 @@ def get_member_detail_payload(db: Session, *, member_id: int) -> dict[str, Any]:
             "bowls_access": getattr(member, "bowls_access", None),
             "squash_access": getattr(member, "squash_access", None),
             "active": bool(member.active),
+            "club_relationship": _club_relationship_payload(db, member),
         },
         "linked_account": linked_account,
         "stats": {
@@ -648,6 +713,7 @@ def get_member_detail_payload(db: Session, *, member_id: int) -> dict[str, Any]:
 
 
 def search_members_payload(db: Session, *, q: str, limit: int = 10) -> dict[str, Any]:
+    started_at = measure_started()
     needle = (q or "").strip().lower()
     if not needle:
         return {"members": []}
@@ -670,10 +736,11 @@ def search_members_payload(db: Session, *, q: str, limit: int = 10) -> dict[str,
         .all()
     )
 
-    return {
+    payload = {
         "members": [
             {
                 "id": m.id,
+                "global_person_id": int(getattr(m, "global_person_id", 0) or 0) or None,
                 "member_number": m.member_number,
                 "first_name": m.first_name,
                 "last_name": m.last_name,
@@ -685,7 +752,17 @@ def search_members_payload(db: Session, *, q: str, limit: int = 10) -> dict[str,
                 "membership_category": getattr(m, "membership_category", None),
                 "membership_status": getattr(m, "membership_status", None),
                 "active": bool(m.active),
+                "club_relationship": _club_relationship_payload(db, m),
             }
             for m in members
         ]
     }
+    record_task_timing(
+        db,
+        club_id=int(getattr(db, "info", {}).get("club_id") or 0) or None,
+        task_key="people_search_to_save_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="admin",
+        meta={"query": q, "returned": len(payload["members"])},
+    )
+    return payload

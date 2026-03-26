@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AccountCustomer
 from app.people import parse_terms_days
+from app.services.revenue_integrity_service import sync_account_customer_linkage, sync_account_customer_integrity
 
 
 class AccountCustomerUpsertPayload(BaseModel):
@@ -184,6 +185,8 @@ def create_account_customer_payload(
         notes=str(payload.notes or "").strip() or None,
     )
     db.add(row)
+    db.flush()
+    sync_account_customer_integrity(db, row, source_system="account_customer_create")
     if audit_event is not None:
         audit_event(
             action="account_customer.created",
@@ -239,6 +242,13 @@ def update_account_customer_payload(
     row.active = 1 if payload.active else 0
     row.notes = str(payload.notes or "").strip() or None
     row.updated_at = datetime.utcnow()
+    sync_account_customer_integrity(db, row, source_system="account_customer_update")
+    sync_account_customer_linkage(
+        db,
+        club_id=int(getattr(row, "club_id", 0) or 0),
+        account_customer_id=int(getattr(row, "id", 0) or 0),
+        source_system="account_customer_update",
+    )
 
     if audit_event is not None:
         audit_event(

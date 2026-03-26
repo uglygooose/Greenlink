@@ -9,7 +9,13 @@ from app.club_assignments import ensure_user_primary_club, sync_user_club_assign
 from app.integrations import handicap_sa
 from app.people import sync_member_person, sync_user_person
 from app.password_policy import assert_password_policy
+from app.services.identity_integrity_service import (
+    clear_pricing_unresolved_exception,
+    emit_pricing_unresolved_exception,
+    resolve_booking_identity_context,
+)
 from app.services.payment_methods import normalize_booking_payment_method
+from app.services.task_metrics_service import elapsed_ms, measure_started, record_task_timing
 from fastapi import HTTPException
 
 def _require_club_id(db: Session) -> int:
@@ -489,6 +495,7 @@ def list_tee_times(db: Session):
 
 def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user: models.User | None = None):
     club_id = _require_club_id(db)
+    started_at = measure_started()
     # Validate tee time exists
     tee_time = (
         db.query(models.TeeTime)
@@ -759,6 +766,20 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
                 inferred_pricing_context = player_type is not None or getattr(booking_in, "member_id", None) is not None or getattr(booking_in, "player_email", None) is not None
 
                 if explicitly_requested_pricing or inferred_pricing_context:
+                    emit_pricing_unresolved_exception(
+                        db,
+                        club_id=club_id,
+                        dedupe_suffix=f"manual:{int(booking_in.tee_time_id)}:{player_email or player_name}",
+                        player_name=player_name,
+                        context={
+                            "player_type": player_type,
+                            "gender": gender,
+                            "holes": holes,
+                            "age": age,
+                            "tee_time": tee_time.tee_time.isoformat(),
+                            "player_email": player_email,
+                        },
+                    )
                     raise HTTPException(
                         status_code=400,
                         detail={
@@ -919,11 +940,26 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
             print(f"[CADDY] Auto-caddy skipped: {str(e)[:120]}")
      
     status = models.BookingStatus.checked_in if prepaid else models.BookingStatus.booked
+    global_person, relationship_state, _identity_issues = resolve_booking_identity_context(
+        db,
+        club_id=club_id,
+        booking_id=None,
+        player_name=player_name,
+        player_email=player_email,
+        member=member,
+        user=resolved_user,
+        account_customer=resolved_account_customer,
+        player_type=player_type_snapshot,
+        source_system="booking_create",
+        source_ref=f"tee:{int(booking_in.tee_time_id)}:{player_email or player_name}",
+    )
 
     b = models.Booking(
         club_id=club_id,
         tee_time_id=booking_in.tee_time_id,
         member_id=resolved_member_id,
+        global_person_id=int(getattr(global_person, "id", 0) or 0) or None,
+        club_relationship_state_id=int(getattr(relationship_state, "id", 0) or 0) or None,
         created_by_user_id=getattr(current_user, "id", None) if current_user is not None else None,
         player_name=player_name,
         player_email=player_email,
@@ -958,6 +994,11 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     db.add(b)
     db.commit()
     db.refresh(b)
+    clear_pricing_unresolved_exception(
+        db,
+        club_id=club_id,
+        dedupe_suffix=f"manual:{int(booking_in.tee_time_id)}:{player_email or player_name}",
+    )
     
     # Record payment only once the booking is paid (checked-in/completed).
     if b.status in (models.BookingStatus.checked_in, models.BookingStatus.completed):
@@ -967,6 +1008,20 @@ def create_booking(db: Session, booking_in: schemas.BookingCreate, current_user:
     # DEPRECATED: Sage One / Pastel accounting sync removed
     # New system uses cashbook Excel exports instead
     # See: app/routers/cashbook.py and CASHBOOK_EXPORT.md
+    record_task_timing(
+        db,
+        club_id=club_id,
+        task_key="booking_create_time",
+        duration_ms=elapsed_ms(started_at),
+        actor_role=str(getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None)) or ""),
+        actor_user_id=int(getattr(current_user, "id", 0) or 0) or None,
+        meta={
+            "tee_time_id": int(booking_in.tee_time_id),
+            "player_type": player_type_snapshot,
+            "prepaid": bool(prepaid),
+        },
+    )
+    db.commit()
     
     return b
 
@@ -980,6 +1035,7 @@ def list_bookings_for_tee(db: Session, tee_time_id: int):
 
 def checkin_booking(db: Session, booking_id: int, payment_method: str | None = None):
     club_id = _require_club_id(db)
+    started_at = measure_started()
     b = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.club_id == club_id).first()
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -1018,6 +1074,15 @@ def checkin_booking(db: Session, booking_id: int, payment_method: str | None = N
     r.handicap_sa_round_id = handicap_result.get("round_id")
     db.commit()
     db.refresh(r)
+    record_task_timing(
+        db,
+        club_id=club_id,
+        task_key="check_in_time_median",
+        duration_ms=elapsed_ms(started_at),
+        actor_role="staff",
+        meta={"booking_id": int(b.id), "payment_method": payment_method or None},
+    )
+    db.commit()
 
     return {"booking": b, "round": r, "handicap_sa": handicap_result}
 
