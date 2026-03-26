@@ -887,6 +887,23 @@ def test_reports_revenue_reads_are_shared_cached_and_summary_invalidated():
     assert 'deps.loadSharedReportsRevenue({ signal, period: "mtd" })' in reports_js
 
 
+def test_cashbook_preview_is_explicitly_lazy_loaded():
+    root = Path(__file__).resolve().parents[1]
+    admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
+    reports_js = (root / "frontend" / "js" / "admin" / "reports-workspace.js").read_text(encoding="utf-8")
+    finance_reporting_js = (root / "frontend" / "js" / "admin" / "finance-reporting.js").read_text(encoding="utf-8")
+
+    assert "function cashbookPreviewCacheKey(" in admin_js
+    assert "async function loadSharedCashbookPreview(" in admin_js
+    assert "function loadCachedCashbookPreview(" in admin_js
+    assert 'deps.fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(financeDate)}`' not in reports_js
+    assert 'const preview = deps.loadCachedCashbookPreview({ date: financeDate });' in reports_js
+    assert 'previewLoaded: Boolean(preview)' in reports_js
+    assert 'data-load-cashbook-preview' in finance_reporting_js
+    assert 'Load the journal preview before closing the day.' in finance_reporting_js
+    assert 'deps.invalidateCashbookPreview(safeDate);' in finance_reporting_js
+
+
 def test_operations_member_area_previews_are_shared_cached_and_invalidated():
     root = Path(__file__).resolve().parents[1]
     admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
@@ -1104,6 +1121,57 @@ def test_admin_dashboard_read_model_declares_consumer_view(client: TestClient, s
     assert meta["shared_catch_all"] is False
     assert "club_admin.reports.performance" in list(meta.get("intended_consumers") or [])
     assert "imports" in payload
+
+
+def test_finance_ui_consumes_canonical_finance_state_fields():
+    root = Path(__file__).resolve().parents[1]
+    admin_js = (root / "frontend" / "admin.js").read_text(encoding="utf-8")
+    finance_reporting_js = (root / "frontend" / "js" / "admin" / "finance-reporting.js").read_text(encoding="utf-8")
+    cashbook_router = (root / "app" / "routers" / "cashbook.py").read_text(encoding="utf-8")
+
+    assert "row?.finance_state?.payment_status_label" in admin_js
+    assert "row?.finance_state?.paid_status_without_ledger" in admin_js
+    assert 'const paidWithoutLedger = Boolean(row?.finance_state?.paid_status_without_ledger);' in admin_js
+    assert 'const ledgerBackedBookings = rows.filter(row => Boolean(row?.finance_state?.is_paid));' in admin_js
+    assert "financeState.export_status_label" in admin_js
+    assert "row?.finance_state?.is_paid" in finance_reporting_js
+    assert "row?.finance_state?.export_ready" in finance_reporting_js
+    assert "row?.finance_state?.payment_method_present" in finance_reporting_js or "No payment method" in finance_reporting_js
+    assert "row.pastel_synced" not in finance_reporting_js
+    assert "const exportMapping = closeStatus?.finance_semantics?.export_mapping || {};" in admin_js
+    assert "function closeStatusFinanceSummary(bundle)" in admin_js
+    assert "function exportBacklogMeta(bundle)" in admin_js
+    assert "function financeReadyBlockedMeta(bundle)" in admin_js
+    assert "const financeSummary = closeStatusFinanceSummary(bundle);" in admin_js
+    assert "const closeMeta = closeStatusMeta(bundle);" in admin_js
+    assert "const financeDiagnostics = pendingExportRows > 0 || blockedRows > 0" in admin_js
+    assert 'detail: financeDetail,' in admin_js
+    assert '`${formatInteger(pendingRows)} paid ledger row(s) still need export before day close.`' in admin_js
+    assert '${formatInteger(summary.transaction_count || summary.records?.length || 0)} payment row(s) · ${financeReadyBlockedMeta(bundle)}' in admin_js
+    assert '<div class="stat-label">Close Posture</div>' in admin_js
+    assert '<div class="stat-value">${escapeHtml(closeMeta.label)}</div>' in admin_js
+    assert "const closeDiagnostics = pendingExportRows > 0 || blockedRows > 0" in admin_js
+    assert 'label: "Day close posture"' in admin_js
+    assert "value: closeState.label" in admin_js
+    assert '{ label: "Close State", value: closeMeta.label, meta: closeMeta.detail }' in admin_js
+    assert '{ label: "Pending Export Rows", value: formatInteger(closeStatusFinanceSummary(bundle).pending_export_rows || 0), meta: exportBacklogMeta(bundle) }' in admin_js
+    assert '{ label: "Close Posture", value: closeMeta.label, meta: closeDiagnostics }' in admin_js
+    assert '{ label: "Export-ready Rows", value: formatInteger(financeSummary.export_ready_rows || 0), meta: "Rows ready for export from current finance truth" }' in admin_js
+    assert '{ label: "Blocked Rows", value: formatInteger(financeSummary.blocked_rows || 0), meta: "Rows blocked by payment-method or mapping gaps" }' in admin_js
+    assert "exportSetupReady: Boolean(cashbookReady && exportMapping.configured)" in admin_js
+    assert '{ label: "Cashbook Setup", value: summary.exportSetupReady ? "Ready" : "Needs setup"' in admin_js
+    assert 'label: "Setup missing"' in admin_js
+    assert 'summary.exportMappingConfigured ? "Aligned" : "Needs setup"' in admin_js
+    assert "preview.finance_state_summary" in finance_reporting_js
+    assert "function cashbookExportPosture(" in finance_reporting_js
+    assert 'deps.renderStatusPill("Export", exportPosture.code)' in finance_reporting_js
+    assert 'const previewStateLabel = !previewLoaded' in finance_reporting_js
+    assert '{ label: "Export locked"' in finance_reporting_js
+    assert '{ label: "Export blocked"' in finance_reporting_js
+    assert '{ label: "Close State", value: exportPosture.label' in finance_reporting_js
+    assert '{ label: "Close blocked"' in finance_reporting_js
+    assert '"finance_semantics": finance_semantics' in cashbook_router
+    assert '"finance_state_summary": summarize_ledger_finance_states' in cashbook_router
 
 
 def test_admin_can_create_and_update_club_communication(client: TestClient, seeded_contract: dict[str, int | str]):
@@ -1647,6 +1715,212 @@ def test_admin_golf_day_booking_list_is_club_scoped(client: TestClient, seeded_c
     assert response.status_code == 200, response.text
     rows = response.json()["bookings"]
     assert rows == []
+
+
+def test_admin_booking_and_ledger_payloads_surface_canonical_finance_state(client: TestClient, seeded_contract: dict[str, int | str]):
+    token = _login(
+        client,
+        email=str(seeded_contract["admin_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    marker = f"contract-finance-state-{uuid4().hex[:8]}"
+
+    with SessionLocal() as db:
+        club_id = int(seeded_contract["club_a_id"])
+        for key, value in {
+            "pastel_journal_layout": json.dumps({"columns": ["Date", "Account", "Amount"], "column_map": {"date": "Date", "account": "Account", "amount": "Amount"}}),
+            "pastel_journal_mappings": json.dumps({"vat_output_gl": "2200/000", "debit_gl": {"CARD": "8400/000", "EFT": "8410/000"}}),
+        }.items():
+            row = db.query(models.ClubSetting).filter(models.ClubSetting.club_id == club_id, models.ClubSetting.key == key).first()
+            if row:
+                row.value = value
+            else:
+                db.add(models.ClubSetting(club_id=club_id, key=key, value=value))
+
+        tee_time = models.TeeTime(
+            club_id=club_id,
+            tee_time=datetime.utcnow() + timedelta(days=1),
+            hole="1",
+            capacity=4,
+            status="open",
+        )
+        db.add(tee_time)
+        db.flush()
+
+        paid_booking = models.Booking(
+            club_id=club_id,
+            tee_time_id=int(tee_time.id),
+            player_name=f"{marker}-paid",
+            player_email=f"{marker}-paid@example.com",
+            club_card="ACC-PAID-001",
+            price=450.0,
+            status=models.BookingStatus.checked_in,
+        )
+        missing_ledger_booking = models.Booking(
+            club_id=club_id,
+            tee_time_id=int(tee_time.id),
+            player_name=f"{marker}-missing-ledger",
+            player_email=f"{marker}-missing@example.com",
+            club_card="ACC-MISS-001",
+            price=325.0,
+            status=models.BookingStatus.completed,
+        )
+        no_method_booking = models.Booking(
+            club_id=club_id,
+            tee_time_id=int(tee_time.id),
+            player_name=f"{marker}-no-method",
+            player_email=f"{marker}-no-method@example.com",
+            club_card="ACC-NOMETHOD-001",
+            price=280.0,
+            status=models.BookingStatus.checked_in,
+        )
+        db.add_all([paid_booking, missing_ledger_booking, no_method_booking])
+        db.flush()
+
+        paid_ledger = models.LedgerEntry(
+            club_id=club_id,
+            booking_id=int(paid_booking.id),
+            description="Contract paid ledger",
+            amount=450.0,
+            pastel_synced=0,
+        )
+        no_method_ledger = models.LedgerEntry(
+            club_id=club_id,
+            booking_id=int(no_method_booking.id),
+            description="Contract ledger missing payment method",
+            amount=280.0,
+            pastel_synced=0,
+        )
+        db.add_all([paid_ledger, no_method_ledger])
+        db.flush()
+        db.add(models.LedgerEntryMeta(ledger_entry_id=int(paid_ledger.id), payment_method="CARD"))
+        db.commit()
+
+        paid_booking_id = int(paid_booking.id)
+        missing_ledger_booking_id = int(missing_ledger_booking.id)
+        no_method_booking_id = int(no_method_booking.id)
+
+    bookings_response = client.get(f"/api/admin/bookings?q={marker}&limit=20", headers=headers)
+    assert bookings_response.status_code == 200, bookings_response.text
+    bookings_payload = bookings_response.json()
+    assert bookings_payload["finance_semantics"]["booking_paid_rule"] == "paid_only_with_ledger_entry"
+    assert bookings_payload["finance_semantics"]["day_close_is_export_proof"] is False
+    assert bookings_payload["finance_semantics"]["revenue_transactions_reporting_only"] is True
+
+    booking_rows = {int(row["id"]): row for row in bookings_payload["bookings"]}
+
+    paid_row = booking_rows[paid_booking_id]
+    assert paid_row["finance_state"]["is_paid"] is True
+    assert paid_row["finance_state"]["payment_method_present"] is True
+    assert paid_row["finance_state"]["export_ready"] is True
+    assert paid_row["finance_state"]["payment_status_label"] == "Paid"
+    assert paid_row["finance_state"]["export_status_label"] == "Export-ready"
+
+    missing_row = booking_rows[missing_ledger_booking_id]
+    assert missing_row["finance_state"]["is_paid"] is False
+    assert missing_row["finance_state"]["paid_status_without_ledger"] is True
+    assert missing_row["finance_state"]["payment_status_label"] == "Paid status missing ledger"
+
+    no_method_row = booking_rows[no_method_booking_id]
+    assert no_method_row["finance_state"]["is_paid"] is True
+    assert no_method_row["finance_state"]["payment_method_present"] is False
+    assert no_method_row["finance_state"]["export_ready"] is False
+    assert no_method_row["finance_state"]["export_status_code"] == "missing_payment_method"
+
+    detail_response = client.get(f"/api/admin/bookings/{paid_booking_id}", headers=headers)
+    assert detail_response.status_code == 200, detail_response.text
+    detail_payload = detail_response.json()
+    assert detail_payload["finance_semantics"]["booking_paid_rule"] == "paid_only_with_ledger_entry"
+    assert detail_payload["finance_state"]["is_paid"] is True
+    assert detail_payload["finance_state"]["export_ready"] is True
+    assert detail_payload["ledger_entries"][0]["finance_state"]["export_status_label"] == "Export-ready"
+
+    ledger_response = client.get(f"/api/admin/ledger?limit=20&q={paid_booking_id}", headers=headers)
+    assert ledger_response.status_code == 200, ledger_response.text
+    ledger_payload = ledger_response.json()
+    assert ledger_payload["finance_semantics"]["booking_paid_rule"] == "paid_only_with_ledger_entry"
+    assert ledger_payload["finance_semantics"]["golf_day_bookings_separate_from_ledger"] is True
+    ledger_row = next(row for row in ledger_payload["ledger_entries"] if int(row["booking_id"]) == paid_booking_id)
+    assert ledger_row["payment_method"] == "CARD"
+    assert ledger_row["finance_state"]["payment_method_present"] is True
+    assert ledger_row["finance_state"]["export_ready"] is True
+
+
+def test_cashbook_export_routes_surface_canonical_finance_state_summary(client: TestClient, seeded_contract: dict[str, int | str]):
+    token = _login(
+        client,
+        email=str(seeded_contract["admin_email"]),
+        password=str(seeded_contract["password"]),
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    target_dt = datetime(2031, 1, 15, 10, 30, 0)
+    target_date = target_dt.date()
+
+    with SessionLocal() as db:
+        club_id = int(seeded_contract["club_a_id"])
+        for key, value in {
+            "pastel_journal_layout": json.dumps({"columns": ["Date", "Account", "Amount"], "column_map": {"date": "Date", "account": "Account", "amount": "Amount"}}),
+            "pastel_journal_mappings": json.dumps({"vat_output_gl": "2200/000", "debit_gl": {"CARD": "8400/000"}}),
+        }.items():
+            row = db.query(models.ClubSetting).filter(models.ClubSetting.club_id == club_id, models.ClubSetting.key == key).first()
+            if row:
+                row.value = value
+            else:
+                db.add(models.ClubSetting(club_id=club_id, key=key, value=value))
+
+        tee_time = models.TeeTime(
+            club_id=club_id,
+            tee_time=target_dt + timedelta(days=1),
+            hole="1",
+            capacity=4,
+            status="open",
+        )
+        db.add(tee_time)
+        db.flush()
+
+        booking = models.Booking(
+            club_id=club_id,
+            tee_time_id=int(tee_time.id),
+            player_name=f"cashbook-export-{uuid4().hex[:8]}",
+            player_email=f"cashbook-export-{uuid4().hex[:8]}@example.com",
+            club_card="ACC-CASHBOOK-001",
+            price=510.0,
+            status=models.BookingStatus.checked_in,
+        )
+        db.add(booking)
+        db.flush()
+
+        ledger_entry = models.LedgerEntry(
+            club_id=club_id,
+            booking_id=int(booking.id),
+            description="Cashbook export state contract ledger",
+            amount=510.0,
+            pastel_synced=0,
+            created_at=target_dt,
+        )
+        db.add(ledger_entry)
+        db.flush()
+        db.add(models.LedgerEntryMeta(ledger_entry_id=int(ledger_entry.id), payment_method="CARD"))
+        db.commit()
+
+    preview_response = client.get(f"/cashbook/export-preview?export_date={target_date.isoformat()}", headers=headers)
+    assert preview_response.status_code == 200, preview_response.text
+    preview_payload = preview_response.json()
+    assert preview_payload["finance_semantics"]["booking_paid_rule"] == "paid_only_with_ledger_entry"
+    assert preview_payload["finance_semantics"]["day_close_is_export_proof"] is False
+    assert preview_payload["finance_state_summary"]["total_rows"] >= 1
+    assert preview_payload["finance_state_summary"]["export_ready_rows"] >= 1
+    assert preview_payload["finance_state_summary"]["blocked_rows"] == 0
+
+    close_status_response = client.get(f"/cashbook/close-status?summary_date={target_date.isoformat()}", headers=headers)
+    assert close_status_response.status_code == 200, close_status_response.text
+    close_status_payload = close_status_response.json()
+    assert close_status_payload["finance_semantics"]["booking_paid_rule"] == "paid_only_with_ledger_entry"
+    assert close_status_payload["finance_semantics"]["day_close_is_export_proof"] is False
+    assert close_status_payload["finance_state_summary"]["total_rows"] >= 1
+    assert close_status_payload["finance_state_summary"]["pending_export_rows"] >= 1
+    assert close_status_payload["finance_state_summary"]["export_ready_rows"] >= 1
 
 
 def test_admin_can_filter_audit_logs(client: TestClient, seeded_contract: dict[str, int | str]):

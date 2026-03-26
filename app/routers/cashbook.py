@@ -20,6 +20,12 @@ from app.fee_models import FeeCategory
 from app.club_config import invalidate_club_config_cache
 from app.observability import log_event
 from app.services.cashbook_service import build_daily_journal_lines
+from app.services.finance_semantics_service import (
+    build_finance_semantics_metadata,
+    build_ledger_entry_finance_state,
+    get_export_mapping_status,
+    summarize_ledger_finance_states,
+)
 from app.tenancy import get_active_club_id
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1830,7 +1836,10 @@ def export_daily_payments_preview(
     else:
         target_date = date.today()
 
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
     settings = get_accounting_settings(db)
+    mapping_status = get_export_mapping_status(db, club_id=club_id) if club_id else {"configured": False, "layout_configured": False, "mappings_configured": False}
+    finance_semantics = build_finance_semantics_metadata(mapping_status)
     layout = _require_pastel_layout(db)
     mappings = _require_pastel_mappings(db)
 
@@ -1852,6 +1861,15 @@ def export_daily_payments_preview(
 
     if not rows:
         raise HTTPException(status_code=404, detail=f"No payments found for {target_date}")
+
+    preview_finance_states = [
+        build_ledger_entry_finance_state(
+            pastel_synced=bool(getattr(ledger_entry, "pastel_synced", False)),
+            payment_method=str(getattr(meta, "payment_method", "") or "").strip().upper() or None,
+            mapping_status=mapping_status,
+        )
+        for ledger_entry, _booking, _fee_cat, meta in rows
+    ]
 
     journal = build_daily_journal_lines(
         rows=rows,
@@ -2057,6 +2075,8 @@ def export_daily_payments_preview(
     return {
         "date": target_date.strftime("%Y-%m-%d"),
         "batchRef": batch_ref,
+        "finance_semantics": finance_semantics,
+        "finance_state_summary": summarize_ledger_finance_states(preview_finance_states),
         "totals": {"gross": float(gross_total), "net": float(net_total), "vat": float(vat_total)},
         "journal_lines": preview_lines,
     }
@@ -2076,11 +2096,51 @@ def get_close_status(
     else:
         target_date = date.today()
 
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    mapping_status = get_export_mapping_status(db, club_id=club_id) if club_id else {"configured": False, "layout_configured": False, "mappings_configured": False}
+    finance_semantics = build_finance_semantics_metadata(mapping_status)
+    base_ledger_query = db.query(LedgerEntry).filter(
+        LedgerEntry.club_id == club_id,
+        LedgerEntry.booking_id.isnot(None),
+        func.date(LedgerEntry.created_at) == target_date,
+    )
+    total_rows = int(base_ledger_query.count() or 0)
+    exported_rows = int(base_ledger_query.filter(LedgerEntry.pastel_synced == 1).count() or 0)
+    pending_export_rows = max(0, total_rows - exported_rows)
+    missing_payment_method_rows = int(
+        db.query(LedgerEntry)
+        .outerjoin(LedgerEntryMeta, LedgerEntryMeta.ledger_entry_id == LedgerEntry.id)
+        .filter(
+            LedgerEntry.club_id == club_id,
+            LedgerEntry.booking_id.isnot(None),
+            func.date(LedgerEntry.created_at) == target_date,
+            func.coalesce(LedgerEntry.pastel_synced, 0) != 1,
+            func.length(func.trim(func.coalesce(LedgerEntryMeta.payment_method, ""))) == 0,
+        )
+        .count()
+        or 0
+    )
+    mapping_configured = bool(mapping_status.get("configured"))
+    export_ready_rows = max(0, pending_export_rows - missing_payment_method_rows) if mapping_configured else 0
+    missing_mapping_rows = pending_export_rows if not mapping_configured else 0
+    blocked_rows = max(0, pending_export_rows - export_ready_rows)
+    finance_state_summary = {
+        "total_rows": total_rows,
+        "exported_rows": exported_rows,
+        "pending_export_rows": pending_export_rows,
+        "export_ready_rows": export_ready_rows,
+        "blocked_rows": blocked_rows,
+        "missing_payment_method_rows": missing_payment_method_rows,
+        "missing_mapping_rows": missing_mapping_rows,
+    }
+
     close = db.query(DayClose).filter(DayClose.close_date == target_date).order_by(DayClose.id.desc()).first()
     if not close:
         return {
             "date": target_date.strftime("%Y-%m-%d"),
-            "is_closed": False
+            "is_closed": False,
+            "finance_semantics": finance_semantics,
+            "finance_state_summary": finance_state_summary,
         }
 
     return {
@@ -2091,7 +2151,9 @@ def get_close_status(
         "closed_by_user_id": close.closed_by_user_id,
         "export_batch_id": close.export_batch_id,
         "export_filename": close.export_filename,
-        "auto_push": bool(close.auto_push)
+        "auto_push": bool(close.auto_push),
+        "finance_semantics": finance_semantics,
+        "finance_state_summary": finance_state_summary,
     }
 
 

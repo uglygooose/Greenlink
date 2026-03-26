@@ -144,6 +144,13 @@ from app.services.finance_reporting_service import (
     period_window as _period_window,
     pro_shop_revenue_source_clause as _pro_shop_revenue_source_clause,
 )
+from app.services.finance_semantics_service import (
+    build_booking_finance_state,
+    build_finance_semantics_metadata,
+    build_ledger_entry_finance_state,
+    collect_booking_ledger_snapshot,
+    get_export_mapping_status,
+)
 from app.services.operational_alerts_service import (
     clear_admin_operational_alerts_cache,
     get_operational_alerts_payload,
@@ -1437,24 +1444,29 @@ async def get_all_bookings(
         }
 
     ledger_entry_counts: dict[int, int] = {}
+    ledger_exported_counts: dict[int, int] = {}
+    booking_payment_methods: dict[int, str | None] = {}
     booking_ids = [int(getattr(b, "id", 0) or 0) for b in bookings if getattr(b, "id", None)]
     if booking_ids:
+        ledger_snapshot = collect_booking_ledger_snapshot(db, booking_ids)
         ledger_entry_counts = {
-            int(row.booking_id): int(row.entry_count or 0)
-            for row in (
-                db.query(
-                    LedgerEntry.booking_id.label("booking_id"),
-                    func.count(LedgerEntry.id).label("entry_count"),
-                )
-                .filter(LedgerEntry.booking_id.in_(booking_ids))
-                .group_by(LedgerEntry.booking_id)
-                .all()
-            )
+            int(booking_id): int((snapshot or {}).get("ledger_entry_count") or 0)
+            for booking_id, snapshot in ledger_snapshot.items()
         }
+        ledger_exported_counts = {
+            int(booking_id): int((snapshot or {}).get("exported_entry_count") or 0)
+            for booking_id, snapshot in ledger_snapshot.items()
+        }
+        booking_payment_methods = {
+            int(booking_id): (str((snapshot or {}).get("payment_method") or "").strip().upper() or None)
+            for booking_id, snapshot in ledger_snapshot.items()
+        }
+    mapping_status = get_export_mapping_status(db, club_id=int(club_id))
 
     return {
         "total": total,
         "integrity_filter": integrity_mode or None,
+        "finance_semantics": build_finance_semantics_metadata(mapping_status),
         "bookings": [
             {
                 "id": b.id,
@@ -1480,6 +1492,14 @@ async def get_all_bookings(
                 "push_cart": bool(getattr(b, "push_cart", None)) if getattr(b, "push_cart", None) is not None else None,
                 "caddy": bool(getattr(b, "caddy", None)) if getattr(b, "caddy", None) is not None else None,
                 "ledger_entry_count": int(ledger_entry_counts.get(int(getattr(b, "id", 0) or 0), 0)),
+                "payment_method": booking_payment_methods.get(int(getattr(b, "id", 0) or 0)),
+                "finance_state": build_booking_finance_state(
+                    booking_status=getattr(b, "status", None),
+                    ledger_entry_count=int(ledger_entry_counts.get(int(getattr(b, "id", 0) or 0), 0)),
+                    exported_entry_count=int(ledger_exported_counts.get(int(getattr(b, "id", 0) or 0), 0)),
+                    payment_method=booking_payment_methods.get(int(getattr(b, "id", 0) or 0)),
+                    mapping_status=mapping_status,
+                ),
             }
             for b in bookings
         ]
@@ -1522,10 +1542,23 @@ async def get_booking_detail(
     if entry_ids:
         metas = db.query(LedgerEntryMeta).filter(LedgerEntryMeta.ledger_entry_id.in_(entry_ids)).all()
         meta_by_entry_id = {m.ledger_entry_id: m for m in metas}
+    club_id = int(getattr(db, "info", {}).get("club_id") or 0)
+    mapping_status = get_export_mapping_status(
+        db,
+        club_id=int(club_id),
+    ) if club_id > 0 else {"configured": False, "layout_configured": False, "mappings_configured": False}
+    payment_method = next(
+        (
+            str(getattr(meta_by_entry_id.get(int(le.id)), "payment_method", "") or "").strip().upper()
+            for le in sorted(ledger_entries, key=lambda row: int(getattr(row, "id", 0) or 0), reverse=True)
+            if str(getattr(meta_by_entry_id.get(int(le.id)), "payment_method", "") or "").strip()
+        ),
+        None,
+    ) or None
+    exported_entry_count = sum(1 for le in ledger_entries if bool(getattr(le, "pastel_synced", False)))
 
     fee_category = None
     if booking.fee_category_id:
-        club_id = int(getattr(db, "info", {}).get("club_id") or 0)
         fee_q = db.query(FeeCategory).filter(FeeCategory.id == booking.fee_category_id)
         if club_id > 0:
             fee_q = fee_q.filter(or_(FeeCategory.club_id == club_id, FeeCategory.club_id.is_(None)))
@@ -1581,6 +1614,15 @@ async def get_booking_detail(
         "player_type": getattr(booking, "player_type", None),
         "tee_time": booking.tee_time.tee_time.isoformat() if booking.tee_time else None,
         "created_at": booking.created_at.isoformat(),
+        "payment_method": payment_method,
+        "finance_semantics": build_finance_semantics_metadata(mapping_status),
+        "finance_state": build_booking_finance_state(
+            booking_status=getattr(booking, "status", None),
+            ledger_entry_count=len(ledger_entries),
+            exported_entry_count=exported_entry_count,
+            payment_method=payment_method,
+            mapping_status=mapping_status,
+        ),
         "round": round_info,
         "ledger_entries": [
             {
@@ -1588,7 +1630,12 @@ async def get_booking_detail(
                 "description": le.description,
                 "amount": float(le.amount),
                 "pastel_synced": bool(le.pastel_synced),
-                "payment_method": getattr(meta_by_entry_id.get(le.id), "payment_method", None),
+                "payment_method": str(getattr(meta_by_entry_id.get(le.id), "payment_method", "") or "").strip().upper() or None,
+                "finance_state": build_ledger_entry_finance_state(
+                    pastel_synced=bool(le.pastel_synced),
+                    payment_method=str(getattr(meta_by_entry_id.get(le.id), "payment_method", "") or "").strip().upper() or None,
+                    mapping_status=mapping_status,
+                ),
                 "created_at": le.created_at.isoformat()
             }
             for le in ledger_entries

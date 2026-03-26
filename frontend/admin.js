@@ -1051,6 +1051,44 @@
         return Number.isFinite(number) ? number : 0;
     }
 
+    function closeStatusFinanceSummary(bundle) {
+        return bundle?.closeStatus?.finance_state_summary || {};
+    }
+
+    function exportBacklogMeta(bundle) {
+        const summary = closeStatusFinanceSummary(bundle);
+        const blocked = Number(summary.blocked_rows || 0);
+        const pending = Number(summary.pending_export_rows || 0);
+        const missingPaymentMethod = Number(summary.missing_payment_method_rows || 0);
+        const missingMapping = Number(summary.missing_mapping_rows || 0);
+        if (blocked > 0) {
+            if (missingPaymentMethod > 0 && missingMapping > 0) {
+                return `${formatInteger(blocked)} blocked: payment method and mapping gaps still need attention`;
+            }
+            if (missingPaymentMethod > 0) {
+                return `${formatInteger(blocked)} blocked: payment methods still need capture`;
+            }
+            if (missingMapping > 0) {
+                return `${formatInteger(blocked)} blocked: Pastel layout or mappings still need setup`;
+            }
+            return `${formatInteger(blocked)} blocked for export`;
+        }
+        if (pending > 0) {
+            return `${formatInteger(pending)} paid ledger row(s) still need export`;
+        }
+        return "No paid ledger backlog flagged";
+    }
+
+    function financeReadyBlockedMeta(bundle) {
+        const summary = closeStatusFinanceSummary(bundle);
+        const ready = Number(summary.export_ready_rows || 0);
+        const blocked = Number(summary.blocked_rows || 0);
+        if (ready > 0 || blocked > 0) {
+            return `${formatInteger(ready)} ready · ${formatInteger(blocked)} blocked`;
+        }
+        return "No pending export rows";
+    }
+
     function renderTable(headers, rows) {
         return `
             <div class="table-scroll">
@@ -1069,9 +1107,15 @@
     function renderDashboardStatCards(bundle) {
         const dashboard = bundle?.dashboard || {};
         const alerts = bundle?.alerts || {};
-        const exportBacklog = alertMetric(alerts, "stale_unexported_ledger");
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const closeMeta = closeStatusMeta(bundle);
         const mtd = dashboardTargetPeriod(dashboard, "mtd");
         const mtdPace = paceVarianceMeta(mtd?.revenue_actual, mtd?.revenue_target);
+        const pendingExportRows = Number(financeSummary.pending_export_rows || 0);
+        const blockedRows = Number(financeSummary.blocked_rows || 0);
+        const closeDiagnostics = pendingExportRows > 0 || blockedRows > 0
+            ? `${closeMeta.detail} | ${formatInteger(pendingExportRows)} pending, ${formatInteger(blockedRows)} blocked`
+            : closeMeta.detail;
         return `
             <section class="stats-grid">
                 <article class="stat-card">
@@ -1085,9 +1129,9 @@
                 <article class="stat-card">
                     <div class="stat-icon">MB</div>
                     <div class="stat-content">
-                        <div class="stat-label">Export Backlog</div>
-                        <div class="stat-value">${escapeHtml(formatInteger(exportBacklog?.metric_value || 0))}</div>
-                        <div class="stat-meta">${escapeHtml(exportBacklog?.message || "No paid ledger backlog flagged")}</div>
+                        <div class="stat-label">Close Posture</div>
+                        <div class="stat-value">${escapeHtml(closeMeta.label)}</div>
+                        <div class="stat-meta">${escapeHtml(closeDiagnostics)}</div>
                     </div>
                 </article>
                 <article class="stat-card">
@@ -1546,10 +1590,18 @@
         const roleContext = bundle?.staffContext || {};
         const closeMeta = closeStatusMeta(bundle);
         const highAlerts = Number(alerts?.summary?.high || 0);
-        const exportBacklog = alertMetric(alerts, "stale_unexported_ledger");
+        const financeSummary = closeStatusFinanceSummary(bundle);
         const stockRisk = alertMetric(alerts, "low_stock_products");
         const published = communications.filter(row => String(row.status || "").toLowerCase() === "published");
         const pinned = published.filter(row => Boolean(row.pinned)).length;
+        const pendingExportRows = Number(financeSummary.pending_export_rows || 0);
+        const blockedRows = Number(financeSummary.blocked_rows || 0);
+        const financeDiagnostics = pendingExportRows > 0 || blockedRows > 0
+            ? `${formatInteger(pendingExportRows)} pending · ${formatInteger(blockedRows)} blocked.`
+            : "";
+        const financeDetail = financeDiagnostics
+            ? `${closeMeta.detail} ${financeDiagnostics}`
+            : closeMeta.detail;
         const golfDetail = Number(dashboard.today_bookings || 0) > 0
             ? `${formatInteger(dashboard.today_bookings || 0)} booking(s) are already live on today's sheet.`
             : "The day is quiet so far; keep the first starts and walk-ins visible.";
@@ -1590,9 +1642,7 @@
             ? {
                 title: "Finance status",
                 state: closeMeta.label,
-                detail: Number(exportBacklog?.metric_value || 0) > 0
-                    ? exportBacklog?.message || closeMeta.detail
-                    : closeMeta.detail,
+                detail: financeDetail,
                 workspace: "reports",
                 panel: "cashbook",
                 label: "Open cashbook & day close",
@@ -1629,25 +1679,33 @@
         `;
     }
 
-    function renderHandoverReadinessCard(dashboard, alerts) {
+    function renderHandoverReadinessCard(bundle) {
+        const dashboard = bundle?.dashboard || {};
+        const alerts = bundle?.alerts || {};
         const bookingImport = dashboard?.imports?.bookings;
         const revenueImport = dashboard?.imports?.revenue;
-        const exportBacklog = alertMetric(alerts, "stale_unexported_ledger");
         const alertSummary = alerts?.summary || {};
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const closeMeta = closeStatusMeta(bundle);
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
                     <div>
                         <h4>Ready to close?</h4>
-                        <p>Make import freshness, export backlog, and blockers obvious before the day is closed.</p>
+                        <p>Lead with finance truth first, then use import freshness and alerts as supporting diagnostics.</p>
                     </div>
                 </div>
                 ${metricCards([
-                    { label: "Booking Sync", value: formatRelativeAge(bookingImport), meta: bookingImport ? formatDateTime(bookingImport) : "No bookings import recorded" },
-                    { label: "Revenue Sync", value: formatRelativeAge(revenueImport), meta: revenueImport ? formatDateTime(revenueImport) : "No revenue import recorded" },
-                    { label: "Export Backlog", value: formatInteger(exportBacklog?.metric_value || 0), meta: exportBacklog?.message || "No paid ledger backlog flagged" },
-                    { label: "High Alerts", value: formatInteger(alertSummary.high || 0), meta: `${formatInteger(alertSummary.total || 0)} active operational alerts` },
+                    { label: "Close State", value: closeMeta.label, meta: closeMeta.detail },
+                    { label: "Pending Export Rows", value: formatInteger(closeStatusFinanceSummary(bundle).pending_export_rows || 0), meta: exportBacklogMeta(bundle) },
+                    { label: "Export-ready Rows", value: formatInteger(financeSummary.export_ready_rows || 0), meta: "Rows ready for export from current finance truth" },
+                    { label: "Blocked Rows", value: formatInteger(financeSummary.blocked_rows || 0), meta: "Rows blocked by payment-method or mapping gaps" },
                 ])}
+                <div class="stack compact-stack">
+                    <div class="detail-row"><span class="row-key">Booking Sync</span><span class="row-value">${escapeHtml(formatRelativeAge(bookingImport))} <span class="list-meta">${escapeHtml(bookingImport ? formatDateTime(bookingImport) : "No bookings import recorded")}</span></span></div>
+                    <div class="detail-row"><span class="row-key">Revenue Sync</span><span class="row-value">${escapeHtml(formatRelativeAge(revenueImport))} <span class="list-meta">${escapeHtml(revenueImport ? formatDateTime(revenueImport) : "No revenue import recorded")}</span></span></div>
+                    <div class="detail-row"><span class="row-key">High Alerts</span><span class="row-value">${escapeHtml(formatInteger(alertSummary.high || 0))} <span class="list-meta">${escapeHtml(`${formatInteger(alertSummary.total || 0)} active operational alerts`)}</span></span></div>
+                </div>
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="reports" data-nav-panel="cashbook">Open cashbook & day close</button>
                     <button type="button" class="button ghost" data-nav-workspace="reports" data-nav-panel="ledger">Open ledger & reconciliation</button>
@@ -1657,10 +1715,18 @@
         `;
     }
 
-    function renderProShopCashupCard(dashboard, alerts) {
+    function renderProShopCashupCard(bundle) {
+        const dashboard = bundle?.dashboard || {};
+        const alerts = bundle?.alerts || {};
         const proShop = dashboard?.revenue_streams?.pro_shop || {};
         const stockRisk = alertMetric(alerts, "low_stock_products");
-        const exportBacklog = alertMetric(alerts, "stale_unexported_ledger");
+        const closeMeta = closeStatusMeta(bundle);
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const pendingExportRows = Number(financeSummary.pending_export_rows || 0);
+        const blockedRows = Number(financeSummary.blocked_rows || 0);
+        const closeDiagnostics = pendingExportRows > 0 || blockedRows > 0
+            ? `${closeMeta.detail} | ${formatInteger(pendingExportRows)} pending, ${formatInteger(blockedRows)} blocked`
+            : closeMeta.detail;
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
@@ -1673,7 +1739,7 @@
                     { label: "Sales Today", value: formatCurrency(proShop.today_revenue || 0), meta: `${formatInteger(proShop.today_transactions || 0)} transactions` },
                     { label: "Week Revenue", value: formatCurrency(proShop.week_revenue || 0), meta: `${formatInteger(proShop.week_transactions || 0)} transactions this week` },
                     { label: "Stock Risk", value: formatInteger(stockRisk?.metric_value || 0), meta: stockRisk?.message || "No stock-risk alert active" },
-                    { label: "Export Backlog", value: formatInteger(exportBacklog?.metric_value || 0), meta: "Pending paid rows not yet exported" },
+                    { label: "Close Posture", value: closeMeta.label, meta: closeDiagnostics },
                 ])}
                 <div class="button-row">
                     <button type="button" class="button secondary" data-nav-workspace="operations" data-nav-panel="pro_shop">Open pro shop</button>
@@ -1685,18 +1751,30 @@
 
     function closeStatusMeta(bundle) {
         const closeStatus = bundle?.closeStatus || {};
-        const alerts = bundle?.alerts || {};
-        const backlog = alertMetric(alerts, "stale_unexported_ledger");
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const exportMapping = closeStatus?.finance_semantics?.export_mapping || {};
         if (closeStatus.is_closed) {
             return {
                 label: "Closed",
                 detail: closeStatus.closed_at ? `Closed ${formatDateTime(closeStatus.closed_at)}` : "Day close is already recorded.",
             };
         }
-        if (Number(backlog?.metric_value || 0) > 0) {
+        if (!Boolean(exportMapping.configured)) {
+            return {
+                label: "Setup missing",
+                detail: "Pastel layout or mappings still need setup before clean export handoff.",
+            };
+        }
+        if (Number(financeSummary.blocked_rows || 0) > 0) {
+            return {
+                label: "Blocked",
+                detail: exportBacklogMeta(bundle),
+            };
+        }
+        if (Number(financeSummary.pending_export_rows || 0) > 0) {
             return {
                 label: "Needs export",
-                detail: backlog?.message || "Paid ledger rows still need export.",
+                detail: exportBacklogMeta(bundle),
             };
         }
         return {
@@ -1784,6 +1862,10 @@
         const settings = bundle?.settings || {};
         const summary = bundle?.summary || {};
         const closeMeta = closeStatusMeta(bundle);
+        const exportMapping = bundle?.closeStatus?.finance_semantics?.export_mapping || {};
+        const mappingMeta = Boolean(exportMapping.configured)
+            ? "Pastel layout and mappings are configured"
+            : "Pastel layout or mappings still need setup";
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
@@ -1794,8 +1876,8 @@
                 </div>
                 ${metricCards([
                     { label: "Cashbook", value: settings.cashbook_name || "Not configured", meta: "Export destination for this club" },
-                    { label: "Contra GL", value: settings.cashbook_contra_gl || "-", meta: "Export mapping" },
-                    { label: "Daily Payments", value: formatCurrency(summary.total_payments || 0), meta: `${formatInteger(summary.transaction_count || summary.records?.length || 0)} payment row(s)` },
+                    { label: "Contra GL", value: settings.cashbook_contra_gl || "-", meta: mappingMeta },
+                    { label: "Daily Payments", value: formatCurrency(summary.total_payments || 0), meta: `${formatInteger(summary.transaction_count || summary.records?.length || 0)} payment row(s) · ${financeReadyBlockedMeta(bundle)}` },
                     { label: "Close State", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
                 <div class="button-row">
@@ -1826,7 +1908,7 @@
                 ${metricCards([
                     { label: "Daily Close", value: closeMeta.label, meta: closeMeta.detail },
                     { label: "Week Revenue", value: formatCurrency(weekRevenue), meta: "Rolling 7-day club revenue" },
-                    { label: "Period Actual", value: formatCurrency(revenue.actual_revenue || summary.total_payments || 0), meta: revenue.actual_revenue != null ? "Current reporting period actuals" : "Today's payment-backed actuals" },
+                    { label: "Period Actual", value: formatCurrency(revenue.actual_revenue || summary.total_payments || 0), meta: revenue.actual_revenue != null ? "Current reporting period actuals" : `Today's payment-backed actuals · ${financeReadyBlockedMeta(bundle)}` },
                     { label: "Target Pace", value: revenue.target_revenue != null ? formatCurrency(revenue.target_revenue) : "-", meta: revenue.target_revenue != null ? "Expected position for this period" : "Use the finance dashboard for period pacing" },
                 ])}
                 <div class="button-row">
@@ -2172,30 +2254,35 @@
         `;
     }
 
-    function mappingReadinessSummary(settingsRows, cashbookSettings = {}) {
+    function mappingReadinessSummary(settingsRows, cashbookSettings = {}, financeSemantics = {}) {
         const rows = Array.isArray(settingsRows) ? settingsRows : [];
         const configured = rows.filter(row => Boolean(row?.configured)).length;
         const total = rows.length;
         const missing = Math.max(0, total - configured);
         const cashbookReady = Boolean(String(cashbookSettings?.cashbook_name || "").trim() && String(cashbookSettings?.cashbook_contra_gl || "").trim());
+        const exportMapping = financeSemantics?.export_mapping || {};
         return {
             configured,
             total,
             missing,
             cashbookReady,
+            exportMappingConfigured: Boolean(exportMapping.configured),
+            layoutConfigured: Boolean(exportMapping.layout_configured),
+            mappingsConfigured: Boolean(exportMapping.mappings_configured),
+            exportSetupReady: Boolean(cashbookReady && exportMapping.configured),
         };
     }
 
     function renderAccountingWorkflowCard(bundle) {
         const settingsRows = Array.isArray(bundle?.importSettings) ? bundle.importSettings : [];
-        const summary = mappingReadinessSummary(settingsRows, bundle?.settings || {});
+        const summary = mappingReadinessSummary(settingsRows, bundle?.settings || {}, bundle?.closeStatus?.finance_semantics || {});
         const closeMeta = closeStatusMeta(bundle);
         const mappingValue = settingsRows.length
             ? `${formatInteger(summary.configured)}/${formatInteger(summary.total)}`
-            : (summary.cashbookReady ? "Aligned" : "Needs setup");
+            : (summary.exportMappingConfigured ? "Aligned" : "Needs setup");
         const mappingMeta = settingsRows.length
             ? "Revenue mappings aligned to the club ledger shape"
-            : "Cashbook export target posture";
+            : (summary.exportMappingConfigured ? "Pastel layout and mappings are configured" : "Pastel layout or mappings still need setup");
         return `
             <article class="dashboard-card">
                 <div class="panel-head">
@@ -2206,8 +2293,8 @@
                 </div>
                 ${metricCards([
                     { label: settingsRows.length ? "Mapped Streams" : "Export Fit", value: mappingValue, meta: mappingMeta },
-                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : "-", meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mappings are in place") : "Open Imports & Data Health for stream mapping detail" },
-                    { label: "Cashbook Setup", value: summary.cashbookReady ? "Ready" : "Needs setup", meta: summary.cashbookReady ? "Cashbook name and contra GL are configured" : "Cashbook export target still needs setup" },
+                    { label: "Missing Mappings", value: settingsRows.length ? formatInteger(summary.missing) : (summary.exportMappingConfigured ? "0" : "1"), meta: settingsRows.length ? (summary.missing ? "Mappings still need attention" : "Mappings are in place") : (summary.exportMappingConfigured ? "Pastel mapping posture is in place" : "Open Imports & Data Health for Pastel layout and mapping setup") },
+                    { label: "Cashbook Setup", value: summary.exportSetupReady ? "Ready" : "Needs setup", meta: summary.exportSetupReady ? "Cashbook target and export mapping posture are configured" : (summary.cashbookReady ? "Cashbook target is configured but export mapping still needs setup" : "Cashbook export target still needs setup") },
                     { label: "Day Close", value: closeMeta.label, meta: closeMeta.detail },
                 ])}
                 <div class="stack">
@@ -2420,9 +2507,25 @@
     function revenueIntegrityGuidanceRows(bundle, options = {}) {
         const integrity = bundle?.dashboard?.ai_assistant?.revenue_integrity || {};
         const rows = Array.isArray(integrity.alerts) ? integrity.alerts.slice(0, Number(options.limit || 2)) : [];
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const blockedRows = Number(financeSummary.blocked_rows || 0);
+        const pendingRows = Number(financeSummary.pending_export_rows || 0);
+        const missingPaymentMethodRows = Number(financeSummary.missing_payment_method_rows || 0);
+        const missingMappingRows = Number(financeSummary.missing_mapping_rows || 0);
         return rows.length
             ? rows.map(item => ({ title: item.title || "Revenue integrity", detail: item.detail || item.context || "" }))
-            : [{ title: "Revenue integrity", detail: "No payment or ledger integrity blockers are active right now." }];
+            : blockedRows > 0
+                ? [{
+                    title: "Revenue integrity",
+                    detail: missingPaymentMethodRows > 0 && missingMappingRows > 0
+                        ? `${formatInteger(blockedRows)} export blocker(s) still need payment methods and Pastel mapping setup.`
+                        : missingPaymentMethodRows > 0
+                            ? `${formatInteger(blockedRows)} export blocker(s) still need payment methods before clean export handoff.`
+                            : `${formatInteger(blockedRows)} export blocker(s) still need Pastel layout or mapping setup.`,
+                }]
+                : pendingRows > 0
+                    ? [{ title: "Revenue integrity", detail: `${formatInteger(pendingRows)} paid ledger row(s) still need export before day close.` }]
+                    : [{ title: "Revenue integrity", detail: "No payment or ledger integrity blockers are active right now." }];
     }
 
     function importCopilotGuidanceRows(bundle, options = {}) {
@@ -3748,6 +3851,10 @@
         return `reports-revenue:${clubKey}:${safePeriod}`;
     }
 
+    function cashbookPreviewCacheKey(date = todayYmd(), clubKey = activeClubCacheKeyPart()) {
+        return `cashbook-preview:${clubKey}:${clampYmd(date)}`;
+    }
+
     function proShopProductsCacheKey(clubKey = activeClubCacheKeyPart()) {
         return `pro-shop-products:${clubKey}`;
     }
@@ -4021,6 +4128,23 @@
             () => fetchJson(`/api/admin/revenue?period=${encodeURIComponent(safePeriod)}`, { signal }),
             8000
         );
+    }
+
+    function loadCachedCashbookPreview({ date = todayYmd() } = {}) {
+        return readSharedCache(cashbookPreviewCacheKey(date), 120000);
+    }
+
+    async function loadSharedCashbookPreview({ signal, date = todayYmd() } = {}) {
+        const safeDate = clampYmd(date);
+        return loadSharedResource(
+            cashbookPreviewCacheKey(safeDate, activeClubCacheKeyPart()),
+            () => fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(safeDate)}`, { journal_lines: [] }, { signal }),
+            120000
+        );
+    }
+
+    function invalidateCashbookPreview(date = todayYmd()) {
+        deleteSharedCacheKey(cashbookPreviewCacheKey(date, activeClubCacheKeyPart()));
     }
 
     async function loadSharedProShopProducts({ signal } = {}) {
@@ -4306,8 +4430,8 @@
                 </article>
             </section>
             <section class="dashboard-grid">
-                ${renderHandoverReadinessCard(dashboard, alerts)}
-                ${renderProShopCashupCard(dashboard, alerts)}
+                ${renderHandoverReadinessCard(bundle)}
+                ${renderProShopCashupCard(bundle)}
             </section>
             ${shell === "club_admin" ? `
                 <section class="dashboard-grid">
@@ -4631,10 +4755,13 @@
         const nextLoadedRow = activeRows.find(row => Number(row.occupied || 0) > 0) || null;
         const soldOut = activeRows.filter(row => Number(row.available || 0) <= 0 && Number(row.occupied || 0) > 0).length;
         const openPlaces = activeRows.reduce((sum, row) => sum + Math.max(0, Number(row.available || 0)), 0);
-        const closeState = bundle.closeStatus?.is_closed ? "Closed" : "Open";
-        const closeMeta = bundle.closeStatus?.is_closed
-            ? "Day close already posted"
-            : `${formatCurrency(bundle.summary?.total_payments || 0)} ready for export`;
+        const closeState = closeStatusMeta(bundle);
+        const financeSummary = closeStatusFinanceSummary(bundle);
+        const pendingExportRows = Number(financeSummary.pending_export_rows || 0);
+        const blockedRows = Number(financeSummary.blocked_rows || 0);
+        const closeDiagnostics = pendingExportRows > 0 || blockedRows > 0
+            ? `${closeState.detail} | ${formatInteger(pendingExportRows)} pending, ${formatInteger(blockedRows)} blocked`
+            : closeState.detail;
         const leadBooking = nextLoadedRow?.bookings?.[0] || null;
         return `
             <div class="golf-command-strip">
@@ -4656,9 +4783,9 @@
                             meta: "Immediate sellable golf capacity",
                         },
                         {
-                            label: "Day close state",
-                            value: closeState,
-                            meta: closeMeta,
+                            label: "Day close posture",
+                            value: closeState.label,
+                            meta: closeDiagnostics,
                         },
                     ])}
                 </div>
@@ -4686,9 +4813,23 @@
     }
 
     function golfBookingsPaymentState(row) {
-        if (Number(row.ledger_entry_count || 0) > 0) return "Ledger posted";
+        if (row?.finance_state?.payment_status_label) return String(row.finance_state.payment_status_label);
+        if (row?.finance_state?.is_paid) return "Paid";
         if (Boolean(row.prepaid)) return "Prepaid";
         return "Pay on day";
+    }
+
+    function golfBookingsPaymentMeta(row) {
+        const financeState = row?.finance_state || {};
+        const parts = [];
+        if (financeState.export_status_label) {
+            parts.push(String(financeState.export_status_label));
+        }
+        if (financeState.payment_method) {
+            parts.push(String(financeState.payment_method));
+        }
+        parts.push(`${formatInteger(row.ledger_entry_count || 0)} ledger row(s)`);
+        return parts.filter(Boolean).join(" · ");
     }
 
     function bookingMatchesQuery(row, query) {
@@ -4707,7 +4848,7 @@
         const filters = defaultGolfBookingsUi(ui);
         return (Array.isArray(rows) ? rows : []).filter(row => {
             const status = String(row.status || "").trim().toLowerCase();
-            const paidWithoutLedger = ["checked_in", "completed"].includes(status) && Number(row.ledger_entry_count || 0) <= 0;
+            const paidWithoutLedger = Boolean(row?.finance_state?.paid_status_without_ledger);
             if (filters.status !== "all" && status !== filters.status) return false;
             if (filters.integrity === "missing_paid_ledger" && !paidWithoutLedger) return false;
             if (!bookingMatchesQuery(row, filters.q)) return false;
@@ -4785,7 +4926,7 @@
                         <td>${escapeHtml(formatCurrency(row.price || 0))}</td>
                         <td>
                             <span class="metric-pill">${escapeHtml(golfBookingsPaymentState(row))}</span>
-                            <div class="table-meta">${escapeHtml(formatInteger(row.ledger_entry_count || 0))} ledger row(s)</div>
+                            <div class="table-meta">${escapeHtml(golfBookingsPaymentMeta(row))}</div>
                         </td>
                         <td>
                             <span class="metric-pill">${escapeHtml(row.club_card || "No code")}</span>
@@ -4811,11 +4952,8 @@
         const rows = Array.isArray(payload.bookings) ? payload.bookings : [];
         const ui = defaultGolfBookingsUi(bundle.bookingsUi);
         const filtered = filterGolfBookings(rows, ui);
-        const paidStatuses = rows.filter(row => ["checked_in", "completed"].includes(String(row.status || "").trim().toLowerCase()));
-        const missingPaidLedger = rows.filter(row => {
-            const status = String(row.status || "").trim().toLowerCase();
-            return ["checked_in", "completed"].includes(status) && Number(row.ledger_entry_count || 0) <= 0;
-        });
+        const ledgerBackedBookings = rows.filter(row => Boolean(row?.finance_state?.is_paid));
+        const missingPaidLedger = rows.filter(row => Boolean(row?.finance_state?.paid_status_without_ledger));
         const arrivingWork = rows.filter(row => ["booked", "checked_in"].includes(String(row.status || "").trim().toLowerCase()));
         return `
             ${renderPageHero({
@@ -4827,8 +4965,8 @@
                 metrics: [
                     { label: "Loaded Bookings", value: formatInteger(rows.length), meta: `Selected golf date ${escapeHtml(formatDate(bundle.date))}` },
                     { label: "Booked / Arriving", value: formatInteger(arrivingWork.length), meta: "Booked or checked-in work still active" },
-                    { label: "Paid Statuses", value: formatInteger(paidStatuses.length), meta: "Checked-in or completed bookings" },
-                    { label: "Missing Paid Ledger", value: formatInteger(missingPaidLedger.length), meta: "Paid-status bookings without ledger rows" },
+                    { label: "Ledger-backed Bookings", value: formatInteger(ledgerBackedBookings.length), meta: "Bookings considered paid by ledger truth" },
+                    { label: "Paid Status Missing Ledger", value: formatInteger(missingPaidLedger.length), meta: "Checked-in or completed bookings still missing a ledger row" },
                 ],
             })}
             <form class="form-card" id="golf-bookings-filter-form">
@@ -4954,7 +5092,7 @@
                     </article>
                 </section>
                 <section class="dashboard-grid">
-                    ${renderHandoverReadinessCard(bundle.dashboard || {}, bundle.alerts || {})}
+                    ${renderHandoverReadinessCard(bundle)}
                     <article class="dashboard-card">
                         <div class="panel-head">
                             <div>
@@ -5172,8 +5310,8 @@
                     ],
                 })}
                 <section class="dashboard-grid">
-                    ${renderProShopCashupCard(bundle.dashboard || {}, alerts)}
-                    ${renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
+                    ${renderProShopCashupCard(bundle)}
+                    ${renderHandoverReadinessCard(bundle)}
                 </section>
                 ${shell === "club_admin" ? `
                     <section class="dashboard-grid">
@@ -5664,6 +5802,8 @@
             loadSharedDashboardPayload,
             loadSharedFinanceBase,
             loadSharedOperationalTargets,
+            loadCachedCashbookPreview,
+            loadSharedCashbookPreview,
             loadSharedReportsRevenue,
             logClientError,
             metricCards,
@@ -5675,11 +5815,13 @@
             renderImportsWorkspace,
             renderLedgerWorkspace: (bundle) => window.GreenLinkAdminFinanceReporting.renderLedgerWorkspace(bundle, financeReportingModuleDeps()),
             renderPageHero,
+            renderStatusPill,
             renderStatusBreakdown,
             renderInsightMeta,
             renderTable,
             revenueIntegrityGuidanceRows,
             safeNumber,
+            invalidateCashbookPreview,
             state,
             todayYmd,
         };
@@ -6778,7 +6920,7 @@
     }
 
     async function handleClick(event) {
-        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-booking-bulk-account],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-clear-members-search],[data-workblock-toggle],[data-edit-communication],[data-communication-status],[data-communication-pin],[data-clear-communication-form],[data-edit-pro-shop-product],[data-adjust-pro-shop-stock],[data-clear-golf-day-form],[data-clear-golf-day-allocation-form],[data-edit-golf-day],[data-load-golf-day-allocation],[data-golf-day-mark-paid],[data-golf-day-complete],[data-edit-import-settings],[data-clear-import-settings-form],[data-ledger-repair],[data-ledger-payment],[data-ledger-account],[data-edit-staff],[data-clear-staff-form]") : null;
+        const target = event.target instanceof HTMLElement ? event.target.closest("[data-nav-group],[data-nav-workspace],[data-nav-panel],[data-demo-ensure],[data-refresh],[data-close-modal],[data-open-booking],[data-check-in],[data-booking-status],[data-booking-payment],[data-booking-account],[data-booking-select],[data-booking-select-visible],[data-booking-select-clear],[data-booking-bulk-status],[data-booking-bulk-payment],[data-booking-bulk-account],[data-date-shift],[data-dashboard-stream],[data-export-cashbook],[data-export-pro-shop],[data-close-day],[data-reopen-day],[data-load-cashbook-preview],[data-clear-members-search],[data-workblock-toggle],[data-edit-communication],[data-communication-status],[data-communication-pin],[data-clear-communication-form],[data-edit-pro-shop-product],[data-adjust-pro-shop-stock],[data-clear-golf-day-form],[data-clear-golf-day-allocation-form],[data-edit-golf-day],[data-load-golf-day-allocation],[data-golf-day-mark-paid],[data-golf-day-complete],[data-edit-import-settings],[data-clear-import-settings-form],[data-ledger-repair],[data-ledger-payment],[data-ledger-account],[data-edit-staff],[data-clear-staff-form]") : null;
         if (!target) return;
         if (target.hasAttribute("data-nav-group")) return toggleNavGroup(target.getAttribute("data-nav-group") || "");
         if (target.hasAttribute("data-close-modal")) return closeModal();
@@ -6793,6 +6935,7 @@
         if (target.hasAttribute("data-export-pro-shop")) return window.GreenLinkAdminFinanceReporting.exportProShopCsv(target.getAttribute("data-export-pro-shop") || todayYmd(), financeReportingModuleDeps());
         if (target.hasAttribute("data-close-day")) return window.GreenLinkAdminFinanceReporting.closeCashbookDay(target.getAttribute("data-close-day") || todayYmd(), financeReportingModuleDeps());
         if (target.hasAttribute("data-reopen-day")) return window.GreenLinkAdminFinanceReporting.reopenCashbookDay(target.getAttribute("data-reopen-day") || todayYmd(), financeReportingModuleDeps());
+        if (target.hasAttribute("data-load-cashbook-preview")) return window.GreenLinkAdminFinanceReporting.loadCashbookPreview(target.getAttribute("data-load-cashbook-preview") || todayYmd(), financeReportingModuleDeps());
         if (target.hasAttribute("data-clear-members-search")) return window.GreenLinkAdminMembersPanel.clearSearch(membersPanelModuleDeps());
         if (target.hasAttribute("data-workblock-toggle")) return focusWorkblock(target.getAttribute("data-workblock-toggle") || "");
         if (target.hasAttribute("data-date-shift")) return navigate({ date: addDaysYmd(state.route.date, Number(target.getAttribute("data-date-shift") || 0)) });

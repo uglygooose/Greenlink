@@ -7,7 +7,12 @@ from typing import Any
 from sqlalchemy import String, and_, cast, desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.models import Booking, LedgerEntry, RevenueTransaction, TeeTime
+from app.models import Booking, LedgerEntry, LedgerEntryMeta, RevenueTransaction, TeeTime
+from app.services.finance_semantics_service import (
+    build_finance_semantics_metadata,
+    build_ledger_entry_finance_state,
+    get_export_mapping_status,
+)
 from app.services.kpi_targets_service import get_target_model_payload
 from app.ttl_cache import TTLCache
 
@@ -309,20 +314,41 @@ def get_ledger_entries_payload(
     total = query.count()
     total_amount = query.with_entities(func.sum(LedgerEntry.amount)).scalar() or 0.0
     entries = query.order_by(desc(LedgerEntry.created_at)).offset(skip).limit(limit).all()
+    mapping_status = get_export_mapping_status(db, club_id=int(club_id))
+    entry_ids = [int(getattr(le, "id", 0) or 0) for le in entries if int(getattr(le, "id", 0) or 0) > 0]
+    meta_by_entry_id: dict[int, LedgerEntryMeta] = {}
+    if entry_ids:
+        meta_rows = (
+            db.query(LedgerEntryMeta)
+            .filter(LedgerEntryMeta.ledger_entry_id.in_(entry_ids))
+            .all()
+        )
+        meta_by_entry_id = {
+            int(getattr(meta, "ledger_entry_id", 0) or 0): meta
+            for meta in meta_rows
+            if int(getattr(meta, "ledger_entry_id", 0) or 0) > 0
+        }
 
     payload = {
         "total": total,
         "total_amount": float(total_amount),
+        "finance_semantics": build_finance_semantics_metadata(mapping_status),
         "ledger_entries": [
-            {
+            (lambda payment_method: {
                 "id": le.id,
                 "booking_id": le.booking_id,
                 "description": le.description,
                 "amount": float(le.amount),
                 "pastel_synced": bool(le.pastel_synced),
                 "pastel_transaction_id": le.pastel_transaction_id,
+                "payment_method": payment_method,
+                "finance_state": build_ledger_entry_finance_state(
+                    pastel_synced=bool(le.pastel_synced),
+                    payment_method=payment_method,
+                    mapping_status=mapping_status,
+                ),
                 "created_at": le.created_at.isoformat(),
-            }
+            })(str(getattr(meta_by_entry_id.get(int(le.id)), "payment_method", "") or "").strip().upper() or None)
             for le in entries
         ],
     }

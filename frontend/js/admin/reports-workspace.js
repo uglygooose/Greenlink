@@ -28,13 +28,13 @@
                 const financeDate = financeBase.closeStatus?.date || deps.todayYmd();
                 const dayStart = `${financeDate}T00:00:00.000Z`;
                 const dayEnd = `${deps.addDaysYmd(financeDate, 1)}T00:00:00.000Z`;
-                const [revenue, preview, proShop, cashbookLedger] = await Promise.all([
+                const [revenue, proShop, cashbookLedger] = await Promise.all([
                     deps.loadSharedReportsRevenue({ signal, period: "wtd" }),
-                    deps.fetchJsonSafe(`/cashbook/export-preview?export_date=${encodeURIComponent(financeDate)}`, { journal_lines: [] }, { signal }),
                     deps.fetchJsonSafe(`/cashbook/pro-shop-summary?summary_date=${encodeURIComponent(financeDate)}`, { transaction_count: 0, total_payments: 0 }, { signal }),
                     deps.fetchJsonSafe(`/api/admin/ledger?limit=300&start=${encodeURIComponent(dayStart)}&end=${encodeURIComponent(dayEnd)}`, { ledger_entries: [], total: 0, total_amount: 0 }, { signal }),
                 ]);
-                return { panel, ...financeBase, revenue, preview, proShop, cashbookLedger, date: financeDate };
+                const preview = deps.loadCachedCashbookPreview({ date: financeDate });
+                return { panel, ...financeBase, revenue, preview: preview || null, previewLoaded: Boolean(preview), proShop, cashbookLedger, date: financeDate };
             }
             if (panel === "imports") {
                 const importsBundle = await deps.loadImportsWorkspaceBundle({ signal });
