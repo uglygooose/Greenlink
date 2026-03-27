@@ -1,6 +1,22 @@
 (function (global) {
     "use strict";
 
+    function readinessMeta(row) {
+        const missing = [];
+        if (!String(row.account_code || "").trim()) missing.push("Code missing");
+        if (!String(row.billing_contact || "").trim()) missing.push("Billing contact missing");
+        if (!String(row.terms || "").trim()) missing.push("Terms missing");
+        return missing;
+    }
+
+    function joinMeta(parts) {
+        return parts.filter(Boolean).join(" / ");
+    }
+
+    function readinessState(row) {
+        return readinessMeta(row).length ? "missing" : "configured";
+    }
+
     function buildDebtorWatchRows(rows) {
         return (Array.isArray(rows) ? rows : [])
             .map(row => {
@@ -42,7 +58,14 @@
                             <span class="list-title">${deps.escapeHtml(row.name || "Account")}</span>
                             <span class="metric-pill">${deps.escapeHtml(row.account_code || "No code")}</span>
                         </div>
-                        <div class="list-meta">${deps.escapeHtml([row.billing_contact || "", row.customer_type || "", row.terms || ""].filter(Boolean).join(" · ")) || "No billing contact set."}</div>
+                        <div class="list-meta">${deps.escapeHtml(joinMeta([
+                            row.billing_contact || "Billing contact missing",
+                            row.customer_type || "",
+                            row.terms || "Terms missing",
+                        ]))}</div>
+                        <div class="inline-actions">
+                            ${deps.renderStatusPill("", readinessState(row))}
+                        </div>
                     </div>
                 `).join("") : `<div class="empty-state">${deps.escapeHtml(emptyText)}</div>`}
             </div>
@@ -66,13 +89,18 @@
                                 <span class="list-title">${deps.escapeHtml(row.name || "Account customer")}</span>
                                 <span class="metric-pill">${deps.escapeHtml(row.account_code || "Code missing")}</span>
                             </div>
-                            <div class="list-meta">${deps.escapeHtml([
+                            <div class="list-meta">${deps.escapeHtml(joinMeta([
                                 row.billing_contact || "Billing contact missing",
                                 row.customer_type || "",
                                 row.terms || "Terms missing",
-                            ].filter(Boolean).join(" · "))}</div>
+                            ]))}</div>
+                            <div class="list-meta">${deps.escapeHtml(
+                                readinessMeta(row).length
+                                    ? readinessMeta(row).join(" / ")
+                                    : "Export posture is configured for operational handoff."
+                            )}</div>
                             <div class="inline-actions">
-                                ${deps.renderStatusPill("", row._missingCode || row._missingContact ? "missing" : "configured")}
+                                ${deps.renderStatusPill("", readinessState(row))}
                             </div>
                         </div>
                     `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}
@@ -91,13 +119,18 @@
                             <span class="list-title">${deps.escapeHtml(row.name || "Account customer")}</span>
                             <span class="metric-pill">${deps.escapeHtml(row.account_code || "Code missing")}</span>
                         </div>
-                        <div class="list-meta">${deps.escapeHtml([
+                        <div class="list-meta">${deps.escapeHtml(joinMeta([
                             row.billing_contact || "Billing contact missing",
                             row.customer_type || "",
                             row.terms || "Terms missing",
-                        ].filter(Boolean).join(" · "))}</div>
+                        ]))}</div>
+                        <div class="list-meta">${deps.escapeHtml(
+                            readinessMeta(row).length
+                                ? readinessMeta(row).join(" / ")
+                                : "Export posture is configured for operational handoff."
+                        )}</div>
                         <div class="inline-actions">
-                            ${deps.renderStatusPill("", row._missingCode || row._missingContact ? "missing" : "configured")}
+                            ${deps.renderStatusPill("", readinessState(row))}
                         </div>
                     </div>
                 `).join("") : `<div class="empty-state">No active debtor accounts found.</div>`}

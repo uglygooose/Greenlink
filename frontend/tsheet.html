@@ -8,22 +8,25 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
   <link rel="shortcut icon" href="assets/favicon.png?v=2" />
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/frontend/style.css">
   <script src="club-config.js"></script>
   <script src="js/utils/session.js?v=2026-03-23-club-ops-recovery-01"></script>
   <style>
     :root {
-      --ucc-olive: #5a7a3a;
-      --ucc-olive-dark: #4e6a31;
-      --ucc-sage: #e6ecd6;
-      --ucc-cream: #f6f4ec;
-      --ucc-orange: #f28c2c;
+      --ucc-olive: #2c7a5b;
+      --ucc-olive-dark: #225f47;
+      --ucc-sage: #e7f4ee;
+      --ucc-cream: #f5f7f4;
+      --ucc-orange: #f59e0b;
       --ucc-gold: #f5c542;
-      --ucc-ink: #1f2a1b;
-      --ucc-muted: #6c7b66;
-      --ucc-border: #d9dfc9;
+      --ucc-ink: #24323d;
+      --ucc-muted: #70808f;
+      --ucc-border: #dbe5df;
       --ucc-card: #ffffff;
-      --ucc-shadow: 0 12px 30px rgba(31, 42, 27, 0.12);
+      --ucc-shadow: 0 20px 48px rgba(31, 50, 44, 0.10);
     }
 
     * {
@@ -32,14 +35,16 @@
 
     body {
       margin: 0;
-      background: radial-gradient(circle at top, #f6f4ec 0%, #e6ecd6 45%, #f6f4ec 100%);
+      background:
+        radial-gradient(circle at top left, rgba(44, 122, 91, 0.08), transparent 26%),
+        linear-gradient(180deg, #fbfcfb 0%, #f3f7f4 100%);
       min-height: 100vh;
       color: var(--ucc-ink);
-      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+      font-family: "Inter", system-ui, sans-serif;
     }
 
     body.embedded {
-      background: #f6f4ec;
+      background: #f5f7f4;
     }
 
     body.embedded .tsheet-header,
@@ -63,49 +68,51 @@
       display: none !important;
     }
 
-	    .tsheet-container {
-	      position: relative;
-	      top: auto;
-	      left: auto;
-	      transform: none;
-	      max-width: 1440px;
-	      width: calc(100% - 32px);
-	      margin: 18px auto 32px;
-	      padding: 0 0 18px;
-	      min-height: 100vh;
-	      background: transparent;
-	    }
+    .tsheet-container {
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: none;
+      max-width: 1500px;
+      width: calc(100% - 32px);
+      margin: 14px auto 32px;
+      padding: 0 0 18px;
+      min-height: 100vh;
+      background: transparent;
+    }
 
     .tsheet-header {
       display: flex;
       align-items: center;
-      padding: 18px 24px;
-      background: linear-gradient(135deg, #f6f4ec 0%, #e6ecd6 100%);
-      border: 1px solid var(--ucc-border);
-      border-radius: 20px;
+      padding: 16px 22px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(219, 229, 223, 0.9);
+      border-radius: 22px;
       box-shadow: var(--ucc-shadow);
       gap: 16px;
+      backdrop-filter: blur(16px);
     }
 
     .club-logo {
       width: 48px;
       height: 48px;
-      border-radius: 50%;
-      border: 2px solid var(--ucc-border);
+      border-radius: 14px;
+      border: 1px solid var(--ucc-border);
       object-fit: cover;
+      background: #f8fbf9;
     }
 
     .back-btn {
       width: 44px;
       height: 44px;
-      border: none;
-      background: #ffffff;
-      border-radius: 12px;
+      border: 1px solid var(--ucc-border);
+      background: rgba(248, 251, 249, 0.95);
+      border-radius: 14px;
       font-size: 22px;
-      color: var(--ucc-olive-dark);
+      color: var(--ucc-ink);
       cursor: pointer;
       padding: 0;
-      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.12);
+      box-shadow: 0 10px 22px rgba(31, 50, 44, 0.08);
     }
 
     .header-info {
@@ -113,61 +120,66 @@
     }
 
     .club-name {
-      font-size: 12px;
-      letter-spacing: 0.16em;
+      font-size: 11px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--ucc-muted);
       margin: 0;
+      font-weight: 700;
     }
 
     .page-title {
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 28px;
+      font-weight: 800;
       color: var(--ucc-ink);
       margin: 0;
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
     }
 
     .selectors {
       display: flex;
-      gap: 15px;
-      padding: 18px 6px 8px;
+      gap: 14px;
+      padding: 16px 4px 8px;
     }
 
     .selector-btn {
       flex: 1;
       padding: 16px 18px;
       border: 1px solid var(--ucc-border);
-      border-radius: 16px;
-      background: var(--ucc-card);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.96);
       cursor: pointer;
       text-align: center;
-      box-shadow: 0 8px 20px rgba(31, 42, 27, 0.08);
+      box-shadow: 0 12px 28px rgba(31, 50, 44, 0.08);
     }
 
     .selector-btn.active {
       border-color: var(--ucc-olive);
-      box-shadow: 0 8px 20px rgba(90, 122, 58, 0.2);
+      box-shadow: 0 0 0 3px rgba(44, 122, 91, 0.10), 0 12px 28px rgba(31, 50, 44, 0.08);
     }
 
     .selector-btn .main-text {
       font-size: 18px;
-      font-weight: 600;
-      color: var(--ucc-olive-dark);
+      font-weight: 800;
+      color: var(--ucc-ink);
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
     }
 
     .selector-btn .sub-text {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--ucc-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .booking-window-banner {
-      margin: 10px 6px 2px;
-      padding: 10px 14px;
-      background: #f3f7ea;
-      border: 1px solid var(--ucc-border);
-      border-radius: 14px;
+      margin: 10px 4px 4px;
+      padding: 12px 14px;
+      background: rgba(231, 244, 238, 0.88);
+      border: 1px solid rgba(44, 122, 91, 0.14);
+      border-radius: 16px;
       font-size: 13px;
-      color: var(--ucc-olive-dark);
+      color: var(--ucc-ink);
       display: flex;
       gap: 10px;
       align-items: center;
@@ -181,22 +193,23 @@
     .sheet-actions {
       display: flex;
       gap: 12px;
-      padding: 4px 6px 12px;
+      padding: 10px 4px 12px;
       align-items: center;
       flex-wrap: wrap;
     }
 
     .action-btn {
-      padding: 10px 18px;
+      padding: 11px 18px;
       border-radius: 14px;
       border: 1px solid var(--ucc-border);
-      background: #fff;
-      color: var(--ucc-olive-dark);
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--ucc-ink);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
-      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.08);
+      box-shadow: 0 10px 22px rgba(31, 50, 44, 0.06);
     }
 
     .action-btn:disabled {
@@ -224,12 +237,12 @@
     }
 
     .ops-command-bar {
-      margin: 10px 6px 14px;
-      padding: 16px 18px;
-      border-radius: 18px;
-      border: 1px solid rgba(90, 122, 58, 0.24);
-      background: linear-gradient(135deg, rgba(90, 122, 58, 0.14), rgba(246, 244, 236, 0.94));
-      box-shadow: 0 14px 28px rgba(31, 42, 27, 0.08);
+      margin: 10px 4px 14px;
+      padding: 18px 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(44, 122, 91, 0.14);
+      background: linear-gradient(180deg, rgba(231, 244, 238, 0.88), rgba(255, 255, 255, 0.96));
+      box-shadow: 0 16px 36px rgba(31, 50, 44, 0.08);
       display: grid;
       gap: 12px;
     }
@@ -307,11 +320,11 @@
     }
 
     .table-wrap {
-      border-radius: 18px;
-      border: 1px solid var(--ucc-border);
-      background: #fff;
+      border-radius: 22px;
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      background: rgba(255, 255, 255, 0.98);
       overflow: hidden;
-      box-shadow: 0 14px 30px rgba(31, 42, 27, 0.08);
+      box-shadow: 0 18px 42px rgba(31, 50, 44, 0.08);
     }
 
     .sheet-table {
@@ -321,14 +334,15 @@
     }
 
     .sheet-table th {
-      background: #f3f7ea;
-      color: var(--ucc-olive-dark);
+      background: #f7faf8;
+      color: var(--ucc-muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-size: 11px;
-      padding: 14px 12px;
+      padding: 16px 12px;
       text-align: left;
-      border-bottom: 1px solid var(--ucc-border);
+      border-bottom: 1px solid #e8efeb;
+      font-weight: 800;
     }
 
 	    .sheet-table thead th {
@@ -337,7 +351,7 @@
 
     .sheet-table td {
       padding: 12px;
-      border-bottom: 1px solid #edf0e4;
+      border-bottom: 1px solid #edf2ef;
       vertical-align: top;
       background: #fff;
     }
@@ -359,8 +373,8 @@
 	      --slot-accent: var(--ucc-border);
 	      --status-fg: rgba(31, 42, 27, 0.72);
 	      --status-bg: rgba(31, 42, 27, 0.06);
-	      border-radius: 14px;
-	      border: 1px solid #dbe5d6;
+	      border-radius: 16px;
+	      border: 1px solid rgba(219, 229, 223, 0.95);
 	      border-left: 4px solid var(--slot-accent);
 	      padding: 10px 12px;
 	      background: #ffffff;
@@ -615,11 +629,11 @@
     }
 
     .tee-card {
-      border: 1px solid var(--ucc-border);
-      border-radius: 16px;
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      border-radius: 18px;
       padding: 14px;
       background: #fff;
-      box-shadow: var(--ucc-shadow);
+      box-shadow: 0 16px 30px rgba(31, 50, 44, 0.08);
       display: grid;
       gap: 10px;
     }
@@ -1090,13 +1104,14 @@
 
     .modal-content {
       background: #fff;
-      border-radius: 18px;
+      border-radius: 22px;
       padding: 25px;
       width: 90%;
       max-width: 400px;
       max-height: 80vh;
       overflow-y: auto;
-      box-shadow: var(--ucc-shadow);
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      box-shadow: 0 24px 52px rgba(31, 50, 44, 0.16);
     }
 
     .modal-header {
@@ -1257,10 +1272,10 @@
     }
 
     .detail-card {
-      border: 1px solid var(--ucc-border);
-      border-radius: 16px;
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      border-radius: 18px;
       padding: 16px;
-      background: linear-gradient(180deg, #fff 0%, #fafbf6 100%);
+      background: linear-gradient(180deg, #fff 0%, #f8fbf9 100%);
     }
 
     .detail-card h3 {

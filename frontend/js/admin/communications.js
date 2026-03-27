@@ -111,6 +111,9 @@
         const published = rows.filter(row => String(row.status || "").toLowerCase() === "published").length;
         const drafts = rows.filter(row => String(row.status || "").toLowerCase() === "draft").length;
         const pinned = rows.filter(row => Boolean(row.pinned)).length;
+        const memberNews = rows.filter(row => String(row.kind || "").toLowerCase() === "news" || ["members", "all"].includes(String(row.audience || "").toLowerCase()));
+        const operationalRows = rows.filter(row => String(row.kind || "").toLowerCase() !== "news");
+        const healthPercent = rows.length ? Math.round((published / rows.length) * 100) : 0;
         return `
             ${deps.renderPageHero({
                 title: "Communications",
@@ -122,158 +125,223 @@
                     { label: "Pinned", value: deps.formatInteger(pinned), meta: "Priority notices pinned to the top" },
                 ],
             })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Publishing board</h4>
-                            <p>Show live publishing state clearly, not just an editor and a list.</p>
+            <section class="communications-shell">
+                <nav class="communications-tabs" aria-label="Communications sections">
+                    <span class="communications-tab active">All Messages</span>
+                    <span class="communications-tab">Member News</span>
+                    <span class="communications-tab">Operational Notices</span>
+                </nav>
+                <section class="communications-summary-row">
+                    <article class="communications-summary-card">
+                        <div class="communications-summary-head">
+                            <div class="communications-summary-label">Communication health</div>
+                            <span class="communications-summary-kicker">CM</span>
                         </div>
-                    </div>
-                    <div class="stack">
-                        ${rows.length ? rows.slice(0, 8).map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${deps.escapeHtml(row.title || "Communication")}</span>
-                                    ${deps.renderStatusPill("", row.status || "draft")}
+                        <div class="communications-summary-value">${deps.escapeHtml(`${deps.formatInteger(healthPercent)}% live`)}</div>
+                        <div class="communications-summary-meta">${deps.escapeHtml(rows.length ? `${deps.formatInteger(published)} of ${deps.formatInteger(rows.length)} message(s) are currently published.` : "No messages have been created for this club yet.")}</div>
+                        <div class="communications-summary-progress"><span style="width:${Math.max(10, healthPercent)}%"></span></div>
+                    </article>
+                    <article class="communications-summary-card">
+                        <div class="communications-summary-head">
+                            <div class="communications-summary-label">Published</div>
+                            <span class="communications-summary-kicker">PB</span>
+                        </div>
+                        <div class="communications-summary-value">${deps.escapeHtml(deps.formatInteger(published))}</div>
+                        <div class="communications-summary-meta">Visible to members or staff right now.</div>
+                    </article>
+                    <article class="communications-summary-card">
+                        <div class="communications-summary-head">
+                            <div class="communications-summary-label">Drafts / pinned</div>
+                            <span class="communications-summary-kicker">DR</span>
+                        </div>
+                        <div class="communications-summary-value">${deps.escapeHtml(`${deps.formatInteger(drafts)} / ${deps.formatInteger(pinned)}`)}</div>
+                        <div class="communications-summary-meta">Drafts still being prepared and priority messages pinned.</div>
+                    </article>
+                </section>
+                <section class="communications-main-grid">
+                    <div class="communications-main-stack">
+                        <section class="communications-table-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Recent communications</h4>
+                                    <p>Current club messages stay visible as an operational list, not just an editor.</p>
                                 </div>
-                                <div class="list-meta">${deps.escapeHtml(`${row.kind || ""} | ${row.audience || ""} | ${deps.formatDateTime(row.published_at || row.updated_at)}`)}</div>
-                                <div class="list-meta">${deps.escapeHtml(row.summary || row.body || "")}</div>
                             </div>
-                        `).join("") : `<div class="empty-state">No communications found for this club.</div>`}
-                    </div>
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Audience summary</h4>
-                            <p>Keep member and staff communication context visible while managing messages.</p>
-                        </div>
-                    </div>
-                    ${deps.metricCards([
-                        { label: "Members", value: deps.formatInteger(rows.filter(row => ["members", "all"].includes(String(row.audience || "").toLowerCase())).length), meta: "Messages reaching members" },
-                        { label: "Staff", value: deps.formatInteger(rows.filter(row => ["staff", "all"].includes(String(row.audience || "").toLowerCase())).length), meta: "Messages reaching staff" },
-                        { label: "News", value: deps.formatInteger(rows.filter(row => String(row.kind || "").toLowerCase() === "news").length), meta: "News-style communications" },
-                        { label: "Announcements", value: deps.formatInteger(rows.filter(row => String(row.kind || "").toLowerCase() === "announcement").length), meta: "Operational announcements" },
-                    ])}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderCommunicationsCadenceCard(payload, deps)}
-                ${renderAudienceFollowupCard(payload, deps)}
-            </section>
-            <section class="split-grid">
-                ${canEdit ? `
-                    <form class="form-card" id="communication-form">
-                        <input type="hidden" name="communication_id" value="">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Create or update communication</h3>
-                                <p>Club communications are grouped into one workspace with draft, publish, pin, and archive control.</p>
-                            </div>
-                        </div>
-                        <div class="field-grid">
-                            <div class="field">
-                                <label>Kind</label>
-                                <select name="kind">
-                                    <option value="announcement">Announcement</option>
-                                    <option value="news">News</option>
-                                    <option value="message">Message</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Audience</label>
-                                <select name="audience">
-                                    <option value="members">Members</option>
-                                    <option value="staff">Staff</option>
-                                    <option value="all">All</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Status</label>
-                                <select name="status">
-                                    <option value="draft">Draft</option>
-                                    <option value="published">Published</option>
-                                    <option value="archived">Archived</option>
-                                </select>
-                            </div>
-                            <div class="checkbox-card">
-                                <label><input type="checkbox" name="pinned" value="1"> Pin message</label>
-                                <p>Pinned items stay at the top of member or staff feeds.</p>
-                            </div>
-                            <div class="field"><label>Title</label><input name="title" required></div>
-                            <div class="field"><label>Summary</label><input name="summary"></div>
-                            <div class="field"><label>CTA Label</label><input name="cta_label"></div>
-                            <div class="field"><label>CTA URL</label><input name="cta_url"></div>
-                            <div class="field"><label>Expires At</label><input name="expires_at" type="datetime-local"></div>
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <label>Body</label>
-                                <textarea name="body" required></textarea>
-                            </div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Save communication</button>
-                            <button type="button" class="button secondary" data-clear-communication-form="1">Clear</button>
-                        </div>
-                    </form>
-                ` : `
-                    <section class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Staff view</h3>
-                                <p>Staff can read published club notices without receiving admin-only messaging controls.</p>
-                            </div>
-                        </div>
-                        <div class="detail-row"><span class="row-key">Scope</span><span class="row-value">Published communications only</span></div>
-                    </section>
-                `}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Current communications</h3>
-                            <p>Only this club's communications are shown here.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${rows.length ? rows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${deps.escapeHtml(row.title || "Communication")}</span>
-                                    ${deps.renderStatusPill("", row.status || "draft")}
+                            ${rows.length ? `
+                                <div class="table-scroll">
+                                    <table class="communications-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Status</th>
+                                                <th>Title</th>
+                                                <th>Audience</th>
+                                                <th>Date</th>
+                                                <th>Type</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${rows.slice(0, 8).map(row => `
+                                                <tr>
+                                                    <td>${deps.renderStatusPill("", row.status || "draft")}</td>
+                                                    <td>
+                                                        <button type="button" class="communications-table-link" ${canEdit ? `data-edit-communication="${deps.escapeHtml(String(row.id))}"` : "disabled aria-disabled=\"true\""}>${deps.escapeHtml(row.title || "Communication")}</button>
+                                                        <div class="list-meta">${deps.escapeHtml(row.summary || row.body || "")}</div>
+                                                    </td>
+                                                    <td>${deps.escapeHtml(row.audience || "members")}</td>
+                                                    <td>${deps.escapeHtml(deps.formatDate(row.published_at || row.updated_at || payload.date))}</td>
+                                                    <td>${deps.escapeHtml(row.kind || "announcement")}${row.pinned ? " / pinned" : ""}</td>
+                                                </tr>
+                                            `).join("")}
+                                        </tbody>
+                                    </table>
                                 </div>
-                                <div class="list-meta">${deps.escapeHtml(`${row.kind || ""} | ${row.audience || ""} | ${deps.formatDateTime(row.published_at || row.updated_at)}`)}</div>
-                                <div class="list-meta">${deps.escapeHtml(row.summary || row.body || "")}</div>
+                            ` : `<div class="empty-state">No communications found for this club.</div>`}
+                        </section>
+                        <section class="communications-feed-grid">
+                            <article class="communications-feed-card">
+                                <div class="panel-head">
+                                    <div>
+                                        <h4>Member news</h4>
+                                        <p>Member-facing stories use the same calm card language as the benchmark feed.</p>
+                                    </div>
+                                </div>
+                                <div class="communications-list-stack">
+                                    ${memberNews.length ? memberNews.slice(0, 3).map((row, index) => `
+                                        <article class="communications-story-card ${index === 0 ? "featured" : ""}">
+                                            <div class="communications-story-top">
+                                                <span class="communications-story-meta">${deps.escapeHtml(`${row.kind || "message"} / ${deps.formatDateTime(row.published_at || row.updated_at)}`)}</span>
+                                                ${deps.renderStatusPill("", row.status || "draft")}
+                                            </div>
+                                            <div class="list-title">${deps.escapeHtml(row.title || "Member update")}</div>
+                                            <div class="list-meta">${deps.escapeHtml(row.summary || row.body || "")}</div>
+                                            ${canEdit ? `<div class="inline-actions"><button type="button" class="button ghost" data-edit-communication="${deps.escapeHtml(String(row.id))}">Edit post</button></div>` : ""}
+                                        </article>
+                                    `).join("") : `<div class="empty-state">No member news is ready yet.</div>`}
+                                </div>
+                            </article>
+                            <article class="communications-feed-card">
+                                <div class="panel-head">
+                                    <div>
+                                        <h4>Operational notices</h4>
+                                        <p>GreenLink-specific publishing work stays in the same benchmark family instead of a second admin style.</p>
+                                    </div>
+                                </div>
+                                <div class="communications-dropzone">
+                                    <div>
+                                        <strong>${deps.escapeHtml(operationalRows.length ? `${deps.formatInteger(operationalRows.length)} notice(s) in play` : "No active operational notices")}</strong>
+                                        <div class="list-meta">${deps.escapeHtml(canEdit ? "Use the editor or state controls to publish, archive, or pin the next notice." : "Staff can read current published notices from this surface.")}</div>
+                                    </div>
+                                </div>
+                                <div class="communications-list-stack">
+                                    ${operationalRows.slice(0, 3).map(row => `
+                                        <div class="list-row">
+                                            <div class="list-row-top">
+                                                <span class="list-title">${deps.escapeHtml(row.title || "Operational notice")}</span>
+                                                ${deps.renderStatusPill("", row.status || "draft")}
+                                            </div>
+                                            <div class="list-meta">${deps.escapeHtml(`${row.audience || "members"} / ${row.pinned ? "Pinned" : "Standard"} / ${deps.formatDateTime(row.published_at || row.updated_at)}`)}</div>
+                                        </div>
+                                    `).join("") || `<div class="empty-state">No operational notices are visible yet.</div>`}
+                                </div>
+                            </article>
+                        </section>
+                    </div>
+                    <div class="communications-rail-stack">
+                        ${canEdit ? `
+                            <form class="communications-editor-card" id="communication-form">
+                                <input type="hidden" name="communication_id" value="">
+                                <div class="panel-head">
+                                    <div>
+                                        <h3>Create or update communication</h3>
+                                        <p>Draft, publish, pin, and archive control stays intact inside the benchmark shell.</p>
+                                    </div>
+                                </div>
+                                <div class="field-grid">
+                                    <div class="field">
+                                        <label>Kind</label>
+                                        <select name="kind">
+                                            <option value="announcement">Announcement</option>
+                                            <option value="news">News</option>
+                                            <option value="message">Message</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label>Audience</label>
+                                        <select name="audience">
+                                            <option value="members">Members</option>
+                                            <option value="staff">Staff</option>
+                                            <option value="all">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label>Status</label>
+                                        <select name="status">
+                                            <option value="draft">Draft</option>
+                                            <option value="published">Published</option>
+                                            <option value="archived">Archived</option>
+                                        </select>
+                                    </div>
+                                    <div class="checkbox-card">
+                                        <label><input type="checkbox" name="pinned" value="1"> Pin message</label>
+                                        <p>Pinned items stay at the top of member or staff feeds.</p>
+                                    </div>
+                                    <div class="field"><label>Title</label><input name="title" required></div>
+                                    <div class="field"><label>Summary</label><input name="summary"></div>
+                                    <div class="field"><label>CTA Label</label><input name="cta_label"></div>
+                                    <div class="field"><label>CTA URL</label><input name="cta_url"></div>
+                                    <div class="field"><label>Expires At</label><input name="expires_at" type="datetime-local"></div>
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <label>Body</label>
+                                        <textarea name="body" required></textarea>
+                                    </div>
+                                </div>
+                                <div class="button-row">
+                                    <button type="submit" class="button">Save communication</button>
+                                    <button type="button" class="button secondary" data-clear-communication-form="1">Clear</button>
+                                </div>
+                            </form>
+                        ` : `
+                            <section class="communications-management-card">
+                                <div class="panel-head">
+                                    <div>
+                                        <h3>Staff view</h3>
+                                        <p>Staff can read published club notices without receiving admin-only messaging controls.</p>
+                                    </div>
+                                </div>
+                                <div class="detail-row"><span class="row-key">Scope</span><span class="row-value">Published communications only</span></div>
+                            </section>
+                        `}
+                        <section class="communications-management-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h3>Manage message state</h3>
+                                    <p>Edit the current record, publish it, archive it, or change pin state without leaving the page.</p>
+                                </div>
                             </div>
-                        `).join("") : `<div class="empty-state">No communications found for this club.</div>`}
+                            <div class="communications-list-stack">
+                                ${rows.length ? rows.map(row => `
+                                    <div class="list-row">
+                                        <div class="list-row-top">
+                                            <span class="list-title">${deps.escapeHtml(`${row.title || "Communication"} #${row.id || "-"}`)}</span>
+                                            ${deps.renderStatusPill("", row.status || "draft")}
+                                        </div>
+                                        <div class="list-meta">${deps.escapeHtml(`${row.kind || ""} / ${row.audience || ""} / ${row.pinned ? "Pinned" : "Not pinned"}`)}</div>
+                                        ${canEdit ? `
+                                            <div class="inline-actions">
+                                                <button type="button" class="button secondary" data-edit-communication="${deps.escapeHtml(String(row.id))}">Edit</button>
+                                                <button type="button" class="button ghost" data-communication-status="${deps.escapeHtml(String(row.id))}" data-status-value="published">Publish</button>
+                                                <button type="button" class="button ghost" data-communication-status="${deps.escapeHtml(String(row.id))}" data-status-value="archived">Archive</button>
+                                                <button type="button" class="button ghost" data-communication-pin="${deps.escapeHtml(String(row.id))}" data-pin-value="${row.pinned ? "0" : "1"}">${row.pinned ? "Unpin" : "Pin"}</button>
+                                            </div>
+                                        ` : ""}
+                                    </div>
+                                `).join("") : `<div class="empty-state">No communication records available to manage.</div>`}
+                            </div>
+                        </section>
+                        ${renderCommunicationsCadenceCard(payload, deps)}
+                        ${renderAudienceFollowupCard(payload, deps)}
                     </div>
                 </section>
-                ${canEdit ? `
-                    <section class="card">
-                        <div class="panel-head">
-                            <div>
-                                <h3>Manage message state</h3>
-                                <p>Edit the current record, publish it, archive it, or change pin state without leaving the page.</p>
-                            </div>
-                        </div>
-                        <div class="stack">
-                            ${rows.length ? rows.map(row => `
-                                <div class="list-row">
-                                    <div class="list-row-top">
-                                        <span class="list-title">${deps.escapeHtml(`${row.title || "Communication"} #${row.id || "-"}`)}</span>
-                                        ${deps.renderStatusPill("", row.status || "draft")}
-                                    </div>
-                                    <div class="list-meta">${deps.escapeHtml(`${row.kind || ""} | ${row.audience || ""} | ${row.pinned ? "Pinned" : "Not pinned"}`)}</div>
-                                    <div class="inline-actions">
-                                        <button type="button" class="button secondary" data-edit-communication="${deps.escapeHtml(String(row.id))}">Edit</button>
-                                        <button type="button" class="button ghost" data-communication-status="${deps.escapeHtml(String(row.id))}" data-status-value="published">Publish</button>
-                                        <button type="button" class="button ghost" data-communication-status="${deps.escapeHtml(String(row.id))}" data-status-value="archived">Archive</button>
-                                        <button type="button" class="button ghost" data-communication-pin="${deps.escapeHtml(String(row.id))}" data-pin-value="${row.pinned ? "0" : "1"}">${row.pinned ? "Unpin" : "Pin"}</button>
-                                    </div>
-                                </div>
-                            `).join("") : `<div class="empty-state">No communication records available to manage.</div>`}
-                        </div>
-                    </section>
-                ` : ""}
             </section>
         `;
     }

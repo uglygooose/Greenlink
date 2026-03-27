@@ -131,50 +131,48 @@
                 ])}
                 ${deps.renderPeopleControlCards()}
             </section>
-            ${renderMembersSearchForm(bundle, deps)}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>${bundle.membersUi?.query ? "People search results" : "Recent member service board"}</h4>
-                            <p>${bundle.membersUi?.query ? "Search results stay operational: member context, booking demand, and service risk in one table." : "Recent activity, spend, and operation context stay visible before you drop into full records."}</p>
+            <section class="ops-utility-grid people-shell">
+                <div class="ops-utility-main">
+                    ${renderMembersSearchForm(bundle, deps)}
+                    <article class="dashboard-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>${bundle.membersUi?.query ? "People search results" : "Recent member service board"}</h4>
+                                <p>${bundle.membersUi?.query ? "Search results stay operational: member context, booking demand, and service risk in one table." : "Recent activity, spend, and operation context stay visible before you drop into full records."}</p>
+                            </div>
                         </div>
-                    </div>
-                    ${renderMemberRowsTable(rows, deps, { limit: 10 })}
-                </article>
-                ${deps.renderMemberServiceQueue(rows)}
-            </section>
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Summary</h4>
-                            <p>Member demand, flagged statuses, and debtor readiness should be visible before staff jump into golf, communications, or finance.</p>
+                        ${renderMemberRowsTable(rows, deps, { limit: 10 })}
+                    </article>
+                    <section class="card">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Members</h3>
+                                <p>Sorted by operational recency to keep service work practical.</p>
+                            </div>
                         </div>
-                    </div>
-                    ${deps.metricCards([
-                        { label: "Golf Members", value: deps.formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
-                        { label: "High Activity", value: deps.formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
-                        { label: "Configured Debtors", value: deps.formatInteger(accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length), meta: "Account customers ready for export" },
-                        { label: "Comms Follow-up", value: deps.formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
-                    ])}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${deps.renderServiceDeskBriefCard(rows, accountCustomers)}
-                ${deps.renderDebtorWatchCard(accountCustomers)}
-            </section>
-            <section class="split-grid">
-                ${deps.roleShell() === "club_admin" ? renderMemberCreateForm(deps) : ""}
-                <section class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Members</h3>
-                            <p>Sorted by operational recency to keep service work practical.</p>
+                        ${renderMemberRowsTable(rows, deps, { emptyText: "No members found." })}
+                    </section>
+                </div>
+                <aside class="ops-utility-rail">
+                    ${deps.renderMemberServiceQueue(rows)}
+                    <article class="card utility-note-card utility-summary-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Summary</h4>
+                                <p>Member demand, flagged statuses, and debtor readiness should be visible before staff jump into golf, communications, or finance.</p>
+                            </div>
                         </div>
-                    </div>
-                    ${renderMemberRowsTable(rows, deps, { emptyText: "No members found." })}
-                </section>
+                        ${deps.metricCards([
+                            { label: "Golf Members", value: deps.formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
+                            { label: "High Activity", value: deps.formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
+                            { label: "Configured Debtors", value: deps.formatInteger(accountCustomers.filter(row => String(row.account_code || "").trim() && String(row.billing_contact || "").trim()).length), meta: "Account customers ready for export" },
+                            { label: "Comms Follow-up", value: deps.formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
+                        ])}
+                    </article>
+                    ${deps.renderServiceDeskBriefCard(rows, accountCustomers)}
+                    ${deps.renderDebtorWatchCard(accountCustomers)}
+                    ${deps.roleShell() === "club_admin" ? renderMemberCreateForm(deps) : ""}
+                </aside>
             </section>
         `;
     }
@@ -207,16 +205,18 @@
                     deps.roleShell() === "club_admin" ? { label: "Add member", tone: "ghost", workblock: "people-add-workblock" } : null,
                 ])}
             </section>
-            <section class="workblock-stack">
-                ${deps.renderWorkblock({
+            <section class="ops-utility-grid people-shell">
+                <div class="ops-utility-main">
+                    <section class="workblock-stack">
+                        ${deps.renderWorkblock({
                     id: "people-search-workblock",
                     title: "Search",
                     copy: "Start with search and status filters before opening long member lists.",
                     badge: "Open",
                     open: true,
                     body: renderMembersSearchForm(bundle, deps, { embedded: true }),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
                     id: "people-results-workblock",
                     title: hasQuery ? "Search results" : "Recent member service board",
                     copy: hasQuery
@@ -225,62 +225,68 @@
                     badge: hasQuery ? "Open" : "Collapsed",
                     open: hasQuery,
                     body: renderMemberRowsTable(rows, deps, { limit: 10 }),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
                     id: "people-queue-workblock",
                     title: "Priority service queue",
                     copy: "Keep actual identity, readiness, and communication blockers visible before you drill into lower-priority detail.",
                     badge: !hasQuery ? "Open" : "Collapsed",
                     open: !hasQuery,
                     body: deps.renderMemberServiceQueueEmbedded(rows, peopleRepairQueue),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
                     id: "people-accounts-workblock",
                     title: "Account customers",
                     copy: "Debtor and account-customer context stays available, but off the opening view.",
                     badge: "Collapsed",
                     body: deps.renderAccountCustomerStack(accountCustomers, { limit: 8 }),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
+                            id: "people-members-workblock",
+                            title: "Members",
+                            copy: "Full member table remains available for deeper review after the service-first blocks.",
+                            badge: "Collapsed",
+                            body: renderMemberRowsTable(rows, deps, { emptyText: "No members found." }),
+                        })}
+                    </section>
+                </div>
+                <aside class="ops-utility-rail">
+                    ${deps.renderWorkblock({
                     id: "people-posture-workblock",
                     title: "Summary",
                     copy: "Use this block when member demand, follow-up pressure, and debtor readiness need a quick read.",
-                    badge: "Collapsed",
+                    badge: "Open",
+                    open: true,
                     body: deps.metricCards([
                         { label: "Golf Members", value: deps.formatInteger(rows.filter(row => String(row.primary_operation || "").toLowerCase() === "golf").length), meta: "Golf-linked members in current scope" },
                         { label: "High Activity", value: deps.formatInteger(rows.filter(row => Number(row.bookings_count || 0) >= 4).length), meta: "Members with strong recent booking demand" },
                         { label: "Configured Debtors", value: deps.formatInteger(configuredDebtors), meta: "Account customers ready for export" },
                         { label: "Comms Follow-up", value: deps.formatInteger(rows.filter(row => ["hold", "inactive", "defaulter"].includes(String(row.membership_status || "").toLowerCase())).length), meta: "Members likely to need direct follow-up" },
                     ]),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "people-brief-workblock",
                     title: "Desk summary",
                     copy: "Front desk golf demand and debtor readiness stay one click away instead of sitting in the opening stack.",
-                    badge: "Collapsed",
+                    badge: "Open",
+                    open: true,
                     body: deps.renderServiceDeskBriefEmbedded(rows, accountCustomers),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "people-watch-workblock",
                     title: "Debtor watch",
                     copy: "Open this when codes, contacts, or account terms need follow-up.",
                     badge: "Collapsed",
                     body: deps.renderDebtorWatchEmbedded(accountCustomers),
-                })}
-                ${deps.roleShell() === "club_admin" ? deps.renderWorkblock({
-                    id: "people-add-workblock",
-                    title: "Add member",
-                    copy: "Member creation is still available, but it no longer crowds the primary service screen.",
-                    badge: "Collapsed",
-                    body: renderMemberCreateForm(deps, { embedded: true }),
-                }) : ""}
-                ${deps.renderWorkblock({
-                    id: "people-members-workblock",
-                    title: "Members",
-                    copy: "Full member table remains available for deeper review after the service-first blocks.",
-                    badge: "Collapsed",
-                    body: renderMemberRowsTable(rows, deps, { emptyText: "No members found." }),
-                })}
+                    })}
+                    ${deps.roleShell() === "club_admin" ? deps.renderWorkblock({
+                        id: "people-add-workblock",
+                        title: "Add member",
+                        copy: "Member creation is still available, but it no longer crowds the primary service screen.",
+                        badge: "Collapsed",
+                        body: renderMemberCreateForm(deps, { embedded: true }),
+                    }) : ""}
+                </aside>
             </section>
         `;
     }

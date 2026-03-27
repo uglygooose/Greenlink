@@ -55,8 +55,10 @@
                     { label: "Add staff", tone: "secondary", workblock: "staff-add-workblock" },
                 ])}
             </section>
-            <section class="workblock-stack">
-                ${deps.renderWorkblock({
+            <section class="ops-utility-grid staff-shell">
+                <div class="ops-utility-main">
+                    <section class="workblock-stack">
+                        ${deps.renderWorkblock({
                     id: "staff-board-workblock",
                     title: "Staff service board",
                     copy: "Keep operator visibility high before club admins open lower-priority detail.",
@@ -70,8 +72,8 @@
                             </div>
                         `,
                     }),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
                     id: "staff-current-workblock",
                     title: "Current staff",
                     copy: "Full club staff listing in the current locked club scope.",
@@ -84,8 +86,8 @@
                             </div>
                         `,
                     }),
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                        ${deps.renderWorkblock({
                     id: "staff-add-workblock",
                     title: "Add or update staff",
                     copy: "Create new operators or update an existing club staff user without leaving the page.",
@@ -108,47 +110,53 @@
                             </div>
                         </form>
                     `,
-                })}
-                ${deps.renderWorkblock({
+                        })}
+                    </section>
+                </div>
+                <aside class="ops-utility-rail">
+                    ${deps.renderWorkblock({
                     id: "staff-debtors-workblock",
                     title: "Debtor accounts",
                     copy: "Billing and debtor context used in bookings stays nearby, but off the first screen.",
-                    badge: "Collapsed",
+                    badge: "Open",
+                    open: true,
                     body: deps.renderAccountCustomerStack(accountCustomers, { limit: 8, emptyText: "No active debtor accounts found." }),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "staff-queue-workblock",
                     title: "Member service queue",
                     copy: "Cross-check staff capacity against the current people follow-up load.",
                     badge: "Collapsed",
                     body: deps.renderMemberServiceQueueEmbedded(memberRows),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "staff-posture-workblock",
                     title: "Team summary",
                     copy: "Staff records, debtor readiness, and member demand should read together without dominating the opening view.",
-                    badge: "Collapsed",
+                    badge: "Open",
+                    open: true,
                     body: deps.metricCards([
                         { label: "Operators", value: deps.formatInteger(activeOperators), meta: "Staff-side operators in this club" },
                         { label: "Golf-facing Members", value: deps.formatInteger(golfFacingMembers), meta: "Likely to touch tee-sheet or golf-day flow" },
                         { label: "Configured Debtors", value: deps.formatInteger(configuredDebtors), meta: "Account customers ready for export" },
                         { label: "Current Scope", value: deps.escapeHtml(deps.activeClub()?.display_name || deps.activeClub()?.name || "Club"), meta: "Locked club context" },
                     ]),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "staff-brief-workblock",
                     title: "Desk summary",
                     copy: "Golf demand and debtor readiness can stay available without occupying the initial screen.",
                     badge: "Collapsed",
                     body: deps.renderServiceDeskBriefEmbedded(memberRows, accountCustomers),
-                })}
-                ${deps.renderWorkblock({
+                    })}
+                    ${deps.renderWorkblock({
                     id: "staff-watch-workblock",
                     title: "Debtor watch",
                     copy: "Use this when billing readiness, codes, or contacts need attention.",
                     badge: "Collapsed",
                     body: deps.renderDebtorWatchEmbedded(accountCustomers),
-                })}
+                    })}
+                </aside>
             </section>
         `;
     }

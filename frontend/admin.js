@@ -1121,44 +1121,149 @@
         const mtdPace = paceVarianceMeta(mtd?.revenue_actual, mtd?.revenue_target);
         const pendingExportRows = Number(financeSummary.pending_export_rows || 0);
         const blockedRows = Number(financeSummary.blocked_rows || 0);
-        const closeDiagnostics = pendingExportRows > 0 || blockedRows > 0
-            ? `${closeMeta.detail} | ${formatInteger(pendingExportRows)} pending, ${formatInteger(blockedRows)} blocked`
-            : closeMeta.detail;
+        const revenueProgress = mtd?.revenue_target
+            ? Math.max(12, Math.min(100, Math.round((safeNumber(mtd?.revenue_actual) / Math.max(1, safeNumber(mtd?.revenue_target))) * 100)))
+            : 72;
+        const bookingProgress = Math.max(
+            16,
+            Math.min(100, Math.round((safeNumber(dashboard.today_bookings || 0) / Math.max(1, safeNumber(dashboard.active_members || 0) || 12)) * 100 * 6))
+        );
+        const closeProgressBase = pendingExportRows + blockedRows;
+        const closeProgress = closeProgressBase > 0 ? Math.max(14, Math.min(100, 100 - (closeProgressBase * 6))) : 100;
+        const alertProgress = Math.max(14, Math.min(100, Number(alerts.summary?.high || 0) > 0 ? 32 : 84));
+        const closeTrend = blockedRows > 0
+            ? `${formatInteger(blockedRows)} blocked`
+            : pendingExportRows > 0
+                ? `${formatInteger(pendingExportRows)} pending`
+                : "Ready";
         return `
-            <section class="stats-grid">
+            <section class="stats-grid dashboard-kpi-row">
                 <article class="stat-card">
-                    <div class="stat-icon">OV</div>
-                    <div class="stat-content">
-                        <div class="stat-label">Today's Bookings</div>
-                        <div class="stat-value">${escapeHtml(formatInteger(dashboard.today_bookings || 0))}</div>
-                        <div class="stat-meta">Live golf bookings on today's sheet</div>
+                    <div class="kpi-card-head">
+                        <div class="stat-icon">RV</div>
+                        <span class="kpi-trend ${mtdPace.value >= 0 ? "positive" : "warn"}">${escapeHtml(mtdPace.label)}</span>
                     </div>
-                </article>
-                <article class="stat-card">
-                    <div class="stat-icon">MB</div>
-                    <div class="stat-content">
-                        <div class="stat-label">Close Posture</div>
-                        <div class="stat-value">${escapeHtml(closeMeta.label)}</div>
-                        <div class="stat-meta">${escapeHtml(closeDiagnostics)}</div>
-                    </div>
-                </article>
-                <article class="stat-card">
-                    <div class="stat-icon">RV</div>
                     <div class="stat-content">
                         <div class="stat-label">Revenue Today</div>
                         <div class="stat-value">${escapeHtml(formatCurrency(dashboard.today_revenue || 0))}</div>
                         <div class="stat-meta">${escapeHtml(mtd?.revenue_target != null ? mtdPace.detail : `${formatCurrency(dashboard.week_revenue || 0)} this week`)}</div>
                     </div>
+                    <div class="kpi-progress"><span style="width:${revenueProgress}%"></span></div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-icon">AL</div>
+                    <div class="kpi-card-head">
+                        <div class="stat-icon">BK</div>
+                        <span class="kpi-trend">${escapeHtml(formatInteger(dashboard.open_rounds || 0))} open rounds</span>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Today's Bookings</div>
+                        <div class="stat-value">${escapeHtml(formatInteger(dashboard.today_bookings || 0))}</div>
+                        <div class="stat-meta">Live golf bookings on today's sheet</div>
+                    </div>
+                    <div class="kpi-progress"><span style="width:${bookingProgress}%"></span></div>
+                </article>
+                <article class="stat-card">
+                    <div class="kpi-card-head">
+                        <div class="stat-icon">CL</div>
+                        <span class="kpi-trend ${blockedRows > 0 ? "warn" : "positive"}">${escapeHtml(closeTrend)}</span>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Close Posture</div>
+                        <div class="stat-value">${escapeHtml(closeMeta.label)}</div>
+                        <div class="stat-meta">${escapeHtml(closeMeta.detail)}</div>
+                    </div>
+                    <div class="kpi-progress"><span style="width:${closeProgress}%"></span></div>
+                </article>
+                <article class="stat-card">
+                    <div class="kpi-card-head">
+                        <div class="stat-icon">AL</div>
+                        <span class="kpi-trend ${Number(alerts.summary?.high || 0) > 0 ? "warn" : "positive"}">${Number(alerts.summary?.high || 0) > 0 ? "Action" : "Stable"}</span>
+                    </div>
                     <div class="stat-content">
                         <div class="stat-label">Open Alerts</div>
                         <div class="stat-value">${escapeHtml(formatInteger(alerts.summary?.total || 0))}</div>
                         <div class="stat-meta">${escapeHtml(formatInteger(alerts.summary?.high || 0))} high priority blockers</div>
                     </div>
+                    <div class="kpi-progress"><span style="width:${alertProgress}%"></span></div>
                 </article>
             </section>
+        `;
+    }
+
+    function renderDashboardQuickActionsPanel(bundle) {
+        const shell = roleShell();
+        const actions = [
+            { label: "Open tee sheet", detail: "Live bookings and slot control", workspace: "golf", panel: "tee-sheet", icon: "TS" },
+            { label: "Open people", detail: "Member service and repair visibility", workspace: "members", panel: "members", icon: "PP" },
+            { label: "Open communications", detail: "News, notices, and status control", workspace: "communications", panel: null, icon: "CM" },
+            shell === "club_admin"
+                ? { label: "Open settlement & close", detail: "Preview, export, and handoff", workspace: "reports", panel: "cashbook", icon: "FN" }
+                : { label: "Open operations", detail: "Department queues and blockers", workspace: "operations", panel: "overview", icon: "OP" },
+            { label: "Open pro shop", detail: "Sales pace and stock risk", workspace: "operations", panel: "pro_shop", icon: "PS" },
+        ].filter(Boolean);
+        return `
+            <section class="quick-actions-panel">
+                <div class="panel-head">
+                    <div>
+                        <h4>Quick Actions</h4>
+                    </div>
+                </div>
+                <div class="quick-actions-list">
+                    ${actions.map(action => `
+                        <button
+                            type="button"
+                            class="quick-action-button"
+                            data-nav-workspace="${escapeHtml(action.workspace)}"
+                            ${action.panel ? `data-nav-panel="${escapeHtml(action.panel)}"` : ""}
+                        >
+                            <span class="quick-action-icon">${escapeHtml(action.icon)}</span>
+                            <span class="quick-action-copy">
+                                <strong>${escapeHtml(action.label)}</strong>
+                                <span>${escapeHtml(action.detail)}</span>
+                            </span>
+                        </button>
+                    `).join("")}
+                </div>
+            </section>
+        `;
+    }
+
+    function renderDashboardActivityFeed(bundle) {
+        const communications = Array.isArray(bundle?.communications?.communications) ? bundle.communications.communications : [];
+        const closeMeta = closeStatusMeta(bundle);
+        const alerts = bundle?.alerts || {};
+        const items = [
+            {
+                icon: "FN",
+                title: `Finance posture: ${closeMeta.label}`,
+                meta: closeMeta.detail || "Current handoff posture",
+            },
+            {
+                icon: "AL",
+                title: `${formatInteger(alerts.summary?.total || 0)} operational alert(s) open`,
+                meta: `${formatInteger(alerts.summary?.high || 0)} high priority blocker(s) visible on the floor`,
+            },
+            ...communications.slice(0, 3).map(row => ({
+                icon: "CM",
+                title: row.title || "Club communication",
+                meta: `${String(row.status || "draft").replaceAll("_", " ")} · ${row.summary || row.body || "Current club notice"}`,
+            })),
+        ].slice(0, 4);
+        if (!items.length) {
+            return `<div class="empty-state">No recent dashboard activity is available yet.</div>`;
+        }
+        return `
+            <div class="activity-feed">
+                ${items.map(item => `
+                    <article class="activity-feed-item">
+                        <div class="activity-feed-icon">${escapeHtml(item.icon)}</div>
+                        <div class="activity-feed-copy">
+                            <div class="activity-feed-title">${escapeHtml(item.title)}</div>
+                            <div class="activity-feed-meta">${escapeHtml(item.meta)}</div>
+                        </div>
+                    </article>
+                `).join("")}
+            </div>
         `;
     }
 
@@ -2819,9 +2924,11 @@
         const capacity = ordered.reduce((sum, row) => sum + Number(row.capacity || 4), 0);
         const bookedStarts = ordered.filter(row => Number(row.occupied || 0) > 0).length;
         const blockedStarts = ordered.filter(row => String(row.status || "").trim().toLowerCase() === "blocked").length;
+        const openStarts = ordered.filter(row => String(row.status || "").trim().toLowerCase() !== "blocked" && Number(row.occupied || 0) < Number(row.capacity || 4)).length;
         const teeLabels = Array.from(new Set(ordered.map(row => String(row.hole || "").trim()).filter(Boolean)));
+        const firstOpenStart = ordered.find(row => isPersistedTeeTimeId(row.id) && String(row.status || "").trim().toLowerCase() !== "blocked" && Number(row.occupied || 0) < Number(row.capacity || 4));
         const opsPlan = teeLabels.length
-            ? `Live across Tee ${teeLabels.join(" and Tee ")} ? ${formatInteger(ordered.length)} starts ? Four-slot operating grid`
+            ? `Live across Tee ${teeLabels.join(" and Tee ")} / ${formatInteger(ordered.length)} starts / four-slot operating grid`
             : "The live day sheet stays in the shell with direct booking, movement, and check-in control.";
         return `
             ${renderPageHero({
@@ -2838,10 +2945,17 @@
                 ],
                 body: `
                     <div class="tee-sheet-toolbar">
-                        <div class="tee-sheet-date-controls">
-                            <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
-                            <input type="date" class="tee-sheet-date-input" data-tee-sheet-date value="${escapeHtml(bundle.date)}">
-                            <button type="button" class="button secondary" data-date-shift="1">Next day</button>
+                        <div class="tee-sheet-toolbar-main">
+                            <h3>Daily Tee Sheet</h3>
+                            <p>${escapeHtml(teeLabels.length ? `Course live on Tee ${teeLabels.join(" and Tee ")} with ${formatInteger(ordered.length)} active starts.` : "Course and tee details are loading from the current day sheet.")}</p>
+                        </div>
+                        <div class="tee-sheet-toolbar-actions">
+                            ${firstOpenStart ? `<button type="button" class="button" data-open-booking="${escapeHtml(String(firstOpenStart.id))}" data-open-booking-party="1">Add walk-in</button>` : `<button type="button" class="button" disabled aria-disabled="true">Add walk-in</button>`}
+                            <div class="tee-sheet-date-controls">
+                                <button type="button" class="button secondary" data-date-shift="-1">Previous day</button>
+                                <input type="date" class="tee-sheet-date-input" data-tee-sheet-date value="${escapeHtml(bundle.date)}">
+                                <button type="button" class="button secondary" data-date-shift="1">Next day</button>
+                            </div>
                         </div>
                     </div>
                     <div class="tee-sheet-ops-plan">${escapeHtml(opsPlan)}</div>
@@ -2871,6 +2985,26 @@
                         </tbody>
                     </table>
                 </div>
+            </section>
+            <section class="tee-sheet-insights-row">
+                <article class="tee-sheet-insight-card">
+                    <div class="tee-sheet-insight-label">Utilization</div>
+                    <div class="tee-sheet-insight-value">${escapeHtml(capacity ? formatPercent(occupied / capacity) : "0%")}</div>
+                    <div class="tee-sheet-insight-meta">${escapeHtml(`${formatInteger(Math.max(0, capacity - occupied))} player place(s) still open before the sheet fills.`)}</div>
+                    <div class="tee-sheet-insight-bar"><span style="width:${Math.max(8, Math.min(100, capacity ? (occupied / capacity) * 100 : 8))}%"></span></div>
+                </article>
+                <article class="tee-sheet-insight-card">
+                    <div class="tee-sheet-insight-label">Open starts</div>
+                    <div class="tee-sheet-insight-value">${escapeHtml(formatInteger(openStarts))}</div>
+                    <div class="tee-sheet-insight-meta">${escapeHtml(openStarts ? "Starts still available for bookings or walk-ins." : "Every active start is full or blocked.")}</div>
+                    <div class="tee-sheet-insight-bar"><span style="width:${Math.max(8, Math.min(100, ordered.length ? (openStarts / ordered.length) * 100 : 8))}%"></span></div>
+                </article>
+                <article class="tee-sheet-insight-card ${blockedStarts > 0 ? "warn" : ""}">
+                    <div class="tee-sheet-insight-label">Blocked starts</div>
+                    <div class="tee-sheet-insight-value">${escapeHtml(formatInteger(blockedStarts))}</div>
+                    <div class="tee-sheet-insight-meta">${escapeHtml(blockedStarts > 0 ? "Weather, maintenance, or ops rules are affecting the live sheet." : "No blocked starts on the current tee sheet.")}</div>
+                    <div class="tee-sheet-insight-bar"><span style="width:${Math.max(8, Math.min(100, ordered.length ? (blockedStarts / ordered.length) * 100 : 8))}%"></span></div>
+                </article>
             </section>
         `;
     }
@@ -4383,105 +4517,113 @@
                     : "Start the club day here: blockers, revenue, current notices, and close state in one operating view.",
                 extraClass: "overview-hero",
                 meta: renderInsightMeta("Target pace and risk guidance live"),
+                body: renderOverviewStreamCard(dashboard, options),
             })}
-            ${renderOverviewStreamCard(dashboard, options)}
             ${renderDashboardStatCards(bundle)}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Revenue trend</h4>
-                            <p>Paid golf plus imported non-booking revenue, using the existing club dashboard payload.</p>
-                        </div>
-                    </div>
-                    ${renderRevenueTrendChart(dashboard)}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>${escapeHtml(streamLabel)} performance board</h4>
-                            <p>${escapeHtml(insight.note || "See the current commercial and operational state for this stream.")}</p>
-                        </div>
-                    </div>
-                    ${metricCards((insight.cards || []).map(row => ({
-                        label: row.label,
-                        value: formatMaybe(row.value, row.format),
-                        meta: selectedStream === "all" ? "Current club signal" : `${streamLabel} current signal`,
-                    })))}
-                    ${shell === "club_admin" ? renderOperationalTargetFocus(bundle, { stream: selectedStream }) : ""}
-                    ${renderOperationalHighlights(insight.highlights)}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Operational alerts</h4>
-                            <p>Current blockers stay visible on the landing board.</p>
-                        </div>
-                    </div>
-                    ${renderAlerts(alerts.alerts)}
-                    ${renderGuidanceStack([
-                        { title: "Target pace", detail: aiTargetSummary(bundle) },
-                        ...noShowGuidanceRows(bundle, { limit: 1 }),
-                        ...revenueIntegrityGuidanceRows(bundle, { limit: 1 }),
-                    ])}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>${selectedStream === "all" ? (shell === "club_admin" ? "Revenue streams" : "Operational mix") : `${streamLabel} booking status revenue`}</h4>
-                            <p>${selectedStream === "all" ? (shell === "club_admin" ? "Golf, pro shop, and imported operational revenue in one commercial view." : "Golf and enabled operational signal in one board.") : `See where booked, checked-in, completed, and cancelled value is sitting for ${streamLabel.toLowerCase()}.`}</p>
-                        </div>
-                    </div>
-                    ${selectedStream === "all" ? renderRevenueStreamRows(dashboard) : renderStatusBreakdown(dashboard)}
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${renderHandoverReadinessCard(bundle)}
-                ${renderProShopCashupCard(bundle)}
-            </section>
-            ${shell === "club_admin" ? `
-                <section class="dashboard-grid">
-                    ${renderOperationsCadenceCard(bundle, { context: options.mode === "today" ? "today" : "club" })}
-                    ${renderAccountingHandoffCard(bundle)}
-                </section>
-            ` : ""}
-            <section class="dashboard-grid">
-                ${renderClubManagerBriefCard(bundle)}
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Current club communications</h4>
-                            <p>${options.mode === "today" ? "Published notices stay visible for staff without exposing club setup tools." : "Recent club notices and communication status."}</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${communicationRows.length ? communicationRows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${escapeHtml(row.title || "Notice")}</span>
-                                    ${renderStatusPill("", row.status || "draft")}
-                                </div>
-                                <div class="list-meta">${escapeHtml(row.summary || row.body || "")}</div>
+            <section class="dashboard-pilot-grid">
+                <div class="dashboard-main-stack">
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Revenue trend</h4>
+                                <p>Paid golf plus imported non-booking revenue, using the existing club dashboard payload.</p>
                             </div>
-                        `).join("") : `<div class="empty-state">No communications published for this club yet.</div>`}
-                    </div>
-                </article>
-            </section>
-            <section class="dashboard-card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Golf day pipeline</h4>
-                        <p>Commercial golf-day work remains part of the club overview, not hidden behind the tee sheet.</p>
-                    </div>
+                        </div>
+                        ${renderRevenueTrendChart(dashboard)}
+                    </article>
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Operational alerts</h4>
+                                <p>Current blockers stay visible on the landing board.</p>
+                            </div>
+                        </div>
+                        ${renderAlerts(alerts.alerts)}
+                        ${renderGuidanceStack([
+                            { title: "Target pace", detail: aiTargetSummary(bundle) },
+                            ...noShowGuidanceRows(bundle, { limit: 1 }),
+                            ...revenueIntegrityGuidanceRows(bundle, { limit: 1 }),
+                        ])}
+                    </article>
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Recent activity</h4>
+                                <p>${options.mode === "today" ? "Published notices and operational posture stay visible for staff." : "Recent club notice and handoff signal in one feed."}</p>
+                            </div>
+                        </div>
+                        ${renderDashboardActivityFeed(bundle)}
+                    </article>
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Golf day pipeline</h4>
+                                <p>Commercial golf-day work remains part of the club overview, not hidden behind the tee sheet.</p>
+                            </div>
+                        </div>
+                        ${metricCards([
+                            { label: "Pipeline Value", value: formatCurrency(dashboard.golf_day_pipeline_total || 0), meta: "Open and active golf-day booking pipeline" },
+                            { label: "Outstanding", value: formatCurrency(dashboard.golf_day_outstanding_balance || 0), meta: "Balance still due" },
+                            { label: "Open Golf Days", value: formatInteger(dashboard.golf_day_open_count || 0), meta: "Pending or partial events" },
+                            { label: "Total Club Revenue", value: formatCurrency(dashboard.total_revenue || 0), meta: "Combined current club revenue" },
+                        ])}
+                    </article>
+                    ${shell === "club_admin" ? `
+                        <section class="dashboard-grid">
+                            ${renderOperationsCadenceCard(bundle, { context: options.mode === "today" ? "today" : "club" })}
+                            ${renderAccountingHandoffCard(bundle)}
+                        </section>
+                    ` : ""}
                 </div>
-                ${metricCards([
-                    { label: "Pipeline Value", value: formatCurrency(dashboard.golf_day_pipeline_total || 0), meta: "Open and active golf-day booking pipeline" },
-                    { label: "Outstanding", value: formatCurrency(dashboard.golf_day_outstanding_balance || 0), meta: "Balance still due" },
-                    { label: "Open Golf Days", value: formatInteger(dashboard.golf_day_open_count || 0), meta: "Pending or partial events" },
-                    { label: "Total Club Revenue", value: formatCurrency(dashboard.total_revenue || 0), meta: "Combined current club revenue" },
-                ])}
+                <aside class="dashboard-rail-stack">
+                    ${renderDashboardQuickActionsPanel(bundle)}
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>${escapeHtml(streamLabel)} performance board</h4>
+                                <p>${escapeHtml(insight.note || "See the current commercial and operational state for this stream.")}</p>
+                            </div>
+                        </div>
+                        ${metricCards((insight.cards || []).map(row => ({
+                            label: row.label,
+                            value: formatMaybe(row.value, row.format),
+                            meta: selectedStream === "all" ? "Current club signal" : `${streamLabel} current signal`,
+                        })))}
+                        ${shell === "club_admin" ? renderOperationalTargetFocus(bundle, { stream: selectedStream }) : ""}
+                        ${renderOperationalHighlights(insight.highlights)}
+                    </article>
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>${selectedStream === "all" ? (shell === "club_admin" ? "Revenue streams" : "Operational mix") : `${streamLabel} booking status revenue`}</h4>
+                                <p>${selectedStream === "all" ? (shell === "club_admin" ? "Golf, pro shop, and imported operational revenue in one commercial view." : "Golf and enabled operational signal in one board.") : `See where booked, checked-in, completed, and cancelled value is sitting for ${streamLabel.toLowerCase()}.`}</p>
+                            </div>
+                        </div>
+                        ${selectedStream === "all" ? renderRevenueStreamRows(dashboard) : renderStatusBreakdown(dashboard)}
+                    </article>
+                    ${renderHandoverReadinessCard(bundle)}
+                    ${renderProShopCashupCard(bundle)}
+                    ${renderClubManagerBriefCard(bundle)}
+                    <article class="dashboard-card dashboard-section-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Current club communications</h4>
+                                <p>${options.mode === "today" ? "Published notices stay visible for staff without exposing club setup tools." : "Recent club notices and communication status."}</p>
+                            </div>
+                        </div>
+                        <div class="stack">
+                            ${communicationRows.length ? communicationRows.map(row => `
+                                <div class="list-row">
+                                    <div class="list-row-top">
+                                        <span class="list-title">${escapeHtml(row.title || "Notice")}</span>
+                                        ${renderStatusPill("", row.status || "draft")}
+                                    </div>
+                                    <div class="list-meta">${escapeHtml(row.summary || row.body || "")}</div>
+                                </div>
+                            `).join("") : `<div class="empty-state">No communications published for this club yet.</div>`}
+                        </div>
+                    </article>
+                </aside>
             </section>
         `;
     }
@@ -5684,7 +5826,7 @@
                             MODULE_LABELS[row.primary_operation] || row.primary_operation || "",
                             `${formatInteger(row.bookings_count || 0)} booking(s)`,
                             formatCurrency(row.total_spent || 0),
-                        ].filter(Boolean).join(" Ãƒâ€š? "))}</div>
+                        ].filter(Boolean).join(" | "))}</div>
                         <div class="list-meta">${escapeHtml(memberServicePosture(row))}</div>
                     </div>
                 `).join("") : `<div class="empty-state">No member service queue is available yet.</div>`}
@@ -6151,26 +6293,72 @@
                         { label: "Edit Scope", value: "Targets only", meta: "Keep this page intentionally narrow" },
                     ],
                 })}
-                <form class="form-card" id="operational-targets-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Operational targets</h3>
-                            <p>Club admins can manage the targets that directly support operations and reporting.</p>
-                        </div>
-                    </div>
-                    <input type="hidden" name="year" value="${escapeHtml(bundle.targets?.year || new Date().getFullYear())}">
-                    <div class="stack">
-                        ${targets.map(row => `
-                            <div class="detail-row">
-                                <span class="row-key">${escapeHtml(row.label || `${row.operation_key} ${row.metric_key}`)}</span>
-                                <input type="number" step="0.01" min="0" name="target__${escapeHtml(row.operation_key)}__${escapeHtml(row.metric_key)}" value="${escapeHtml(row.target_value || 0)}" style="max-width:180px;">
+                <section class="ops-utility-grid targets-shell">
+                    <div class="ops-utility-main">
+                        <form class="form-card targets-editor-card" id="operational-targets-form">
+                            <div class="panel-head">
+                                <div>
+                                    <h3>Operational targets</h3>
+                                    <p>Club admins can manage the targets that directly support operations and reporting.</p>
+                                </div>
                             </div>
-                        `).join("")}
+                            <input type="hidden" name="year" value="${escapeHtml(bundle.targets?.year || new Date().getFullYear())}">
+                            <div class="targets-editor-list">
+                                ${targets.map(row => `
+                                    <div class="targets-editor-row">
+                                        <div class="targets-editor-label">
+                                            <strong>${escapeHtml(row.label || `${row.operation_key} ${row.metric_key}`)}</strong>
+                                            <span>${escapeHtml(MODULE_LABELS[row.operation_key] || row.operation_key || "Operation")} · ${escapeHtml(row.unit || "value")}</span>
+                                        </div>
+                                        <input type="number" step="0.01" min="0" name="target__${escapeHtml(row.operation_key)}__${escapeHtml(row.metric_key)}" value="${escapeHtml(row.target_value || 0)}">
+                                    </div>
+                                `).join("")}
+                            </div>
+                            <div class="button-row">
+                                <button type="submit" class="button">Save targets</button>
+                            </div>
+                        </form>
                     </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Save targets</button>
-                    </div>
-                </form>
+                    <aside class="ops-utility-rail">
+                        <article class="card utility-note-card utility-summary-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Editing posture</h4>
+                                    <p>Targets remain explicit, editable, and narrow in scope.</p>
+                                </div>
+                            </div>
+                            <div class="utility-stat-stack">
+                                <div class="utility-stat-row">
+                                    <div>
+                                        <div class="utility-stat-label">Target Rows</div>
+                                        <div class="utility-stat-value">${formatInteger(targets.length)}</div>
+                                        <div class="utility-stat-meta">Configured operational targets in the current set</div>
+                                    </div>
+                                </div>
+                                <div class="utility-stat-row">
+                                    <div>
+                                        <div class="utility-stat-label">Target Year</div>
+                                        <div class="utility-stat-value">${escapeHtml(bundle.targets?.year || new Date().getFullYear())}</div>
+                                        <div class="utility-stat-meta">Single active planning year for this editor</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                        <article class="card utility-note-card">
+                            <span class="utility-kicker">Reporting Discipline</span>
+                            <div class="utility-points">
+                                <div class="utility-point">
+                                    <strong>Same data, clearer editor</strong>
+                                    <span>This page only changes presentation. Saved target values still feed reporting and dashboard pacing exactly as before.</span>
+                                </div>
+                                <div class="utility-point">
+                                    <strong>No setup sprawl</strong>
+                                    <span>Targets stay separate from broader club setup so finance and operations can review them without losing context.</span>
+                                </div>
+                            </div>
+                        </article>
+                    </aside>
+                </section>
             `;
         }
         return window.GreenLinkAdminClubSettings.renderWorkspace(bundle, clubSettingsModuleDeps());

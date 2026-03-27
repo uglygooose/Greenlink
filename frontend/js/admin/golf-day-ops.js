@@ -101,14 +101,16 @@
                     { label: "Ready to Complete", value: deps.formatInteger(readyToComplete), meta: "Settled and allocated events ready to close" },
                 ],
             })}
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Active event queue</h4>
-                        <p>Open golf-day events stay visible here first until setup, payment, and allocation all reach a clean state.</p>
-                    </div>
-                </div>
-                <div class="stack">
+            <section class="ops-utility-grid golfday-shell">
+                <div class="ops-utility-main">
+                    <section class="card golfday-queue-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Active event queue</h4>
+                                <p>Open golf-day events stay visible here first until setup, payment, and allocation all reach a clean state.</p>
+                            </div>
+                        </div>
+                        <div class="stack">
                     ${rows.length ? rows.map(row => `
                         <div class="list-row">
                             <div class="list-row-top">
@@ -128,9 +130,9 @@
                             <div class="list-meta">${deps.escapeHtml(lifecycle(row, deps).detail)}</div>
                         </div>
                     `).join("") : `<div class="empty-state">No golf-day bookings yet.</div>`}
-                </div>
-            </section>
-            <section class="split-grid">
+                        </div>
+                    </section>
+                    <section class="split-grid">
                 <form class="form-card" id="golf-day-form">
                     <div class="panel-head">
                         <div>
@@ -203,6 +205,47 @@
                         <button type="button" class="button secondary" data-clear-golf-day-allocation-form="1">Clear</button>
                     </div>
                 </form>
+                    </section>
+                </div>
+                <aside class="ops-utility-rail">
+                    <article class="card utility-note-card utility-summary-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Event posture</h4>
+                                <p>Read the operational state before loading the next setup or tee allocation action.</p>
+                            </div>
+                        </div>
+                        <div class="utility-stat-stack">
+                            <div class="utility-stat-row">
+                                <div>
+                                    <div class="utility-stat-label">Open Events</div>
+                                    <div class="utility-stat-value">${deps.formatInteger(golfDays.total || 0)}</div>
+                                    <div class="utility-stat-meta">Current golf-day bookings in this club scope</div>
+                                </div>
+                            </div>
+                            <div class="utility-stat-row">
+                                <div>
+                                    <div class="utility-stat-label">Allocated</div>
+                                    <div class="utility-stat-value">${deps.formatInteger(allocatedCount)}</div>
+                                    <div class="utility-stat-meta">Events already reserved on the live tee sheet</div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="card utility-note-card">
+                        <span class="utility-kicker">Golf Day Flow</span>
+                        <div class="utility-points">
+                            <div class="utility-point">
+                                <strong>Setup first</strong>
+                                <span>Event identity, contact, and settlement state stay intact before any tee allocation changes are applied.</span>
+                            </div>
+                            <div class="utility-point">
+                                <strong>Allocation stays explicit</strong>
+                                <span>The tee-sheet reservation step still uses the existing bulk-book flow and is not hidden behind static presentation.</span>
+                            </div>
+                        </div>
+                    </article>
+                </aside>
             </section>
         `;
     }

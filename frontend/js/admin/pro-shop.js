@@ -37,6 +37,12 @@
         const inventory = bundle.insightMap?.pro_shop?.inventory || {};
         const alerts = bundle.alerts || {};
         const shell = deps.roleShell();
+        const categories = ["All Items"].concat(
+            Array.from(new Set(products.map(row => String(row.category || "").trim()).filter(Boolean))).slice(0, 3)
+        );
+        const lowStock = products.filter(row => Number(row.stock_qty || 0) <= Number(row.reorder_level || 0)).length;
+        const cardSales = sales.filter(row => String(row.payment_method || "").toLowerCase().includes("card")).length;
+        const activeCustomer = sales.find(row => String(row.customer_name || "").trim())?.customer_name || "Walk-in guest";
         return `
             ${deps.renderPageHero({
                 title: "Pro Shop",
@@ -50,149 +56,201 @@
                     { label: "Low Stock", value: deps.formatInteger(bundle.products?.low_stock_count || 0), meta: "Products at or below reorder level" },
                 ],
             })}
-            <section class="dashboard-grid">
-                ${deps.renderProShopCashupCard(bundle.dashboard || {}, alerts)}
-                ${deps.renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
-            </section>
-            ${shell === "club_admin" ? `
-                <section class="dashboard-grid">
-                    ${deps.renderOperationsCadenceCard(bundle, { context: "pro_shop" })}
-                    ${deps.renderAccountingHandoffCard(bundle)}
-                </section>
-            ` : ""}
-            <section class="dashboard-grid">
-                ${renderDeskBrief(products, sales, deps)}
-                ${deps.renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
-            </section>
-            <section class="split-grid">
-                <article class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Inventory watch</h4>
-                            <p>Quick visibility into products needing attention.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${products.slice(0, 14).map(row => `
-                            <div class="product-row">
+            <section class="proshop-shell">
+                <section class="proshop-layout">
+                    <div class="proshop-main-stack">
+                        <section class="proshop-catalog-card">
+                            <div class="proshop-toolbar">
                                 <div>
-                                    <div class="list-title">${deps.escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</div>
-                                    <div class="list-meta">${deps.escapeHtml(row.category || "Uncategorised")} · ${deps.escapeHtml(row.sku || "")}</div>
+                                    <h4>Quick sale</h4>
+                                    <p>Active products, pricing, and stock posture stay visible in one benchmark-led catalog view.</p>
                                 </div>
-                                <div class="inline-actions">
-                                    <span class="metric-pill">${deps.escapeHtml(deps.formatCurrency(row.unit_price || 0))}</span>
-                                    ${deps.renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
-                                    <span class="metric-pill">${deps.escapeHtml(deps.formatInteger(row.stock_qty || 0))} in stock</span>
+                                <div class="proshop-category-tabs">
+                                    ${categories.map((category, index) => `
+                                        <span class="proshop-category-chip ${index === 0 ? "active" : ""}">${deps.escapeHtml(category)}</span>
+                                    `).join("")}
                                 </div>
                             </div>
-                        `).join("") || `<div class="empty-state">No products found.</div>`}
-                    </div>
-                </article>
-                <article class="card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Recent sales</h4>
-                            <p>Native pro-shop throughput over the current period.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${sales.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${deps.escapeHtml(`${row.customer_name || "Walk-in sale"} #${row.id || "-"}`)}</span>
-                                    <span class="metric-pill">${deps.escapeHtml(deps.formatCurrency(row.total || 0))}</span>
+                            <div class="proshop-product-grid">
+                                ${products.slice(0, 12).map(row => `
+                                    <article class="proshop-product-card">
+                                        <span class="proshop-product-badge">${deps.escapeHtml(String((row.category || row.sku || row.name || "PS")).slice(0, 2).toUpperCase())}</span>
+                                        <div class="proshop-product-price">${deps.escapeHtml(deps.formatCurrency(row.unit_price || 0))}</div>
+                                        <div class="proshop-product-name">${deps.escapeHtml(row.name || row.sku || "Product")}</div>
+                                        <div class="proshop-product-meta">${deps.escapeHtml(`${row.category || "General"} / ${deps.formatInteger(row.stock_qty || 0)} in stock`)}</div>
+                                        <div class="inline-actions">
+                                            ${deps.renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
+                                            <button type="button" class="button ghost" data-edit-pro-shop-product="${deps.escapeHtml(String(row.id))}">Edit</button>
+                                        </div>
+                                    </article>
+                                `).join("") || `<div class="empty-state">No products found.</div>`}
+                            </div>
+                        </section>
+                        <section class="split-grid">
+                            <article class="proshop-actions-card">
+                                <div class="panel-head">
+                                    <div>
+                                        <h4>Inventory watch</h4>
+                                        <p>Quick visibility into products needing attention.</p>
+                                    </div>
                                 </div>
-                                <div class="list-meta">${deps.escapeHtml(`${deps.formatDateTime(row.sold_at)} · ${(row.items || []).length} line item(s) · ${row.payment_method || ""}`)}</div>
+                                <div class="proshop-list-stack">
+                                    ${products.slice(0, 10).map(row => `
+                                        <div class="product-row">
+                                            <div>
+                                                <div class="list-title">${deps.escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</div>
+                                                <div class="list-meta">${deps.escapeHtml(`${row.category || "Uncategorised"} / ${row.sku || "-"}`)}</div>
+                                            </div>
+                                            <div class="inline-actions">
+                                                <span class="metric-pill">${deps.escapeHtml(deps.formatCurrency(row.unit_price || 0))}</span>
+                                                ${deps.renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
+                                                <span class="metric-pill">${deps.escapeHtml(deps.formatInteger(row.stock_qty || 0))} stock</span>
+                                            </div>
+                                        </div>
+                                    `).join("") || `<div class="empty-state">No products found.</div>`}
+                                </div>
+                            </article>
+                            <form class="proshop-form-card" id="pro-shop-product-form">
+                                <div class="panel-head">
+                                    <div>
+                                        <h3>Add or update product</h3>
+                                        <p>Create products here, or enter an existing product ID to update stock and pricing fields.</p>
+                                    </div>
+                                </div>
+                                <div class="field-grid">
+                                    <div class="field"><label>Existing Product ID</label><input name="product_id" type="number" min="1" placeholder="Leave blank to create"></div>
+                                    <div class="field"><label>SKU</label><input name="sku" required></div>
+                                    <div class="field"><label>Name</label><input name="name" required></div>
+                                    <div class="field"><label>Category</label><input name="category"></div>
+                                    <div class="field"><label>Unit Price</label><input name="unit_price" type="number" min="0" step="0.01" value="0"></div>
+                                    <div class="field"><label>Cost Price</label><input name="cost_price" type="number" min="0" step="0.01" value="0"></div>
+                                    <div class="field"><label>Stock Qty</label><input name="stock_qty" type="number" min="0" value="0"></div>
+                                    <div class="field"><label>Reorder Level</label><input name="reorder_level" type="number" min="0" value="0"></div>
+                                    <div class="checkbox-card">
+                                        <label><input type="checkbox" name="active" value="1" checked> Active product</label>
+                                        <p>Inactive products stay out of current sales but remain in the catalog.</p>
+                                    </div>
+                                    <div class="field"><label>Stock Adjust Delta</label><input name="stock_delta" type="number" step="1" value="0"></div>
+                                    <div class="field"><label>Stock Adjust Reason</label><input name="stock_reason" placeholder="Optional reason"></div>
+                                </div>
+                                <div class="button-row">
+                                    <button type="submit" class="button">Save product</button>
+                                </div>
+                            </form>
+                        </section>
+                        <section class="proshop-actions-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h3>Product actions</h3>
+                                    <p>Use current product IDs to update records, or apply quick stock adjustments from this action list.</p>
+                                </div>
                             </div>
-                        `).join("") || `<div class="empty-state">No recent pro-shop sales.</div>`}
-                    </div>
-                </article>
-            </section>
-            <section class="split-grid">
-                <form class="form-card" id="pro-shop-sale-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Record sale</h3>
-                            <p>Post a new pro-shop sale directly from this page using the current native product list.</p>
-                        </div>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field">
-                            <label>Product</label>
-                            <select name="product_id">
-                                ${products.map(row => `<option value="${deps.escapeHtml(String(row.id))}">${deps.escapeHtml(`${row.name || row.sku || "Product"} (${deps.formatCurrency(row.unit_price || 0)})`)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field"><label>Quantity</label><input name="quantity" type="number" min="1" value="1"></div>
-                        <div class="field"><label>Customer</label><input name="customer_name" placeholder="Optional customer name"></div>
-                        <div class="field">
-                            <label>Payment</label>
-                            <select name="payment_method">
-                                <option value="card">Card</option>
-                                <option value="cash">Cash</option>
-                                <option value="eft">EFT</option>
-                                <option value="account">Account</option>
-                                <option value="online">Online</option>
-                            </select>
-                        </div>
-                        <div class="field"><label>Discount</label><input name="discount" type="number" min="0" step="0.01" value="0"></div>
-                        <div class="field"><label>Tax</label><input name="tax" type="number" min="0" step="0.01" value="0"></div>
-                        <div class="field" style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes"></textarea></div>
-                    </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Record sale</button>
-                    </div>
-                </form>
-                <form class="form-card" id="pro-shop-product-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Add or update product</h3>
-                            <p>Create products here, or enter an existing product ID to update stock and pricing fields.</p>
-                        </div>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field"><label>Existing Product ID</label><input name="product_id" type="number" min="1" placeholder="Leave blank to create"></div>
-                        <div class="field"><label>SKU</label><input name="sku" required></div>
-                        <div class="field"><label>Name</label><input name="name" required></div>
-                        <div class="field"><label>Category</label><input name="category"></div>
-                        <div class="field"><label>Unit Price</label><input name="unit_price" type="number" min="0" step="0.01" value="0"></div>
-                        <div class="field"><label>Cost Price</label><input name="cost_price" type="number" min="0" step="0.01" value="0"></div>
-                        <div class="field"><label>Stock Qty</label><input name="stock_qty" type="number" min="0" value="0"></div>
-                        <div class="field"><label>Reorder Level</label><input name="reorder_level" type="number" min="0" value="0"></div>
-                        <div class="checkbox-card">
-                            <label><input type="checkbox" name="active" value="1" checked> Active product</label>
-                            <p>Inactive products stay out of current sales but remain in the catalog.</p>
-                        </div>
-                        <div class="field"><label>Stock Adjust Delta</label><input name="stock_delta" type="number" step="1" value="0"></div>
-                        <div class="field"><label>Stock Adjust Reason</label><input name="stock_reason" placeholder="Optional reason"></div>
-                    </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Save product</button>
-                    </div>
-                </form>
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h3>Product actions</h3>
-                        <p>Use current product IDs to update records, or apply quick stock adjustments from this action list.</p>
-                    </div>
-                </div>
-                <div class="stack">
-                    ${products.length ? products.slice(0, 20).map(row => `
-                        <div class="list-row">
-                            <div class="list-row-top">
-                                <span class="list-title">${deps.escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</span>
-                                ${deps.renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
+                            <div class="proshop-list-stack">
+                                ${products.length ? products.slice(0, 20).map(row => `
+                                    <div class="list-row">
+                                        <div class="list-row-top">
+                                            <span class="list-title">${deps.escapeHtml(`${row.name || row.sku || "Product"} #${row.id || "-"}`)}</span>
+                                            ${deps.renderStatusPill("", Number(row.stock_qty || 0) <= Number(row.reorder_level || 0) ? "high" : "active")}
+                                        </div>
+                                        <div class="list-meta">${deps.escapeHtml(`${row.sku || ""} / ${deps.formatCurrency(row.unit_price || 0)} / ${deps.formatInteger(row.stock_qty || 0)} in stock`)}</div>
+                                        <div class="inline-actions">
+                                            <button type="button" class="button secondary" data-edit-pro-shop-product="${deps.escapeHtml(String(row.id))}">Edit product</button>
+                                            <button type="button" class="button ghost" data-adjust-pro-shop-stock="${deps.escapeHtml(String(row.id))}">Adjust stock</button>
+                                        </div>
+                                    </div>
+                                `).join("") : `<div class="empty-state">No products available for action.</div>`}
                             </div>
-                            <div class="list-meta">${deps.escapeHtml(`${row.sku || ""} · ${deps.formatCurrency(row.unit_price || 0)} · ${deps.formatInteger(row.stock_qty || 0)} in stock`)}</div>
-                            <div class="inline-actions">
-                                <button type="button" class="button secondary" data-edit-pro-shop-product="${deps.escapeHtml(String(row.id))}">Edit product</button>
-                                <button type="button" class="button ghost" data-adjust-pro-shop-stock="${deps.escapeHtml(String(row.id))}">Adjust stock</button>
+                        </section>
+                    </div>
+                    <aside class="proshop-rail-stack">
+                        <section class="proshop-rail-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Current trade</h4>
+                                    <p>Live desk posture using the same restrained right-rail language as the benchmark.</p>
+                                </div>
                             </div>
-                        </div>
-                    `).join("") : `<div class="empty-state">No products available for action.</div>`}
-                </div>
+                            ${deps.metricCards([
+                                { label: "Active Customer", value: activeCustomer, meta: "Latest named shopper in the current feed" },
+                                { label: "Recent Sales", value: deps.formatInteger(sales.length), meta: "Visible native pro-shop sales rows" },
+                                { label: "Card Sales", value: deps.formatInteger(cardSales), meta: "Recent card-payment transactions" },
+                                { label: "Low Stock", value: deps.formatInteger(lowStock), meta: "Products already at or below reorder level" },
+                            ])}
+                        </section>
+                        <form class="proshop-form-card" id="pro-shop-sale-form">
+                            <div class="panel-head">
+                                <div>
+                                    <h3>Record sale</h3>
+                                    <p>Post a new pro-shop sale directly from this page using the current native product list.</p>
+                                </div>
+                            </div>
+                            <div class="proshop-payment-strip">
+                                <div class="proshop-payment-tile">Cash</div>
+                                <div class="proshop-payment-tile active">Card</div>
+                                <div class="proshop-payment-tile">Account</div>
+                            </div>
+                            <div class="field-grid">
+                                <div class="field">
+                                    <label>Product</label>
+                                    <select name="product_id">
+                                        ${products.map(row => `<option value="${deps.escapeHtml(String(row.id))}">${deps.escapeHtml(`${row.name || row.sku || "Product"} (${deps.formatCurrency(row.unit_price || 0)})`)}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field"><label>Quantity</label><input name="quantity" type="number" min="1" value="1"></div>
+                                <div class="field"><label>Customer</label><input name="customer_name" placeholder="Optional customer name"></div>
+                                <div class="field">
+                                    <label>Payment</label>
+                                    <select name="payment_method">
+                                        <option value="card">Card</option>
+                                        <option value="cash">Cash</option>
+                                        <option value="eft">EFT</option>
+                                        <option value="account">Account</option>
+                                        <option value="online">Online</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label>Discount</label><input name="discount" type="number" min="0" step="0.01" value="0"></div>
+                                <div class="field"><label>Tax</label><input name="tax" type="number" min="0" step="0.01" value="0"></div>
+                                <div class="field" style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes"></textarea></div>
+                            </div>
+                            <div class="button-row">
+                                <button type="submit" class="button">Record sale</button>
+                            </div>
+                        </form>
+                        <section class="proshop-rail-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Recent sales</h4>
+                                    <p>Native pro-shop throughput over the current period.</p>
+                                </div>
+                            </div>
+                            <div class="proshop-list-stack">
+                                ${sales.map(row => `
+                                    <div class="list-row">
+                                        <div class="list-row-top">
+                                            <span class="list-title">${deps.escapeHtml(`${row.customer_name || "Walk-in sale"} #${row.id || "-"}`)}</span>
+                                            <span class="metric-pill">${deps.escapeHtml(deps.formatCurrency(row.total || 0))}</span>
+                                        </div>
+                                        <div class="list-meta">${deps.escapeHtml(`${deps.formatDateTime(row.sold_at)} / ${(row.items || []).length} line item(s) / ${row.payment_method || ""}`)}</div>
+                                    </div>
+                                `).join("") || `<div class="empty-state">No recent pro-shop sales.</div>`}
+                            </div>
+                        </section>
+                    </aside>
+                </section>
+                <section class="dashboard-grid">
+                    ${deps.renderProShopCashupCard(bundle.dashboard || {}, alerts)}
+                    ${deps.renderHandoverReadinessCard(bundle.dashboard || {}, alerts)}
+                </section>
+                ${shell === "club_admin" ? `
+                    <section class="dashboard-grid">
+                        ${deps.renderOperationsCadenceCard(bundle, { context: "pro_shop" })}
+                        ${deps.renderAccountingHandoffCard(bundle)}
+                    </section>
+                ` : ""}
+                <section class="dashboard-grid">
+                    ${renderDeskBrief(products, sales, deps)}
+                    ${deps.renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
+                </section>
             </section>
         `;
     }

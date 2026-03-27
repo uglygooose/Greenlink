@@ -63,142 +63,157 @@
                 ],
                 body: bundle.imports?._error ? `<div class="empty-state">${deps.escapeHtml(bundle.imports._error)}</div>` : "",
             })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Revenue stream mappings</h4>
-                            <p>Mappings drive the export shape and keep club-specific reporting practical.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        ${settingsRows.length ? settingsRows.map(row => `
-                            <div class="list-row">
-                                <div class="list-row-top">
-                                    <span class="list-title">${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</span>
-                                    ${deps.renderStatusPill("", row.configured ? "configured" : "missing")}
-                                </div>
-                                <div class="list-meta">${deps.escapeHtml(row.settings?.date_field || "No date field")} | ${deps.escapeHtml(row.settings?.amount_field || "No amount field")} | ${deps.escapeHtml(row.settings?.external_id_field || "No external ID field")}</div>
-                                <div class="inline-actions">
-                                    <button type="button" class="button secondary" data-edit-import-settings="${deps.escapeHtml(String(row.stream || "other"))}">Edit mapping</button>
-                                </div>
-                            </div>
-                        `).join("") : `<div class="empty-state">No revenue stream mappings found.</div>`}
-                    </div>
-                </article>
-                ${deps.renderImportsHealthCard(bundle)}
-            </section>
-            <section class="split-grid">
-                <form class="form-card" id="import-settings-form">
-                    <div class="panel-head">
-                        <div>
-                            <h3>Revenue mapping</h3>
-                            <p>Save the fields GreenLink should use before the next revenue import for this stream.</p>
-                        </div>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field">
-                            <label>Stream</label>
-                            <select name="stream">
-                                ${settingsRows.map(row => `<option value="${deps.escapeHtml(String(row.stream || "other"))}" ${row.stream === firstSettings.stream ? "selected" : ""}>${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field"><label>Date Field</label><input name="date_field" value="${deps.escapeHtml(initialSettings.date_field || "")}" required></div>
-                        <div class="field"><label>Amount Field</label><input name="amount_field" value="${deps.escapeHtml(initialSettings.amount_field || "")}" required></div>
-                        <div class="field"><label>Description Field</label><input name="description_field" value="${deps.escapeHtml(initialSettings.description_field || "")}"></div>
-                        <div class="field"><label>Category Field</label><input name="category_field" value="${deps.escapeHtml(initialSettings.category_field || "")}"></div>
-                        <div class="field"><label>External ID Field</label><input name="external_id_field" value="${deps.escapeHtml(initialSettings.external_id_field || "")}"></div>
-                        <div class="field"><label>Stream Field</label><input name="stream_field" value="${deps.escapeHtml(initialSettings.stream_field || "")}"></div>
-                        <div class="field"><label>Tax Field</label><input name="tax_field" value="${deps.escapeHtml(initialSettings.tax_field || "")}"></div>
-                        <div class="field">
-                            <label>Amount Sign</label>
-                            <select name="amount_sign">
-                                ${["as_is", "invert"].map(value => `<option value="${value}" ${String(initialSettings.amount_sign || "as_is") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Amount Basis</label>
-                            <select name="amount_basis">
-                                ${["gross", "net"].map(value => `<option value="${value}" ${String(initialSettings.amount_basis || "gross") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Tax Adjustment</label>
-                            <select name="tax_adjustment">
-                                ${["ignore", "add", "subtract"].map(value => `<option value="${value}" ${String(initialSettings.tax_adjustment || "ignore") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="field"><label>Tax Rate</label><input name="tax_rate" type="number" min="0" step="0.01" value="${deps.escapeHtml(initialSettings.tax_rate ?? 0.15)}"></div>
-                        <div class="checkbox-card"><label><input type="checkbox" name="allow_stream_override" value="1" ${initialSettings.allow_stream_override ? "checked" : ""}> Allow stream override</label><p>Use a source field in the file when multiple streams are present.</p></div>
-                        <div class="checkbox-card"><label><input type="checkbox" name="dedupe_without_external_id" value="1" ${initialSettings.dedupe_without_external_id !== false ? "checked" : ""}> Dedupe without external ID</label><p>Create a best-effort fingerprint when the file has no unique transaction ID.</p></div>
-                    </div>
-                    <div class="button-row">
-                        <button type="submit" class="button">Save mapping</button>
-                        <button type="button" class="button secondary" data-clear-import-settings-form="1">Reset</button>
-                    </div>
-                </form>
-                <div class="stack">
-                    <form class="form-card" id="import-revenue-form">
+            <section class="ops-utility-grid imports-shell">
+                <div class="ops-utility-main">
+                    <article class="dashboard-card utility-summary-card">
                         <div class="panel-head">
                             <div>
-                                <h3>Import revenue CSV</h3>
-                                <p>Run a club-scoped revenue import with current or saved mapping rules.</p>
+                                <h4>Revenue stream mappings</h4>
+                                <p>Mappings drive the export shape and keep club-specific reporting practical.</p>
                             </div>
                         </div>
-                        <div class="field-grid">
-                            <div class="field">
-                                <label>Stream</label>
-                                <select name="stream">
-                                    ${settingsRows.map(row => `<option value="${deps.escapeHtml(String(row.stream || "other"))}">${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
-                                </select>
+                        <div class="stack">
+                            ${settingsRows.length ? settingsRows.map(row => `
+                                <div class="list-row">
+                                    <div class="list-row-top">
+                                        <span class="list-title">${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</span>
+                                        ${deps.renderStatusPill("", row.configured ? "configured" : "missing")}
+                                    </div>
+                                    <div class="list-meta">${deps.escapeHtml(row.settings?.date_field || "No date field")} | ${deps.escapeHtml(row.settings?.amount_field || "No amount field")} | ${deps.escapeHtml(row.settings?.external_id_field || "No external ID field")}</div>
+                                    <div class="inline-actions">
+                                        <button type="button" class="button secondary" data-edit-import-settings="${deps.escapeHtml(String(row.stream || "other"))}">Edit mapping</button>
+                                    </div>
+                                </div>
+                            `).join("") : `<div class="empty-state">No revenue stream mappings found.</div>`}
+                        </div>
+                    </article>
+                    <section class="split-grid">
+                        <form class="form-card imports-form-card" id="import-settings-form">
+                            <div class="panel-head">
+                                <div>
+                                    <h3>Revenue mapping</h3>
+                                    <p>Save the fields GreenLink should use before the next revenue import for this stream.</p>
+                                </div>
                             </div>
-                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
-                            <div class="checkbox-card"><label><input type="checkbox" name="use_saved_settings" value="1" checked> Use saved settings</label><p>Apply saved mapping rules for this stream where available.</p></div>
-                            <div class="checkbox-card"><label><input type="checkbox" name="save_settings" value="1"> Save settings after import</label><p>Persist the detected or edited field mapping after this import.</p></div>
+                            <div class="field-grid">
+                                <div class="field">
+                                    <label>Stream</label>
+                                    <select name="stream">
+                                        ${settingsRows.map(row => `<option value="${deps.escapeHtml(String(row.stream || "other"))}" ${row.stream === firstSettings.stream ? "selected" : ""}>${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field"><label>Date Field</label><input name="date_field" value="${deps.escapeHtml(initialSettings.date_field || "")}" required></div>
+                                <div class="field"><label>Amount Field</label><input name="amount_field" value="${deps.escapeHtml(initialSettings.amount_field || "")}" required></div>
+                                <div class="field"><label>Description Field</label><input name="description_field" value="${deps.escapeHtml(initialSettings.description_field || "")}"></div>
+                                <div class="field"><label>Category Field</label><input name="category_field" value="${deps.escapeHtml(initialSettings.category_field || "")}"></div>
+                                <div class="field"><label>External ID Field</label><input name="external_id_field" value="${deps.escapeHtml(initialSettings.external_id_field || "")}"></div>
+                                <div class="field"><label>Stream Field</label><input name="stream_field" value="${deps.escapeHtml(initialSettings.stream_field || "")}"></div>
+                                <div class="field"><label>Tax Field</label><input name="tax_field" value="${deps.escapeHtml(initialSettings.tax_field || "")}"></div>
+                                <div class="field">
+                                    <label>Amount Sign</label>
+                                    <select name="amount_sign">
+                                        ${["as_is", "invert"].map(value => `<option value="${value}" ${String(initialSettings.amount_sign || "as_is") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label>Amount Basis</label>
+                                    <select name="amount_basis">
+                                        ${["gross", "net"].map(value => `<option value="${value}" ${String(initialSettings.amount_basis || "gross") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label>Tax Adjustment</label>
+                                    <select name="tax_adjustment">
+                                        ${["ignore", "add", "subtract"].map(value => `<option value="${value}" ${String(initialSettings.tax_adjustment || "ignore") === value ? "selected" : ""}>${deps.escapeHtml(value)}</option>`).join("")}
+                                    </select>
+                                </div>
+                                <div class="field"><label>Tax Rate</label><input name="tax_rate" type="number" min="0" step="0.01" value="${deps.escapeHtml(initialSettings.tax_rate ?? 0.15)}"></div>
+                                <div class="checkbox-card"><label><input type="checkbox" name="allow_stream_override" value="1" ${initialSettings.allow_stream_override ? "checked" : ""}> Allow stream override</label><p>Use a source field in the file when multiple streams are present.</p></div>
+                                <div class="checkbox-card"><label><input type="checkbox" name="dedupe_without_external_id" value="1" ${initialSettings.dedupe_without_external_id !== false ? "checked" : ""}> Dedupe without external ID</label><p>Create a best-effort fingerprint when the file has no unique transaction ID.</p></div>
+                            </div>
+                            <div class="button-row">
+                                <button type="submit" class="button">Save mapping</button>
+                                <button type="button" class="button secondary" data-clear-import-settings-form="1">Reset</button>
+                            </div>
+                        </form>
+                        <div class="stack">
+                            <form class="form-card imports-form-card" id="import-revenue-form">
+                                <div class="panel-head">
+                                    <div>
+                                        <h3>Import revenue CSV</h3>
+                                        <p>Run a club-scoped revenue import with current or saved mapping rules.</p>
+                                    </div>
+                                </div>
+                                <div class="field-grid">
+                                    <div class="field">
+                                        <label>Stream</label>
+                                        <select name="stream">
+                                            ${settingsRows.map(row => `<option value="${deps.escapeHtml(String(row.stream || "other"))}">${deps.escapeHtml(deps.MODULE_LABELS[row.stream] || row.stream || "Stream")}</option>`).join("")}
+                                        </select>
+                                    </div>
+                                    <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
+                                    <div class="checkbox-card"><label><input type="checkbox" name="use_saved_settings" value="1" checked> Use saved settings</label><p>Apply saved mapping rules for this stream where available.</p></div>
+                                    <div class="checkbox-card"><label><input type="checkbox" name="save_settings" value="1"> Save settings after import</label><p>Persist the detected or edited field mapping after this import.</p></div>
+                                </div>
+                                <div class="button-row">
+                                    <button type="submit" class="button">Import revenue CSV</button>
+                                </div>
+                            </form>
+                            <form class="form-card imports-form-card" id="import-members-form">
+                                <div class="panel-head">
+                                    <div>
+                                        <h3>Import members CSV</h3>
+                                        <p>Refresh People data from a member export without leaving the finance data-health chain.</p>
+                                    </div>
+                                </div>
+                                <div class="field-grid">
+                                    <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
+                                </div>
+                                <div class="button-row">
+                                    <button type="submit" class="button">Import members CSV</button>
+                                </div>
+                            </form>
                         </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Import revenue CSV</button>
-                        </div>
-                    </form>
-                    <form class="form-card" id="import-members-form">
+                    </section>
+                    <section class="card">
                         <div class="panel-head">
                             <div>
-                                <h3>Import members CSV</h3>
-                                <p>Refresh People data from a member export without leaving the finance data-health chain.</p>
+                                <h4>Recent import batches</h4>
+                                <p>Import history should stay visible so operations and finance can trust the reporting chain.</p>
                             </div>
                         </div>
-                        <div class="field-grid">
-                            <div class="field" style="grid-column: 1 / -1;"><label>CSV File</label><input name="file" type="file" accept=".csv,text/csv" required></div>
-                        </div>
-                        <div class="button-row">
-                            <button type="submit" class="button">Import members CSV</button>
-                        </div>
-                    </form>
+                        ${deps.renderTable(
+                            ["Imported", "Kind", "Source", "Rows", "Notes"],
+                            rows.length ? rows.map(row => `
+                                <tr>
+                                    <td>${deps.escapeHtml(deps.formatDateTime(row.imported_at || ""))}</td>
+                                    <td>${deps.escapeHtml(row.kind || "-")}</td>
+                                    <td>${deps.escapeHtml(row.source || row.file_name || "-")}</td>
+                                    <td>${deps.escapeHtml(`${deps.formatInteger(row.rows_inserted || 0)} / ${deps.formatInteger(row.rows_total || 0)}`)}</td>
+                                    <td>${deps.escapeHtml(row.notes || "-")}</td>
+                                </tr>
+                            `) : [`<tr><td colspan="5"><div class="empty-state">No import batches found for this club.</div></td></tr>`]
+                        )}
+                    </section>
                 </div>
-            </section>
-            <section class="dashboard-grid">
-                ${deps.renderAccountingWorkflowCard(bundle)}
-                ${deps.renderAccountingHandoffCard(bundle)}
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Recent import batches</h4>
-                        <p>Import history should stay visible so operations and finance can trust the reporting chain.</p>
-                    </div>
-                </div>
-                ${deps.renderTable(
-                    ["Imported", "Kind", "Source", "Rows", "Notes"],
-                    rows.length ? rows.map(row => `
-                        <tr>
-                            <td>${deps.escapeHtml(deps.formatDateTime(row.imported_at || ""))}</td>
-                            <td>${deps.escapeHtml(row.kind || "-")}</td>
-                            <td>${deps.escapeHtml(row.source || row.file_name || "-")}</td>
-                            <td>${deps.escapeHtml(`${deps.formatInteger(row.rows_inserted || 0)} / ${deps.formatInteger(row.rows_total || 0)}`)}</td>
-                            <td>${deps.escapeHtml(row.notes || "-")}</td>
-                        </tr>
-                    `) : [`<tr><td colspan="5"><div class="empty-state">No import batches found for this club.</div></td></tr>`]
-                )}
+                <aside class="ops-utility-rail">
+                    ${deps.renderImportsHealthCard(bundle)}
+                    ${deps.renderAccountingWorkflowCard(bundle)}
+                    ${deps.renderAccountingHandoffCard(bundle)}
+                    <article class="card utility-note-card">
+                        <span class="utility-kicker">Finance Clarity</span>
+                        <div class="utility-points">
+                            <div class="utility-point">
+                                <strong>Explicit trust chain</strong>
+                                <span>Mappings, imports, and handoff posture stay visible together so export confidence does not depend on guesswork.</span>
+                            </div>
+                            <div class="utility-point">
+                                <strong>No silent automation</strong>
+                                <span>Staff still trigger imports and exports deliberately. This page only changes chrome and readability.</span>
+                            </div>
+                        </div>
+                    </article>
+                </aside>
             </section>
         `;
     }

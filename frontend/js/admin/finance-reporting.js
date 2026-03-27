@@ -154,6 +154,28 @@
             : ["missing_mapping", "missing"].includes(String(exportPosture.code || ""))
                 ? { label: "Export blocked", tone: "ghost", attrs: `data-export-cashbook="${deps.escapeHtml(date)}" disabled aria-disabled="true"` }
                 : { label: "Export daily CSV", attrs: `data-export-cashbook="${deps.escapeHtml(date)}"` };
+        const closeAction = closeStatus.is_closed
+            ? { label: "Reopen day", tone: "ghost", attrs: `data-reopen-day="${deps.escapeHtml(date)}"` }
+            : closeReady
+                ? { label: "Close day", tone: "ghost", attrs: `data-close-day="${deps.escapeHtml(date)}"` }
+                : { label: "Close blocked", tone: "ghost", attrs: `data-close-day="${deps.escapeHtml(date)}" disabled aria-disabled="true"` };
+        const previewMessage = !previewLoaded
+            ? "Load the journal preview before closing or exporting the day."
+            : previewError
+                ? previewError
+                : blockedRows > 0
+                    ? `Resolve ${deps.formatInteger(blockedRows)} blocked row(s) before close.`
+                    : unexportedCount > 0
+                        ? `Export ${deps.formatInteger(unexportedCount)} unexported row(s) before close.`
+                        : "Preview is clear and ready for export review.";
+        const previewAmount = previewLines.reduce((total, row) => total + Number(row?.amount || row?.debit || row?.credit || 0), 0);
+        const totalExportValue = previewAmount || Number(bundle.cashbookLedger?.total_amount || 0) || Number(summary.total_payments || 0);
+        const drawerRows = (previewLoaded ? previewLines : ledgerRows).slice(0, 4);
+        const financeTone = blockedRows > 0 || previewError ? "bad" : closeReady ? "ok" : "warn";
+        const journalRows = ledgerRows.slice(0, 8);
+        const renderActionButton = action => `
+            <button type="button" class="button ${action.tone === "secondary" ? "secondary" : action.tone === "ghost" ? "ghost" : ""}" ${action.attrs}>${deps.escapeHtml(action.label)}</button>
+        `;
         return `
             ${deps.renderPageHero({
                 title: "Cashbook & Day Close",
@@ -177,77 +199,136 @@
                     { label: previewLoaded ? "Refresh preview" : "Load preview", tone: "ghost", attrs: `data-load-cashbook-preview="${deps.escapeHtml(date)}"` },
                     exportAction,
                     { label: "Export pro shop CSV", tone: "secondary", attrs: `data-export-pro-shop="${deps.escapeHtml(date)}"` },
-                    closeStatus.is_closed
-                        ? { label: "Reopen day", tone: "ghost", attrs: `data-reopen-day="${deps.escapeHtml(date)}"` }
-                        : closeReady
-                            ? { label: "Close day", tone: "ghost", attrs: `data-close-day="${deps.escapeHtml(date)}"` }
-                            : { label: "Close blocked", tone: "ghost", attrs: `data-close-day="${deps.escapeHtml(date)}" disabled aria-disabled="true"` },
+                    closeAction,
                 ],
             })}
-            <section class="dashboard-grid">
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Export readiness</h4>
-                            <p>Accounting settings, export state, and close state need to be readable before the day is handed over.</p>
+            <section class="finance-flow-layout">
+                <div class="finance-main-stack">
+                    <section class="finance-summary-row">
+                        <article class="finance-summary-card ${financeTone === "bad" ? "bad" : "ok"}">
+                            <div class="finance-summary-head">
+                                <div class="finance-summary-label">Unexported posture</div>
+                                <span class="finance-summary-kicker">GL</span>
+                            </div>
+                            <div class="finance-summary-value">${deps.escapeHtml(deps.formatInteger(unexportedCount))}</div>
+                            <div class="finance-summary-meta">${deps.escapeHtml(blockedRows > 0 ? `${deps.formatInteger(blockedRows)} blocked row(s) still need attention.` : `${deps.formatInteger(exportReadyRows)} row(s) are ready for export review.`)}</div>
+                            <div class="finance-summary-progress"><span style="width:${Math.max(12, Math.min(100, unexportedCount > 0 ? (exportReadyRows / Math.max(1, unexportedCount + blockedRows)) * 100 : 100))}%"></span></div>
+                        </article>
+                        <article class="finance-summary-card ${closeReady ? "ok" : "bad"}">
+                            <div class="finance-summary-head">
+                                <div class="finance-summary-label">Pending exports</div>
+                                <span class="finance-summary-kicker">EX</span>
+                            </div>
+                            <div class="finance-summary-value">${deps.escapeHtml(deps.formatInteger(exportReadyRows))}</div>
+                            <div class="finance-summary-meta">${deps.escapeHtml(closeReady ? "Ready for sync after review." : previewStateLabel)}</div>
+                            <div class="finance-summary-progress"><span style="width:${Math.max(12, Math.min(100, (exportReadyRows / Math.max(1, exportReadyRows + blockedRows)) * 100))}%"></span></div>
+                        </article>
+                    </section>
+                    <section class="finance-journal-card">
+                        <div class="panel-head">
+                            <div>
+                                <h4>Cashbook journal</h4>
+                                <p>Daily ledger activity stays explicit on the main surface while export review remains in the right-side drawer pattern.</p>
+                            </div>
+                            <span class="metric-pill">${deps.escapeHtml(deps.formatDate(date))}</span>
                         </div>
-                    </div>
-                    ${deps.metricCards([
-                        { label: "Daily Payments", value: deps.formatCurrency(summary.total_payments || 0), meta: `${deps.formatInteger(summary.records?.length || 0)} payment records` },
-                        { label: "Tax", value: deps.formatCurrency(summary.total_tax || 0), meta: "Daily tax total" },
-                        { label: "Close State", value: exportPosture.label, meta: Boolean(closeStatus.is_closed) && closeStatus.closed_at ? deps.formatDateTime(closeStatus.closed_at) : (closeReady ? "Daily journal can be closed after export review" : "Current close posture from surfaced finance truth") },
-                        { label: "VAT Rate", value: settings.vat_rate != null ? `${Math.round(Number(settings.vat_rate || 0) * 100)}%` : "-", meta: "Accounting settings currently applied" },
-                    ])}
-                    ${deps.renderGuidanceStack(deps.revenueIntegrityGuidanceRows(bundle, { limit: 1 }))}
-                </article>
-                <article class="dashboard-card">
-                    <div class="panel-head">
-                        <div>
-                            <h4>Close controls</h4>
-                            <p>Close should only follow a clean preview and a completed daily export.</p>
-                        </div>
-                    </div>
-                    <div class="stack">
-                        <div class="detail-row"><span class="row-key">Green Fees GL</span><span class="row-value">${deps.escapeHtml(settings.green_fees_gl || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Cashbook</span><span class="row-value">${deps.escapeHtml(settings.cashbook_name || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Close Batch</span><span class="row-value">${deps.escapeHtml(closeStatus.export_batch_id || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Export File</span><span class="row-value">${deps.escapeHtml(closeStatus.export_filename || "-")}</span></div>
-                        <div class="detail-row"><span class="row-key">Preview State</span><span class="row-value">${deps.escapeHtml(previewStateLabel)}</span></div>
-                        <div class="detail-row"><span class="row-key">Export-ready rows</span><span class="row-value">${deps.escapeHtml(deps.formatInteger(exportReadyRows))}</span></div>
-                        <div class="detail-row"><span class="row-key">Blocked rows</span><span class="row-value">${deps.escapeHtml(deps.formatInteger(blockedRows))}${missingPaymentMethodCount || missingMappingCount ? ` (${deps.escapeHtml(`${deps.formatInteger(missingPaymentMethodCount)} payment method, ${deps.formatInteger(missingMappingCount)} mapping`)})` : ""}</span></div>
-                    </div>
-                </article>
-            </section>
-            <section class="dashboard-grid">
-                ${deps.renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
-                ${deps.renderReportingRhythmCard(bundle)}
-                ${deps.renderAccountingHandoffCard(bundle)}
-            </section>
-            <section class="card">
-                <div class="panel-head">
-                    <div>
-                        <h4>Journal preview</h4>
-                        <p>Preview what will import before downloading the CSV for the club's accounting package.</p>
-                    </div>
+                        ${deps.renderTable(
+                            ["Date", "Item / Transaction", "Category", "Finance State", "Amount"],
+                            journalRows.length ? journalRows.map(row => `
+                                <tr>
+                                    <td>${deps.escapeHtml(deps.formatDate(row.created_at || row.timestamp || row.recorded_at || date))}</td>
+                                    <td>
+                                        <strong>${deps.escapeHtml(row.description || row.reference || row.source_label || "Ledger entry")}</strong>
+                                        <div class="list-meta">${deps.escapeHtml((row.reference || row.external_reference || row.booking_reference || "-"))}</div>
+                                    </td>
+                                    <td>${deps.escapeHtml(row.category || row.account_name || row.stream || "-")}</td>
+                                    <td>${deps.renderStatusPill("", row?.finance_state?.export_status_code || row?.finance_state?.status || "pending")}</td>
+                                    <td>${deps.escapeHtml(deps.formatCurrency(row.amount || row.total || 0))}</td>
+                                </tr>
+                            `) : [`<tr><td colspan="5"><div class="empty-state">No ledger entries found in the current audit window.</div></td></tr>`]
+                        )}
+                    </section>
+                    <section class="dashboard-grid">
+                        <article class="finance-support-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Export readiness</h4>
+                                    <p>Accounting settings, export state, and close state need to stay readable before the day is handed over.</p>
+                                </div>
+                            </div>
+                            ${deps.metricCards([
+                                { label: "Daily Payments", value: deps.formatCurrency(summary.total_payments || 0), meta: `${deps.formatInteger(summary.records?.length || 0)} payment records` },
+                                { label: "Tax", value: deps.formatCurrency(summary.total_tax || 0), meta: "Daily tax total" },
+                                { label: "Close State", value: exportPosture.label, meta: Boolean(closeStatus.is_closed) && closeStatus.closed_at ? deps.formatDateTime(closeStatus.closed_at) : (closeReady ? "Daily journal can be closed after export review" : "Current close posture from surfaced finance truth") },
+                                { label: "VAT Rate", value: settings.vat_rate != null ? `${Math.round(Number(settings.vat_rate || 0) * 100)}%` : "-", meta: "Accounting settings currently applied" },
+                            ])}
+                            ${deps.renderGuidanceStack(deps.revenueIntegrityGuidanceRows(bundle, { limit: 1 }))}
+                        </article>
+                        <article class="finance-support-card">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Close controls</h4>
+                                    <p>Close should only follow a clean preview and a completed daily export.</p>
+                                </div>
+                            </div>
+                            <div class="stack">
+                                <div class="detail-row"><span class="row-key">Green Fees GL</span><span class="row-value">${deps.escapeHtml(settings.green_fees_gl || "-")}</span></div>
+                                <div class="detail-row"><span class="row-key">Cashbook</span><span class="row-value">${deps.escapeHtml(settings.cashbook_name || "-")}</span></div>
+                                <div class="detail-row"><span class="row-key">Close Batch</span><span class="row-value">${deps.escapeHtml(closeStatus.export_batch_id || "-")}</span></div>
+                                <div class="detail-row"><span class="row-key">Export File</span><span class="row-value">${deps.escapeHtml(closeStatus.export_filename || "-")}</span></div>
+                                <div class="detail-row"><span class="row-key">Preview State</span><span class="row-value">${deps.escapeHtml(previewStateLabel)}</span></div>
+                                <div class="detail-row"><span class="row-key">Export-ready rows</span><span class="row-value">${deps.escapeHtml(deps.formatInteger(exportReadyRows))}</span></div>
+                                <div class="detail-row"><span class="row-key">Blocked rows</span><span class="row-value">${deps.escapeHtml(deps.formatInteger(blockedRows))}${missingPaymentMethodCount || missingMappingCount ? ` (${deps.escapeHtml(`${deps.formatInteger(missingPaymentMethodCount)} payment method, ${deps.formatInteger(missingMappingCount)} mapping`)})` : ""}</span></div>
+                            </div>
+                        </article>
+                    </section>
+                    <section class="dashboard-grid">
+                        ${deps.renderAccountingWorkflowCard({ ...bundle, importSettings: [] })}
+                        ${deps.renderReportingRhythmCard(bundle)}
+                        ${deps.renderAccountingHandoffCard(bundle)}
+                    </section>
                 </div>
-                ${!previewLoaded ? `
-                    <div class="empty-state">
-                        <p>Preview generation is on demand for this page.</p>
-                        <button type="button" class="button secondary" data-load-cashbook-preview="${deps.escapeHtml(date)}">Load journal preview</button>
-                    </div>
-                ` : ""}
-                ${deps.renderTable(
-                    ["Date", "Reference", "Description", "Account", "Amount"],
-                    previewLoaded && previewLines.length ? previewLines.slice(0, 10).map(row => `
-                        <tr>
-                            <td>${deps.escapeHtml(row.transaction_date || row.date || "-")}</td>
-                            <td>${deps.escapeHtml(row.reference || row.ref || "-")}</td>
-                            <td>${deps.escapeHtml(row.description || "-")}</td>
-                            <td>${deps.escapeHtml(row.account || row.gl_account || "-")}</td>
-                            <td>${deps.escapeHtml(String(row.amount || row.debit || row.credit || "-"))}</td>
-                        </tr>
-                    `) : [`<tr><td colspan="5"><div class="empty-state">${deps.escapeHtml(previewLoaded ? (previewError || "No journal preview is available for this date yet.") : "Load the journal preview when you need to inspect the export.")}</div></td></tr>`]
-                )}
+                <aside class="finance-drawer-stack">
+                    <section class="finance-drawer">
+                        <div class="finance-drawer-head">
+                            <div class="panel-head">
+                                <div>
+                                    <h4>Export Preview</h4>
+                                    <p>${deps.escapeHtml(previewLoaded ? `Reviewing ${deps.formatInteger(previewLines.length)} record(s) for journal sync.` : "Preview stays on demand until the user loads it.")}</p>
+                                </div>
+                                <span class="status-pill ${financeTone}">${deps.escapeHtml(closeReady ? "Validated" : exportPosture.label)}</span>
+                            </div>
+                        </div>
+                        <div class="finance-drawer-body">
+                            <div class="finance-inline-callout ${financeTone === "bad" ? "bad" : ""}">
+                                <strong>${deps.escapeHtml(closeReady ? "Ready to trigger export" : "Review required")}</strong>
+                                <span>${deps.escapeHtml(previewMessage)}</span>
+                            </div>
+                            <div class="finance-handoff-list">
+                                ${drawerRows.length ? drawerRows.map(row => `
+                                    <div class="finance-handoff-row">
+                                        <div class="finance-handoff-copy">
+                                            <div class="finance-handoff-title">${deps.escapeHtml(row.reference || row.ref || row.description || "Journal row")}</div>
+                                            <div class="finance-handoff-meta">${deps.escapeHtml((row.description || row.account || row.gl_account || row.category || "Current export item"))}</div>
+                                        </div>
+                                        <strong>${deps.escapeHtml(deps.formatCurrency(row.amount || row.debit || row.credit || row.total || 0))}</strong>
+                                    </div>
+                                `).join("") : `<div class="empty-state">${deps.escapeHtml(previewLoaded ? (previewError || "No journal preview is available for this date yet.") : "Load the journal preview when you need to inspect the export.")}</div>`}
+                            </div>
+                            <div class="finance-total-card">
+                                <div class="finance-summary-label">Total export value</div>
+                                <div class="finance-summary-value">${deps.escapeHtml(deps.formatCurrency(totalExportValue || 0))}</div>
+                                <div class="finance-summary-meta">${deps.escapeHtml(Boolean(closeStatus.is_closed) ? "Day already closed." : closeReady ? "Validated and ready for export." : "Still waiting on explicit review and export completion.")}</div>
+                            </div>
+                            <div class="finance-drawer-actions">
+                                ${renderActionButton({ label: previewLoaded ? "Refresh preview" : "Load preview", tone: "secondary", attrs: `data-load-cashbook-preview="${deps.escapeHtml(date)}"` })}
+                                ${renderActionButton(exportAction)}
+                                ${renderActionButton({ label: "Export pro shop CSV", tone: "secondary", attrs: `data-export-pro-shop="${deps.escapeHtml(date)}"` })}
+                                ${renderActionButton(closeAction)}
+                            </div>
+                        </div>
+                    </section>
+                </aside>
             </section>
         `;
     }

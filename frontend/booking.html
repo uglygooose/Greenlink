@@ -8,22 +8,25 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=2" />
   <link rel="shortcut icon" href="assets/favicon.png?v=2" />
   <link rel="apple-touch-icon" href="assets/favicon.png?v=2" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/frontend/style.css">
   <script src="club-config.js"></script>
   <script src="js/utils/session.js?v=2026-03-23-club-ops-recovery-01"></script>
   <style>
     :root {
-      --ucc-olive: #5a7a3a;
-      --ucc-olive-dark: #4e6a31;
-      --ucc-sage: #e6ecd6;
-      --ucc-cream: #f6f4ec;
-      --ucc-orange: #f28c2c;
+      --ucc-olive: #2c7a5b;
+      --ucc-olive-dark: #225f47;
+      --ucc-sage: #e7f4ee;
+      --ucc-cream: #f5f7f4;
+      --ucc-orange: #f59e0b;
       --ucc-gold: #f5c542;
-      --ucc-ink: #1f2a1b;
-      --ucc-muted: #6c7b66;
-      --ucc-border: #d9dfc9;
+      --ucc-ink: #24323d;
+      --ucc-muted: #70808f;
+      --ucc-border: #dbe5df;
       --ucc-card: #ffffff;
-      --ucc-shadow: 0 12px 30px rgba(31, 42, 27, 0.12);
+      --ucc-shadow: 0 20px 48px rgba(31, 50, 44, 0.10);
     }
 
     * {
@@ -33,10 +36,12 @@
     body {
       margin: 0;
       padding: 0;
-      background: radial-gradient(circle at top, #f6f4ec 0%, #e6ecd6 45%, #f6f4ec 100%);
+      background:
+        radial-gradient(circle at top left, rgba(44, 122, 91, 0.08), transparent 26%),
+        linear-gradient(180deg, #fbfcfb 0%, #f3f7f4 100%);
       min-height: 100vh;
       color: var(--ucc-ink);
-      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+      font-family: "Inter", system-ui, sans-serif;
     }
 
     body.embedded {
@@ -70,7 +75,7 @@
       transform: none;
       max-width: 1200px;
       width: calc(100% - 32px);
-      margin: 18px auto 120px;
+      margin: 14px auto 120px;
       padding: 0 0 140px;
       min-height: 100vh;
       background: transparent;
@@ -79,10 +84,11 @@
     .booking-header {
       display: flex;
       align-items: center;
-      padding: 18px 24px;
-      background: linear-gradient(135deg, #f6f4ec 0%, #e6ecd6 100%);
-      border: 1px solid var(--ucc-border);
-      border-radius: 20px;
+      padding: 16px 22px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(219, 229, 223, 0.9);
+      border-radius: 22px;
+      backdrop-filter: blur(16px);
       box-shadow: var(--ucc-shadow);
       gap: 16px;
     }
@@ -90,22 +96,23 @@
     .club-logo {
       width: 48px;
       height: 48px;
-      border-radius: 50%;
-      border: 2px solid var(--ucc-border);
+      border-radius: 14px;
+      border: 1px solid var(--ucc-border);
       object-fit: cover;
+      background: #f8fbf9;
     }
 
     .back-btn {
       width: 44px;
       height: 44px;
-      border: none;
-      background: #ffffff;
-      border-radius: 12px;
+      border: 1px solid var(--ucc-border);
+      background: rgba(248, 251, 249, 0.95);
+      border-radius: 14px;
       font-size: 22px;
-      color: var(--ucc-olive-dark);
+      color: var(--ucc-ink);
       cursor: pointer;
       padding: 0;
-      box-shadow: 0 6px 14px rgba(31, 42, 27, 0.12);
+      box-shadow: 0 10px 22px rgba(31, 50, 44, 0.08);
     }
 
     .header-info {
@@ -113,18 +120,20 @@
     }
 
     .club-name {
-      font-size: 12px;
-      letter-spacing: 0.16em;
+      font-size: 11px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--ucc-muted);
       margin: 0;
+      font-weight: 700;
     }
 
     .page-title {
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 28px;
+      font-weight: 800;
       color: var(--ucc-ink);
       margin: 0;
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
     }
 
     .selectors {
@@ -134,13 +143,13 @@
     }
 
     .booking-window-banner {
-      margin: 6px 6px 0;
-      padding: 10px 14px;
-      background: #f3f7ea;
-      border: 1px solid var(--ucc-border);
-      border-radius: 14px;
+      margin: 8px 4px 0;
+      padding: 12px 14px;
+      background: rgba(231, 244, 238, 0.88);
+      border: 1px solid rgba(44, 122, 91, 0.14);
+      border-radius: 16px;
       font-size: 13px;
-      color: var(--ucc-olive-dark);
+      color: var(--ucc-ink);
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
@@ -152,12 +161,12 @@
     }
 
     .ops-context-card {
-      margin: 10px 6px 0;
-      padding: 14px 16px;
-      border-radius: 16px;
-      border: 1px solid rgba(90, 122, 58, 0.24);
-      background: linear-gradient(135deg, rgba(90, 122, 58, 0.10), rgba(255, 255, 255, 0.96));
-      box-shadow: 0 10px 24px rgba(31, 42, 27, 0.08);
+      margin: 10px 4px 0;
+      padding: 16px 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(44, 122, 91, 0.14);
+      background: linear-gradient(180deg, rgba(231, 244, 238, 0.88), rgba(255, 255, 255, 0.96));
+      box-shadow: 0 16px 36px rgba(31, 50, 44, 0.08);
       display: grid;
       gap: 10px;
     }
@@ -262,58 +271,67 @@
       flex: 1;
       padding: 16px 18px;
       border: 1px solid var(--ucc-border);
-      border-radius: 16px;
-      background: var(--ucc-card);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.96);
       text-align: center;
-      box-shadow: 0 8px 20px rgba(31, 42, 27, 0.08);
+      box-shadow: 0 12px 28px rgba(31, 50, 44, 0.08);
     }
 
     .selector-btn .main-text {
       font-size: 18px;
-      font-weight: 600;
-      color: var(--ucc-olive-dark);
+      font-weight: 800;
+      color: var(--ucc-ink);
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
     }
 
     .selector-btn .sub-text {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--ucc-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .booking-tabs {
       display: flex;
       justify-content: center;
-      padding: 10px 6px 0;
-      gap: 0;
+      padding: 14px 4px 0;
+      gap: 10px;
     }
 
     .tab-btn {
-      padding: 10px 25px;
+      padding: 12px 20px;
       border: 1px solid var(--ucc-border);
-      background: #fff;
-      font-size: 14px;
+      background: rgba(255, 255, 255, 0.96);
+      font-size: 12px;
       color: var(--ucc-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
       cursor: pointer;
       transition: all 0.2s;
+      border-radius: 999px;
+      box-shadow: 0 10px 22px rgba(31, 50, 44, 0.06);
     }
 
     .tab-btn:first-child {
-      border-radius: 20px 0 0 20px;
-      border-right: none;
+      border-radius: 999px;
+      border-right: 1px solid var(--ucc-border);
     }
 
     .tab-btn:last-child {
-      border-radius: 0 20px 20px 0;
+      border-radius: 999px;
     }
 
     .tab-btn.active {
-      background: #f3f7ea;
+      background: rgba(231, 244, 238, 0.96);
       color: var(--ucc-olive-dark);
-      font-weight: 600;
+      font-weight: 800;
       border-color: var(--ucc-olive);
+      box-shadow: 0 0 0 3px rgba(44, 122, 91, 0.10), 0 10px 22px rgba(31, 50, 44, 0.06);
     }
 
     .players-section {
-      padding: 20px 12px 30px;
+      padding: 22px 6px 30px;
     }
 
     .section-title {
@@ -328,14 +346,14 @@
     .player-card {
       display: flex;
       align-items: center;
-      padding: 16px;
+      padding: 18px;
       background: var(--ucc-card);
-      border-radius: 14px;
+      border-radius: 20px;
       margin-bottom: 15px;
       cursor: pointer;
       transition: all 0.2s;
-      border: 1px solid var(--ucc-border);
-      box-shadow: 0 10px 22px rgba(31, 42, 27, 0.08);
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      box-shadow: 0 16px 32px rgba(31, 50, 44, 0.08);
     }
 
     .player-card:hover {
@@ -396,12 +414,15 @@
     .add-player-btn {
       display: inline-flex;
       align-items: center;
-      padding: 10px 20px;
+      padding: 11px 18px;
       border: 1px solid var(--ucc-olive);
       border-radius: 20px;
       background: #fff;
       color: var(--ucc-olive-dark);
-      font-size: 14px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
       margin-top: 10px;
     }
@@ -416,14 +437,15 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.94);
       padding: 18px 20px;
-      box-shadow: 0 -8px 22px rgba(31, 42, 27, 0.12);
+      box-shadow: 0 -10px 30px rgba(31, 50, 44, 0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 20px;
-      border-top: 1px solid var(--ucc-border);
+      border-top: 1px solid rgba(219, 229, 223, 0.95);
+      backdrop-filter: blur(18px);
     }
 
     .total-section {
@@ -462,8 +484,10 @@
       border: none;
       border-radius: 30px;
       font-size: 16px;
-      font-weight: 700;
+      font-weight: 800;
       cursor: pointer;
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
+      box-shadow: 0 18px 36px rgba(44, 122, 91, 0.22);
     }
 
     .continue-btn:hover {
@@ -490,13 +514,14 @@
 
     .modal-content {
       background: #fff;
-      border-radius: 18px;
+      border-radius: 22px;
       padding: 25px;
       width: 90%;
       max-width: 420px;
       max-height: 80vh;
       overflow-y: auto;
-      box-shadow: var(--ucc-shadow);
+      border: 1px solid rgba(219, 229, 223, 0.95);
+      box-shadow: 0 24px 52px rgba(31, 50, 44, 0.16);
     }
 
     .modal-header {
@@ -537,10 +562,11 @@
     .form-group input,
     .form-group select {
       width: 100%;
-      padding: 12px;
+      padding: 13px 14px;
       border: 1px solid var(--ucc-border);
-      border-radius: 10px;
+      border-radius: 14px;
       font-size: 14px;
+      font-family: "Inter", system-ui, sans-serif;
     }
 
     .toggle {
@@ -567,14 +593,15 @@
     }
 
     .price-display {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--ucc-olive-dark);
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--ucc-ink);
       text-align: center;
       padding: 15px;
-      background: #f3f7ea;
-      border-radius: 10px;
+      background: rgba(231, 244, 238, 0.88);
+      border-radius: 16px;
       margin-bottom: 15px;
+      font-family: "Manrope", "Inter", system-ui, sans-serif;
     }
 
     .modal-btn {

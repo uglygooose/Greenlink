@@ -788,7 +788,13 @@ function renderHome() {
   const upcomingSection = document.getElementById("section-home-upcoming");
   const highlightsSection = document.getElementById("section-home-highlights");
   const eventsSection = document.getElementById("section-home-events");
-  if (greeting) greeting.textContent = `Welcome, ${profile?.name || "Player"}`;
+  if (greeting) {
+    const hour = new Date().getHours();
+    const dayPart = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+    const rawName = String(profile?.name || "Player").trim();
+    const firstName = rawName.split(/\s+/)[0] || "Player";
+    greeting.textContent = `Good ${dayPart}, ${firstName}.`;
+  }
 
   const missing = profileCompleteness(profile);
   if (subtitle) {
