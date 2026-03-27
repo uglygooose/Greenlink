@@ -1,5 +1,0 @@
-tee_time,tee,booking_id,line_id,player_name,player_email,status,price,holes,prepaid,member_number
-2026-02-20T06:30:00,1,GS-1001,1,Alex Mokoena,alex.mokoena@example.com,booked,340,18,false,M0001
-2026-02-20T06:30:00,1,GS-1001,2,Sam Naidoo,sam.naidoo@example.com,booked,340,18,false,M0002
-2026-02-20T06:30:00,1,GS-1001,3,Jordan Smith,jordan.smith@example.com,booked,340,18,false,M0003
-2026-02-20T06:40:00,10,GS-1002,1,Visitor One,visitor1@example.com,checked_in,450,18,true,
