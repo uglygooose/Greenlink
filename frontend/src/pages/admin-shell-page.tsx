@@ -1,15 +1,69 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { NavLink, Outlet } from "react-router-dom";
+
+import { prefetchOperationalSettings } from "../features/golf-settings/hooks";
+import { prefetchTeeSheetDay } from "../features/tee-sheet/hooks";
 import { useSession } from "../session/session-context";
 
 export function AdminShellPage(): JSX.Element {
-  const { bootstrap } = useSession();
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+  const selectedClub = bootstrap?.selected_club ?? null;
+  const membership = bootstrap?.available_clubs.find((club) => club.club_id === selectedClubId);
 
   return (
-    <main className="shell-layout">
-      <section className="shell-card">
-        <p className="eyebrow">Admin Shell</p>
-        <h1>{bootstrap?.selected_club?.name ?? "Select a club"}</h1>
-        <p className="muted">Phase 1 keeps the admin surface thin. Real workspaces land in later phases.</p>
+    <div className="admin-shell">
+      <aside className="admin-sidebar">
+        <div className="admin-sidebar-block">
+          <p className="eyebrow">GreenLink Admin</p>
+          <h1>{selectedClub?.name ?? "Club workspace"}</h1>
+          <p className="muted">
+            {membership?.membership_role ?? "superadmin"} {selectedClub ? `| ${selectedClub.timezone}` : ""}
+          </p>
+        </div>
+        <nav className="admin-nav" aria-label="Admin navigation">
+          <NavLink className="admin-nav-link" to="/admin/dashboard">
+            Dashboard
+          </NavLink>
+          <NavLink
+            className="admin-nav-link"
+            to="/admin/golf/tee-sheet"
+            onMouseEnter={() => {
+              void prefetchTeeSheetDay(queryClient, accessToken, selectedClubId);
+            }}
+          >
+            Tee Sheet
+          </NavLink>
+          <NavLink
+            className="admin-nav-link"
+            to="/admin/golf/settings"
+            onMouseEnter={() => {
+              void prefetchOperationalSettings(queryClient, accessToken, selectedClubId);
+            }}
+          >
+            Golf Settings
+          </NavLink>
+          <NavLink className="admin-nav-link" to="/select-club">
+            Change Club
+          </NavLink>
+        </nav>
+      </aside>
+      <section className="admin-main">
+        <header className="admin-topbar">
+          <div>
+            <p className="eyebrow">Selected Club</p>
+            <strong>{selectedClub?.name ?? "No active club"}</strong>
+          </div>
+          <div className="admin-topbar-meta">
+            <span>{bootstrap?.user.display_name ?? "Admin"}</span>
+            <span>{selectedClub?.timezone ?? "Club context required"}</span>
+          </div>
+        </header>
+        <main className="admin-content">
+          <Outlet />
+        </main>
       </section>
-    </main>
+    </div>
   );
 }

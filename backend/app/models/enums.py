@@ -44,3 +44,68 @@ class BulkIntakeAction(StrEnum):
     MATCH_EXISTING_UPDATE_MEMBERSHIP = "match_existing_update_membership"
     REJECT_ROW = "reject_row"
     WARNING_ONLY = "warning_only"
+
+
+class BookingRuleAppliesTo(StrEnum):
+    MEMBER = "member"
+    GUEST = "guest"
+    STAFF = "staff"
+
+
+class BookingRuleScopeType(StrEnum):
+    CLUB = "club"
+    COURSE = "course"
+    TEE = "tee"
+    MEMBERSHIP_ROLE = "membership_role"
+    APPLIES_TO_BUCKET = "applies_to_bucket"
+
+
+class BookingRuleConflictStrategy(StrEnum):
+    FIRST_MATCH = "first_match"
+    MERGE = "merge"
+    OVERRIDE = "override"
+
+
+class BookingRuleType(StrEnum):
+    ADVANCE_WINDOW = "advance_window"
+    MAX_BOOKINGS_PER_DAY = "max_bookings_per_day"
+    MAX_FUTURE_BOOKINGS = "max_future_bookings"
+    GUEST_LIMIT = "guest_limit"
+    TIME_RESTRICTION = "time_restriction"
+
+
+class PricingRuleAppliesTo(StrEnum):
+    MEMBER = "member"
+    GUEST = "guest"
+
+
+class PricingDayType(StrEnum):
+    WEEKDAY = "weekday"
+    WEEKEND = "weekend"
+    PUBLIC_HOLIDAY = "public_holiday"
+
+
+class PricingTimeBand(StrEnum):
+    MORNING = "morning"
+    AFTERNOON = "afternoon"
+    CUSTOM = "custom"
+
+
+class BookingStatus(StrEnum):
+    RESERVED = "reserved"
+    CHECKED_IN = "checked_in"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    NO_SHOW = "no_show"
+
+
+class BookingParticipantType(StrEnum):
+    MEMBER = "member"
+    GUEST = "guest"
+    STAFF = "staff"
+
+
+class BookingSource(StrEnum):
+    ADMIN = "admin"
+    MEMBER_PORTAL = "member_portal"
+    STAFF = "staff"

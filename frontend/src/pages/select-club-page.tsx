@@ -7,7 +7,7 @@ export function SelectClubPage(): JSX.Element {
   const { bootstrap, setSelectedClub } = useSession();
 
   if (!bootstrap) {
-    return <div className="centered-panel">Loading clubs…</div>;
+    return <div className="centered-panel">Loading clubs...</div>;
   }
 
   async function handleSelect(clubId: string): Promise<void> {
@@ -32,7 +32,7 @@ export function SelectClubPage(): JSX.Element {
             >
               <strong>{club.club_name}</strong>
               <span>
-                {club.membership_role ?? "superadmin preview"} · {club.membership_status ?? "active"}
+                {club.membership_role ?? "superadmin preview"} | {club.membership_status ?? "active"}
               </span>
             </button>
           ))}

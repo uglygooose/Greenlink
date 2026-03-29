@@ -1,6 +1,9 @@
 import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom";
 
 import { ProtectedRoute } from "../components/protected-route";
+import { AdminDashboardPage } from "../pages/admin-dashboard-page";
+import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
+import { AdminGolfTeeSheetPage } from "../pages/admin-golf-tee-sheet-page";
 import { AdminShellPage } from "../pages/admin-shell-page";
 import { LoginPage } from "../pages/login-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
@@ -32,8 +35,15 @@ const router = createBrowserRouter([
     element: <ProtectedRoute shell="admin" />,
     children: [
       { path: "select-club", element: <SelectClubPage /> },
-      { path: "dashboard", element: <AdminShellPage /> },
-      { path: "*", element: <Navigate to="/admin/dashboard" replace /> }
+      {
+        element: <AdminShellPage />,
+        children: [
+          { path: "dashboard", element: <AdminDashboardPage /> },
+          { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
+          { path: "golf/settings", element: <AdminGolfSettingsPage /> },
+          { path: "*", element: <Navigate to="/admin/dashboard" replace /> }
+        ]
+      }
     ]
   },
   {
