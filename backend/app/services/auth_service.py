@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
 
 from fastapi import Response
@@ -16,7 +17,7 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
-from app.models import AuthSession, ClubMembership, User
+from app.models import AuthSession, ClubMembership, Person, User
 from app.schemas.auth import LoginRequest, TokenResponse, UserIdentity
 
 REFRESH_COOKIE_NAME = "greenlink_refresh_token"
@@ -36,7 +37,11 @@ class AuthService:
     def login(self, payload: LoginRequest) -> tuple[TokenResponse, str]:
         user = self.db.scalar(
             select(User)
-            .options(selectinload(User.memberships).selectinload(ClubMembership.club))
+            .options(
+                selectinload(User.person)
+                .selectinload(Person.memberships)
+                .selectinload(ClubMembership.club)
+            )
             .where(User.email == payload.email.lower())
         )
         if user is None or not user.active:
@@ -52,7 +57,11 @@ class AuthService:
             raise AuthenticationError("Refresh token is no longer valid")
         user = self.db.scalar(
             select(User)
-            .options(selectinload(User.memberships).selectinload(ClubMembership.club))
+            .options(
+                selectinload(User.person)
+                .selectinload(Person.memberships)
+                .selectinload(ClubMembership.club)
+            )
             .where(User.id == session.user_id)
         )
         if user is None or not user.active:
@@ -96,12 +105,21 @@ class AuthService:
     def clear_refresh_cookie(self, response: Response) -> None:
         response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
 
-    def create_user(self, *, email: str, password: str, display_name: str, user_type) -> User:
+    def create_user(
+        self,
+        *,
+        email: str,
+        password: str,
+        display_name: str,
+        user_type,
+        person_id: uuid.UUID | None = None,
+    ) -> User:
         user = User(
             email=email.lower(),
             password_hash=hash_password(password),
             display_name=display_name,
             user_type=user_type,
+            person_id=person_id,
         )
         self.db.add(user)
         self.db.flush()

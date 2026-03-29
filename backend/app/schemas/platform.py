@@ -34,11 +34,12 @@ class ClubCreateRequest(BaseModel):
 
 
 class ClubMembershipAssignRequest(BaseModel):
-    user_id: uuid.UUID
+    person_id: uuid.UUID
     club_id: uuid.UUID
     role: ClubMembershipRole
     status: ClubMembershipStatus = ClubMembershipStatus.ACTIVE
     is_primary: bool = False
+    membership_number: str | None = Field(default=None, max_length=64)
 
 
 class ClubModuleUpdateRequest(BaseModel):

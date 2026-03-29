@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import ConflictError, NotFoundError
+from app.domain.people.normalization import build_full_name, normalize_email, split_display_name
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Club,
@@ -14,6 +15,7 @@ from app.models import (
     ClubMembershipRole,
     ClubMembershipStatus,
     ClubModule,
+    Person,
     PlatformState,
     User,
     UserType,
@@ -44,12 +46,27 @@ class PlatformService:
                 code="platform_initialized",
             )
         self._ensure_unique_email(payload.superadmin.email)
+        first_name, last_name = split_display_name(
+            payload.superadmin.display_name,
+            payload.superadmin.email,
+        )
+        person = Person(
+            first_name=first_name,
+            last_name=last_name,
+            full_name=build_full_name(first_name, last_name),
+            email=normalize_email(payload.superadmin.email),
+            normalized_email=normalize_email(payload.superadmin.email),
+            profile_metadata={},
+        )
+        self.db.add(person)
+        self.db.flush()
 
         superadmin = self.auth_service.create_user(
             email=payload.superadmin.email,
             password=payload.superadmin.password,
             display_name=payload.superadmin.display_name,
             user_type=UserType.SUPERADMIN,
+            person_id=person.id,
         )
         initial_club: Club | None = None
         if payload.initial_club is not None:
@@ -63,7 +80,7 @@ class PlatformService:
             self.db.flush()
             self.db.add(
                 ClubMembership(
-                    user_id=superadmin.id,
+                    person_id=person.id,
                     club_id=initial_club.id,
                     role=ClubMembershipRole.CLUB_ADMIN,
                     status=ClubMembershipStatus.ACTIVE,
@@ -121,24 +138,26 @@ class PlatformService:
         self, payload: ClubMembershipAssignRequest, *, correlation_id: str | None = None
     ) -> None:
         self._assert_initialized()
-        user = self.db.get(User, payload.user_id)
+        person = self.db.get(Person, payload.person_id)
         club = self.db.get(Club, payload.club_id)
-        if user is None:
-            raise NotFoundError("User not found")
+        if person is None:
+            raise NotFoundError("Person not found")
         if club is None:
             raise NotFoundError("Club not found")
         membership = self.db.scalar(
             select(ClubMembership).where(
-                ClubMembership.user_id == payload.user_id, ClubMembership.club_id == payload.club_id
+                ClubMembership.person_id == payload.person_id,
+                ClubMembership.club_id == payload.club_id,
             )
         )
         if membership is None:
             membership = ClubMembership(
-                user_id=payload.user_id,
+                person_id=payload.person_id,
                 club_id=payload.club_id,
                 role=payload.role,
                 status=payload.status,
                 is_primary=payload.is_primary,
+                membership_number=payload.membership_number,
             )
             self.db.add(membership)
             self.db.flush()
@@ -146,6 +165,7 @@ class PlatformService:
             membership.role = payload.role
             membership.status = payload.status
             membership.is_primary = payload.is_primary
+            membership.membership_number = payload.membership_number
         self.publisher.publish(
             event_type="club_membership.upserted",
             aggregate_type="club_membership",
@@ -153,7 +173,6 @@ class PlatformService:
             payload={"role": payload.role.value, "status": payload.status.value},
             correlation_id=correlation_id,
             club_id=club.id,
-            actor_user_id=user.id,
         )
         self.db.commit()
 

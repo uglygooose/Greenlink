@@ -4,11 +4,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
+from app.domain.people.normalization import build_full_name, normalize_email
 from app.models import (
     Club,
     ClubMembership,
     ClubMembershipRole,
     ClubMembershipStatus,
+    Person,
     PlatformState,
     User,
     UserType,
@@ -16,11 +18,23 @@ from app.models import (
 
 
 def _create_user(db: Session, *, email: str, user_type: UserType = UserType.USER) -> User:
+    local_part = email.split("@")[0]
+    person = Person(
+        first_name=local_part.title(),
+        last_name="User",
+        full_name=build_full_name(local_part.title(), "User"),
+        email=normalize_email(email),
+        normalized_email=normalize_email(email),
+        profile_metadata={},
+    )
+    db.add(person)
+    db.flush()
     user = User(
         email=email,
         password_hash=hash_password("password123"),
-        display_name=email.split("@")[0],
+        display_name=local_part,
         user_type=user_type,
+        person_id=person.id,
     )
     db.add(user)
     db.commit()
@@ -46,7 +60,7 @@ def _assign_membership(
     is_primary: bool = False,
 ) -> ClubMembership:
     membership = ClubMembership(
-        user_id=user.id,
+        person_id=user.person_id,
         club_id=club.id,
         role=role,
         status=status,

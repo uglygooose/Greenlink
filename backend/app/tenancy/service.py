@@ -31,6 +31,7 @@ class TenancyService:
         raw_selected_club_id: uuid.UUID | None,
         *,
         allow_unselected: bool,
+        require_explicit_selection: bool = False,
     ) -> TenancyContext:
         memberships = sorted(
             user.memberships,
@@ -44,6 +45,8 @@ class TenancyService:
 
         if user.user_type == UserType.SUPERADMIN:
             selected_club = None
+            if require_explicit_selection and raw_selected_club_id is None:
+                raise AuthorizationError("Explicit selected club is required")
             if raw_selected_club_id is not None:
                 selected_club = self.db.get(Club, raw_selected_club_id)
                 if selected_club is None or not selected_club.active:
@@ -68,6 +71,9 @@ class TenancyService:
                     club_selection_required=False,
                 )
             raise AuthorizationError("No active club membership found")
+
+        if require_explicit_selection and raw_selected_club_id is None:
+            raise AuthorizationError("Explicit selected club is required")
 
         if len(active_memberships) == 1:
             membership = active_memberships[0]

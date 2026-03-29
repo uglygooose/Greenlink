@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Club, ClubMembership, ClubMembershipRole, ClubModule, User, UserType
+from app.models import Club, ClubMembership, ClubMembershipRole, ClubModule, Person, User, UserType
 from app.schemas.session import (
     AvailableClubSummary,
     SelectedClubSummary,
@@ -28,7 +28,11 @@ class SessionBootstrapService:
     ) -> SessionBootstrapResponse:
         hydrated_user = self.db.scalar(
             select(User)
-            .options(selectinload(User.memberships).selectinload(ClubMembership.club))
+            .options(
+                selectinload(User.person)
+                .selectinload(Person.memberships)
+                .selectinload(ClubMembership.club)
+            )
             .where(User.id == user.id)
         )
         assert hydrated_user is not None
@@ -148,15 +152,31 @@ class SessionBootstrapService:
 
     def _build_permissions(self, context: TenancyContext, user_type: UserType) -> list[str]:
         if user_type == UserType.SUPERADMIN:
-            base = ["platform:manage", "clubs:read"]
+            base = ["platform:manage", "clubs:read", "people:read", "people:write"]
             if context.selected_club is not None:
-                return base + ["clubs:write", "users:assign"]
+                return base + [
+                    "clubs:write",
+                    "users:assign",
+                    "memberships:manage",
+                    "account_customers:manage",
+                    "bulk_intake:process",
+                ]
             return base
         if context.selected_membership is None:
             return []
         role = context.selected_membership.role
         if role == ClubMembershipRole.CLUB_ADMIN:
-            return ["club:read", "club:write", "memberships:manage", "modules:manage"]
+            return [
+                "club:read",
+                "club:write",
+                "memberships:manage",
+                "modules:manage",
+                "people:read",
+                "people:write",
+                "account_customers:manage",
+                "bulk_intake:preview",
+                "bulk_intake:process",
+            ]
         if role == ClubMembershipRole.CLUB_STAFF:
-            return ["club:read", "workspace:staff"]
+            return ["club:read", "workspace:staff", "people:read", "bulk_intake:preview"]
         return ["club:read", "workspace:member"]

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.core.security import decode_token
 from app.db import get_db
-from app.models import AuthSession, ClubMembership, User, UserType
+from app.models import AuthSession, ClubMembership, Person, User, UserType
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -19,7 +19,11 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def _load_user(db: Session, user_id: uuid.UUID) -> User | None:
     statement = (
         select(User)
-        .options(selectinload(User.memberships).selectinload(ClubMembership.club))
+        .options(
+            selectinload(User.person)
+            .selectinload(Person.memberships)
+            .selectinload(ClubMembership.club)
+        )
         .where(User.id == user_id)
     )
     return db.scalar(statement)
