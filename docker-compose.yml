@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: greenlink-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-greenlink}
+      POSTGRES_USER: ${POSTGRES_USER:-greenlink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-greenlink}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-greenlink} -d ${POSTGRES_DB:-greenlink}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: greenlink-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
