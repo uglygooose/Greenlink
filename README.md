@@ -11,9 +11,10 @@ GreenLink is a club-scoped golf operations platform rebuilt as a modular monolit
 ## Local setup
 
 1. Start local infrastructure:
-   - `docker compose up -d`
+   - `docker compose up -d postgres redis`
 2. Start the backend:
    - `cd backend`
+   - `copy .env.example .env`
    - `py -m uv sync --extra dev`
    - `py -m uv run alembic upgrade head`
    - `py -m uv run uvicorn app.main:app --reload`
@@ -22,9 +23,12 @@ GreenLink is a club-scoped golf operations platform rebuilt as a modular monolit
    - `npm.cmd install`
    - `npm.cmd run dev`
 
+GreenLink development is PostgreSQL-first. The backend runtime and Alembic migrations are expected to run against PostgreSQL, and SQLite is not a supported local/dev database path for this rebuild.
+
 ## Tests and checks
 
 - Backend tests: `cd backend && py -m uv run pytest`
+  Requires the local PostgreSQL service to be running; tests use the canonical PostgreSQL-backed test database path.
 - Backend lint: `cd backend && py -m uv run ruff check .`
 - Backend format check: `cd backend && py -m uv run ruff format --check .`
 - Frontend tests: `cd frontend && npm.cmd run test`

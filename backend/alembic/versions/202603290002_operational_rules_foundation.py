@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -21,42 +22,51 @@ branch_labels = None
 depends_on = None
 
 
-booking_rule_applies_to_enum = sa.Enum(
+booking_rule_applies_to_enum = postgresql.ENUM(
     "member",
     "guest",
     "staff",
     name="bookingruleappliesto",
+    create_type=False,
 )
-booking_rule_scope_type_enum = sa.Enum(
+booking_rule_scope_type_enum = postgresql.ENUM(
     "club",
     "course",
     "tee",
     "membership_role",
     "applies_to_bucket",
     name="bookingrulescopetype",
+    create_type=False,
 )
-booking_rule_conflict_strategy_enum = sa.Enum(
+booking_rule_conflict_strategy_enum = postgresql.ENUM(
     "first_match",
     "merge",
     "override",
     name="bookingruleconflictstrategy",
+    create_type=False,
 )
-booking_rule_type_enum = sa.Enum(
+booking_rule_type_enum = postgresql.ENUM(
     "advance_window",
     "max_bookings_per_day",
     "max_future_bookings",
     "guest_limit",
     "time_restriction",
     name="bookingruletype",
+    create_type=False,
 )
-pricing_rule_applies_to_enum = sa.Enum("member", "guest", name="pricingruleappliesto")
-pricing_day_type_enum = sa.Enum(
+pricing_rule_applies_to_enum = postgresql.ENUM(
+    "member", "guest", name="pricingruleappliesto", create_type=False
+)
+pricing_day_type_enum = postgresql.ENUM(
     "weekday",
     "weekend",
     "public_holiday",
     name="pricingdaytype",
+    create_type=False,
 )
-pricing_time_band_enum = sa.Enum("morning", "afternoon", "custom", name="pricingtimeband")
+pricing_time_band_enum = postgresql.ENUM(
+    "morning", "afternoon", "custom", name="pricingtimeband", create_type=False
+)
 
 DEFAULT_OPERATING_HOURS = {
     "monday": {"open": "06:00", "close": "18:00", "closed": False},

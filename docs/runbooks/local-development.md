@@ -21,10 +21,13 @@ This starts PostgreSQL and Redis for normal local development.
 
 ```bash
 cd backend
+copy .env.example .env
 py -m uv sync --extra dev
 py -m uv run alembic upgrade head
 py -m uv run uvicorn app.main:app --reload
 ```
+
+GreenLink local/dev is PostgreSQL-first. Alembic and the backend runtime should use the PostgreSQL DSN from `backend/.env`, and SQLite is not a supported runtime or migration target for this rebuild.
 
 ## Backend validation
 
@@ -34,6 +37,8 @@ py -m uv run pytest
 py -m uv run ruff check .
 py -m uv run ruff format --check .
 ```
+
+Backend tests also run against PostgreSQL. Keep the local Compose database running, or point `GREENLINK_TEST_DATABASE_URL` at a PostgreSQL test database.
 
 ## Frontend setup
 

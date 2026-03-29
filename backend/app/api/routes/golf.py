@@ -20,8 +20,10 @@ from app.api.routes.operations_support import (
 )
 from app.auth.dependencies import get_current_user, get_db
 from app.models import BookingRuleAppliesTo, Course, Tee, User
+from app.schemas.bookings import BookingCreateRequest, BookingCreateResult
 from app.schemas.operations import CourseCreateRequest, CourseResponse, TeeCreateRequest, TeeResponse
 from app.schemas.tee_sheet import TeeSheetDayQuery, TeeSheetDayResponse
+from app.services.booking_service import BookingService
 from app.services.tee_sheet_service import TeeSheetService
 
 router = APIRouter()
@@ -140,3 +142,17 @@ def get_tee_sheet_day(
             reference_datetime=reference_datetime,
         )
     )
+
+
+@router.post("/bookings", response_model=BookingCreateResult)
+def create_booking(
+    payload: BookingCreateRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingCreateResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingService(db)
+    return service.create_booking(context.selected_club.id, payload)

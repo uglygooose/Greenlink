@@ -8,6 +8,7 @@ Create Date: 2026-03-27 12:40:00.000000
 from __future__ import annotations
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -17,10 +18,12 @@ branch_labels = None
 depends_on = None
 
 
-user_type_enum = sa.Enum("superadmin", "user", name="usertype")
-membership_role_enum = sa.Enum("club_admin", "club_staff", "member", name="clubmembershiprole")
-membership_status_enum = sa.Enum(
-    "active", "invited", "suspended", "inactive", name="clubmembershipstatus"
+user_type_enum = postgresql.ENUM("superadmin", "user", name="usertype", create_type=False)
+membership_role_enum = postgresql.ENUM(
+    "club_admin", "club_staff", "member", name="clubmembershiprole", create_type=False
+)
+membership_status_enum = postgresql.ENUM(
+    "active", "invited", "suspended", "inactive", name="clubmembershipstatus", create_type=False
 )
 
 

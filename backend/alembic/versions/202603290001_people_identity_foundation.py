@@ -188,38 +188,60 @@ def upgrade() -> None:
             },
         )
 
-    with op.batch_alter_table("club_memberships") as batch_op:
-        batch_op.drop_constraint("uq_club_memberships_user_club", type_="unique")
-        batch_op.drop_constraint("club_memberships_user_id_fkey", type_="foreignkey")
-        batch_op.alter_column("person_id", existing_type=sa.Uuid(), nullable=False)
-        batch_op.alter_column("joined_at", existing_type=sa.DateTime(timezone=True), nullable=False)
-        batch_op.alter_column("membership_metadata", existing_type=sa.JSON(), nullable=False)
-        batch_op.create_foreign_key(
-            "fk_club_memberships_person_id_people",
-            "people",
-            ["person_id"],
-            ["id"],
-            ondelete="CASCADE",
-        )
-        batch_op.create_unique_constraint(
-            "uq_club_memberships_person_club", ["person_id", "club_id"]
-        )
-        batch_op.create_unique_constraint(
-            "uq_club_memberships_club_membership_number",
-            ["club_id", "membership_number"],
-        )
-        batch_op.drop_column("user_id")
+    op.drop_constraint("uq_club_memberships_user_club", "club_memberships", type_="unique")
+    op.drop_constraint("club_memberships_user_id_fkey", "club_memberships", type_="foreignkey")
+    op.alter_column("club_memberships", "person_id", existing_type=sa.Uuid(), nullable=False)
+    op.alter_column("club_memberships", "joined_at", existing_type=sa.DateTime(timezone=True), nullable=False)
+    op.alter_column("club_memberships", "membership_metadata", existing_type=sa.JSON(), nullable=False)
+    op.create_foreign_key(
+        "fk_club_memberships_person_id_people",
+        "club_memberships",
+        "people",
+        ["person_id"],
+        ["id"],
+        ondelete="CASCADE",
+    )
+    op.create_unique_constraint("uq_club_memberships_person_club", "club_memberships", ["person_id", "club_id"])
+    op.create_unique_constraint(
+        "uq_club_memberships_club_membership_number",
+        "club_memberships",
+        ["club_id", "membership_number"],
+    )
+    op.drop_column("club_memberships", "user_id")
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("club_memberships") as batch_op:
-        batch_op.drop_constraint("uq_club_memberships_club_membership_number", type_="unique")
-        batch_op.drop_constraint("uq_club_memberships_person_club", type_="unique")
-        batch_op.drop_constraint("fk_club_memberships_person_id_people", type_="foreignkey")
-        batch_op.drop_column("membership_metadata")
-        batch_op.drop_column("membership_number")
-        batch_op.drop_column("joined_at")
-        batch_op.drop_column("person_id")
+    op.add_column("club_memberships", sa.Column("user_id", sa.Uuid(), nullable=True))
+
+    bind = op.get_bind()
+    bind.execute(
+        sa.text(
+            """
+            UPDATE club_memberships
+            SET user_id = users.id
+            FROM users
+            WHERE users.person_id = club_memberships.person_id
+            """
+        )
+    )
+
+    op.alter_column("club_memberships", "user_id", existing_type=sa.Uuid(), nullable=False)
+    op.create_foreign_key(
+        "club_memberships_user_id_fkey",
+        "club_memberships",
+        "users",
+        ["user_id"],
+        ["id"],
+        ondelete="CASCADE",
+    )
+    op.create_unique_constraint("uq_club_memberships_user_club", "club_memberships", ["user_id", "club_id"])
+    op.drop_constraint("uq_club_memberships_club_membership_number", "club_memberships", type_="unique")
+    op.drop_constraint("uq_club_memberships_person_club", "club_memberships", type_="unique")
+    op.drop_constraint("fk_club_memberships_person_id_people", "club_memberships", type_="foreignkey")
+    op.drop_column("club_memberships", "membership_metadata")
+    op.drop_column("club_memberships", "membership_number")
+    op.drop_column("club_memberships", "joined_at")
+    op.drop_column("club_memberships", "person_id")
 
     op.drop_constraint("fk_users_person_id_people", "users", type_="foreignkey")
     op.drop_index(op.f("ix_users_person_id"), table_name="users")

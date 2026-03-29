@@ -8,6 +8,7 @@ Create Date: 2026-03-29 23:00:00.000000
 from __future__ import annotations
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -16,16 +17,21 @@ down_revision = "202603290004"
 branch_labels = None
 depends_on = None
 
-booking_status_enum = sa.Enum(
+booking_status_enum = postgresql.ENUM(
     "reserved",
     "checked_in",
     "cancelled",
     "completed",
     "no_show",
     name="bookingstatus",
+    create_type=False,
 )
-booking_participant_type_enum = sa.Enum("member", "guest", "staff", name="bookingparticipanttype")
-booking_source_enum = sa.Enum("admin", "member_portal", "staff", name="bookingsource")
+booking_participant_type_enum = postgresql.ENUM(
+    "member", "guest", "staff", name="bookingparticipanttype", create_type=False
+)
+booking_source_enum = postgresql.ENUM(
+    "admin", "member_portal", "staff", name="bookingsource", create_type=False
+)
 
 
 def upgrade() -> None:

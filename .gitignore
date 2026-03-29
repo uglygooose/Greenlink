@@ -20,6 +20,7 @@ backend/pytest-cache-files-*/
 backend/.env
 frontend/.env
 
+# Legacy SQLite local artifacts from the scaffold period. PostgreSQL is the canonical dev database.
 alembic.sqlite
 test.db
 
