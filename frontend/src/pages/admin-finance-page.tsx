@@ -3,83 +3,9 @@ import { NavLink } from "react-router-dom";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
+import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
 import { useSession } from "../session/session-context";
-
-type FinanceMetric = {
-  label: string;
-  value: string;
-  detail: string;
-  icon: string;
-  accentClassName: string;
-  borderClassName: string;
-};
-
-type JournalEntry = {
-  date: string;
-  title: string;
-  reference: string;
-  category: string;
-  amount: string;
-  status: string;
-  statusClassName: string;
-};
-
-const METRICS: FinanceMetric[] = [
-  {
-    label: "Total Unpaid",
-    value: "$14,280.00",
-    detail: "24 entries",
-    icon: "pending_actions",
-    accentClassName: "text-error",
-    borderClassName: "border-l-4 border-error",
-  },
-  {
-    label: "Pending Exports",
-    value: "45",
-    detail: "Ready for sync",
-    icon: "ios_share",
-    accentClassName: "text-primary",
-    borderClassName: "border-l-4 border-primary",
-  },
-  {
-    label: "Accounting Status",
-    value: "Synced with Xero",
-    detail: "Last automated sync: 14 mins ago",
-    icon: "verified_user",
-    accentClassName: "text-secondary",
-    borderClassName: "border-l-4 border-secondary",
-  },
-];
-
-const JOURNAL: JournalEntry[] = [
-  {
-    date: "Aug 24, 2023",
-    title: "Member Dues - John Smith",
-    reference: "INV-882910",
-    category: "Subscriptions",
-    amount: "$450.00",
-    status: "Queued",
-    statusClassName: "bg-primary-container text-on-primary-container",
-  },
-  {
-    date: "Aug 23, 2023",
-    title: "Catering Supply - Fresh Greens",
-    reference: "EXP-44021",
-    category: "Operations",
-    amount: "$1,240.00",
-    status: "Pending",
-    statusClassName: "border border-outline-variant text-slate-600",
-  },
-  {
-    date: "Aug 22, 2023",
-    title: "Golf Cart Maintenance",
-    reference: "MNT-9912",
-    category: "Fleet",
-    amount: "$890.50",
-    status: "Exported",
-    statusClassName: "bg-secondary-container text-on-secondary-container",
-  },
-];
+import type { FinanceTransactionType } from "../types/finance";
 
 function initials(name: string | undefined): string {
   return (
@@ -98,9 +24,58 @@ function sidebarLinkClass(isActive: boolean): string {
     : "group flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-emerald-700 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-emerald-300";
 }
 
+function formatAmount(amount: string): string {
+  const n = parseFloat(amount);
+  const abs = Math.abs(n).toFixed(2);
+  return n < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function txTypeLabel(type: FinanceTransactionType): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function txStatusClass(type: FinanceTransactionType): string {
+  switch (type) {
+    case "charge":
+      return "bg-error-container text-on-error-container";
+    case "payment":
+      return "bg-secondary-container text-on-secondary-container";
+    case "refund":
+      return "bg-primary-container text-on-primary-container";
+    default:
+      return "border border-outline-variant text-slate-600";
+  }
+}
+
 export function AdminFinancePage(): JSX.Element {
-  const { bootstrap } = useSession();
+  const { bootstrap, accessToken } = useSession();
   const displayName = bootstrap?.user.display_name ?? "Club Admin";
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
+  const journalQuery = useFinanceJournalQuery({ accessToken, selectedClubId });
+
+  const accounts = accountsQuery.data ?? [];
+  const journal = journalQuery.data;
+
+  // Derive metrics from live accounts data
+  const totalUnpaid = accounts
+    .reduce((sum, a) => {
+      const bal = parseFloat(a.balance);
+      return bal < 0 ? sum + Math.abs(bal) : sum;
+    }, 0)
+    .toFixed(2);
+
+  const unpaidCount = accounts.filter((a) => parseFloat(a.balance) < 0).length;
+  const totalTxCount = accounts.reduce((sum, a) => sum + a.transaction_count, 0);
 
   return (
     <div className="flex min-h-screen bg-background text-on-surface">
@@ -200,38 +175,67 @@ export function AdminFinancePage(): JSX.Element {
         </header>
 
         <div className="mt-16 flex-1 p-8">
+          {/* Metrics */}
           <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-            {METRICS.map((metric) => (
-              <div className={`rounded-xl bg-surface-container-lowest p-6 shadow-sm ${metric.borderClassName}`} key={metric.label}>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{metric.label}</span>
-                  <MaterialSymbol className={metric.accentClassName} icon={metric.icon} />
-                </div>
-                {metric.label === "Accounting Status" ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-on-surface">{metric.value}</span>
-                      <span className="rounded-full bg-secondary-container px-2 py-0.5 text-[10px] font-bold uppercase text-on-secondary-container">
-                        Live
-                      </span>
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-400">{metric.detail}</p>
-                  </>
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Unpaid</span>
+                <MaterialSymbol className="text-error" icon="pending_actions" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {accountsQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
                 ) : (
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">{metric.value}</span>
-                    <span className={`text-xs font-medium ${metric.accentClassName}`}>{metric.detail}</span>
-                  </div>
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">${totalUnpaid}</span>
+                    <span className="text-xs font-medium text-error">{unpaidCount} accounts</span>
+                  </>
                 )}
               </div>
-            ))}
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Transactions</span>
+                <MaterialSymbol className="text-primary" icon="receipt_long" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {accountsQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{totalTxCount}</span>
+                    <span className="text-xs font-medium text-primary">{accounts.length} accounts</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Accounting Status</span>
+                <MaterialSymbol className="text-secondary" icon="verified_user" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-on-surface">Synced with Xero</span>
+                <span className="rounded-full bg-secondary-container px-2 py-0.5 text-[10px] font-bold uppercase text-on-secondary-container">
+                  Live
+                </span>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">Last automated sync: 14 mins ago</p>
+            </div>
           </div>
 
+          {/* Journal table */}
           <div className="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-50 px-6 py-4">
               <div className="flex items-center gap-2">
                 <h3 className="font-headline font-bold text-slate-800">Cashbook Journal</h3>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">August 2023</span>
+                {journal && (
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                    {journal.total_count} records
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <button className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50" type="button">
@@ -249,31 +253,58 @@ export function AdminFinancePage(): JSX.Element {
                 <thead>
                   <tr className="bg-slate-50/50">
                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Date</th>
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Item / Transaction</th>
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Category</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Description</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Account</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Source</th>
                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Amount</th>
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Status</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Type</th>
                     <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {JOURNAL.map((entry) => (
-                    <tr className="group transition-colors hover:bg-surface-container-low" key={entry.reference}>
-                      <td className="px-6 py-4 text-sm text-slate-600">{entry.date}</td>
+                  {journalQuery.isLoading && (
+                    <tr>
+                      <td className="px-6 py-8 text-center text-sm text-slate-400" colSpan={7}>
+                        Loading transactions…
+                      </td>
+                    </tr>
+                  )}
+                  {journalQuery.isError && (
+                    <tr>
+                      <td className="px-6 py-8 text-center text-sm text-error" colSpan={7}>
+                        Failed to load journal.
+                      </td>
+                    </tr>
+                  )}
+                  {journal && journal.entries.length === 0 && (
+                    <tr>
+                      <td className="px-6 py-8 text-center text-sm text-slate-400" colSpan={7}>
+                        No transactions yet.
+                      </td>
+                    </tr>
+                  )}
+                  {journal?.entries.map((entry) => (
+                    <tr className="group transition-colors hover:bg-surface-container-low" key={entry.id}>
+                      <td className="px-6 py-4 text-sm text-slate-600">{formatDate(entry.created_at)}</td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-on-surface">{entry.title}</span>
-                          <span className="text-[11px] text-slate-400">{entry.reference}</span>
+                          <span className="text-sm font-bold text-on-surface">{entry.description}</span>
+                          {entry.reference_id && (
+                            <span className="text-[11px] text-slate-400">{entry.reference_id}</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{entry.category}</span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                          {entry.account_customer_code ?? "—"}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-bold text-on-surface">{entry.amount}</td>
+                      <td className="px-6 py-4 text-xs text-slate-500 capitalize">{entry.source}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-on-surface">{formatAmount(entry.amount)}</td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${entry.statusClassName}`}>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${txStatusClass(entry.type)}`}>
                           <span className="h-1.5 w-1.5 rounded-full bg-current"></span>
-                          {entry.status}
+                          {txTypeLabel(entry.type)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -287,7 +318,11 @@ export function AdminFinancePage(): JSX.Element {
               </table>
             </div>
             <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/30 p-4">
-              <span className="text-xs font-medium text-slate-500">Showing 45 of 45 records ready for export.</span>
+              <span className="text-xs font-medium text-slate-500">
+                {journal
+                  ? `Showing ${journal.entries.length} of ${journal.total_count} records.`
+                  : "Loading…"}
+              </span>
               <div className="flex gap-2">
                 <button className="rounded border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 transition-all hover:bg-white" type="button">
                   Previous
@@ -308,7 +343,9 @@ export function AdminFinancePage(): JSX.Element {
         <div className="flex items-center justify-between border-b border-slate-100 p-6">
           <div>
             <h3 className="font-headline text-lg font-extrabold text-slate-900">Export Preview</h3>
-            <p className="text-xs text-slate-500">Reviewing 45 records for General Ledger sync</p>
+            <p className="text-xs text-slate-500">
+              {journal ? `Reviewing ${journal.total_count} records for General Ledger sync` : "Loading…"}
+            </p>
           </div>
           <button className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-50" type="button">
             <MaterialSymbol icon="close" />
@@ -321,50 +358,34 @@ export function AdminFinancePage(): JSX.Element {
               <div>
                 <p className="text-sm font-bold text-on-primary-container">Ready to Trigger Export</p>
                 <p className="mt-1 text-xs leading-relaxed text-on-primary-container/80">
-                  Are you sure you want to export 45 records to Xero? This will mark them as exported and lock them for further editing.
+                  Are you sure you want to export {journal?.total_count ?? "—"} records to Xero? This will mark them as exported and lock them for further editing.
                 </p>
               </div>
             </div>
           </div>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Handoff Summary</span>
-              <button className="text-[11px] font-bold text-primary" type="button">
-                Select All
-              </button>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Recent Entries</span>
             </div>
             <div className="space-y-2">
-              <div className="group flex items-center justify-between rounded-lg border border-transparent bg-surface p-3 transition-all hover:border-slate-200 hover:bg-slate-50">
-                <div className="flex items-center gap-3">
-                  <div className="h-1.5 w-1.5 rounded-full bg-primary"></div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-on-surface">INV-882910</span>
-                    <span className="text-[10px] text-slate-500">Member Dues</span>
+              {journal?.entries.slice(0, 5).map((entry) => (
+                <div className="group flex items-center justify-between rounded-lg border border-transparent bg-surface p-3 transition-all hover:border-slate-200 hover:bg-slate-50" key={entry.id}>
+                  <div className="flex items-center gap-3">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary"></div>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-on-surface">{entry.account_customer_code ?? "—"}</span>
+                      <span className="text-[10px] text-slate-500 capitalize">{entry.source}</span>
+                    </div>
                   </div>
+                  <span className="text-xs font-bold text-on-surface">{formatAmount(entry.amount)}</span>
                 </div>
-                <span className="text-xs font-bold text-on-surface">$450.00</span>
-              </div>
-              <div className="group flex items-center justify-between rounded-lg border border-transparent bg-surface p-3 transition-all hover:border-slate-200 hover:bg-slate-50">
-                <div className="flex items-center gap-3">
-                  <div className="h-1.5 w-1.5 rounded-full bg-primary"></div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-on-surface">MNT-9912</span>
-                    <span className="text-[10px] text-slate-500">Cart Maintenance</span>
-                  </div>
+              ))}
+              {journal && journal.total_count > 5 && (
+                <div className="py-2 text-center">
+                  <span className="text-[10px] font-medium text-slate-400">… and {journal.total_count - 5} more records</span>
                 </div>
-                <span className="text-xs font-bold text-on-surface">$890.50</span>
-              </div>
-              <div className="py-2 text-center">
-                <span className="text-[10px] font-medium text-slate-400">... and 43 more records</span>
-              </div>
+              )}
             </div>
-          </div>
-          <div className="rounded-xl bg-slate-900 p-4 text-white">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Total Export Value</span>
-              <span className="text-xs font-bold text-emerald-400">Validated</span>
-            </div>
-            <div className="font-headline text-2xl font-extrabold">$18,452.25</div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 border-t border-slate-200 bg-slate-50 p-6">

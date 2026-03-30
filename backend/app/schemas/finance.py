@@ -60,3 +60,30 @@ class FinanceAccountLedgerResponse(BaseModel):
     status: FinanceAccountStatus
     balance: Decimal
     transactions: list[FinanceLedgerEntryResponse]
+
+
+class FinanceAccountCustomerSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    account_code: str
+    person_id: uuid.UUID
+
+
+class FinanceAccountSummaryResponse(BaseModel):
+    id: uuid.UUID
+    club_id: uuid.UUID
+    account_customer_id: uuid.UUID
+    account_customer: FinanceAccountCustomerSummary
+    status: FinanceAccountStatus
+    balance: Decimal
+    transaction_count: int
+
+
+class FinanceJournalEntryResponse(FinanceTransactionResponse):
+    account_customer_code: str | None
+
+
+class FinanceClubJournalResponse(BaseModel):
+    entries: list[FinanceJournalEntryResponse]
+    total_count: int
