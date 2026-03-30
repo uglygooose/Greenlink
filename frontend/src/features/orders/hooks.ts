@@ -1,7 +1,16 @@
-import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
+import { apiRequest } from "../../api/client";
 import { fetchOrder, fetchOrderMenu, fetchOrders } from "../../api/operations";
-import type { OrderDetail, OrderMenuItem, OrderStatus, OrderSummary } from "../../types/orders";
+import { useSession } from "../../session/session-context";
+import type {
+  OrderDetail,
+  OrderMenuItem,
+  OrderSettlementRequestInput,
+  OrderSettlementResult,
+  OrderStatus,
+  OrderSummary,
+} from "../../types/orders";
 
 export const orderKeys = {
   menu: (clubId: string) => ["orders", clubId, "menu"] as const,
@@ -85,5 +94,34 @@ export async function prefetchOpenOrders(
   await queryClient.prefetchQuery({
     queryKey: orderKeys.list(selectedClubId, null),
     queryFn: () => fetchOrders(null, { accessToken, selectedClubId }),
+  });
+}
+
+interface RecordPaymentVariables {
+  orderId: string;
+  tenderType: OrderSettlementRequestInput["tender_type"];
+}
+
+export function useRecordPaymentMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: ({ orderId, tenderType }: RecordPaymentVariables) =>
+      apiRequest<OrderSettlementResult>(`/api/orders/${orderId}/record-payment`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify({ tender_type: tenderType }),
+      }),
+    onSuccess: async () => {
+      if (!selectedClubId) {
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["orders", selectedClubId],
+      });
+    },
   });
 }

@@ -14,6 +14,11 @@ from app.api.routes.club_access import (
 from app.auth.dependencies import get_current_user, get_db
 from app.core.exceptions import AuthorizationError, NotFoundError
 from app.models import ClubMembershipRole, OrderSource, OrderStatus, User
+from app.schemas.order_settlement import (
+    OrderSettlementRecordRequest,
+    OrderSettlementRequest,
+    OrderSettlementResult,
+)
 from app.schemas.orders import (
     OrderCancelRequest,
     OrderCancelResult,
@@ -33,6 +38,7 @@ from app.schemas.orders import (
 )
 from app.services.order_finance_posting_service import OrderFinancePostingService
 from app.services.order_service import OrderService
+from app.services.order_settlement_service import OrderSettlementService
 
 router = APIRouter()
 
@@ -220,4 +226,26 @@ def post_order_charge(
     return service.post_charge(
         club_id=context.selected_club.id,
         payload=OrderChargePostRequest(order_id=order_id, acting_user_id=current_user.id),
+    )
+
+
+@router.post("/{order_id}/record-payment", response_model=OrderSettlementResult)
+def record_order_payment(
+    order_id: uuid.UUID,
+    payload: OrderSettlementRecordRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> OrderSettlementResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = OrderSettlementService(db)
+    return service.record_settlement(
+        club_id=context.selected_club.id,
+        payload=OrderSettlementRequest(
+            order_id=order_id,
+            acting_user_id=current_user.id,
+            tender_type=payload.tender_type,
+        ),
     )

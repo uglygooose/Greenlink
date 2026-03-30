@@ -1,5 +1,10 @@
+import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { apiRequest } from "../../api/client";
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
-import type { OrderDetail, OrderStatus } from "../../types/orders";
+import { useSession } from "../../session/session-context";
+import type { OrderDetail, OrderSettlementResult, OrderStatus, TenderType } from "../../types/orders";
 
 type FeedbackTone = "error" | "info";
 type LifecycleAction = "preparing" | "ready" | "collected" | "cancel" | "post_charge";
@@ -69,6 +74,34 @@ function formatOrderLabel(orderId: string): string {
   return `Order ${orderId.slice(0, 8)}`;
 }
 
+function tenderLabel(tenderType: TenderType): string {
+  switch (tenderType) {
+    case "cash":
+      return "Cash";
+    case "card":
+      return "Card";
+    case "member_account":
+      return "Account";
+  }
+}
+
+function tenderIcon(tenderType: TenderType): string {
+  switch (tenderType) {
+    case "cash":
+      return "payments";
+    case "card":
+      return "credit_card";
+    case "member_account":
+      return "account_balance";
+  }
+}
+
+function tenderButtonClassName(isSelected: boolean): string {
+  return isSelected
+    ? "flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-primary/20 bg-primary-container/30 px-3 py-3 text-primary transition-colors"
+    : "flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl bg-surface-container-low px-3 py-3 text-on-surface transition-colors hover:bg-surface-container";
+}
+
 function ActionButton({
   ariaLabel,
   disabled,
@@ -105,12 +138,82 @@ export function OrderManagementDrawer({
   onCancel,
   onClose,
 }: OrderManagementDrawerProps): JSX.Element {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+  const recordPaymentMutation = useMutation<
+    OrderSettlementResult,
+    Error,
+    { orderId: string; tenderType: TenderType }
+  >({
+    mutationFn: ({ orderId, tenderType }) =>
+      apiRequest<OrderSettlementResult>(`/api/orders/${orderId}/record-payment`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify({ tender_type: tenderType }),
+      }),
+    onSuccess: async () => {
+      if (!selectedClubId) {
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["orders", selectedClubId],
+      });
+    },
+  });
+  const [selectedTender, setSelectedTender] = useState<TenderType | null>(null);
+  const [settlementFeedbackMessage, setSettlementFeedbackMessage] = useState<string | null>(null);
+  const [settlementFeedbackTone, setSettlementFeedbackTone] = useState<FeedbackTone | null>(null);
   const isPending = pendingOrderId === order.id;
   const isPreparingPending = isPending && pendingAction === "preparing";
   const isReadyPending = isPending && pendingAction === "ready";
   const isCollectedPending = isPending && pendingAction === "collected";
   const isCancelPending = isPending && pendingAction === "cancel";
   const isPostChargePending = isPending && pendingAction === "post_charge";
+  const settlementOrder = recordPaymentMutation.data?.order?.id === order.id ? recordPaymentMutation.data.order : null;
+  const financePaymentTransactionId =
+    settlementOrder?.finance_payment_transaction_id ?? order.finance_payment_transaction_id ?? null;
+  const financePaymentPosted =
+    settlementOrder?.finance_payment_posted ?? order.finance_payment_posted ?? false;
+  const paymentTenderType =
+    settlementOrder?.payment_tender_type ?? recordPaymentMutation.data?.transaction?.tender_type ?? order.payment_tender_type ?? null;
+  const effectiveFeedbackMessage = feedbackMessage ?? settlementFeedbackMessage;
+  const effectiveFeedbackTone = feedbackMessage ? feedbackTone : settlementFeedbackTone;
+
+  useEffect(() => {
+    setSelectedTender(null);
+    setSettlementFeedbackMessage(null);
+    setSettlementFeedbackTone(null);
+    recordPaymentMutation.reset();
+  }, [order.id]);
+
+  async function handleRecordPayment(): Promise<void> {
+    if (!selectedTender || recordPaymentMutation.isPending) {
+      return;
+    }
+
+    setSettlementFeedbackMessage(null);
+    setSettlementFeedbackTone(null);
+    const result = await recordPaymentMutation.mutateAsync({
+      orderId: order.id,
+      tenderType: selectedTender,
+    });
+
+    if (result.decision === "blocked") {
+      setSettlementFeedbackTone("error");
+      setSettlementFeedbackMessage(result.failures[0] ?? "Payment recording was blocked.");
+      return;
+    }
+
+    setSelectedTender(null);
+    setSettlementFeedbackTone("info");
+    setSettlementFeedbackMessage(
+      result.settlement_applied
+        ? "Payment recorded. Drawer refreshed from backend state."
+        : "Payment was already recorded. Drawer refreshed from backend state.",
+    );
+  }
 
   return (
     <>
@@ -152,11 +255,14 @@ export function OrderManagementDrawer({
             </div>
           </section>
 
-          {feedbackMessage ? (
-            <section className={`rounded-2xl px-4 py-3 ${feedbackClassName(feedbackTone)}`}>
+          {effectiveFeedbackMessage ? (
+            <section className={`rounded-2xl px-4 py-3 ${feedbackClassName(effectiveFeedbackTone)}`}>
               <div className="flex items-start gap-3">
-                <MaterialSymbol className="text-base" icon={feedbackTone === "error" ? "warning" : "info"} />
-                <p className="text-sm font-medium">{feedbackMessage}</p>
+                <MaterialSymbol
+                  className="text-base"
+                  icon={effectiveFeedbackTone === "error" ? "warning" : "info"}
+                />
+                <p className="text-sm font-medium">{effectiveFeedbackMessage}</p>
               </div>
             </section>
           ) : null}
@@ -201,6 +307,64 @@ export function OrderManagementDrawer({
               ) : null}
             </div>
           </section>
+
+          {order.status === "collected" && order.finance_charge_posted ? (
+            <section className="rounded-2xl bg-surface-container-low p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Payment</p>
+              {financePaymentPosted ? (
+                <div className="mt-3 space-y-2 text-sm text-on-surface">
+                  <div className="flex items-center gap-2">
+                    <MaterialSymbol className="text-sm text-slate-400" icon="payments" />
+                    <span>Payment recorded</span>
+                  </div>
+                  {paymentTenderType ? (
+                    <div className="flex items-center gap-2">
+                      <MaterialSymbol className="text-sm text-slate-400" icon={tenderIcon(paymentTenderType)} />
+                      <span>{tenderLabel(paymentTenderType)}</span>
+                    </div>
+                  ) : null}
+                  {financePaymentTransactionId ? (
+                    <div className="flex items-center gap-2">
+                      <MaterialSymbol className="text-sm text-slate-400" icon="receipt_long" />
+                      <span className="break-all">{financePaymentTransactionId}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["cash", "card", "member_account"] as TenderType[]).map((tenderType) => (
+                      <button
+                        className={tenderButtonClassName(selectedTender === tenderType)}
+                        key={tenderType}
+                        onClick={() => setSelectedTender(tenderType)}
+                        type="button"
+                      >
+                        <MaterialSymbol className="text-lg" icon={tenderIcon(tenderType)} />
+                        <span className="text-[10px] font-bold uppercase tracking-tight">
+                          {tenderLabel(tenderType)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary-dim disabled:cursor-not-allowed disabled:bg-slate-300"
+                    disabled={!selectedTender || recordPaymentMutation.isPending}
+                    onClick={() => {
+                      void handleRecordPayment();
+                    }}
+                    type="button"
+                  >
+                    <MaterialSymbol
+                      className="text-sm"
+                      icon={recordPaymentMutation.isPending ? "progress_activity" : "payments"}
+                    />
+                    <span>{recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}</span>
+                  </button>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section className="space-y-3">
             <div className="flex items-center justify-between">

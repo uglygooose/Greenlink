@@ -140,3 +140,9 @@ class OrderStatus(StrEnum):
     READY = "ready"
     COLLECTED = "collected"
     CANCELLED = "cancelled"
+
+
+class TenderType(StrEnum):
+    CASH = "cash"
+    CARD = "card"
+    MEMBER_ACCOUNT = "member_account"

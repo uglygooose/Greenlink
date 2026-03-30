@@ -36,6 +36,12 @@ class Order(UUIDPrimaryKeyMixin, Base):
         unique=True,
         index=True,
     )
+    finance_payment_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("finance_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     source: Mapped[OrderSource] = mapped_column(nullable=False)
     status: Mapped[OrderStatus] = mapped_column(
         nullable=False,
@@ -53,6 +59,10 @@ class Order(UUIDPrimaryKeyMixin, Base):
     finance_charge_transaction = relationship(
         "FinanceTransaction",
         foreign_keys=[finance_charge_transaction_id],
+    )
+    finance_payment_transaction = relationship(
+        "FinanceTransaction",
+        foreign_keys=[finance_payment_transaction_id],
     )
     items = relationship(
         "OrderItem",

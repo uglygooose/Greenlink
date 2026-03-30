@@ -1,5 +1,6 @@
 export type OrderSource = "player_app" | "staff";
 export type OrderStatus = "placed" | "preparing" | "ready" | "collected" | "cancelled";
+export type TenderType = "cash" | "card" | "member_account";
 
 export interface OrderMenuItem {
   product_id: string;
@@ -45,6 +46,9 @@ export interface OrderSummary {
   booking_id: string | null;
   finance_charge_transaction_id: string | null;
   finance_charge_posted: boolean;
+  finance_payment_transaction_id?: string | null;
+  finance_payment_posted?: boolean;
+  payment_tender_type?: TenderType | null;
   source: OrderSource;
   status: OrderStatus;
   created_at: string;
@@ -109,4 +113,28 @@ export interface OrderChargePostResult {
   } | null;
   balance: string | null;
   failures: OrderChargePostFailureDetail[];
+}
+
+export interface OrderSettlementRequestInput {
+  tender_type: TenderType;
+}
+
+export interface OrderSettlementResult {
+  decision: "allowed" | "blocked";
+  settlement_applied: boolean;
+  order: OrderDetail | null;
+  transaction: {
+    id: string;
+    club_id: string;
+    account_id: string;
+    amount: string;
+    type: "charge" | "payment" | "adjustment";
+    source: "booking" | "order" | "pos" | "manual";
+    reference_id: string | null;
+    description: string;
+    created_at: string;
+    tender_type: TenderType | null;
+  } | null;
+  balance: string | null;
+  failures: string[];
 }
