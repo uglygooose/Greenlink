@@ -12,24 +12,33 @@ from app.models.club_setting import ClubSetting
 from app.models.course import Course
 from app.models.domain_event_record import DomainEventRecord
 from app.models.enums import (
-    BulkIntakeAction,
     BookingParticipantType,
-    BookingSource,
-    BookingStatus,
     BookingRuleAppliesTo,
     BookingRuleConflictStrategy,
     BookingRuleScopeType,
     BookingRuleType,
+    BookingSource,
+    BookingStatus,
+    BulkIntakeAction,
     ClubMembershipRole,
     ClubMembershipStatus,
+    FinanceAccountStatus,
+    FinanceTransactionSource,
+    FinanceTransactionType,
     IntegrityIssueScope,
     IntegrityIssueSeverity,
+    OrderSource,
+    OrderStatus,
     PricingDayType,
     PricingRuleAppliesTo,
     PricingTimeBand,
     ReadinessStatus,
     UserType,
 )
+from app.models.finance.account import FinanceAccount
+from app.models.finance.transaction import FinanceTransaction
+from app.models.order import Order
+from app.models.order_item import OrderItem
 from app.models.person import Person
 from app.models.platform_state import PlatformState
 from app.models.pricing_matrix import PricingMatrix
@@ -62,8 +71,17 @@ __all__ = [
     "ClubSetting",
     "Course",
     "DomainEventRecord",
+    "FinanceAccount",
+    "FinanceAccountStatus",
+    "FinanceTransaction",
+    "FinanceTransactionSource",
+    "FinanceTransactionType",
     "IntegrityIssueScope",
     "IntegrityIssueSeverity",
+    "Order",
+    "OrderItem",
+    "OrderSource",
+    "OrderStatus",
     "Person",
     "PricingDayType",
     "PricingMatrix",

@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { prefetchOperationalSettings } from "../features/golf-settings/hooks";
+import { prefetchOpenOrders } from "../features/orders/hooks";
 import { prefetchTeeSheetDay } from "../features/tee-sheet/hooks";
 import { useSession } from "../session/session-context";
 
@@ -43,6 +44,15 @@ export function AdminShellPage(): JSX.Element {
             }}
           >
             Golf Settings
+          </NavLink>
+          <NavLink
+            className="admin-nav-link"
+            to="/admin/orders"
+            onMouseEnter={() => {
+              void prefetchOpenOrders(queryClient, accessToken, selectedClubId);
+            }}
+          >
+            Orders
           </NavLink>
           <NavLink className="admin-nav-link" to="/select-club">
             Change Club

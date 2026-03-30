@@ -6,6 +6,19 @@ import type {
   BookingNoShowResult,
 } from "../types/bookings";
 import type {
+  OrderCancelResult,
+  OrderChargePostResult,
+  OrderCollectedResult,
+  OrderCreateInput,
+  OrderCreateResult,
+  OrderDetail,
+  OrderMenuItem,
+  OrderPreparingResult,
+  OrderReadyResult,
+  OrderStatus,
+  OrderSummary,
+} from "../types/orders";
+import type {
   BookingRuleSet,
   BookingRuleSetInput,
   ClubConfig,
@@ -222,6 +235,113 @@ export function markBookingNoShow(
   { accessToken, selectedClubId }: AuthenticatedOptions,
 ): Promise<BookingNoShowResult> {
   return apiRequest<BookingNoShowResult>(`/api/golf/bookings/${bookingId}/no-show`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function fetchOrders(
+  status: OrderStatus | null,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderSummary[]> {
+  const searchParams = new URLSearchParams();
+  if (status) {
+    searchParams.set("status", status);
+  }
+  const path = searchParams.size ? `/api/orders?${searchParams.toString()}` : "/api/orders";
+  return apiRequest<OrderSummary[]>(path, {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+export function fetchOrderMenu({ accessToken, selectedClubId }: AuthenticatedOptions): Promise<OrderMenuItem[]> {
+  return apiRequest<OrderMenuItem[]>("/api/orders/menu", {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+export function createOrder(
+  payload: OrderCreateInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderCreateResult> {
+  return apiRequest<OrderCreateResult>("/api/orders", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchOrder(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderDetail> {
+  return apiRequest<OrderDetail>(`/api/orders/${orderId}`, {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+export function markOrderPreparing(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderPreparingResult> {
+  return apiRequest<OrderPreparingResult>(`/api/orders/${orderId}/preparing`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function markOrderReady(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderReadyResult> {
+  return apiRequest<OrderReadyResult>(`/api/orders/${orderId}/ready`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function markOrderCollected(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderCollectedResult> {
+  return apiRequest<OrderCollectedResult>(`/api/orders/${orderId}/collected`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function cancelOrder(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderCancelResult> {
+  return apiRequest<OrderCancelResult>(`/api/orders/${orderId}/cancel`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function postOrderCharge(
+  orderId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<OrderChargePostResult> {
+  return apiRequest<OrderChargePostResult>(`/api/orders/${orderId}/post-charge`, {
     method: "POST",
     accessToken,
     selectedClubId,

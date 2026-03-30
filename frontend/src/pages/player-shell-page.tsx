@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
@@ -107,6 +109,18 @@ export function PlayerShellPage(): JSX.Element {
           <span className="font-headline text-lg font-bold">Book Golf</span>
         </button>
 
+        <Link
+          className="flex items-center justify-between rounded-xl bg-surface-container-lowest px-5 py-4 shadow-sm transition-colors hover:bg-surface-container-low"
+          to="/player/order"
+        >
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary">Halfway House</p>
+            <h2 className="mt-1 font-headline text-lg font-bold text-on-surface">Order food & drink</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">Quick order, minimal taps, ready for collection.</p>
+          </div>
+          <MaterialSymbol className="text-outline" icon="arrow_forward" />
+        </Link>
+
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-bold font-headline">Upcoming Bookings</h2>
@@ -171,7 +185,7 @@ export function PlayerShellPage(): JSX.Element {
         inactiveClassName="text-slate-500 active:bg-slate-100 scale-95"
         items={[
           { label: "Home", icon: "home", to: "/player/home", isActive: true },
-          { label: "Bookings", icon: "calendar_today" },
+          { label: "Order", icon: "local_cafe", to: "/player/order" },
           { label: "Club/News", icon: "article" },
           { label: "Profile", icon: "person" },
         ]}

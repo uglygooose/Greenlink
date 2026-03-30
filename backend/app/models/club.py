@@ -27,5 +27,10 @@ class Club(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="club",
         cascade="all, delete-orphan",
     )
+    finance_accounts = relationship(
+        "FinanceAccount",
+        back_populates="club",
+        cascade="all, delete-orphan",
+    )
     settings = relationship("ClubSetting", back_populates="club", cascade="all, delete-orphan")
     modules = relationship("ClubModule", back_populates="club", cascade="all, delete-orphan")

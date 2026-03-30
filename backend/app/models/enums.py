@@ -109,3 +109,34 @@ class BookingSource(StrEnum):
     ADMIN = "admin"
     MEMBER_PORTAL = "member_portal"
     STAFF = "staff"
+
+
+class FinanceAccountStatus(StrEnum):
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
+class FinanceTransactionType(StrEnum):
+    CHARGE = "charge"
+    PAYMENT = "payment"
+    ADJUSTMENT = "adjustment"
+
+
+class FinanceTransactionSource(StrEnum):
+    BOOKING = "booking"
+    ORDER = "order"
+    POS = "pos"
+    MANUAL = "manual"
+
+
+class OrderSource(StrEnum):
+    PLAYER_APP = "player_app"
+    STAFF = "staff"
+
+
+class OrderStatus(StrEnum):
+    PLACED = "placed"
+    PREPARING = "preparing"
+    READY = "ready"
+    COLLECTED = "collected"
+    CANCELLED = "cancelled"

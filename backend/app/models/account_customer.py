@@ -32,3 +32,9 @@ class AccountCustomer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     club = relationship("Club", back_populates="account_customers")
     person = relationship("Person", back_populates="account_customers")
+    finance_account = relationship(
+        "FinanceAccount",
+        back_populates="account_customer",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
