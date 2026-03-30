@@ -3,55 +3,14 @@ import { Link, NavLink } from "react-router-dom";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
+import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
+import { useCoursesQuery } from "../features/golf-settings/hooks";
+import { useClubDirectoryQuery } from "../features/people/hooks";
+import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { useSession } from "../session/session-context";
-
-type MetricCard = {
-  label: string;
-  value: string;
-  icon: string;
-  accentClassName: string;
-  trend?: string;
-  detail?: string;
-  progress?: string;
-  bars?: number;
-};
 
 type ActionItem = { title: string; subtitle: string; icon: string };
 type ActivityItem = { title: string; subtitle: string; icon: string; accentClassName: string };
-
-const METRIC_CARDS: MetricCard[] = [
-  {
-    label: "Today's Revenue",
-    value: "$14,280",
-    icon: "payments",
-    accentClassName: "bg-primary-container text-on-primary-container",
-    trend: "+8.2%",
-    progress: "75%",
-  },
-  {
-    label: "Tee Time Occupancy",
-    value: "82%",
-    icon: "golf_course",
-    accentClassName: "bg-secondary-container text-on-secondary-container",
-    trend: "84 / 102",
-    bars: 3,
-  },
-  {
-    label: "New Memberships",
-    value: "12",
-    icon: "person_add",
-    accentClassName: "bg-tertiary-container text-on-tertiary-container",
-    detail: "8 pending approval",
-  },
-  {
-    label: "Pace of Play",
-    value: "4h 12m",
-    icon: "timer",
-    accentClassName: "bg-surface-container-high text-on-surface",
-    trend: "warning",
-    detail: "Avg delay: +8 mins",
-  },
-];
 
 const QUICK_ACTIONS: ActionItem[] = [
   { title: "Book Golf", subtitle: "Create new reservation", icon: "add_box" },
@@ -100,17 +59,58 @@ function todayLabel(): string {
   }).format(new Date());
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function sidebarLinkClass(isActive: boolean): string {
   return isActive
     ? "flex items-center gap-3 px-4 py-3 text-emerald-800 dark:text-emerald-400 font-bold border-r-4 border-emerald-600 bg-emerald-50/50 dark:bg-emerald-900/20 transition-all duration-200 ease-in-out"
     : "flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out";
 }
 
+function formatAmount(amount: number): string {
+  return `$${Math.abs(amount).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function AdminDashboardPage(): JSX.Element {
-  const { bootstrap, logout } = useSession();
+  const { bootstrap, logout, accessToken } = useSession();
   const displayName = bootstrap?.user.display_name ?? "Club Admin";
   const selectedClubName = bootstrap?.selected_club?.name ?? "Club workspace";
   const timezone = bootstrap?.selected_club?.timezone ?? "Club timezone";
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  // Live data queries
+  const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
+  const journalQuery = useFinanceJournalQuery({ accessToken, selectedClubId });
+  const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
+  const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
+  const firstCourseId = coursesQuery.data?.[0]?.id ?? null;
+  const teeSheetQuery = useTeeSheetDayQuery({
+    accessToken,
+    selectedClubId,
+    courseId: firstCourseId,
+    date: todayIso(),
+    membershipType: "member",
+  });
+
+  // Derived metrics
+  const totalOutstanding = (accountsQuery.data ?? []).reduce((sum, a) => {
+    const bal = parseFloat(a.balance);
+    return bal < 0 ? sum + Math.abs(bal) : sum;
+  }, 0);
+  const unpaidCount = (accountsQuery.data ?? []).filter((a) => parseFloat(a.balance) < 0).length;
+
+  const memberCount = directoryQuery.data?.length ?? null;
+
+  const txTotal = journalQuery.data?.total_count ?? null;
+
+  const allSlots = (teeSheetQuery.data?.rows ?? []).flatMap((r) => r.slots);
+  const bookedSlots = allSlots.filter((s) =>
+    s.bookings.some((b) => b.status === "reserved" || b.status === "checked_in"),
+  ).length;
+  const totalSlots = allSlots.length;
+  const occupancyPct = totalSlots > 0 ? Math.round((bookedSlots / totalSlots) * 100) : null;
 
   return (
     <div className="bg-background text-on-surface">
@@ -138,21 +138,15 @@ export function AdminDashboardPage(): JSX.Element {
               <MaterialSymbol icon="calendar_today" />
               <span className="font-label text-sm">Tee Sheet</span>
             </NavLink>
-            <button
-              className={sidebarLinkClass(false)}
-              type="button"
-            >
+            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/members">
               <MaterialSymbol icon="group" />
               <span className="font-label text-sm">Members</span>
-            </button>
+            </NavLink>
             <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
               <MaterialSymbol icon="payments" />
               <span className="font-label text-sm">Finance</span>
             </NavLink>
-            <button
-              className={sidebarLinkClass(false)}
-              type="button"
-            >
+            <button className={sidebarLinkClass(false)} type="button">
               <MaterialSymbol icon="inventory_2" />
               <span className="font-label text-sm">Inventory</span>
             </button>
@@ -163,7 +157,7 @@ export function AdminDashboardPage(): JSX.Element {
           </nav>
         </div>
         <div className="mt-auto border-t border-slate-100 px-6 py-8">
-          <button className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-white hover:opacity-90 transition-opacity">
+          <button className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-white transition-opacity hover:opacity-90">
             <MaterialSymbol icon="add_circle" />
             <span>New Action</span>
           </button>
@@ -174,9 +168,7 @@ export function AdminDashboardPage(): JSX.Element {
             </NavLink>
             <button
               className="flex items-center gap-3 px-4 py-2 text-slate-500 transition-colors hover:text-error"
-              onClick={() => {
-                void logout();
-              }}
+              onClick={() => { void logout(); }}
               type="button"
             >
               <MaterialSymbol className="text-xl" icon="logout" />
@@ -223,54 +215,111 @@ export function AdminDashboardPage(): JSX.Element {
         </header>
 
         <div className="mx-auto max-w-7xl px-6 pt-24">
+          {/* Metric cards */}
           <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {METRIC_CARDS.map((card) => (
-              <div
-                className="group relative overflow-hidden rounded-xl bg-surface-container-lowest p-6 transition-all hover:-translate-y-[2px]"
-                key={card.label}
-              >
-                <div className="mb-4 flex items-start justify-between">
-                  <div className={`rounded-lg p-2 ${card.accentClassName}`}>
-                    <MaterialSymbol icon={card.icon} />
-                  </div>
-                  {card.trend === "warning" ? (
-                    <span className="flex items-center gap-1 text-xs font-bold text-error">
-                      <MaterialSymbol className="text-sm" icon="warning" />
-                    </span>
-                  ) : card.trend ? (
-                    <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
-                      <MaterialSymbol className="text-sm" icon="trending_up" />
-                      {card.trend}
-                    </span>
-                  ) : null}
+
+            {/* Card 1: Outstanding balance */}
+            <div className="group relative overflow-hidden rounded-xl bg-surface-container-lowest p-6 transition-all hover:-translate-y-[2px]">
+              <div className="mb-4 flex items-start justify-between">
+                <div className="rounded-lg bg-error-container p-2 text-on-error-container">
+                  <MaterialSymbol icon="account_balance" />
                 </div>
-                <p className="mb-1 text-label-sm font-label uppercase tracking-wider text-on-surface-variant">{card.label}</p>
-                <h3 className="font-headline text-2xl font-bold">{card.value}</h3>
-                {card.progress ? (
-                  <div className="mt-4 h-1 w-full rounded-full bg-surface-container-low">
-                    <div className="h-1 rounded-full bg-primary" style={{ width: card.progress }}></div>
-                  </div>
-                ) : null}
-                {card.bars ? (
-                  <div className="mt-4 flex gap-1">
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <div
-                        className={index < card.bars! ? "h-1 flex-1 rounded-full bg-primary" : "h-1 flex-1 rounded-full bg-surface-container-low"}
-                        key={`${card.label}-${index}`}
-                      ></div>
-                    ))}
-                  </div>
-                ) : null}
-                {card.detail ? <p className="mt-2 text-[10px] font-medium text-slate-400">{card.detail}</p> : null}
+                {accountsQuery.isSuccess && unpaidCount > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-bold text-error">
+                    <MaterialSymbol className="text-sm" icon="warning" />
+                  </span>
+                )}
               </div>
-            ))}
+              <p className="mb-1 font-label text-label-sm uppercase tracking-wider text-on-surface-variant">
+                Outstanding Balance
+              </p>
+              {accountsQuery.isLoading ? (
+                <div className="h-8 w-24 animate-pulse rounded bg-slate-100" />
+              ) : (
+                <h3 className="font-headline text-2xl font-bold">{formatAmount(totalOutstanding)}</h3>
+              )}
+              <p className="mt-2 text-[10px] font-medium text-slate-400">
+                {accountsQuery.isLoading ? "—" : `${unpaidCount} accounts in arrears`}
+              </p>
+            </div>
+
+            {/* Card 2: Tee occupancy */}
+            <div className="group relative overflow-hidden rounded-xl bg-surface-container-lowest p-6 transition-all hover:-translate-y-[2px]">
+              <div className="mb-4 flex items-start justify-between">
+                <div className="rounded-lg bg-secondary-container p-2 text-on-secondary-container">
+                  <MaterialSymbol icon="golf_course" />
+                </div>
+                {occupancyPct !== null && (
+                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                    <MaterialSymbol className="text-sm" icon="trending_up" />
+                    {bookedSlots} / {totalSlots}
+                  </span>
+                )}
+              </div>
+              <p className="mb-1 font-label text-label-sm uppercase tracking-wider text-on-surface-variant">
+                Tee Occupancy Today
+              </p>
+              {teeSheetQuery.isLoading || coursesQuery.isLoading ? (
+                <div className="h-8 w-16 animate-pulse rounded bg-slate-100" />
+              ) : occupancyPct !== null ? (
+                <h3 className="font-headline text-2xl font-bold">{occupancyPct}%</h3>
+              ) : (
+                <h3 className="font-headline text-2xl font-bold text-slate-300">—</h3>
+              )}
+              {occupancyPct !== null && (
+                <div className="mt-4 h-1 w-full rounded-full bg-surface-container-low">
+                  <div className="h-1 rounded-full bg-primary transition-all" style={{ width: `${occupancyPct}%` }} />
+                </div>
+              )}
+            </div>
+
+            {/* Card 3: Members */}
+            <div className="group relative overflow-hidden rounded-xl bg-surface-container-lowest p-6 transition-all hover:-translate-y-[2px]">
+              <div className="mb-4 flex items-start justify-between">
+                <div className="rounded-lg bg-tertiary-container p-2 text-on-tertiary-container">
+                  <MaterialSymbol icon="group" />
+                </div>
+              </div>
+              <p className="mb-1 font-label text-label-sm uppercase tracking-wider text-on-surface-variant">
+                Total Members
+              </p>
+              {directoryQuery.isLoading ? (
+                <div className="h-8 w-16 animate-pulse rounded bg-slate-100" />
+              ) : (
+                <h3 className="font-headline text-2xl font-bold">{memberCount ?? "—"}</h3>
+              )}
+              <p className="mt-2 text-[10px] font-medium text-slate-400">
+                {directoryQuery.isSuccess ? "Active club directory" : "—"}
+              </p>
+            </div>
+
+            {/* Card 4: Finance transactions */}
+            <div className="group relative overflow-hidden rounded-xl bg-surface-container-lowest p-6 transition-all hover:-translate-y-[2px]">
+              <div className="mb-4 flex items-start justify-between">
+                <div className="rounded-lg bg-surface-container-high p-2 text-on-surface">
+                  <MaterialSymbol icon="receipt_long" />
+                </div>
+              </div>
+              <p className="mb-1 font-label text-label-sm uppercase tracking-wider text-on-surface-variant">
+                Finance Transactions
+              </p>
+              {journalQuery.isLoading ? (
+                <div className="h-8 w-16 animate-pulse rounded bg-slate-100" />
+              ) : (
+                <h3 className="font-headline text-2xl font-bold">{txTotal ?? "—"}</h3>
+              )}
+              <p className="mt-2 text-[10px] font-medium text-slate-400">
+                {journalQuery.isSuccess ? "All time" : "—"}
+              </p>
+            </div>
+
           </div>
 
           <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
             <div className="space-y-8 lg:col-span-2">
               <section>
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="flex items-center gap-2 text-lg font-bold font-headline">
+                  <h3 className="flex items-center gap-2 font-headline text-lg font-bold">
                     Operational Alerts
                     <span className="rounded-full bg-error-container px-2 py-0.5 text-[10px] uppercase tracking-tighter text-on-error-container">
                       3 Active
@@ -331,7 +380,7 @@ export function AdminDashboardPage(): JSX.Element {
 
               <section>
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-bold font-headline">Recent Activity</h3>
+                  <h3 className="font-headline text-lg font-bold">Recent Activity</h3>
                   <button className="text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-primary" type="button">
                     View Log
                   </button>
@@ -359,7 +408,7 @@ export function AdminDashboardPage(): JSX.Element {
 
             <div className="space-y-6">
               <section className="rounded-2xl bg-primary-container/20 p-6">
-                <h3 className="mb-6 text-sm font-bold font-headline uppercase tracking-widest text-emerald-900">
+                <h3 className="mb-6 font-headline text-sm font-bold uppercase tracking-widest text-emerald-900">
                   Quick Actions
                 </h3>
                 <div className="grid grid-cols-1 gap-3">
@@ -382,28 +431,28 @@ export function AdminDashboardPage(): JSX.Element {
               </section>
 
               <section className="rounded-2xl bg-surface-container-low p-6">
-                <h3 className="mb-6 text-sm font-bold font-headline uppercase tracking-widest text-on-surface">
+                <h3 className="mb-6 font-headline text-sm font-bold uppercase tracking-widest text-on-surface">
                   Course Status
                 </h3>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">North Course</span>
-                    <span className="rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary">
-                      Open
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">South Course</span>
-                    <span className="rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary">
-                      Open
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Driving Range</span>
-                    <span className="rounded-lg bg-error-container/20 px-2 py-1 text-[10px] font-bold uppercase text-error">
-                      Maintenance
-                    </span>
-                  </div>
+                  {coursesQuery.isLoading ? (
+                    <div className="space-y-3">
+                      {[1, 2].map((i) => (
+                        <div className="h-6 animate-pulse rounded bg-slate-100" key={i} />
+                      ))}
+                    </div>
+                  ) : coursesQuery.data && coursesQuery.data.length > 0 ? (
+                    coursesQuery.data.map((course) => (
+                      <div className="flex items-center justify-between" key={course.id}>
+                        <span className="text-sm font-medium">{course.name}</span>
+                        <span className="rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase text-primary">
+                          Open
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-400">No courses configured.</p>
+                  )}
                   <div className="border-t border-slate-200 pt-4">
                     <div className="flex items-center gap-3 text-on-surface-variant">
                       <MaterialSymbol className="text-lg" icon="device_thermostat" />
