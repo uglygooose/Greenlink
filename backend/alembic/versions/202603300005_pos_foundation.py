@@ -46,7 +46,7 @@ def upgrade() -> None:
         "card",
         "member_account",
         name="tendertype",
-        create_type=False,
+        create_type=True,
     )
     op.create_table(
         "pos_transactions",
@@ -142,3 +142,4 @@ def downgrade() -> None:
 
     op.drop_index("ix_products_club_id", table_name="products")
     op.drop_table("products")
+    postgresql.ENUM(name="tendertype").drop(op.get_bind(), checkfirst=True)
