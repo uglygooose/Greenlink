@@ -1,5 +1,11 @@
 import { apiRequest } from "./client";
 import type {
+  BookingCancelResult,
+  BookingCheckInResult,
+  BookingCompleteResult,
+  BookingNoShowResult,
+} from "../types/bookings";
+import type {
   BookingRuleSet,
   BookingRuleSetInput,
   ClubConfig,
@@ -172,5 +178,53 @@ export function fetchTeeSheetDay(
     method: "GET",
     accessToken,
     selectedClubId,
+  });
+}
+
+export function cancelBooking(
+  bookingId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingCancelResult> {
+  return apiRequest<BookingCancelResult>(`/api/golf/bookings/${bookingId}/cancel`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function checkInBooking(
+  bookingId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingCheckInResult> {
+  return apiRequest<BookingCheckInResult>(`/api/golf/bookings/${bookingId}/check-in`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function completeBooking(
+  bookingId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingCompleteResult> {
+  return apiRequest<BookingCompleteResult>(`/api/golf/bookings/${bookingId}/complete`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
+export function markBookingNoShow(
+  bookingId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingNoShowResult> {
+  return apiRequest<BookingNoShowResult>(`/api/golf/bookings/${bookingId}/no-show`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
   });
 }

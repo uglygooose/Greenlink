@@ -11,6 +11,8 @@ from app.core.exceptions import NotFoundError
 from app.models import Booking, ClubConfig, Course, Tee, TeeSheetSlotState
 from app.schemas.rule_context import ContextNotice, RuleContextInput
 from app.schemas.tee_sheet import (
+    TeeSheetBookingParticipantSummary,
+    TeeSheetBookingSummary,
     TeeSheetDayQuery,
     TeeSheetDayResponse,
     TeeSheetOccupancySummary,
@@ -21,7 +23,7 @@ from app.schemas.tee_sheet import (
     TeeSheetSlotView,
 )
 from app.services.availability_service import AvailabilityService
-from app.services.booking_state_service import BookingStateService
+from app.services.booking_state_service import LIVE_OCCUPANCY_STATUSES, BookingStateService
 from app.services.rule_context_service import RuleContextService
 
 
@@ -36,24 +38,34 @@ class TeeSheetService:
         club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == query.club_id))
         if club_config is None:
             raise NotFoundError("Club config not found")
-        course = self.db.scalar(select(Course).where(Course.id == query.course_id, Course.club_id == query.club_id))
+        course = self.db.scalar(
+            select(Course).where(Course.id == query.course_id, Course.club_id == query.club_id)
+        )
         if course is None:
             raise NotFoundError("Course not found")
 
         timezone_name = club_config.timezone
         zone = ZoneInfo(timezone_name)
-        reference_datetime = query.reference_datetime.astimezone(UTC) if query.reference_datetime else datetime.now(UTC)
+        reference_datetime = (
+            query.reference_datetime.astimezone(UTC)
+            if query.reference_datetime
+            else datetime.now(UTC)
+        )
         warnings: list[ContextNotice] = []
         if query.reference_datetime is None:
             warnings.append(
                 ContextNotice(
                     code="reference_datetime_defaulted_to_request_time",
-                    message="reference_datetime was not supplied and defaulted to current request time",
+                    message=(
+                        "reference_datetime was not supplied and defaulted to current request time"
+                    ),
                 )
             )
 
         interval_minutes = club_config.default_slot_interval_minutes
-        slot_datetimes = self._generate_slot_datetimes(query.date, zone, club_config.operating_hours, interval_minutes)
+        slot_datetimes = self._generate_slot_datetimes(
+            query.date, zone, club_config.operating_hours, interval_minutes
+        )
         row_tees = self._load_row_tees(query)
         slot_states = self._load_slot_states(query, slot_datetimes)
         bookings = self._load_bookings(query, slot_datetimes)
@@ -66,6 +78,11 @@ class TeeSheetService:
             for slot_datetime in slot_datetimes:
                 persisted_state = slot_states[(tee.id if tee is not None else None, slot_datetime)]
                 slot_bookings = bookings[(tee.id if tee is not None else None, slot_datetime)]
+                live_slot_bookings = [
+                    booking
+                    for booking in slot_bookings
+                    if booking.status in LIVE_OCCUPANCY_STATUSES
+                ]
                 normalized_context = self.rule_context_service.normalize_context(
                     RuleContextInput(
                         club_id=query.club_id,
@@ -76,11 +93,13 @@ class TeeSheetService:
                         reference_datetime=reference_datetime,
                     )
                 )
-                decision_input = self.booking_state_service.build_decision_input_from_persisted_state(
-                    normalized_context,
-                    bookings=slot_bookings,
-                    slot_state=persisted_state,
-                    slot_interval_minutes=interval_minutes,
+                decision_input = (
+                    self.booking_state_service.build_decision_input_from_persisted_state(
+                        normalized_context,
+                        bookings=slot_bookings,
+                        slot_state=persisted_state,
+                        slot_interval_minutes=interval_minutes,
+                    )
                 )
                 availability = self.availability_service.preview_slot_availability(decision_input)
                 slots.append(
@@ -90,10 +109,16 @@ class TeeSheetService:
                         display_status=self._display_status(availability),
                         state_flags={
                             "manually_blocked": bool(decision_input.booking_state.manually_blocked),
-                            "reserved_state_active": bool(decision_input.booking_state.reserved_state_active),
-                            "competition_controlled": bool(decision_input.booking_state.competition_controlled),
+                            "reserved_state_active": bool(
+                                decision_input.booking_state.reserved_state_active
+                            ),
+                            "competition_controlled": bool(
+                                decision_input.booking_state.competition_controlled
+                            ),
                             "event_controlled": bool(decision_input.booking_state.event_controlled),
-                            "externally_unavailable": bool(decision_input.booking_state.externally_unavailable),
+                            "externally_unavailable": bool(
+                                decision_input.booking_state.externally_unavailable
+                            ),
                         },
                         occupancy=TeeSheetOccupancySummary(
                             player_capacity=decision_input.booking_state.occupancy.player_capacity,
@@ -120,6 +145,23 @@ class TeeSheetService:
                         blockers=availability.blockers,
                         unresolved_checks=availability.unresolved_checks,
                         warnings=availability.warnings,
+                        bookings=[
+                            TeeSheetBookingSummary(
+                                id=booking.id,
+                                status=booking.status,
+                                party_size=booking.party_size,
+                                slot_datetime=booking.slot_datetime,
+                                participants=[
+                                    TeeSheetBookingParticipantSummary(
+                                        display_name=participant.display_name,
+                                        participant_type=participant.participant_type,
+                                        is_primary=participant.is_primary,
+                                    )
+                                    for participant in booking.participants
+                                ],
+                            )
+                            for booking in live_slot_bookings
+                        ],
                         decision_input=decision_input,
                         booking_state=decision_input.booking_state,
                         booking_party=decision_input.party,
@@ -151,7 +193,9 @@ class TeeSheetService:
     def _load_row_tees(self, query: TeeSheetDayQuery) -> list[Tee | None]:
         if query.tee_id is not None:
             tee = self.db.scalar(
-                select(Tee).join(Tee.course).where(Tee.id == query.tee_id, Course.club_id == query.club_id)
+                select(Tee)
+                .join(Tee.course)
+                .where(Tee.id == query.tee_id, Course.club_id == query.club_id)
             )
             if tee is None:
                 raise NotFoundError("Tee not found")
@@ -160,7 +204,11 @@ class TeeSheetService:
             self.db.scalars(
                 select(Tee)
                 .join(Tee.course)
-                .where(Course.club_id == query.club_id, Tee.course_id == query.course_id, Tee.active.is_(True))
+                .where(
+                    Course.club_id == query.club_id,
+                    Tee.course_id == query.course_id,
+                    Tee.active.is_(True),
+                )
                 .order_by(Tee.name.asc())
             ).all()
         )

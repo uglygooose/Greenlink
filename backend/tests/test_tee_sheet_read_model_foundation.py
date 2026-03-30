@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -11,13 +11,13 @@ from app.models import (
     Booking,
     BookingParticipant,
     BookingParticipantType,
-    BookingSource,
     BookingRule,
     BookingRuleAppliesTo,
     BookingRuleConflictStrategy,
     BookingRuleScopeType,
     BookingRuleSet,
     BookingRuleType,
+    BookingSource,
     BookingStatus,
     Club,
     ClubConfig,
@@ -64,7 +64,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -151,8 +153,8 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
         ]
     )
     db_session.flush()
-    first_slot = datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc)
-    second_slot = datetime(2026, 3, 30, 4, 30, tzinfo=timezone.utc)
+    first_slot = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    second_slot = datetime(2026, 3, 30, 4, 30, tzinfo=UTC)
     booking = Booking(
         club_id=club.id,
         course_id=course.id,
@@ -223,7 +225,7 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
             "course_id": str(course.id),
             "date": date(2026, 3, 30).isoformat(),
             "membership_type": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
         },
         headers=headers,
     )
@@ -241,8 +243,16 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
     assert first_view["party_summary"]["total_players"] == 2
     assert first_view["party_summary"]["member_count"] == 1
     assert first_view["party_summary"]["guest_count"] == 1
+    assert len(first_view["bookings"]) == 1
+    assert first_view["bookings"][0]["id"] == str(booking.id)
+    assert first_view["bookings"][0]["status"] == "reserved"
+    assert first_view["bookings"][0]["party_size"] == 2
+    assert first_view["bookings"][0]["participants"][0]["display_name"] == "Primary Member"
     assert first_view["display_status"] == "indeterminate"
-    assert any(item["code"] == "live_concurrency_not_evaluated" for item in first_view["unresolved_checks"])
+    assert any(
+        item["code"] == "live_concurrency_not_evaluated" for item in first_view["unresolved_checks"]
+    )
+    assert second_view["bookings"] == []
     assert second_view["display_status"] == "reserved"
     assert second_view["state_flags"]["reserved_state_active"] is True
 
@@ -315,4 +325,8 @@ def test_tee_sheet_day_defaults_reference_datetime_and_generates_rows_per_tee(
     assert payload["rows"][0]["label"] == "Blue"
     assert payload["rows"][1]["label"] == "White"
     assert len(payload["rows"][0]["slots"]) == 1
-    assert any(warning["code"] == "reference_datetime_defaulted_to_request_time" for warning in payload["warnings"])
+    assert payload["rows"][0]["slots"][0]["bookings"] == []
+    assert any(
+        warning["code"] == "reference_datetime_defaulted_to_request_time"
+        for warning in payload["warnings"]
+    )

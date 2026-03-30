@@ -17,11 +17,25 @@ GreenLink is a club-scoped golf operations platform rebuilt as a modular monolit
    - `copy .env.example .env`
    - `py -m uv sync --extra dev`
    - `py -m uv run alembic upgrade head`
+   - `py -3.12 -m uv run python -m app.scripts.seed_users`
    - `py -m uv run uvicorn app.main:app --reload`
 3. Start the frontend in another terminal:
    - `cd frontend`
    - `npm.cmd install`
    - `npm.cmd run dev`
+
+## Local auth seed
+
+Run the deterministic local auth seed from `backend/`:
+
+- `py -3.12 -m uv run python -m app.scripts.seed_users`
+
+Seeded credentials:
+
+- Superadmin: `greenlinkgolfsa@gmail.com` / `Admin123!`
+- Admin: `admin@greenlink.test` / `Admin123!`
+- Staff: `staff@greenlink.test` / `Admin123!`
+- Member: `member@greenlink.test` / `Admin123!`
 
 GreenLink development is PostgreSQL-first. The backend runtime and Alembic migrations are expected to run against PostgreSQL, and SQLite is not a supported local/dev database path for this rebuild.
 

@@ -54,11 +54,15 @@ class BookingCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_participants(self) -> BookingCreateRequest:
-        primary_participants = [participant for participant in self.participants if participant.is_primary]
+        primary_participants = [
+            participant for participant in self.participants if participant.is_primary
+        ]
         if len(primary_participants) != 1:
             raise ValueError("exactly one primary participant is required")
         if primary_participants[0].participant_type == BookingParticipantType.GUEST:
-            raise ValueError("primary participant must be a member or staff participant in this phase")
+            raise ValueError(
+                "primary participant must be a member or staff participant in this phase"
+            )
         if self.applies_to is not None:
             expected_applies_to = (
                 BookingRuleAppliesTo.STAFF
@@ -66,7 +70,9 @@ class BookingCreateRequest(BaseModel):
                 else BookingRuleAppliesTo.MEMBER
             )
             if self.applies_to != expected_applies_to:
-                raise ValueError("applies_to must match the primary participant bucket in this phase")
+                raise ValueError(
+                    "applies_to must match the primary participant bucket in this phase"
+                )
         return self
 
 
@@ -119,3 +125,98 @@ class BookingCreateResult(BaseModel):
     booking: BookingSummary | None = None
     availability: AvailabilityPolicyResult | None = None
     failures: list[BookingCreateFailureDetail] = Field(default_factory=list)
+
+
+class BookingLifecycleMutationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    acting_user_id: uuid.UUID
+
+
+class BookingLifecycleMutationFailureDetail(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+    current_status: BookingStatus | None = None
+
+
+class BookingLifecycleMutationDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingLifecycleMutationResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingLifecycleMutationDecision
+    transition_applied: bool = False
+    booking: BookingSummary | None = None
+    failures: list[BookingLifecycleMutationFailureDetail] = Field(default_factory=list)
+
+
+class BookingCancelRequest(BookingLifecycleMutationRequest):
+    pass
+
+
+class BookingCancelFailureDetail(BookingLifecycleMutationFailureDetail):
+    pass
+
+
+BookingCancelDecision = BookingLifecycleMutationDecision
+
+
+class BookingCancelResult(BookingLifecycleMutationResult):
+    booking_id: uuid.UUID
+    decision: BookingCancelDecision
+    failures: list[BookingCancelFailureDetail] = Field(default_factory=list)
+
+
+class BookingCheckInRequest(BookingLifecycleMutationRequest):
+    pass
+
+
+class BookingCheckInFailureDetail(BookingLifecycleMutationFailureDetail):
+    pass
+
+
+BookingCheckInDecision = BookingLifecycleMutationDecision
+
+
+class BookingCheckInResult(BookingLifecycleMutationResult):
+    booking_id: uuid.UUID
+    decision: BookingCheckInDecision
+    failures: list[BookingCheckInFailureDetail] = Field(default_factory=list)
+
+
+class BookingCompleteRequest(BookingLifecycleMutationRequest):
+    pass
+
+
+class BookingCompleteFailureDetail(BookingLifecycleMutationFailureDetail):
+    pass
+
+
+BookingCompleteDecision = BookingLifecycleMutationDecision
+
+
+class BookingCompleteResult(BookingLifecycleMutationResult):
+    booking_id: uuid.UUID
+    decision: BookingCompleteDecision
+    failures: list[BookingCompleteFailureDetail] = Field(default_factory=list)
+
+
+class BookingNoShowRequest(BookingLifecycleMutationRequest):
+    pass
+
+
+class BookingNoShowFailureDetail(BookingLifecycleMutationFailureDetail):
+    pass
+
+
+BookingNoShowDecision = BookingLifecycleMutationDecision
+
+
+class BookingNoShowResult(BookingLifecycleMutationResult):
+    booking_id: uuid.UUID
+    decision: BookingNoShowDecision
+    failures: list[BookingNoShowFailureDetail] = Field(default_factory=list)

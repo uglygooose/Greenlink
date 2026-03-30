@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from enum import Enum as PythonEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Enum, ForeignKey, String, Uuid
@@ -14,6 +15,10 @@ if TYPE_CHECKING:
     from app.models.club_membership import ClubMembership
 
 
+def enum_values(enum_class: type[PythonEnum]) -> list[str]:
+    return [item.value for item in enum_class]
+
+
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
@@ -21,7 +26,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     user_type: Mapped[UserType] = mapped_column(
-        Enum(UserType),
+        Enum(UserType, values_callable=enum_values),
         nullable=False,
         default=UserType.USER,
     )

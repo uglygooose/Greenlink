@@ -1,4 +1,5 @@
 import type { BookingRuleAppliesTo } from "./operations";
+import type { BookingParticipantSummary, BookingStatus } from "./bookings";
 
 export type TeeSheetSlotDisplayStatus = "available" | "blocked" | "reserved" | "indeterminate" | "warning";
 
@@ -43,6 +44,13 @@ export interface TeeSheetSlotView {
   blockers: TeeSheetTrace[];
   unresolved_checks: TeeSheetTrace[];
   warnings: TeeSheetNotice[];
+  bookings: Array<{
+    id: string;
+    status: BookingStatus;
+    party_size: number;
+    slot_datetime: string;
+    participants: BookingParticipantSummary[];
+  }>;
 }
 
 export interface TeeSheetRow {

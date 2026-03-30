@@ -6,9 +6,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import BookingRuleAppliesTo
+from app.models.enums import BookingParticipantType, BookingRuleAppliesTo, BookingStatus
 from app.schemas.availability import AvailabilityTrace
-from app.schemas.booking_state import AvailabilityDecisionInput, BookingPartyContext, BookingStateSnapshot
+from app.schemas.booking_state import (
+    AvailabilityDecisionInput,
+    BookingPartyContext,
+    BookingStateSnapshot,
+)
 from app.schemas.rule_context import ContextNotice
 
 
@@ -54,6 +58,20 @@ class TeeSheetPolicySummary(BaseModel):
     warning_count: int
 
 
+class TeeSheetBookingParticipantSummary(BaseModel):
+    display_name: str
+    participant_type: BookingParticipantType
+    is_primary: bool
+
+
+class TeeSheetBookingSummary(BaseModel):
+    id: uuid.UUID
+    status: BookingStatus
+    party_size: int
+    slot_datetime: datetime
+    participants: list[TeeSheetBookingParticipantSummary] = Field(default_factory=list)
+
+
 class TeeSheetSlotView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,6 +85,7 @@ class TeeSheetSlotView(BaseModel):
     blockers: list[AvailabilityTrace] = Field(default_factory=list)
     unresolved_checks: list[AvailabilityTrace] = Field(default_factory=list)
     warnings: list[ContextNotice] = Field(default_factory=list)
+    bookings: list[TeeSheetBookingSummary] = Field(default_factory=list)
     decision_input: AvailabilityDecisionInput
     booking_state: BookingStateSnapshot
     booking_party: BookingPartyContext

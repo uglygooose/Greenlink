@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -185,7 +185,7 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     _seed_club_config(db_session, club=club)
     _seed_rules(db_session, club=club)
 
-    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc)
+    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
     db_session.add(
         TeeSheetSlotState(
             club_id=club.id,
@@ -212,7 +212,7 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
             "slot_datetime": slot_datetime.isoformat(),
             "source": "admin",
             "applies_to": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
             "participants": [
                 {
                     "participant_type": "member",
@@ -244,7 +244,7 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
             "course_id": str(course.id),
             "date": date(2026, 3, 30).isoformat(),
             "membership_type": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
         },
     )
     assert tee_sheet.status_code == 200
@@ -264,7 +264,7 @@ def test_booking_create_blocks_when_slot_capacity_is_exceeded(client: TestClient
     _seed_club_config(db_session, club=club)
     _seed_rules(db_session, club=club)
 
-    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc)
+    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
     db_session.add(
         TeeSheetSlotState(
             club_id=club.id,
@@ -324,7 +324,7 @@ def test_booking_create_blocks_when_slot_capacity_is_exceeded(client: TestClient
             "slot_datetime": slot_datetime.isoformat(),
             "source": "admin",
             "applies_to": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
             "participants": [
                 {
                     "participant_type": "member",
@@ -362,10 +362,10 @@ def test_booking_create_returns_indeterminate_when_slot_state_is_incomplete(
         json={
             "course_id": str(course.id),
             "tee_id": str(tee.id),
-            "slot_datetime": datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc).isoformat(),
+            "slot_datetime": datetime(2026, 3, 30, 4, 0, tzinfo=UTC).isoformat(),
             "source": "admin",
             "applies_to": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
             "participants": [
                 {
                     "participant_type": "member",
@@ -399,7 +399,7 @@ def test_booking_create_blocks_when_member_participant_lacks_club_membership(
             club_id=club.id,
             course_id=course.id,
             tee_id=tee.id,
-            slot_datetime=datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc),
+            slot_datetime=datetime(2026, 3, 30, 4, 0, tzinfo=UTC),
             player_capacity=4,
             manually_blocked=False,
             reserved_state_active=False,
@@ -417,10 +417,10 @@ def test_booking_create_blocks_when_member_participant_lacks_club_membership(
         json={
             "course_id": str(course.id),
             "tee_id": str(tee.id),
-            "slot_datetime": datetime(2026, 3, 30, 4, 0, tzinfo=timezone.utc).isoformat(),
+            "slot_datetime": datetime(2026, 3, 30, 4, 0, tzinfo=UTC).isoformat(),
             "source": "admin",
             "applies_to": "member",
-            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=timezone.utc).isoformat(),
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
             "participants": [
                 {
                     "participant_type": "member",

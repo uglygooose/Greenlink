@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from enum import Enum as PythonEnum
 
 from sqlalchemy import JSON, Boolean, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,6 +12,10 @@ from app.db.base import Base
 from app.db.types import UTCDateTime
 from app.models.enums import ClubMembershipRole, ClubMembershipStatus
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+
+
+def enum_values(enum_class: type[PythonEnum]) -> list[str]:
+    return [item.value for item in enum_class]
 
 
 class ClubMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -32,9 +37,14 @@ class ClubMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("clubs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    role: Mapped[ClubMembershipRole] = mapped_column(Enum(ClubMembershipRole), nullable=False)
+    role: Mapped[ClubMembershipRole] = mapped_column(
+        Enum(ClubMembershipRole, values_callable=enum_values),
+        nullable=False,
+    )
     status: Mapped[ClubMembershipStatus] = mapped_column(
-        Enum(ClubMembershipStatus), nullable=False, default=ClubMembershipStatus.ACTIVE
+        Enum(ClubMembershipStatus, values_callable=enum_values),
+        nullable=False,
+        default=ClubMembershipStatus.ACTIVE,
     )
     joined_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

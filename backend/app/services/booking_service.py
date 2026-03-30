@@ -15,7 +15,6 @@ from app.models import (
     BookingParticipant,
     BookingParticipantType,
     BookingRuleAppliesTo,
-    BookingSource,
     BookingStatus,
     ClubConfig,
     ClubMembership,
@@ -26,7 +25,10 @@ from app.models import (
     Tee,
     TeeSheetSlotState,
 )
-from app.schemas.booking_state import BookingPartyContextInput, BookingStateSnapshotInput, SlotCandidateInput
+from app.schemas.booking_state import (
+    BookingPartyContextInput,
+    SlotCandidateInput,
+)
 from app.schemas.bookings import (
     BookingCreateDecision,
     BookingCreateFailureDetail,
@@ -37,7 +39,10 @@ from app.schemas.bookings import (
 )
 from app.schemas.rule_context import RuleContextInput
 from app.services.availability_service import AvailabilityService
-from app.services.booking_state_service import BookingStateService, LIVE_OCCUPANCY_STATUSES
+from app.services.booking_state_service import (
+    LIVE_OCCUPANCY_STATUSES,
+    BookingStateService,
+)
 from app.services.rule_context_service import RuleContextService
 
 STAFF_MEMBERSHIP_ROLES = {ClubMembershipRole.CLUB_ADMIN, ClubMembershipRole.CLUB_STAFF}
@@ -62,10 +67,17 @@ class BookingService:
         self.booking_state_service = BookingStateService(db)
         self.availability_service = AvailabilityService(db)
 
-    def create_booking(self, club_id: uuid.UUID, payload: BookingCreateRequest) -> BookingCreateResult:
+    def create_booking(
+        self, club_id: uuid.UUID, payload: BookingCreateRequest
+    ) -> BookingCreateResult:
         failures: list[BookingCreateFailureDetail] = []
 
-        course = self.db.scalar(select(Course).where(Course.id == payload.course_id, Course.club_id == club_id))
+        course = self.db.scalar(
+            select(Course).where(
+                Course.id == payload.course_id,
+                Course.club_id == club_id,
+            )
+        )
         if course is None:
             failures.append(
                 BookingCreateFailureDetail(
@@ -79,7 +91,9 @@ class BookingService:
         tee = None
         if payload.tee_id is not None:
             tee = self.db.scalar(
-                select(Tee).join(Tee.course).where(Tee.id == payload.tee_id, Tee.course_id == course.id)
+                select(Tee)
+                .join(Tee.course)
+                .where(Tee.id == payload.tee_id, Tee.course_id == course.id)
             )
             if tee is None:
                 failures.append(
@@ -89,21 +103,38 @@ class BookingService:
                         field="tee_id",
                     )
                 )
-                return BookingCreateResult(decision=BookingCreateDecision.BLOCKED, failures=failures)
+                return BookingCreateResult(
+                    decision=BookingCreateDecision.BLOCKED,
+                    failures=failures,
+                )
 
-        resolved_participants, primary_participant, failures = self._resolve_participants(club_id, payload.participants)
+        resolved_participants, primary_participant, failures = self._resolve_participants(
+            club_id,
+            payload.participants,
+        )
         if failures:
-            return BookingCreateResult(decision=BookingCreateDecision.BLOCKED, failures=failures)
+            return BookingCreateResult(
+                decision=BookingCreateDecision.BLOCKED,
+                failures=failures,
+            )
         assert primary_participant is not None
 
-        applies_to = payload.applies_to or self._derive_applies_to(primary_participant.participant_type)
+        applies_to = payload.applies_to or self._derive_applies_to(
+            primary_participant.participant_type
+        )
         membership_role = None
         if primary_participant.club_membership_id is not None:
             membership_role = self.db.scalar(
-                select(ClubMembership.role).where(ClubMembership.id == primary_participant.club_membership_id)
+                select(ClubMembership.role).where(
+                    ClubMembership.id == primary_participant.club_membership_id
+                )
             )
 
-        reference_datetime = payload.reference_datetime.astimezone(UTC) if payload.reference_datetime else datetime.now(UTC)
+        reference_datetime = (
+            payload.reference_datetime.astimezone(UTC)
+            if payload.reference_datetime
+            else datetime.now(UTC)
+        )
         try:
             context = self.rule_context_service.normalize_context(
                 RuleContextInput(
@@ -122,14 +153,20 @@ class BookingService:
                 failures=[BookingCreateFailureDetail(code=exc.code, message=exc.message)],
             )
 
-        slot_interval_minutes = self._resolve_slot_interval_minutes(club_id, payload.slot_interval_minutes)
+        slot_interval_minutes = self._resolve_slot_interval_minutes(
+            club_id,
+            payload.slot_interval_minutes,
+        )
         if slot_interval_minutes is None:
             return BookingCreateResult(
                 decision=BookingCreateDecision.INDETERMINATE,
                 failures=[
                     BookingCreateFailureDetail(
                         code="slot_interval_unresolved",
-                        message="slot interval is unresolved because no club default exists and no explicit slot interval was supplied",
+                        message=(
+                            "slot interval is unresolved because no club default exists "
+                            "and no explicit slot interval was supplied"
+                        ),
                         field="slot_interval_minutes",
                     )
                 ],
@@ -167,9 +204,21 @@ class BookingService:
             context,
             slot=SlotCandidateInput(slot_interval_minutes=slot_interval_minutes),
             party=BookingPartyContextInput(
-                member_count=sum(1 for participant in resolved_participants if participant.participant_type == BookingParticipantType.MEMBER),
-                guest_count=sum(1 for participant in resolved_participants if participant.participant_type == BookingParticipantType.GUEST),
-                staff_count=sum(1 for participant in resolved_participants if participant.participant_type == BookingParticipantType.STAFF),
+                member_count=sum(
+                    1
+                    for participant in resolved_participants
+                    if participant.participant_type == BookingParticipantType.MEMBER
+                ),
+                guest_count=sum(
+                    1
+                    for participant in resolved_participants
+                    if participant.participant_type == BookingParticipantType.GUEST
+                ),
+                staff_count=sum(
+                    1
+                    for participant in resolved_participants
+                    if participant.participant_type == BookingParticipantType.STAFF
+                ),
                 requested_player_count=len(resolved_participants),
                 requester_applies_to=applies_to,
                 requester_membership_role=membership_role,
@@ -179,7 +228,11 @@ class BookingService:
         availability = self.availability_service.preview_slot_availability(decision_input)
         decision = self._resolve_create_decision(availability)
         if decision != BookingCreateDecision.ALLOWED:
-            return BookingCreateResult(decision=decision, availability=availability, failures=failures)
+            return BookingCreateResult(
+                decision=decision,
+                availability=availability,
+                failures=failures,
+            )
 
         booking = Booking(
             club_id=club_id,
@@ -209,7 +262,9 @@ class BookingService:
         self.db.commit()
 
         hydrated = self.db.scalar(
-            select(Booking).options(selectinload(Booking.participants)).where(Booking.id == booking.id)
+            select(Booking)
+            .options(selectinload(Booking.participants))
+            .where(Booking.id == booking.id)
         )
         assert hydrated is not None
         return BookingCreateResult(
@@ -223,9 +278,17 @@ class BookingService:
         self,
         club_id: uuid.UUID,
         participants: Sequence[BookingCreateParticipantInput],
-    ) -> tuple[list[ResolvedCreateParticipant], ResolvedCreateParticipant | None, list[BookingCreateFailureDetail]]:
+    ) -> tuple[
+        list[ResolvedCreateParticipant],
+        ResolvedCreateParticipant | None,
+        list[BookingCreateFailureDetail],
+    ]:
         failures: list[BookingCreateFailureDetail] = []
-        person_ids = [participant.person_id for participant in participants if participant.person_id is not None]
+        person_ids = [
+            participant.person_id
+            for participant in participants
+            if participant.person_id is not None
+        ]
         if len(set(person_ids)) != len(person_ids):
             failures.append(
                 BookingCreateFailureDetail(
@@ -281,7 +344,9 @@ class BookingService:
                     failures.append(
                         BookingCreateFailureDetail(
                             code="membership_required",
-                            message="member and staff participants require an active club membership",
+                            message=(
+                                "member and staff participants require an active club membership"
+                            ),
                             field=f"participants[{index}].person_id",
                         )
                     )
@@ -293,7 +358,9 @@ class BookingService:
                     failures.append(
                         BookingCreateFailureDetail(
                             code="staff_membership_required",
-                            message="staff participants require a club staff or club admin membership",
+                            message=(
+                                "staff participants require a club staff or club admin membership"
+                            ),
                             field=f"participants[{index}].person_id",
                         )
                     )
@@ -314,10 +381,16 @@ class BookingService:
 
         return resolved, primary, failures
 
-    def _resolve_slot_interval_minutes(self, club_id: uuid.UUID, requested_interval: int | None) -> int | None:
+    def _resolve_slot_interval_minutes(
+        self, club_id: uuid.UUID, requested_interval: int | None
+    ) -> int | None:
         if requested_interval is not None:
             return requested_interval
-        return self.db.scalar(select(ClubConfig.default_slot_interval_minutes).where(ClubConfig.club_id == club_id))
+        return self.db.scalar(
+            select(ClubConfig.default_slot_interval_minutes).where(
+                ClubConfig.club_id == club_id
+            )
+        )
 
     def _load_slot_bookings(
         self,

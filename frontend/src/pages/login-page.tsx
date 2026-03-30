@@ -19,6 +19,10 @@ export function LoginPage(): JSX.Element {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -37,14 +41,23 @@ export function LoginPage(): JSX.Element {
         <p className="eyebrow">GreenLink Foundation</p>
         <h1>Sign in</h1>
         <p className="muted">Authenticate through the Phase 1 backend and bootstrap your shell from the API.</p>
+        <p className="muted">Use seeded dev accounts: admin@greenlink.test / Admin123!</p>
         <form onSubmit={handleSubmit} className="auth-form">
           <label>
             Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+            <input
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              required
+            />
           </label>
           <label>
             Password
             <input
+              autoComplete="current-password"
+              minLength={8}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"

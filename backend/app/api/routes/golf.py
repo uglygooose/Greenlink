@@ -20,9 +20,29 @@ from app.api.routes.operations_support import (
 )
 from app.auth.dependencies import get_current_user, get_db
 from app.models import BookingRuleAppliesTo, Course, Tee, User
-from app.schemas.bookings import BookingCreateRequest, BookingCreateResult
-from app.schemas.operations import CourseCreateRequest, CourseResponse, TeeCreateRequest, TeeResponse
+from app.schemas.bookings import (
+    BookingCancelRequest,
+    BookingCancelResult,
+    BookingCheckInRequest,
+    BookingCheckInResult,
+    BookingCompleteRequest,
+    BookingCompleteResult,
+    BookingCreateRequest,
+    BookingCreateResult,
+    BookingNoShowRequest,
+    BookingNoShowResult,
+)
+from app.schemas.operations import (
+    CourseCreateRequest,
+    CourseResponse,
+    TeeCreateRequest,
+    TeeResponse,
+)
 from app.schemas.tee_sheet import TeeSheetDayQuery, TeeSheetDayResponse
+from app.services.booking_cancellation_service import BookingCancellationService
+from app.services.booking_checkin_service import BookingCheckInService
+from app.services.booking_completion_service import BookingCompletionService
+from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
 from app.services.tee_sheet_service import TeeSheetService
 
@@ -156,3 +176,83 @@ def create_booking(
     assert context.selected_club is not None
     service = BookingService(db)
     return service.create_booking(context.selected_club.id, payload)
+
+
+@router.post("/bookings/{booking_id}/cancel", response_model=BookingCancelResult)
+def cancel_booking(
+    booking_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingCancelResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingCancellationService(db)
+    return service.cancel_booking(
+        context.selected_club.id,
+        BookingCancelRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/check-in", response_model=BookingCheckInResult)
+def check_in_booking(
+    booking_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingCheckInResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingCheckInService(db)
+    return service.check_in_booking(
+        context.selected_club.id,
+        BookingCheckInRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/complete", response_model=BookingCompleteResult)
+def complete_booking(
+    booking_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingCompleteResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingCompletionService(db)
+    return service.complete_booking(
+        context.selected_club.id,
+        BookingCompleteRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/no-show", response_model=BookingNoShowResult)
+def mark_booking_no_show(
+    booking_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingNoShowResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingNoShowService(db)
+    return service.mark_no_show(
+        context.selected_club.id,
+        BookingNoShowRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+        ),
+    )
