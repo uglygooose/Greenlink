@@ -1,33 +1,90 @@
-# CODEX EXECUTION RULES � GREENLINK
+# CODEX EXECUTION RULES — GREENLINK
 
-YOU ARE NOT BUILDING A NEW UI.
+## CONTEXT
 
-YOU ARE:
-- adapting existing system
-- applying benchmark design
+You are working on GreenLink, a **club-scoped operational system**.
 
-HARD RULES:
-- DO NOT CHANGE LOGIC
-- DO NOT BREAK ROUTES
-- DO NOT RESTRUCTURE BACKEND
+You are NOT:
+- building a generic SaaS app
+- redesigning UI
+- inventing patterns
 
-DESIGN RULES:
+You ARE:
+- extending an existing system
+- following the Master Build Plan
+- implementing narrow, deterministic slices
+
+---
+
+## CORE BUILD PRINCIPLES
+
+- Backend owns all logic
+- Frontend sends intent only
+- No duplicated logic
+- No hidden state
+- No side effects
+- No mixing domains
+
+---
+
+## UI RULES (STRICT)
+
+- Benchmark HTML files are source of truth
+- DO NOT redesign UI
+- DO NOT invent new design systems
+- ONLY:
+  - extract
+  - componentize
+  - map data
+
+Design system:
 - no borders
-- no redesign
-- no new components
-- follow benchmark files exactly
+- tonal layering
+- whitespace-driven layout
+- green = action only
 
-LAYOUT:
-- sidebar + topbar persistent
-- only content changes
+---
 
-SUPERADMIN:
-- remove theming
-- only allow logo upload
+## ARCHITECTURE RULES
 
-FINAL CHECK:
-- matches benchmark?
-- no redesign?
-- functionality intact?
+- Tee sheet is a READ MODEL (never write directly)
+- Lifecycle transitions are backend-owned
+- Frontend must NOT implement business rules
+- Use existing services/patterns only
 
-IF NOT ? FIX IT
+---
+
+## DEVELOPMENT RULES
+
+- Work in **phase-specific scope only**
+- Build narrow slices
+- Do not expand scope
+- Do not refactor unrelated code
+- Do not introduce new patterns
+
+---
+
+## LAYOUT RULES
+
+- Sidebar + Topbar are persistent
+- Only content area updates
+- No full page reload patterns
+
+---
+
+## SUPERADMIN RULE
+
+- No theming system
+- Only allow club logo upload
+
+---
+
+## FINAL CHECK BEFORE COMPLETION
+
+- Does it follow the Master Plan phase?
+- Is scope minimal?
+- Is backend owning logic?
+- Is UI matching benchmark?
+- Is there any redesign? (if yes → fix)
+
+If anything violates these → fix before completing
