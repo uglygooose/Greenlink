@@ -99,10 +99,10 @@ export function AdminFinancePage(): JSX.Element {
               <MaterialSymbol icon="calendar_today" />
               <span className="font-label text-sm font-medium">Tee Sheet</span>
             </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
+            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/members">
               <MaterialSymbol icon="group" />
               <span className="font-label text-sm font-medium">Members</span>
-            </button>
+            </NavLink>
             <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
               <MaterialSymbol filled icon="payments" />
               <span className="font-label text-sm font-medium">Finance</span>

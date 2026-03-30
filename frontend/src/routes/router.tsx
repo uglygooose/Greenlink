@@ -5,6 +5,7 @@ import { AdminCommunicationsPage } from "../pages/admin-communications-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
+import { AdminMembersPage } from "../pages/admin-members-page";
 import { AdminGolfTeeSheetPage } from "../pages/admin-golf-tee-sheet-page";
 import { AdminOrderQueuePage } from "../pages/admin-order-queue-page";
 import { AdminPosTerminalPage } from "../pages/admin-pos-terminal-page";
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
       { path: "golf/settings", element: <AdminGolfSettingsPage /> },
       { path: "orders", element: <AdminOrderQueuePage /> },
+      { path: "members", element: <AdminMembersPage /> },
       { path: "finance", element: <AdminFinancePage /> },
       { path: "communications", element: <AdminCommunicationsPage /> },
       { path: "pos-terminal", element: <AdminPosTerminalPage /> },

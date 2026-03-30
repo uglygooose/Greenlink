@@ -35,3 +35,16 @@ export interface FinanceClubJournal {
   entries: FinanceJournalEntry[];
   total_count: number;
 }
+
+export interface FinanceLedgerEntry extends FinanceJournalEntry {
+  running_balance: string;
+}
+
+export interface FinanceAccountLedger {
+  account_id: string;
+  club_id: string;
+  account_customer_id: string;
+  status: FinanceAccountStatus;
+  balance: string;
+  transactions: FinanceLedgerEntry[];
+}
