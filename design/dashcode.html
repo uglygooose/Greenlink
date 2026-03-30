@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GreenLink | Admin Overview</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary": "#566445",
+                        "secondary": "#526074",
+                        "surface-container-lowest": "#ffffff",
+                        "surface": "#f7f9fb",
+                        "background": "#f7f9fb",
+                        "on-surface": "#2a3439",
+                        "secondary-fixed": "#d5e3fc",
+                        "surface-container-high": "#e1e9ee",
+                        "on-tertiary-fixed-variant": "#596748",
+                        "inverse-primary": "#b8f9de",
+                        "primary-dim": "#1d5d49",
+                        "error-container": "#fe8983",
+                        "surface-tint": "#2b6954",
+                        "secondary-dim": "#465468",
+                        "on-primary-fixed": "#004936",
+                        "on-secondary-fixed": "#324053",
+                        "tertiary-dim": "#4a5739",
+                        "on-background": "#2a3439",
+                        "error": "#9f403d",
+                        "surface-container": "#e8eff3",
+                        "on-primary-container": "#1c5c48",
+                        "tertiary-fixed-dim": "#d6e5be",
+                        "surface-variant": "#d9e4ea",
+                        "primary-fixed": "#b0f0d6",
+                        "secondary-container": "#d5e3fc",
+                        "outline-variant": "#a9b4b9",
+                        "on-error-container": "#752121",
+                        "tertiary-fixed": "#e4f4cc",
+                        "error-dim": "#4e0309",
+                        "primary-container": "#b0f0d6",
+                        "primary": "#2b6954",
+                        "inverse-surface": "#0b0f10",
+                        "inverse-on-surface": "#9a9d9f",
+                        "on-tertiary": "#efffd6",
+                        "on-error": "#fff7f6",
+                        "on-tertiary-container": "#4f5d3e",
+                        "on-secondary": "#f8f8ff",
+                        "on-secondary-fixed-variant": "#4e5c71",
+                        "surface-container-low": "#f0f4f7",
+                        "on-surface-variant": "#566166",
+                        "surface-dim": "#cfdce3",
+                        "outline": "#717c82",
+                        "on-primary": "#dffff0",
+                        "on-tertiary-fixed": "#3d4a2e",
+                        "secondary-fixed-dim": "#c7d5ed",
+                        "surface-container-highest": "#d9e4ea",
+                        "on-primary-fixed-variant": "#286652",
+                        "tertiary-container": "#e4f4cc",
+                        "on-secondary-container": "#455367",
+                        "surface-bright": "#f7f9fb",
+                        "primary-fixed-dim": "#a2e2c8"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+            color: #2a3439;
+        }
+        h1, h2, h3, .font-headline {
+            font-family: 'Manrope', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full z-30 bg-slate-50 dark:bg-slate-950 h-screen w-64 hidden lg:flex flex-col border-r border-slate-200/50">
+<div class="px-6 py-8">
+<div class="flex items-center gap-3 mb-10">
+<div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+<span class="material-symbols-outlined" data-icon="forest">forest</span>
+</div>
+<div>
+<h1 class="font-bold text-emerald-900 dark:text-emerald-50 text-xl tracking-tight">GreenLink</h1>
+<p class="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Golf Operations</p>
+</div>
+</div>
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-emerald-800 dark:text-emerald-400 font-bold border-r-4 border-emerald-600 bg-emerald-50/50 dark:bg-emerald-900/20 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-label text-sm">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span class="font-label text-sm">Tee Sheet</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label text-sm">Members</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span class="font-label text-sm">Finance</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label text-sm">Inventory</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label text-sm">Reports</span>
+</a>
+</nav>
+</div>
+<div class="mt-auto px-6 py-8 border-t border-slate-100 dark:border-slate-800">
+<button class="w-full bg-primary text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity mb-6">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span>Book Golf</span>
+</button>
+<div class="space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-emerald-700 transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="contact_support">contact_support</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-error transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="logout">logout</span>
+<span class="text-sm font-medium">Sign Out</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="lg:ml-64 min-h-screen pb-24 lg:pb-12">
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 left-0 lg:left-64 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md px-6 h-16 flex justify-between items-center border-b border-slate-100/50">
+<div class="flex items-center gap-4">
+<h2 class="text-xl font-bold tracking-tight text-emerald-900 dark:text-emerald-50">Dashboard</h2>
+<span class="text-slate-300">|</span>
+<p class="text-sm font-medium text-slate-500">Wednesday, Oct 24</p>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative hidden md:block">
+<input class="bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all" placeholder="Search operations..." type="text"/>
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg" data-icon="search">search</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+</button>
+<button class="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button class="p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center border border-emerald-200">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="professional headshot of a club manager with a friendly expression in a modern office setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmad6_2PrVwsnaeacqqd1mhlh5itsgP1LF9b-BpoC-0iDE4-qUje4abtqMR3b-95tVShRRJYCuBrK5npV-yoKgUAQCC-UNVQ9TGKFLR-KpythMi-wCS3L1rzr2QKdxF5aIwwIoM3EKWK3tzPgx0kpyCqI3yjzVRb__bWRnwNe8aFo21p9F-ekz-8UgZ0u1Z_BxMy_uWjpsOSTR2E2apoUOCrs2or366seT66EkfyVf39iqY81QH4fxQjgmMUBBosWyHpOT0LWWADY"/>
+</div>
+</div>
+</header>
+<!-- Dashboard Canvas -->
+<div class="pt-24 px-6 max-w-7xl mx-auto">
+<!-- Bento Grid - Key Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<!-- Revenue Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden group transition-all hover:translate-y-[-2px]">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-primary-container rounded-lg text-on-primary-container">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+</div>
+<span class="text-emerald-600 text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="trending_up">trending_up</span>
+                            +12.5%
+                        </span>
+</div>
+<p class="text-label-sm font-label text-on-surface-variant uppercase tracking-wider mb-1">Today's Revenue</p>
+<h3 class="text-2xl font-bold font-headline">$14,280</h3>
+<div class="mt-4 h-1 w-full bg-surface-container-low rounded-full">
+<div class="h-1 bg-primary rounded-full" style="width: 75%"></div>
+</div>
+</div>
+<!-- Occupancy Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden group transition-all hover:translate-y-[-2px]">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-secondary-container rounded-lg text-on-secondary-container">
+<span class="material-symbols-outlined" data-icon="golf_course">golf_course</span>
+</div>
+<span class="text-slate-500 text-xs font-bold">84 / 102</span>
+</div>
+<p class="text-label-sm font-label text-on-surface-variant uppercase tracking-wider mb-1">Tee Time Occupancy</p>
+<h3 class="text-2xl font-bold font-headline">82%</h3>
+<div class="mt-4 flex gap-1">
+<div class="h-1 flex-1 bg-primary rounded-full"></div>
+<div class="h-1 flex-1 bg-primary rounded-full"></div>
+<div class="h-1 flex-1 bg-primary rounded-full"></div>
+<div class="h-1 flex-1 bg-surface-container-low rounded-full"></div>
+</div>
+</div>
+<!-- New Members Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden group transition-all hover:translate-y-[-2px]">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-tertiary-container rounded-lg text-on-tertiary-container">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+</div>
+</div>
+<p class="text-label-sm font-label text-on-surface-variant uppercase tracking-wider mb-1">New Memberships</p>
+<h3 class="text-2xl font-bold font-headline">12</h3>
+<p class="text-[10px] text-slate-400 mt-2 font-medium">8 pending approval</p>
+</div>
+<!-- Pace of Play Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden group transition-all hover:translate-y-[-2px]">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-high rounded-lg text-on-surface">
+<span class="material-symbols-outlined" data-icon="timer">timer</span>
+</div>
+<span class="text-error text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="warning">warning</span>
+                            Slow
+                        </span>
+</div>
+<p class="text-label-sm font-label text-on-surface-variant uppercase tracking-wider mb-1">Pace of Play</p>
+<h3 class="text-2xl font-bold font-headline">4h 12m</h3>
+<p class="text-[10px] text-slate-400 mt-2 font-medium">Avg delay: +8 mins</p>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+<!-- Left: Alerts & Activity -->
+<div class="lg:col-span-2 space-y-8">
+<!-- Alerts Panel -->
+<section>
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-lg font-bold font-headline flex items-center gap-2">
+                                Critical Alerts
+                                <span class="px-2 py-0.5 bg-error-container text-on-error-container text-[10px] rounded-full uppercase tracking-tighter">3 Active</span>
+</h3>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-4 p-4 bg-white rounded-xl group hover:bg-slate-50 transition-colors">
+<div class="w-1 bg-error h-12 rounded-full"></div>
+<div class="p-2 bg-error-container/20 rounded-lg text-error">
+<span class="material-symbols-outlined" data-icon="emergency_home">emergency_home</span>
+</div>
+<div class="flex-1">
+<h4 class="font-bold text-sm">3 bookings unmapped</h4>
+<p class="text-xs text-on-surface-variant">Conflicting tee times on the North Course require manual resolution.</p>
+</div>
+<button class="text-xs font-bold text-primary px-3 py-1 hover:bg-primary-container rounded-lg transition-colors">Resolve</button>
+</div>
+<div class="flex items-center gap-4 p-4 bg-white rounded-xl group hover:bg-slate-50 transition-colors">
+<div class="w-1 bg-amber-500 h-12 rounded-full"></div>
+<div class="p-2 bg-amber-100 rounded-lg text-amber-700">
+<span class="material-symbols-outlined" data-icon="thunderstorm">thunderstorm</span>
+</div>
+<div class="flex-1">
+<h4 class="font-bold text-sm">Weather warning: course closure</h4>
+<p class="text-xs text-on-surface-variant">Severe lightning predicted for 2:00 PM. Automated alerts ready to send.</p>
+</div>
+<button class="text-xs font-bold text-primary px-3 py-1 hover:bg-primary-container rounded-lg transition-colors">Notify All</button>
+</div>
+<div class="flex items-center gap-4 p-4 bg-white rounded-xl group hover:bg-slate-50 transition-colors">
+<div class="w-1 bg-blue-500 h-12 rounded-full"></div>
+<div class="p-2 bg-blue-100 rounded-lg text-blue-700">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+</div>
+<div class="flex-1">
+<h4 class="font-bold text-sm">Pro Shop Inventory Low</h4>
+<p class="text-xs text-on-surface-variant">Titleist Pro V1 stock below threshold. Reorder suggested.</p>
+</div>
+<button class="text-xs font-bold text-primary px-3 py-1 hover:bg-primary-container rounded-lg transition-colors">Review</button>
+</div>
+</div>
+</section>
+<!-- Recent Activity -->
+<section>
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-lg font-bold font-headline">Recent Activity</h3>
+<button class="text-xs font-bold text-slate-400 hover:text-primary uppercase tracking-wider">View Log</button>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-2">
+<div class="space-y-1">
+<div class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl">
+<div class="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="file_download">file_download</span>
+</div>
+<div class="flex-1">
+<p class="text-sm font-medium">Finance Export completed</p>
+<p class="text-[10px] text-slate-400">by Sarah Miller • 14 mins ago</p>
+</div>
+<button class="material-symbols-outlined text-slate-300 hover:text-slate-600" data-icon="more_horiz">more_horiz</button>
+</div>
+<div class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl">
+<div class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="newspaper">newspaper</span>
+</div>
+<div class="flex-1">
+<p class="text-sm font-medium">New news post published</p>
+<p class="text-[10px] text-slate-400">System • 2 hours ago</p>
+</div>
+<button class="material-symbols-outlined text-slate-300 hover:text-slate-600" data-icon="more_horiz">more_horiz</button>
+</div>
+<div class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl">
+<div class="w-8 h-8 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="how_to_reg">how_to_reg</span>
+</div>
+<div class="flex-1">
+<p class="text-sm font-medium">Member "James Wilson" checked in</p>
+<p class="text-[10px] text-slate-400">Front Desk • 3 hours ago</p>
+</div>
+<button class="material-symbols-outlined text-slate-300 hover:text-slate-600" data-icon="more_horiz">more_horiz</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right: Quick Actions -->
+<div class="space-y-6">
+<section class="bg-primary-container/20 p-6 rounded-2xl border border-primary/10">
+<h3 class="text-sm font-bold font-headline text-emerald-900 uppercase tracking-widest mb-6">Quick Actions</h3>
+<div class="grid grid-cols-1 gap-3">
+<button class="w-full bg-white p-4 rounded-xl flex items-center gap-4 text-left hover:shadow-sm transition-all group">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span>
+</div>
+<div>
+<p class="text-sm font-bold">Book Golf</p>
+<p class="text-[10px] text-slate-500">Create new reservation</p>
+</div>
+</button>
+<button class="w-full bg-white p-4 rounded-xl flex items-center gap-4 text-left hover:shadow-sm transition-all group">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined" data-icon="mail">mail</span>
+</div>
+<div>
+<p class="text-sm font-bold">Send Member News</p>
+<p class="text-[10px] text-slate-500">Draft mass communication</p>
+</div>
+</button>
+<button class="w-full bg-white p-4 rounded-xl flex items-center gap-4 text-left hover:shadow-sm transition-all group">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined" data-icon="file_export">file_export</span>
+</div>
+<div>
+<p class="text-sm font-bold">Trigger Finance Export</p>
+<p class="text-[10px] text-slate-500">Sync with accounting</p>
+</div>
+</button>
+<button class="w-full bg-white p-4 rounded-xl flex items-center gap-4 text-left hover:shadow-sm transition-all group">
+<div class="w-10 h-10 rounded-lg bg-emerald-50 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+</div>
+<div>
+<p class="text-sm font-bold">Adjust Tee Times</p>
+<p class="text-[10px] text-slate-500">Bulk operational changes</p>
+</div>
+</button>
+</div>
+</section>
+<!-- Operations Status -->
+<section class="bg-surface-container-low p-6 rounded-2xl">
+<h3 class="text-sm font-bold font-headline text-on-surface uppercase tracking-widest mb-6">Course Status</h3>
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium">North Course</span>
+<span class="text-[10px] font-bold px-2 py-1 bg-primary/10 text-primary rounded-lg uppercase">Open</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium">South Course</span>
+<span class="text-[10px] font-bold px-2 py-1 bg-primary/10 text-primary rounded-lg uppercase">Open</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium">Driving Range</span>
+<span class="text-[10px] font-bold px-2 py-1 bg-error-container/20 text-error rounded-lg uppercase">Maintenance</span>
+</div>
+<div class="pt-4 border-t border-slate-200">
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="material-symbols-outlined text-lg" data-icon="device_thermostat">device_thermostat</span>
+<p class="text-sm">72°F <span class="text-xs opacity-60 ml-1">Humidity: 45%</span></p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-2 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 lg:hidden">
+<a class="flex flex-col items-center justify-center bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 rounded-xl px-3 py-1.5 transition-transform scale-95 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="home" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label text-[10px] font-medium">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 px-3 py-1.5 active:bg-slate-100 transition-transform scale-95 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="font-label text-[10px] font-medium">Book</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 px-3 py-1.5 active:bg-slate-100 transition-transform scale-95 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label text-[10px] font-medium">Activity</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 px-3 py-1.5 active:bg-slate-100 transition-transform scale-95 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label text-[10px] font-medium">Profile</span>
+</a>
+</nav>
+</body></html>
