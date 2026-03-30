@@ -54,6 +54,9 @@ export function AdminShellPage(): JSX.Element {
           >
             Orders
           </NavLink>
+          <NavLink className="admin-nav-link" to="/admin/pos-terminal">
+            POS
+          </NavLink>
           <NavLink className="admin-nav-link" to="/select-club">
             Change Club
           </NavLink>

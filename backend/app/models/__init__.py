@@ -40,6 +40,8 @@ from app.models.finance.transaction import FinanceTransaction
 from app.models.order import Order
 from app.models.order_item import OrderItem
 from app.models.person import Person
+from app.models.pos_transaction import PosTransaction, PosTransactionItem
+from app.models.product import Product
 from app.models.platform_state import PlatformState
 from app.models.pricing_matrix import PricingMatrix
 from app.models.pricing_rule import PricingRule
@@ -83,6 +85,9 @@ __all__ = [
     "OrderSource",
     "OrderStatus",
     "Person",
+    "PosTransaction",
+    "PosTransactionItem",
+    "Product",
     "PricingDayType",
     "PricingMatrix",
     "PricingRule",
