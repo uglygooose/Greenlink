@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.comms import routes as comms
 from app.api.finance import routes as finance
 from app.api.orders import routes as orders
 from app.api.pos import routes as pos
@@ -18,3 +19,4 @@ api_router.include_router(pricing.router, prefix="/api/pricing", tags=["pricing"
 api_router.include_router(finance.router, prefix="/api/finance", tags=["finance"])
 api_router.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 api_router.include_router(pos.router, prefix="/api/pos", tags=["pos"])
+api_router.include_router(comms.router, prefix="/api/comms", tags=["comms"])

@@ -27,6 +27,8 @@ from app.models.enums import (
     FinanceTransactionType,
     IntegrityIssueScope,
     IntegrityIssueSeverity,
+    NewsPostStatus,
+    NewsPostVisibility,
     OrderSource,
     OrderStatus,
     PricingDayType,
@@ -35,6 +37,7 @@ from app.models.enums import (
     ReadinessStatus,
     UserType,
 )
+from app.models.news_post import NewsPost
 from app.models.finance.account import FinanceAccount
 from app.models.finance.transaction import FinanceTransaction
 from app.models.order import Order
@@ -80,6 +83,9 @@ __all__ = [
     "FinanceTransactionType",
     "IntegrityIssueScope",
     "IntegrityIssueSeverity",
+    "NewsPost",
+    "NewsPostStatus",
+    "NewsPostVisibility",
     "Order",
     "OrderItem",
     "OrderSource",

@@ -146,3 +146,14 @@ class TenderType(StrEnum):
     CASH = "cash"
     CARD = "card"
     MEMBER_ACCOUNT = "member_account"
+
+
+class NewsPostVisibility(StrEnum):
+    PUBLIC = "public"
+    MEMBERS_ONLY = "members_only"
+    INTERNAL = "internal"
+
+
+class NewsPostStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
