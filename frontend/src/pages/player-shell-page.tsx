@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
@@ -51,7 +52,8 @@ function firstName(name: string | undefined): string {
 }
 
 export function PlayerShellPage(): JSX.Element {
-  const { bootstrap } = useSession();
+  const { bootstrap, logout } = useSession();
+  const [profileOpen, setProfileOpen] = useState(false);
   const displayName = bootstrap?.user.display_name ?? "John";
   const selectedClub = bootstrap?.selected_club?.name ?? "GreenLink";
 
@@ -79,11 +81,38 @@ export function PlayerShellPage(): JSX.Element {
           <button className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-50" type="button">
             <MaterialSymbol icon="notifications" />
           </button>
-          <UserAvatar
-            alt={`${displayName} profile`}
-            className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-container text-slate-700"
-            initials={initials(displayName)}
-          />
+          <div className="relative">
+            <button
+              className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-container text-slate-700 transition-opacity hover:opacity-80"
+              type="button"
+              onClick={() => setProfileOpen((o) => !o)}
+            >
+              <UserAvatar
+                alt={`${displayName} profile`}
+                className="flex h-full w-full items-center justify-center text-sm font-bold"
+                initials={initials(displayName)}
+              />
+            </button>
+            {profileOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
+                <div className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-lg">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-xs font-bold text-on-surface">{displayName}</p>
+                  <p className="text-[10px] text-slate-400">{bootstrap?.user.email}</p>
+                </div>
+                <button
+                  className="flex w-full items-center gap-3 px-4 py-3 text-sm text-error transition-colors hover:bg-slate-50"
+                  type="button"
+                  onClick={() => { void logout(); }}
+                >
+                  <MaterialSymbol className="text-base" icon="logout" />
+                  Sign out
+                </button>
+              </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 

@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
 
 import {
   cancelBooking,
@@ -9,8 +8,7 @@ import {
   markBookingNoShow,
 } from "../api/operations";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
-import { UserAvatar } from "../components/benchmark/user-avatar";
+import AdminShell from "../components/shell/AdminShell";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
 import { teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
@@ -129,29 +127,12 @@ function firstDetail(slot: TeeSheetSlotView): string {
   return "Open for booking";
 }
 
-function initials(name: string | undefined): string {
-  return (
-    name
-      ?.split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") || "GL"
-  );
-}
-
 function dateLabel(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
-}
-
-function sidebarLinkClass(isActive: boolean): string {
-  return isActive
-    ? "group flex items-center rounded-xl border-r-4 border-emerald-600 bg-emerald-50/50 px-4 py-3 font-bold text-emerald-800 transition-all duration-200 ease-in-out dark:bg-emerald-900/20 dark:text-emerald-400"
-    : "group flex items-center rounded-xl px-4 py-3 text-slate-600 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-emerald-700 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-emerald-300";
 }
 
 function buildOccupants(slot: TeeSheetSlotView): OccupantChip[] {
@@ -201,7 +182,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(null);
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const displayName = bootstrap?.user.display_name ?? "Club Admin";
   const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
 
   useEffect(() => {
@@ -389,124 +369,37 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       : null;
 
   return (
-    <div className="bg-background text-on-background selection:bg-primary-container">
-      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-64 flex-col border-r border-slate-100/50 bg-slate-50 dark:bg-slate-950 lg:flex">
-        <div className="p-6">
-          <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-on-primary">
-              <MaterialSymbol filled icon="landscape" />
+    <AdminShell title="Tee Sheet" searchPlaceholder="Search tee times...">
+      <div className="p-6">
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <label className="relative flex items-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-low px-3 py-1.5">
+              <MaterialSymbol className="text-sm text-on-surface-variant" icon="calendar_month" />
+              <span className="text-sm font-medium">{dateLabel(selectedDate)}</span>
+              <MaterialSymbol className="text-sm text-on-surface-variant" icon="expand_more" />
+              <input
+                className="absolute inset-0 cursor-pointer opacity-0"
+                onChange={(event) => setSelectedDate(event.target.value)}
+                type="date"
+                value={selectedDate}
+              />
+            </label>
+            <div className="flex gap-1">
+              <button
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                onClick={() => setSelectedDate((current) => addDays(current, -1))}
+                type="button"
+              >
+                <MaterialSymbol icon="chevron_left" />
+              </button>
+              <button
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                onClick={() => setSelectedDate((current) => addDays(current, 1))}
+                type="button"
+              >
+                <MaterialSymbol icon="chevron_right" />
+              </button>
             </div>
-            <div>
-              <h1 className="font-bold leading-none text-emerald-900">{bootstrap?.selected_club?.name ?? "GreenLink"}</h1>
-              <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">Golf Operations</span>
-            </div>
           </div>
-          <nav className="space-y-1">
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/dashboard">
-              <MaterialSymbol className="mr-3" icon="dashboard" />
-              <span className="font-medium">Dashboard</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/tee-sheet">
-              <MaterialSymbol className="mr-3" icon="calendar_today" />
-              <span className="font-medium">Tee Sheet</span>
-            </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol className="mr-3" icon="group" />
-              <span className="font-medium">Members</span>
-            </button>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
-              <MaterialSymbol className="mr-3" icon="payments" />
-              <span className="font-medium">Finance</span>
-            </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol className="mr-3" icon="inventory_2" />
-              <span className="font-medium">Inventory</span>
-            </button>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/communications">
-              <MaterialSymbol className="mr-3" icon="chat_bubble" />
-              <span className="font-medium">Comms</span>
-            </NavLink>
-          </nav>
-          <div className="mt-8">
-            <NavLink
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 font-semibold text-white transition-all hover:bg-primary-dim"
-              to="/admin/pos-terminal"
-            >
-              <MaterialSymbol className="text-sm" icon="add" />
-              <span>Open POS</span>
-            </NavLink>
-          </div>
-        </div>
-        <div className="mt-auto space-y-1 p-6">
-          <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/settings">
-            <MaterialSymbol className="mr-3" icon="settings" />
-            <span className="text-sm font-medium">Settings</span>
-          </NavLink>
-          <button className={sidebarLinkClass(false)} type="button">
-            <MaterialSymbol className="mr-3" icon="contact_support" />
-            <span className="text-sm font-medium">Support</span>
-          </button>
-        </div>
-      </aside>
-
-      <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100/50 bg-white/80 px-6 backdrop-blur-md dark:border-slate-800/50 dark:bg-slate-900/80 lg:left-64">
-        <div className="flex items-center gap-6">
-          <label className="relative flex items-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-low px-3 py-1.5">
-            <MaterialSymbol className="text-sm text-on-surface-variant" icon="calendar_month" />
-            <span className="text-sm font-medium">{dateLabel(selectedDate)}</span>
-            <MaterialSymbol className="text-sm text-on-surface-variant" icon="expand_more" />
-            <input
-              className="absolute inset-0 cursor-pointer opacity-0"
-              onChange={(event) => setSelectedDate(event.target.value)}
-              type="date"
-              value={selectedDate}
-            />
-          </label>
-          <div className="flex gap-1">
-            <button
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-              onClick={() => setSelectedDate((current) => addDays(current, -1))}
-              type="button"
-            >
-              <MaterialSymbol icon="chevron_left" />
-            </button>
-            <button
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-              onClick={() => setSelectedDate((current) => addDays(current, 1))}
-              type="button"
-            >
-              <MaterialSymbol icon="chevron_right" />
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="relative hidden md:block">
-            <MaterialSymbol className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" icon="search" />
-            <input
-              className="w-64 rounded-xl border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20"
-              placeholder="Search tee times..."
-              type="text"
-            />
-          </div>
-          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-            <button className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100" type="button">
-              <MaterialSymbol icon="notifications" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-error"></span>
-            </button>
-            <button className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100" type="button">
-              <MaterialSymbol icon="settings" />
-            </button>
-            <UserAvatar
-              alt={`${displayName} profile`}
-              className="ml-2 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-surface-container-low text-slate-700"
-              initials={initials(displayName)}
-            />
-          </div>
-        </div>
-      </header>
-
-      <main className="min-h-screen pt-16 lg:pl-64">
-        <div className="p-6">
           <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h2 className="font-headline text-2xl font-bold tracking-tight text-on-surface">Daily Tee Sheet</h2>
@@ -772,7 +665,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             </div>
           </div>
         </div>
-      </main>
 
       {selectedSlot ? (
         <BookingManagementDrawer
@@ -811,19 +703,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
           slot={selectedSlot.slot}
         />
       ) : null}
-
-      <MobileTabBar
-        activeClassName="rounded-xl bg-emerald-100 text-emerald-800 scale-95"
-        className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-xl border-t border-slate-200 bg-white/90 px-4 pb-6 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden"
-        inactiveClassName="text-slate-500"
-        items={[
-          { label: "Home", icon: "home", to: "/admin/dashboard" },
-          { label: "Book", icon: "add_circle", to: "/admin/golf/tee-sheet", isActive: true },
-          { label: "Activity", icon: "history" },
-          { label: "Profile", icon: "person" },
-        ]}
-        labelClassName="mt-1 text-[10px] font-medium"
-      />
-    </div>
+    </AdminShell>
   );
 }

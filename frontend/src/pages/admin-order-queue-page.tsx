@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
 
 import {
   cancelOrder,
@@ -9,9 +8,7 @@ import {
   markOrderReady,
   postOrderCharge,
 } from "../api/operations";
-import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
-import { UserAvatar } from "../components/benchmark/user-avatar";
+import AdminShell from "../components/shell/AdminShell";
 import { OrderManagementDrawer } from "../features/orders/order-management-drawer";
 import { useOrderDetailQuery, useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
@@ -56,23 +53,6 @@ const LIFECYCLE_NOTICE_COPY: Record<
     already: "Finance charge was already posted. Queue refreshed from backend state.",
   },
 };
-
-function sidebarLinkClass(isActive: boolean): string {
-  return isActive
-    ? "group flex items-center rounded-xl border-r-4 border-emerald-600 bg-emerald-50/50 px-4 py-3 font-bold text-emerald-800 transition-all duration-200 ease-in-out dark:bg-emerald-900/20 dark:text-emerald-400"
-    : "group flex items-center rounded-xl px-4 py-3 text-slate-600 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-emerald-700 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-emerald-300";
-}
-
-function initials(name: string | undefined): string {
-  return (
-    name
-      ?.split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") || "GL"
-  );
-}
 
 function asMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -135,7 +115,6 @@ export function AdminOrderQueuePage(): JSX.Element {
   const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(null);
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const displayName = bootstrap?.user.display_name ?? "Club Admin";
   const backendStatusFilter = selectedFilter === "collected" ? "collected" : null;
 
   const ordersQuery = useOrdersQuery({
@@ -276,69 +255,8 @@ export function AdminOrderQueuePage(): JSX.Element {
           : null;
 
   return (
-    <div className="bg-background text-on-background selection:bg-primary-container">
-      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-64 flex-col border-r border-slate-100/50 bg-slate-50 dark:bg-slate-950 lg:flex">
-        <div className="p-6">
-          <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-on-primary">
-              <MaterialSymbol filled icon="storefront" />
-            </div>
-            <div>
-              <h1 className="font-bold leading-none text-emerald-900">
-                {bootstrap?.selected_club?.name ?? "GreenLink"}
-              </h1>
-              <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">
-                Order Operations
-              </span>
-            </div>
-          </div>
-          <nav className="space-y-1">
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/dashboard">
-              <MaterialSymbol className="mr-3" icon="dashboard" />
-              <span className="font-medium">Dashboard</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/tee-sheet">
-              <MaterialSymbol className="mr-3" icon="calendar_today" />
-              <span className="font-medium">Tee Sheet</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/orders">
-              <MaterialSymbol className="mr-3" icon="receipt_long" />
-              <span className="font-medium">Orders</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
-              <MaterialSymbol className="mr-3" icon="payments" />
-              <span className="font-medium">Finance</span>
-            </NavLink>
-          </nav>
-        </div>
-        <div className="mt-auto space-y-1 p-6">
-          <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/settings">
-            <MaterialSymbol className="mr-3" icon="settings" />
-            <span className="text-sm font-medium">Settings</span>
-          </NavLink>
-          <button className={sidebarLinkClass(false)} type="button">
-            <MaterialSymbol className="mr-3" icon="contact_support" />
-            <span className="text-sm font-medium">Support</span>
-          </button>
-        </div>
-      </aside>
-
-      <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100/50 bg-white/80 px-6 backdrop-blur-md dark:border-slate-800/50 dark:bg-slate-900/80 lg:left-64">
-        <div>
-          <h2 className="font-headline text-lg font-bold text-on-surface">Staff Order Queue</h2>
-          <p className="text-xs text-on-surface-variant">Open work, detail drawer, explicit lifecycle actions.</p>
-        </div>
-        <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-          <UserAvatar
-            alt={`${displayName} profile`}
-            className="ml-2 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-surface-container-low text-slate-700"
-            initials={initials(displayName)}
-          />
-        </div>
-      </header>
-
-      <main className="min-h-screen pt-16 lg:pl-64">
-        <div className="p-6">
+    <AdminShell title="Order Queue" searchPlaceholder="Search orders...">
+      <div className="p-6">
           <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">Order Queue</h1>
@@ -542,7 +460,6 @@ export function AdminOrderQueuePage(): JSX.Element {
             </div>
           </div>
         </div>
-      </main>
 
       {selectedOrderId ? (
         orderDetailQuery.isLoading || !orderDetailQuery.data ? (
@@ -603,18 +520,6 @@ export function AdminOrderQueuePage(): JSX.Element {
         )
       ) : null}
 
-      <MobileTabBar
-        activeClassName="rounded-xl bg-emerald-100 text-emerald-800 scale-95"
-        className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-xl border-t border-slate-200 bg-white/90 px-4 pb-6 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden"
-        inactiveClassName="text-slate-500"
-        items={[
-          { label: "Home", icon: "home", to: "/admin/dashboard" },
-          { label: "Orders", icon: "receipt_long", to: "/admin/orders", isActive: true },
-          { label: "Tee", icon: "golf_course", to: "/admin/golf/tee-sheet" },
-          { label: "Profile", icon: "person" },
-        ]}
-        labelClassName="mt-1 text-[10px] font-medium"
-      />
-    </div>
+    </AdminShell>
   );
 }

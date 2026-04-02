@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
-import { UserAvatar } from "../components/benchmark/user-avatar";
+import AdminShell from "../components/shell/AdminShell";
 import { useFinanceAccountLedgerQuery, useFinanceAccountsQuery } from "../features/finance/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { useSession } from "../session/session-context";
@@ -19,12 +17,6 @@ function initials(name: string | undefined): string {
       .map((part) => part[0]?.toUpperCase())
       .join("") || "GL"
   );
-}
-
-function sidebarLinkClass(isActive: boolean): string {
-  return isActive
-    ? "flex items-center gap-3 rounded-l-xl border-r-4 border-emerald-600 bg-emerald-50/50 px-4 py-3 font-bold text-emerald-800 transition-all duration-200 ease-in-out dark:bg-emerald-900/20 dark:text-emerald-400"
-    : "group flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-emerald-700 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-emerald-300";
 }
 
 function roleChipClass(role: string): string {
@@ -145,7 +137,6 @@ function MemberRow({ entry, account, isSelected, onSelect }: MemberRowProps): JS
 
 export function AdminMembersPage(): JSX.Element {
   const { bootstrap, accessToken } = useSession();
-  const displayName = bootstrap?.user.display_name ?? "Club Admin";
   const selectedClubId = bootstrap?.selected_club_id ?? null;
 
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
@@ -185,103 +176,8 @@ export function AdminMembersPage(): JSX.Element {
     : members;
 
   return (
-    <div className="flex min-h-screen bg-background text-on-surface">
-      {/* Sidebar */}
-      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-64 flex-col border-r border-slate-100/50 bg-slate-50 dark:bg-slate-950 lg:flex">
-        <div className="px-6 py-8">
-          <div className="mb-10 flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
-              <MaterialSymbol icon="forest" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold leading-none text-emerald-900">GreenLink</h1>
-              <span className="font-label text-[10px] uppercase tracking-widest text-slate-500">Golf Operations</span>
-            </div>
-          </div>
-          <nav className="space-y-1">
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/dashboard">
-              <MaterialSymbol icon="dashboard" />
-              <span className="font-label text-sm font-medium">Dashboard</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/tee-sheet">
-              <MaterialSymbol icon="calendar_today" />
-              <span className="font-label text-sm font-medium">Tee Sheet</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/members">
-              <MaterialSymbol filled icon="group" />
-              <span className="font-label text-sm font-medium">Members</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
-              <MaterialSymbol icon="payments" />
-              <span className="font-label text-sm font-medium">Finance</span>
-            </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol icon="inventory_2" />
-              <span className="font-label text-sm font-medium">Inventory</span>
-            </button>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/communications">
-              <MaterialSymbol icon="analytics" />
-              <span className="font-label text-sm font-medium">Reports</span>
-            </NavLink>
-          </nav>
-        </div>
-        <div className="mt-auto space-y-4 px-6 py-8">
-          <NavLink
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-headline font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
-            to="/admin/pos-terminal"
-          >
-            <MaterialSymbol className="text-sm" icon="add" />
-            <span>Open POS</span>
-          </NavLink>
-          <div className="space-y-1 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/settings">
-              <MaterialSymbol className="text-[20px]" icon="settings" />
-              <span className="text-xs font-medium">Settings</span>
-            </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol className="text-[20px]" icon="contact_support" />
-              <span className="text-xs font-medium">Support</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main className={`flex min-h-screen flex-1 flex-col lg:ml-64 ${selectedPersonId ? "xl:mr-[420px]" : ""}`}>
-        <header className={`glass-header fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100/50 px-8 lg:left-64 ${selectedPersonId ? "xl:right-[420px]" : ""}`}>
-          <div className="flex items-center gap-4">
-            <h2 className="font-headline text-lg font-bold text-emerald-900">Members</h2>
-            {members.length > 0 && (
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                {members.length} total
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="relative hidden sm:block">
-              <MaterialSymbol className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" icon="search" />
-              <input
-                className="w-64 rounded-full border-none bg-surface-container-low py-1.5 pl-10 pr-4 text-sm transition-all focus:ring-2 focus:ring-primary/20"
-                placeholder="Search members…"
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-50" type="button">
-                <MaterialSymbol icon="notifications" />
-              </button>
-              <UserAvatar
-                alt={`${displayName} profile`}
-                className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-primary-container text-primary shadow-sm"
-                initials={initials(displayName)}
-              />
-            </div>
-          </div>
-        </header>
-
-        <div className="mt-16 flex-1 p-8">
+    <AdminShell title="Members" searchPlaceholder="Search members...">
+        <div className="p-8">
           <div className="overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left">
@@ -335,7 +231,6 @@ export function AdminMembersPage(): JSX.Element {
             </div>
           </div>
         </div>
-      </main>
 
       {/* Member detail panel */}
       {selectedPersonId && selectedMember && (
@@ -463,19 +358,6 @@ export function AdminMembersPage(): JSX.Element {
           </div>
         </aside>
       )}
-
-      <MobileTabBar
-        activeClassName="rounded-xl bg-emerald-100 text-emerald-800 scale-95"
-        className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around border-t border-slate-200 bg-white/90 px-4 pb-6 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden"
-        inactiveClassName="text-slate-500 scale-95"
-        items={[
-          { label: "Home", icon: "home", to: "/admin/dashboard" },
-          { label: "Members", icon: "group", to: "/admin/members", isActive: true },
-          { label: "Finance", icon: "payments", to: "/admin/finance" },
-          { label: "Profile", icon: "person" },
-        ]}
-        labelClassName="mt-1 font-label text-[10px] font-medium"
-      />
-    </div>
+    </AdminShell>
   );
 }

@@ -1,6 +1,5 @@
-import { NavLink } from "react-router-dom";
-
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
+import AdminShell from "../components/shell/AdminShell";
 import { useSession } from "../session/session-context";
 
 type CommunicationRow = {
@@ -71,104 +70,13 @@ const NEWS_ITEMS: NewsItem[] = [
   },
 ];
 
-function initials(name: string | undefined): string {
-  return (
-    name
-      ?.split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") || "GL"
-  );
-}
-
-function sidebarLinkClass(isActive: boolean): string {
-  return isActive
-    ? "flex items-center rounded-xl border-r-2 border-emerald-700 bg-emerald-50/50 px-3 py-2.5 font-['Inter'] text-sm font-semibold tracking-tight text-emerald-700 transition-colors duration-200 dark:bg-emerald-900/20 dark:text-emerald-400"
-    : "flex items-center rounded-xl px-3 py-2.5 font-['Inter'] text-sm font-medium tracking-tight text-slate-600 transition-colors duration-200 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100";
-}
 
 export function AdminCommunicationsPage(): JSX.Element {
   const { bootstrap } = useSession();
   const displayName = bootstrap?.user.display_name ?? "Club Admin";
 
   return (
-    <div className="flex min-h-screen bg-background text-on-surface">
-      <aside className="sticky top-0 hidden h-screen w-64 flex-col border-r-0 bg-slate-50 dark:bg-slate-900 md:flex">
-        <div className="flex h-full flex-col px-4 py-6">
-          <div className="mb-10 px-2">
-            <span className="font-['Manrope'] text-xl font-bold text-emerald-900 dark:text-emerald-50">
-              The Operational Architect
-            </span>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-slate-500">Club Management</p>
-          </div>
-          <nav className="flex-1 space-y-1">
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/dashboard">
-              <MaterialSymbol className="mr-3" icon="dashboard" />
-              Dashboard
-            </NavLink>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/communications">
-              <MaterialSymbol className="mr-3" icon="chat_bubble" />
-              Communications
-            </NavLink>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol className="mr-3" icon="group" />
-              Members
-            </button>
-            <button className={sidebarLinkClass(false)} type="button">
-              <MaterialSymbol className="mr-3" icon="trophy" />
-              Competitions
-            </button>
-            <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/golf/settings">
-              <MaterialSymbol className="mr-3" icon="settings" />
-              Settings
-            </NavLink>
-          </nav>
-          <div className="mt-auto border-t border-slate-100 pt-6 dark:border-slate-800">
-            <div className="flex items-center px-2">
-              <div className="mr-3 flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-xs font-bold text-on-primary-container">
-                {initials(displayName)}
-              </div>
-              <div className="text-xs">
-                <p className="font-bold text-on-surface">{displayName}</p>
-                <p className="text-slate-500">GreenLink Pro</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-50 flex h-16 w-full items-center justify-between border-b border-slate-100 bg-white/80 px-8 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
-          <div className="flex flex-1 items-center space-x-6">
-            <h1 className="font-['Manrope'] text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
-              Communications
-            </h1>
-            <div className="relative hidden w-full max-w-md lg:block">
-              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
-                <MaterialSymbol className="text-sm" icon="search" />
-              </span>
-              <input
-                className="w-full rounded-xl border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm transition-all focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary"
-                placeholder="Search threads or members..."
-                type="text"
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <button className="p-2 text-slate-500 transition-all hover:text-emerald-600 dark:hover:text-emerald-300" type="button">
-              <MaterialSymbol icon="notifications" />
-            </button>
-            <button className="p-2 text-slate-500 transition-all hover:text-emerald-600 dark:hover:text-emerald-300" type="button">
-              <MaterialSymbol icon="help_outline" />
-            </button>
-            <button className="flex items-center rounded-xl bg-gradient-to-r from-primary to-primary-dim px-5 py-2 text-sm font-semibold text-white shadow-sm duration-150 active:scale-95" type="button">
-              <MaterialSymbol className="mr-2 text-sm" icon="add" />
-              New Message
-            </button>
-          </div>
-        </header>
-
+    <AdminShell title="Communications" searchPlaceholder="Search threads or members...">
         <div className="space-y-10 p-8">
           <div className="flex space-x-8 border-b border-slate-100 dark:border-slate-800">
             <button className="border-b-2 border-primary pb-4 text-sm font-semibold text-primary" type="button">
@@ -357,7 +265,6 @@ export function AdminCommunicationsPage(): JSX.Element {
             </section>
           </div>
         </div>
-      </main>
-    </div>
+    </AdminShell>
   );
 }
