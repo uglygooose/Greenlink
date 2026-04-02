@@ -21,6 +21,21 @@ class ClubMembershipStatus(StrEnum):
     INACTIVE = "inactive"
 
 
+class ClubOnboardingState(StrEnum):
+    ONBOARDING_STARTED = "onboarding_started"
+    DATA_PENDING = "data_pending"
+    SETUP_IN_PROGRESS = "setup_in_progress"
+    READY_FOR_GO_LIVE = "ready_for_go_live"
+    LIVE = "live"
+
+
+class ClubOnboardingStep(StrEnum):
+    BASIC_INFO = "basic_info"
+    FINANCE = "finance"
+    RULES = "rules"
+    MODULES = "modules"
+
+
 class ReadinessStatus(StrEnum):
     READY = "ready"
     WARNING = "warning"

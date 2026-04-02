@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,4 +26,9 @@ class ClubConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Integer,
         nullable=False,
         default=10,
+    )
+    preferred_accounting_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("accounting_export_profiles.id", ondelete="SET NULL"),
+        nullable=True,
     )

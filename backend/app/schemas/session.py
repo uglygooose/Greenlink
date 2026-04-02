@@ -22,6 +22,7 @@ class SelectedClubSummary(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
+    location: str
     timezone: str
     branding: dict[str, str | None]
 
@@ -41,7 +42,7 @@ class SessionBootstrapResponse(BaseModel):
     selected_club_id: uuid.UUID | None
     selected_club: SelectedClubSummary | None
     club_selection_required: bool
-    role_shell: Literal["admin", "player"] | None
+    role_shell: Literal["admin", "player", "superadmin"] | None
     default_workspace: str | None
     landing_path: str
     module_flags: dict[str, bool]

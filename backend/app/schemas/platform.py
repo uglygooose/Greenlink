@@ -4,7 +4,12 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models import ClubMembershipRole, ClubMembershipStatus
+from app.models import (
+    ClubMembershipRole,
+    ClubMembershipStatus,
+    ClubOnboardingState,
+    ClubOnboardingStep,
+)
 
 
 class BootstrapSuperadminRequest(BaseModel):
@@ -16,6 +21,7 @@ class BootstrapSuperadminRequest(BaseModel):
 class BootstrapInitialClubRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=2, max_length=120)
+    location: str = Field(default="", max_length=255)
     timezone: str = "Africa/Johannesburg"
 
 
@@ -28,8 +34,10 @@ class BootstrapRequest(BaseModel):
 class ClubCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=2, max_length=120)
+    location: str = Field(default="", max_length=255)
     timezone: str = "Africa/Johannesburg"
-    onboarding_state: str = "active"
+    onboarding_state: ClubOnboardingState = ClubOnboardingState.ONBOARDING_STARTED
+    onboarding_current_step: ClubOnboardingStep = ClubOnboardingStep.BASIC_INFO
     module_keys: list[str] = Field(default_factory=list)
 
 

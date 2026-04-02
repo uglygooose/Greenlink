@@ -79,9 +79,7 @@ class SessionBootstrapService:
             memberships_by_club = {
                 membership.club_id: membership for membership in context.all_memberships
             }
-            clubs = self.db.scalars(
-                select(Club).where(Club.active.is_(True)).order_by(Club.name.asc())
-            ).all()
+            clubs = self.db.scalars(select(Club).order_by(Club.name.asc())).all()
             return [
                 AvailableClubSummary(
                     club_id=club.id,
@@ -123,9 +121,7 @@ class SessionBootstrapService:
         self, context: TenancyContext, user_type: UserType
     ) -> tuple[str | None, str | None, str]:
         if user_type == UserType.SUPERADMIN:
-            if context.selected_club is None:
-                return "admin", None, "/admin/select-club"
-            return "admin", "dashboard", "/admin/dashboard"
+            return "superadmin", "clubs", "/superadmin/clubs"
 
         if context.selected_membership is None:
             if context.club_selection_required:
@@ -146,6 +142,7 @@ class SessionBootstrapService:
             id=selected_club.id,
             name=selected_club.name,
             slug=selected_club.slug,
+            location=selected_club.location,
             timezone=selected_club.timezone,
             branding={"logo_object_key": selected_club.logo_object_key, "name": selected_club.name},
         )

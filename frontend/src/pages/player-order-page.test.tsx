@@ -111,6 +111,7 @@ describe("Player ordering flow", () => {
           id: "club-1",
           name: "GreenLink Club",
           slug: "greenlink-club",
+          location: "Durban",
           timezone: "Africa/Johannesburg",
           branding: { logo_object_key: null, name: null },
         },

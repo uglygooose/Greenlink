@@ -90,6 +90,7 @@ class ClubConfigResponse(BaseModel):
     booking_window_days: int
     cancellation_policy_hours: int
     default_slot_interval_minutes: int
+    preferred_accounting_profile_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 

@@ -152,7 +152,7 @@ describe("AdminGolfTeeSheetPage", () => {
       accessToken: "token",
       bootstrap: {
         selected_club_id: "club-1",
-        selected_club: { name: "Club One" },
+        selected_club: { id: "club-1", name: "Club One", slug: "club-one", location: "Durban", timezone: "Africa/Johannesburg", branding: { logo_object_key: null, name: "Club One" } },
         user: { display_name: "Club Admin" },
       },
     });

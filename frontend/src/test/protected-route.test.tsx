@@ -18,6 +18,9 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
           <Route path="/admin" element={<ProtectedRoute shell="admin" />}>
             <Route index element={<div>Admin Shell</div>} />
           </Route>
+          <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
+            <Route index element={<div>Superadmin Shell</div>} />
+          </Route>
           <Route path="/player" element={<ProtectedRoute shell="player" />}>
             <Route index element={<div>Player Shell</div>} />
           </Route>
@@ -40,6 +43,7 @@ const baseBootstrap: SessionBootstrap = {
     id: "club-1",
     name: "Club One",
     slug: "club-one",
+    location: "Durban",
     timezone: "Africa/Johannesburg",
     branding: { logo_object_key: null, name: "Club One" }
   },
@@ -87,4 +91,21 @@ test("redirects to select-club when bootstrap requires club selection", async ()
 test("renders shell when session is aligned with the route", async () => {
   renderWithSession(sessionValue, ["/admin"]);
   expect(await screen.findByText("Admin Shell")).toBeInTheDocument();
+});
+
+test("renders superadmin shell when session is aligned with the superadmin route", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        user: { ...baseBootstrap.user, user_type: "superadmin" },
+        role_shell: "superadmin",
+        landing_path: "/superadmin/clubs",
+        default_workspace: "clubs",
+      },
+    },
+    ["/superadmin"],
+  );
+  expect(await screen.findByText("Superadmin Shell")).toBeInTheDocument();
 });

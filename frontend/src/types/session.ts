@@ -1,7 +1,7 @@
 export type UserType = "superadmin" | "user";
 export type MembershipRole = "club_admin" | "club_staff" | "member";
 export type MembershipStatus = "active" | "invited" | "suspended" | "inactive";
-export type RoleShell = "admin" | "player" | null;
+export type RoleShell = "admin" | "player" | "superadmin" | null;
 
 export interface SessionUser {
   id: string;
@@ -24,6 +24,7 @@ export interface SelectedClub {
   id: string;
   name: string;
   slug: string;
+  location: string;
   timezone: string;
   branding: {
     logo_object_key: string | null;

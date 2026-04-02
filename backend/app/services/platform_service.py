@@ -74,6 +74,7 @@ class PlatformService:
             initial_club = Club(
                 name=payload.initial_club.name,
                 slug=payload.initial_club.slug,
+                location=payload.initial_club.location,
                 timezone=payload.initial_club.timezone,
             )
             self.db.add(initial_club)
@@ -117,8 +118,10 @@ class PlatformService:
         club = Club(
             name=payload.name,
             slug=payload.slug,
+            location=payload.location,
             timezone=payload.timezone,
-            onboarding_state=payload.onboarding_state,
+            onboarding_state=payload.onboarding_state.value,
+            onboarding_current_step=payload.onboarding_current_step.value,
         )
         self.db.add(club)
         self.db.flush()

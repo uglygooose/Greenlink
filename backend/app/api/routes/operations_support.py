@@ -39,6 +39,7 @@ def get_or_create_club_config(db: Session, club_id: uuid.UUID) -> ClubConfig:
         booking_window_days=14,
         cancellation_policy_hours=24,
         default_slot_interval_minutes=10,
+        preferred_accounting_profile_id=None,
     )
     db.add(config)
     db.commit()

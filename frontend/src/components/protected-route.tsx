@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session/session-context";
 
 interface Props {
-  shell?: "admin" | "player";
+  shell?: "admin" | "player" | "superadmin";
 }
 
 export function ProtectedRoute({ shell }: Props): JSX.Element {

@@ -16,6 +16,7 @@ import { LoginPage } from "../pages/login-page";
 import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
+import { SuperadminClubsPage } from "../pages/superadmin-clubs-page";
 import { useSession } from "../session/session-context";
 
 function RootRedirect(): JSX.Element {
@@ -55,6 +56,14 @@ const router = createBrowserRouter([
       { path: "reports", element: <AdminReportsPage /> },
       { path: "pos-terminal", element: <AdminPosTerminalPage /> },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },
+    ],
+  },
+  {
+    path: "/superadmin",
+    element: <ProtectedRoute shell="superadmin" />,
+    children: [
+      { path: "clubs", element: <SuperadminClubsPage /> },
+      { path: "*", element: <Navigate to="/superadmin/clubs" replace /> },
     ],
   },
   {

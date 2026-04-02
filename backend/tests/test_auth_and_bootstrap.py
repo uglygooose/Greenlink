@@ -226,7 +226,8 @@ def test_superadmin_can_preview_without_default_club(
         "/api/session/bootstrap", headers={"Authorization": f"Bearer {access_token}"}
     )
     assert response.status_code == 200
-    assert response.json()["landing_path"] == "/admin/select-club"
+    assert response.json()["landing_path"] == "/superadmin/clubs"
+    assert response.json()["role_shell"] == "superadmin"
     assert response.json()["available_clubs"][0]["club_id"] == str(club.id)
 
     selected = client.get(
