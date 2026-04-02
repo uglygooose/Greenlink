@@ -1,334 +1,219 @@
-# GreenLink — Master System File
+# GreenLink - Master System File
 
 ## 1. System Definition
 
-GreenLink is a **club-scoped operational system** designed for real-world golf club execution.
+GreenLink is a club-scoped golf operations platform built for real club execution.
 
-It is NOT:
-- a generic SaaS platform
-- a configurable theming system
-- a UI-driven product
+It is not:
+- self-serve SaaS
+- a generic admin template
+- a theming product
+- a frontend-led system
 
-It IS:
-- a high-performance operational system
+It is:
+- implementation-led
 - backend-truth driven
-- deterministic and domain-correct
-- built for speed, clarity, and correctness
+- deterministic
+- operationally focused
+- built around club rollout, club execution, and controlled expansion
 
----
+## 2. Non-Negotiable Rules
 
-## 2. Core Principles (NON-NEGOTIABLE)
+- Backend owns logic.
+- Frontend sends intent only.
+- No duplicated business rules across layers.
+- No hidden side effects.
+- No domain mixing.
+- Club-scoped truth must stay in shared models and services, not page-local state.
+- Narrow slices are preferred over broad rebuilds.
+- Existing benchmark HTML files and GreenLink design references are the UI authority.
 
-- Backend owns all logic
-- Frontend sends intent only
-- No duplicated logic across layers
-- No hidden state or side effects
-- No domain mixing
-- Explicit over implicit
-- Narrow slices over broad builds
+## 3. Product Operating Model
 
----
+GreenLink has three distinct operating contexts:
 
-## 3. Build Order (ENFORCED)
+- Superadmin
+  - implementation
+  - onboarding
+  - rollout control
+  - club readiness
+- Club admin and staff
+  - live club operations
+  - finance, members, tee sheet, orders, comms, reporting
+- Player
+  - lightweight member-facing actions
 
-Foundation → Identity → Rules → Operations → UI
+Superadmin is not "admin with more buttons". It is a separate operational mode.
 
-⚠️ UI-first development is invalid and will break the system.
+## 4. Current System State
 
----
+### Platform and auth
+- FastAPI backend with PostgreSQL runtime
+- JWT access tokens plus refresh-token rotation
+- `/api/session/bootstrap` is the frontend source of truth
+- club-scoped tenancy is enforced through auth plus selected-club resolution
+- seeded deterministic users exist for superadmin, admin, staff, and member
 
-## 4. Current System State (SOURCE OF TRUTH)
+### Identity
+- User -> Person -> ClubMembership model is in place
+- AccountCustomer exists as finance identity
+- people directory, membership, account-customer, and bulk-intake foundations are implemented
 
-### Phase 1 — Platform ✅
-- FastAPI backend
-- PostgreSQL
-- JWT auth (access + refresh)
-- `/api/session/bootstrap`
-- club-scoped tenancy
+### Rules and pricing
+- booking rule-set and pricing-matrix backend foundations are implemented
+- admin golf settings page exists, but it is still structurally older than the normalized admin workspaces
 
-### Phase 2 — Identity ✅
-- User → Person → ClubMembership
-- AccountCustomer (finance identity)
-- deterministic seed system
-
-### Phase 3 — Rules ⚠️ (foundation present, not expanded)
-- validation structures exist
-- pricing/availability engine foundations exist
-
-### Phase 4 — Golf Operations ✅ CORE COMPLETE
-- tee sheet read model
-- booking aggregate
-- booking lifecycle:
+### Golf operations
+- tee sheet read model exists
+- booking aggregate exists
+- lifecycle exists:
   - reserved
   - cancelled
   - checked_in
   - completed
   - no_show
-- admin tee sheet operational UI
-
-### Phase 5 — Finance (PARTIAL COMPLETE)
-- FinanceAccount model
-- FinanceTransaction (append-only)
-- Ledger derived from transactions
-- order-to-finance posting (explicit)
-
-### Phase 6 — Orders (ACTIVE + FUNCTIONAL)
-- Order + OrderItem domain
-- player ordering flow (`/player/order`)
-- admin order queue (`/admin/orders`)
-- lifecycle:
-  - placed → preparing → ready → collected
-  - placed → cancelled
-- staff queue operational
-- collected view added
-- charge posting (manual, explicit)
-
----
-
-## 5. Domain Models
-
-### 5.1 Identity
-
-User → Person → ClubMembership
-
-Rules:
-- User ≠ Person
-- Person ≠ Membership
-- Membership is club-scoped
-
----
-
-### 5.2 Booking
-
-Booking is the operational golf reservation.
-
-Components:
-- Booking aggregate
-- BookingParticipant
-- TeeSheet read model (derived)
-
-Rules:
-- tee sheet is READ ONLY
-- booking owns lifecycle
-- frontend does not mutate booking state
-
----
-
-### 5.3 Orders
-
-Order represents an **intent to purchase items**, not a transaction.
-
-Entities:
-- Order
-- OrderItem
-
-Lifecycle:
-- placed → preparing → ready → collected
-- placed → cancelled
-
-Rules:
-- order ≠ payment
-- order ≠ POS transaction
-- collected ≠ paid
-- prices are snapshotted
-- order does NOT mutate inventory
-- order creation must be idempotent
-
----
-
-### 5.4 Finance
-
-Entities:
-- FinanceAccount
-- FinanceTransaction
-
-Rules:
-- transactions are append-only
-- no update/delete
-- ledger is derived (SUM)
-- backend owns all financial logic
-
-Order linkage:
-- orders may create a charge via explicit posting
-- posting is NOT automatic
-- posting is NOT payment
-
----
-
-## 6. Domain Boundaries (CRITICAL)
-
-### Orders do NOT:
-- act as payments
-- mutate finance automatically
-- reserve inventory
-- alter booking state
-
-### Bookings do NOT:
-- handle payments
-- store financial data
-- manage orders
-
-### Finance does NOT:
-- rely on frontend calculations
-- depend on UI state
-
----
-
-## 7. UI Authority (STRICT)
-
-Source of truth:
-- benchmark HTML files
-
-Design system:
-- Precision Utility
-
-Rules:
-- no borders
-- tonal layering only
-- whitespace defines structure
-- green = action only
-- no redesign allowed
-
-Frontend may only:
-- map backend data
-- componentize benchmark UI
-
----
-
-## 8. Layout + Routing
-
-### Layout
-- Sidebar + Topbar persistent
-- Only content area updates
-- No full page reload patterns
-
-### Routing
-
-#### Admin
-- `/admin/dashboard`
-- `/admin/golf/tee-sheet`
-- `/admin/orders`
-- `/admin/pos`
-- `/admin/finance/...`
-
-#### Player
-- `/player/home`
-- `/player/book`
-- `/player/order`
-- `/player/profile`
-
-Routing is workspace-based.
-
----
-
-## 9. Performance Model
-
-- optimistic UI where safe
-- minimal data loading
-- query invalidation over local mutation
-- fast perceived interactions
-
----
-
-## 10. Environment + Dev Setup
-
-- PostgreSQL ONLY
-- Alembic migrations required
-- Python 3.12
-- `uv` execution required
-
-### Startup
-
-Backend:
-
-py -3.12 -m uv run alembic upgrade head
-py -3.12 -m uv run python -m app.scripts.seed_users
-py -3.12 -m uv run uvicorn app.main:app --reload
-
-Frontend:
-
-npm run dev
-
----
-
-## 11. Auth + Seed System
-
-Seed is mandatory.
-
-Credentials:
-- superadmin
-- admin
-- staff
-- member
-
-Rules:
-- seed must be idempotent
-- identity must align with Person + Membership
-- `.test` emails only
-
----
-
-## 12. Codex Execution Rules (ENFORCED)
-
-Codex MUST:
-- follow phase-specific scope
-- not redesign UI
-- not expand scope
-- not introduce new patterns
-
-Always:
-- backend owns logic
-- frontend sends intent
-- use existing services
-
-If violated → fix before completion
-
----
-
-## 13. Current Operational Features
-
-### Golf Ops
-- tee sheet live
-- booking lifecycle complete
-
-### Orders
-- player ordering (single-screen flow)
-- admin queue
-- collected view
-- lifecycle management
+- admin tee-sheet page is live for viewing and lifecycle actions
+- booking creation backend exists, but a full booking-creation UI flow is still missing
 
 ### Finance
-- account + transaction system
-- manual charge posting from order drawer
+- FinanceAccount and append-only FinanceTransaction are implemented
+- ledger and journal views derive from transactions
+- manual transactions, order charge posting, settlement recording, and member-account POS posting exist
+- canonical export batches are implemented
+- accounting export profile mapping is implemented above the canonical batch layer
 
----
+### Orders and POS
+- player ordering is live at `/player/order`
+- admin order queue is live at `/admin/orders`
+- order lifecycle is implemented:
+  - placed -> preparing -> ready -> collected
+  - placed -> cancelled
+- explicit charge posting and settlement recording exist
+- POS transaction foundation exists
+- POS terminal is live at `/admin/pos-terminal`
 
-## 14. Known Constraints
+### Communications
+- admin news-post CRUD exists
+- published posts are available to player-facing read flows
+- player home now reads backend news posts instead of a static updates block
 
-- no theming system (logo only)
-- no frontend finance logic
-- no order-payment coupling
-- no inventory system yet
-- no POS checkout yet
+### Superadmin onboarding
+- distinct superadmin shell and route exist
+- club registry exists
+- club creation exists
+- onboarding state and current step are persisted on club data
+- onboarding workspace exists with steps:
+  - Basic Info
+  - Finance
+  - Rules
+  - Modules
+- finance step links to existing accounting profiles
+- club admin and staff assignment is wired through existing membership models
 
----
+## 5. Current Route Surface
 
-## 15. Next Build Targets
+### Admin
+- `/admin/dashboard`
+- `/admin/golf/tee-sheet`
+- `/admin/golf/settings`
+- `/admin/orders`
+- `/admin/members`
+- `/admin/finance`
+- `/admin/communications`
+- `/admin/halfway`
+- `/admin/pro-shop`
+- `/admin/reports`
+- `/admin/pos-terminal`
 
-Immediate:
-- refine order → finance flow
-- introduce payment/tender capture (controlled)
-- POS foundation (Phase 6.1)
+### Superadmin
+- `/superadmin/clubs`
 
-Later:
-- reporting
-- communications
-- player expansion
+### Player
+- `/player/home`
+- `/player/order`
 
----
+Routes not yet implemented despite earlier planning expectations:
+- `/player/book`
+- `/player/profile`
 
-## 16. Final Rule
+## 6. UI and Layout Authority
 
-If anything contradicts this file:
+Primary visual references:
+- `frontend/src/ui-benchmarks/`
+- `frontend/src/design-system/greenlink-design-system.md`
 
-→ THIS FILE IS CORRECT
+Layout rules:
+- persistent sidebar and topbar shells
+- workspace-level title row plus KPI band where appropriate
+- tonal layering over border-heavy framing
+- whitespace-driven structure
+- Finance page remains the admin KPI and rail reference
+
+Admin workspace normalization is implemented across the main menu surfaces.
+POS terminal remains intentionally standalone.
+
+## 7. Finance Export Architecture
+
+Canonical export layer:
+- persisted FinanceExportBatch
+- deterministic `journal_basic` profile
+- date-range batch generation
+- preview, download, history, and void workflow
+- idempotent generate-or-return-existing behavior
+
+Mapped export layer:
+- persisted club-scoped AccountingExportProfile
+- mapping config stored separately from canonical batches
+- transformed `generic_journal_mapped` output generated from canonical batch payloads
+- deterministic preview and download workflow
+
+GreenLink remains the operational source system.
+It does not replace external accounting software and does not yet perform live external API sync.
+
+## 8. Superadmin Onboarding Architecture
+
+Superadmin onboarding writes into the same club and club-config structures used by live club operations.
+
+This means:
+- no parallel onboarding-only config store
+- finance profile linkage writes to real club config
+- club assignments write to real club memberships
+- rules and module readiness read from real system data
+
+## 9. Known Gaps
+
+- tee sheet still lacks full booking creation and editing UX
+- golf settings page remains visually and structurally behind the normalized admin workspaces
+- finance export currently uses canonical and mapped CSV output only; no external package-specific validation or transport exists yet
+- reports remain largely frontend-derived summaries rather than a dedicated reporting backend
+- player app is still partial
+- POS member-account flow remains intentionally constrained
+- communications admin UI is live, but editing depth remains narrow
+- superadmin onboarding rules and modules steps are readiness scaffolds, not full configuration UIs
+
+## 10. Known Risks
+
+- login page still hard-navigates superadmin users to `/admin/select-club` before protected-route correction redirects to `/superadmin/clubs`
+- local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`
+- dashboard and reports still compute some operational summaries in frontend code
+- several older docs and comments can drift if not updated alongside shipping slices
+
+## 11. Current Reference Validation
+
+Recent full application validation before this documentation update:
+- frontend typecheck passed
+- frontend tests passed
+- backend tests passed
+
+The authoritative runtime and planning references from this point are:
+- this file
+- `docs/architecture/current-system-status.md`
+- `docs/contracts/`
+- `docs/runbooks/local-development.md`
+
+## 12. Final Rule
+
+If older planning notes, stale summaries, or previous handoff text contradict current code:
+
+- current code wins
+- this file should be updated to match that code

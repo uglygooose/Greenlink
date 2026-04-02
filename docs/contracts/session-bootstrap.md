@@ -29,7 +29,7 @@ The raw selected club input is validated only by the tenancy service.
 - One active club membership: auto-select it.
 - Multiple active club memberships: require explicit selection.
 - Zero active club memberships for non-superadmin: return no selected club, no shell, and a `/login` landing path.
-- Superadmin: may authenticate without a club, but club-scoped work requires explicit selection.
+- Superadmin: may authenticate without a club and resolves to the dedicated superadmin shell without club selection.
 - `available_clubs` can include non-active memberships for visibility, but only active memberships are selectable.
 - Superadmin sees active clubs platform-wide for preview/select behavior.
 
@@ -37,7 +37,12 @@ The raw selected club input is validated only by the tenancy service.
 
 - `club_admin` and `club_staff` resolve to `/admin/dashboard`.
 - `member` resolves to `/player/home`.
-- `superadmin` without a selected club resolves to `/admin/select-club`.
+- `superadmin` resolves to `/superadmin/clubs`.
+
+## Notes
+
+- `selected_club` remains nullable for superadmin because the superadmin workspace is not club-scoped in the same way as admin and player shells.
+- Superadmin may still inspect and set selected club context for cross-workspace preview flows, but club selection is not required to bootstrap the shell.
 
 ## Related auth routes
 

@@ -11,6 +11,7 @@ GreenLink is a club-scoped golf operations platform built with a FastAPI backend
 ## Current references
 
 - System authority: `docs/MASTER_SYSTEM.md`
+- Detailed current-state reference: `docs/architecture/current-system-status.md`
 - Local setup and runtime commands: `docs/runbooks/local-development.md`
 - Core backend contracts: `docs/contracts/`
 - Architectural decision records: `docs/decisions/`

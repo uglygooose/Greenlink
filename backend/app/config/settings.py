@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 14
     database_url: str = DEFAULT_DATABASE_URL
     redis_url: str = "redis://localhost:6379/0"
-    allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    )
     log_level: str = "INFO"
     secure_cookies: bool = False
     object_storage_endpoint: str = "http://localhost:9000"

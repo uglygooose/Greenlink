@@ -62,27 +62,27 @@ npm.cmd run test
 - First platform bootstrap is one-time only and permanently locks after success.
 - Non-superadmin users with one active membership auto-select that club.
 - Non-superadmin users with multiple active memberships must provide selected club context.
-- Superadmin can authenticate without a selected club and sees active clubs for preview/select behavior.
+- Superadmin can authenticate without a selected club and resolves to the dedicated `/superadmin/clubs` workspace.
 - Zero-active-membership users can authenticate but bootstrap returns no usable club-scoped shell.
 - Refresh tokens are cookie-backed and rotated on refresh; logout revokes the current session.
 
-## Phase 1 includes
+## Current implementation includes
 
-- Auth foundation
-- Refresh-token rotation
-- Session bootstrap contract
-- Tenancy and selected-club resolution
-- Platform bootstrap and club onboarding primitives
-- Thin admin/player shell scaffold
-- Tests, docs, and local infra scaffold
+- Auth foundation and refresh-token rotation
+- Session bootstrap and tenancy resolution
+- Admin, player, and superadmin shell routing
+- Golf operations backend plus admin tee-sheet lifecycle UI
+- People and membership foundations
+- Finance accounts, journal, ledger, canonical export batches, and accounting profile mapping
+- Orders, order finance posting, settlement recording, and POS foundation
+- Communications CRUD plus player published-post feed
+- Superadmin club onboarding foundation
 
-## Phase 1 does not include
+## Current major gaps
 
-- Tee sheet
-- Finance
-- POS
-- Communications
-- Imports
-- Dashboard domain logic
-- Benchmark UI implementation
-- Any Phase 2 product modules
+- Full tee-sheet booking creation and editing UX
+- Player booking and profile flows
+- Full rules/modules onboarding configuration
+- External accounting-system integration or validation
+- Reconciliation engine
+- Inventory accounting
