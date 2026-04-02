@@ -5,6 +5,10 @@ import { apiRequest } from "../../api/client";
 import { apiBaseUrl } from "../../lib/env";
 import { useSession } from "../../session/session-context";
 import type {
+  AccountingExportProfile,
+  AccountingExportProfileInput,
+  AccountingExportProfileListResponse,
+  AccountingMappedExportPreview,
   FinanceAccountLedger,
   FinanceAccountSummary,
   FinanceClubJournal,
@@ -29,8 +33,11 @@ export const financeKeys = {
   journal: (clubId: string) => ["finance", clubId, "journal"] as const,
   ledger: (clubId: string, accountId: string) => ["finance", clubId, "ledger", accountId] as const,
   exportBatches: (clubId: string) => ["finance", clubId, "export-batches"] as const,
+  accountingProfiles: (clubId: string) => ["finance", clubId, "accounting-profiles"] as const,
   exportBatchDetail: (clubId: string, batchId: string) =>
     ["finance", clubId, "export-batch-detail", batchId] as const,
+  mappedExportPreview: (clubId: string, batchId: string, profileId: string) =>
+    ["finance", clubId, "mapped-export-preview", batchId, profileId] as const,
 };
 
 export function useFinanceAccountsQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
@@ -89,6 +96,19 @@ export function useFinanceExportBatchesQuery({ accessToken, selectedClubId }: Fi
   });
 }
 
+export function useAccountingExportProfilesQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
+  return useQuery<AccountingExportProfileListResponse>({
+    queryKey: financeKeys.accountingProfiles(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<AccountingExportProfileListResponse>("/api/finance/accounting-profiles", {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
 interface ExportBatchDetailOptions extends FinanceQueryOptions {
   batchId: string | null;
 }
@@ -107,6 +127,36 @@ export function useFinanceExportBatchDetailQuery({
         selectedClubId: selectedClubId as string,
       }),
     enabled: isReady(accessToken, selectedClubId) && Boolean(batchId),
+  });
+}
+
+interface MappedExportPreviewOptions extends FinanceQueryOptions {
+  batchId: string | null;
+  profileId: string | null;
+}
+
+export function useAccountingMappedExportPreviewQuery({
+  accessToken,
+  selectedClubId,
+  batchId,
+  profileId,
+}: MappedExportPreviewOptions) {
+  return useQuery<AccountingMappedExportPreview>({
+    queryKey: financeKeys.mappedExportPreview(
+      selectedClubId ?? "none",
+      batchId ?? "none",
+      profileId ?? "none",
+    ),
+    queryFn: () =>
+      apiRequest<AccountingMappedExportPreview>(
+        `/api/finance/export-batches/${batchId}/mapped-export?profile_id=${profileId}`,
+        {
+          method: "GET",
+          accessToken: accessToken as string,
+          selectedClubId: selectedClubId as string,
+        },
+      ),
+    enabled: isReady(accessToken, selectedClubId) && Boolean(batchId) && Boolean(profileId),
   });
 }
 
@@ -138,6 +188,57 @@ export function useCreateFinanceExportBatchMutation() {
   });
 }
 
+export function useCreateAccountingExportProfileMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: AccountingExportProfileInput) =>
+      apiRequest<AccountingExportProfile>("/api/finance/accounting-profiles", {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async () => {
+      if (!selectedClubId) {
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: financeKeys.accountingProfiles(selectedClubId),
+      });
+    },
+  });
+}
+
+export function useUpdateAccountingExportProfileMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: ({ profileId, payload }: { profileId: string; payload: AccountingExportProfileInput }) =>
+      apiRequest<AccountingExportProfile>(`/api/finance/accounting-profiles/${profileId}`, {
+        method: "PUT",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async (_, variables) => {
+      if (!selectedClubId) {
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: financeKeys.accountingProfiles(selectedClubId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: financeKeys.mappedExportPreview(selectedClubId, "none", variables.profileId),
+      });
+    },
+  });
+}
+
 export function useVoidFinanceExportBatchMutation() {
   const queryClient = useQueryClient();
   const { accessToken, bootstrap } = useSession();
@@ -164,6 +265,13 @@ export function useVoidFinanceExportBatchMutation() {
       );
     },
   });
+}
+
+interface DownloadMappedFinanceExportOptions {
+  accessToken: string;
+  selectedClubId: string;
+  batchId: string;
+  profileId: string;
 }
 
 interface DownloadFinanceExportBatchOptions {
@@ -199,6 +307,44 @@ export async function downloadFinanceExportBatch({
   const fileName = fileNameFromDisposition(
     response.headers.get("Content-Disposition"),
     `finance-export-${batchId}.csv`,
+  );
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(objectUrl);
+  return fileName;
+}
+
+export async function downloadMappedFinanceExport({
+  accessToken,
+  selectedClubId,
+  batchId,
+  profileId,
+}: DownloadMappedFinanceExportOptions): Promise<string> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/finance/export-batches/${batchId}/mapped-export/download?profile_id=${profileId}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Club-Id": selectedClubId,
+      },
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? "Download failed");
+  }
+
+  const blob = await response.blob();
+  const fileName = fileNameFromDisposition(
+    response.headers.get("Content-Disposition"),
+    `finance-mapped-export-${batchId}.csv`,
   );
   const objectUrl = window.URL.createObjectURL(blob);
   const link = document.createElement("a");

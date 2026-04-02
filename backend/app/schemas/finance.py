@@ -159,3 +159,100 @@ class FinanceExportBatchVoidResult(BaseModel):
 class FinanceExportBatchDownloadResult(BaseModel):
     file_name: str
     content: str
+
+
+class AccountingExportProfileTransactionMapping(BaseModel):
+    debit_account_code: str = Field(min_length=1, max_length=64)
+    credit_account_code: str = Field(min_length=1, max_length=64)
+    description_prefix: str = Field(default="", max_length=64)
+
+    @field_validator("debit_account_code", "credit_account_code", "description_prefix")
+    @classmethod
+    def normalize_mapping_value(cls, value: str) -> str:
+        return value.strip()
+
+
+class AccountingExportProfileMappingConfig(BaseModel):
+    reference_prefix: str = Field(default="GL", min_length=1, max_length=32)
+    fallback_customer_code: str = Field(default="UNASSIGNED", min_length=1, max_length=64)
+    transaction_mappings: dict[FinanceTransactionType, AccountingExportProfileTransactionMapping]
+
+    @field_validator("reference_prefix", "fallback_customer_code")
+    @classmethod
+    def normalize_top_level_mapping_value(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("transaction_mappings")
+    @classmethod
+    def validate_transaction_mappings(
+        cls,
+        value: dict[FinanceTransactionType, AccountingExportProfileTransactionMapping],
+    ) -> dict[FinanceTransactionType, AccountingExportProfileTransactionMapping]:
+        missing = set(FinanceTransactionType) - set(value.keys())
+        if missing:
+            raise ValueError(
+                f"transaction mappings are required for: {', '.join(sorted(item.value for item in missing))}"
+            )
+        return value
+
+
+class AccountingExportProfileUpsertRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=128)
+    target_system: str = Field(min_length=1, max_length=64)
+    is_active: bool = True
+    mapping_config: AccountingExportProfileMappingConfig
+
+    @field_validator("code", "name", "target_system")
+    @classmethod
+    def normalize_profile_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class AccountingExportProfileResponse(BaseModel):
+    id: uuid.UUID
+    club_id: uuid.UUID
+    code: str
+    name: str
+    target_system: str
+    is_active: bool
+    mapping_config: AccountingExportProfileMappingConfig
+    created_by_person_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class AccountingExportProfileListResponse(BaseModel):
+    profiles: list[AccountingExportProfileResponse]
+    total_count: int
+
+
+class AccountingMappedExportPreviewRow(BaseModel):
+    date: str
+    reference: str
+    description: str
+    debit_account_code: str
+    credit_account_code: str
+    amount: str
+    customer_account_code: str
+    source_type: str
+
+
+class AccountingMappedExportPreviewResponse(BaseModel):
+    source_batch_id: uuid.UUID
+    source_export_profile: FinanceExportProfile
+    accounting_profile_id: uuid.UUID
+    accounting_profile_code: str
+    accounting_profile_name: str
+    target_system: str
+    generated_at: datetime
+    file_name: str
+    content_hash: str
+    row_count: int
+    metadata_json: dict[str, object]
+    rows: list[AccountingMappedExportPreviewRow]
+
+
+class AccountingMappedExportDownloadResult(BaseModel):
+    file_name: str
+    content: str

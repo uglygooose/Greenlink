@@ -114,3 +114,74 @@ export interface FinanceExportBatchVoidResult {
   void_applied: boolean;
   batch: FinanceExportBatchDetail;
 }
+
+export type FinanceTargetSystem = "generic_journal" | "pastel_like" | "sage_like";
+
+export interface AccountingExportProfileTransactionMapping {
+  debit_account_code: string;
+  credit_account_code: string;
+  description_prefix: string;
+}
+
+export interface AccountingExportProfileMappingConfig {
+  reference_prefix: string;
+  fallback_customer_code: string;
+  transaction_mappings: Partial<Record<FinanceTransactionType, AccountingExportProfileTransactionMapping>>;
+}
+
+export interface AccountingExportProfile {
+  id: string;
+  club_id: string;
+  code: string;
+  name: string;
+  target_system: string;
+  is_active: boolean;
+  mapping_config: AccountingExportProfileMappingConfig;
+  created_by_person_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingExportProfileInput {
+  code: string;
+  name: string;
+  target_system: string;
+  is_active: boolean;
+  mapping_config: AccountingExportProfileMappingConfig;
+}
+
+export interface AccountingExportProfileListResponse {
+  profiles: AccountingExportProfile[];
+  total_count: number;
+}
+
+export interface AccountingMappedExportPreviewRow {
+  date: string;
+  reference: string;
+  description: string;
+  debit_account_code: string;
+  credit_account_code: string;
+  amount: string;
+  customer_account_code: string;
+  source_type: string;
+}
+
+export interface AccountingMappedExportPreview {
+  source_batch_id: string;
+  source_export_profile: FinanceExportProfile;
+  accounting_profile_id: string;
+  accounting_profile_code: string;
+  accounting_profile_name: string;
+  target_system: string;
+  generated_at: string;
+  file_name: string;
+  content_hash: string;
+  row_count: number;
+  metadata_json: {
+    output_mode?: string;
+    source_batch_content_hash?: string;
+    source_batch_file_name?: string;
+    column_order?: string[];
+  };
+  rows: AccountingMappedExportPreviewRow[];
+}

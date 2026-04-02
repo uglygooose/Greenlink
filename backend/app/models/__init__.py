@@ -40,6 +40,7 @@ from app.models.enums import (
     UserType,
 )
 from app.models.news_post import NewsPost
+from app.models.finance.accounting_export_profile import AccountingExportProfile
 from app.models.finance.account import FinanceAccount
 from app.models.finance.export_batch import FinanceExportBatch
 from app.models.finance.transaction import FinanceTransaction
@@ -58,6 +59,7 @@ from app.models.user import User
 __all__ = [
     "AccountCustomer",
     "AuthSession",
+    "AccountingExportProfile",
     "BulkIntakeAction",
     "Booking",
     "BookingParticipant",
