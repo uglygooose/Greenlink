@@ -1,5 +1,6 @@
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
 import { useSession } from "../session/session-context";
 import type { FinanceTransactionType } from "../types/finance";
@@ -63,9 +64,10 @@ export function AdminFinancePage(): JSX.Element {
 
   return (
     <AdminShell title="Cashbook Flow" searchPlaceholder="Search transactions...">
-        <div className="p-8">
-          {/* Metrics */}
-          <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <AdminWorkspace
+        description="Journal visibility, account exposure, and export readiness across the club."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Unpaid</span>
@@ -117,9 +119,11 @@ export function AdminFinancePage(): JSX.Element {
               </div>
             </div>
           </div>
+        }
+        title="Cashbook Flow"
+      >
 
-          {/* Journal table */}
-          <div className="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
+        <div className="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-50 px-6 py-4">
               <div className="flex items-center gap-2">
                 <h3 className="font-headline font-bold text-slate-800">Cashbook Journal</h3>
@@ -227,8 +231,8 @@ export function AdminFinancePage(): JSX.Element {
                 </button>
               </div>
             </div>
-          </div>
         </div>
+      </AdminWorkspace>
 
       <aside className="fixed inset-y-0 right-0 z-50 hidden w-[420px] translate-x-0 flex-col border-l border-slate-200 bg-white shadow-2xl xl:flex">
         <div className="flex items-center justify-between border-b border-slate-100 p-6">

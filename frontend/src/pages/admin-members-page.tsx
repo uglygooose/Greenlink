@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useFinanceAccountLedgerQuery, useFinanceAccountsQuery } from "../features/finance/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { useSession } from "../session/session-context";
@@ -48,7 +49,7 @@ function statusDot(status: string): string {
 function formatAmount(amount: string): string {
   const n = parseFloat(amount);
   const abs = Math.abs(n).toFixed(2);
-  return n < 0 ? `-$${abs}` : `$${abs}`;
+  return n < 0 ? `-R${abs}` : `R${abs}`;
 }
 
 function formatDate(iso: string): string {
@@ -175,9 +176,98 @@ export function AdminMembersPage(): JSX.Element {
       )
     : members;
 
+  const activeAccountCount = accounts.filter((account) => account.status === "active").length;
+  const accountsInArrears = accounts.filter((account) => parseFloat(account.balance) < 0);
+  const outstandingTotal = accountsInArrears
+    .reduce((sum, account) => sum + Math.abs(parseFloat(account.balance)), 0)
+    .toFixed(2);
+  const noAccountCount = members.filter((member) => !accountByPersonId.has(member.person.id)).length;
+  const newMemberCount = members.filter((member) => {
+    const joinedAt = new Date(member.membership.joined_at).getTime();
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return joinedAt >= thirtyDaysAgo;
+  }).length;
+  const pendingCount = 0;
+
   return (
     <AdminShell title="Members" searchPlaceholder="Search members...">
-        <div className="p-8">
+      <AdminWorkspace
+        description="Directory visibility, finance account coverage, and member account health."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Members</span>
+                <MaterialSymbol className="text-primary" icon="group" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {directoryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{members.length}</span>
+                    <span className="text-xs font-medium text-primary">club directory</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Accounts</span>
+                <MaterialSymbol className="text-emerald-500" icon="account_balance_wallet" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {accountsQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{activeAccountCount}</span>
+                    <span className="text-xs font-medium text-emerald-600">{accounts.length} total accounts</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">In Arrears / Outstanding</span>
+                <MaterialSymbol className="text-error" icon="pending_actions" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {accountsQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">R{outstandingTotal}</span>
+                    <span className="text-xs font-medium text-error">{accountsInArrears.length} accounts</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">New / Pending / No Account</span>
+                <MaterialSymbol className="text-secondary" icon="person_add" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {directoryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{noAccountCount}</span>
+                    <span className="text-xs font-medium text-secondary">
+                      {newMemberCount} new · {pendingCount} pending
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        }
+        title="Members"
+      >
           <div className="overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left">
@@ -230,7 +320,7 @@ export function AdminMembersPage(): JSX.Element {
               </table>
             </div>
           </div>
-        </div>
+      </AdminWorkspace>
 
       {/* Member detail panel */}
       {selectedPersonId && selectedMember && (

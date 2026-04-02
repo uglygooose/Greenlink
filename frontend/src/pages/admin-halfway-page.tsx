@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useFinanceJournalQuery } from "../features/finance/hooks";
 import { useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
@@ -99,10 +100,10 @@ export function AdminHalfwayPage(): JSX.Element {
 
   return (
     <AdminShell title="Halfway House" searchPlaceholder="Search orders...">
-      <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-
-        {/* KPI row */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <AdminWorkspace
+        description="Revenue, queue pressure, payment mix, and transaction movement for today."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today's Revenue</span>
@@ -170,7 +171,10 @@ export function AdminHalfwayPage(): JSX.Element {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        }
+        title="Halfway House"
+      >
 
         {/* Middle row: Hourly + Payment split + Queue */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -323,7 +327,7 @@ export function AdminHalfwayPage(): JSX.Element {
           </NavLink>
         </div>
 
-      </div>
+      </AdminWorkspace>
     </AdminShell>
   );
 }

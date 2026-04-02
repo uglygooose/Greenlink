@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { usePosProductsQuery } from "../features/pos/hooks";
 import { useSession } from "../session/session-context";
 
@@ -44,10 +45,10 @@ export function AdminProShopPage(): JSX.Element {
 
   return (
     <AdminShell title="Pro Shop" searchPlaceholder="Search products...">
-      <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-
-        {/* KPI row */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+      <AdminWorkspace
+        description="Product catalogue visibility, category coverage, and sellable stock state."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Products</span>
@@ -98,7 +99,10 @@ export function AdminProShopPage(): JSX.Element {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        }
+        title="Pro Shop"
+      >
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3">
@@ -196,7 +200,7 @@ export function AdminProShopPage(): JSX.Element {
             </div>
           </div>
         ))}
-      </div>
+      </AdminWorkspace>
     </AdminShell>
   );
 }

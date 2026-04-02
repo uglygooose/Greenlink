@@ -2,6 +2,7 @@ import { Link, NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
@@ -101,10 +102,10 @@ export function AdminDashboardPage(): JSX.Element {
 
   return (
     <AdminShell title="Dashboard" searchPlaceholder="Search operations...">
-      <div className="mx-auto max-w-7xl px-6 py-8">
-
-        {/* KPI cards */}
-        <div className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <AdminWorkspace
+        description={`${selectedClubName}${timezone ? ` • ${timezone}` : ""}`}
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding</span>
@@ -179,7 +180,10 @@ export function AdminDashboardPage(): JSX.Element {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        }
+        title="Dashboard"
+      >
 
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
           <div className="space-y-8 lg:col-span-2">
@@ -334,7 +338,7 @@ export function AdminDashboardPage(): JSX.Element {
             </section>
           </div>
         </div>
-      </div>
+      </AdminWorkspace>
     </AdminShell>
   );
 }

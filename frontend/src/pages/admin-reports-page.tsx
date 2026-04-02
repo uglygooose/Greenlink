@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
@@ -83,10 +84,10 @@ export function AdminReportsPage(): JSX.Element {
 
   return (
     <AdminShell title="Reports" searchPlaceholder="Search reports...">
-      <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-
-        {/* Summary KPIs */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <AdminWorkspace
+        description="Cross-module finance, membership, and order reporting from live operational data."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Revenue</span>
@@ -156,7 +157,10 @@ export function AdminReportsPage(): JSX.Element {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        }
+        title="Reports"
+      >
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
@@ -344,7 +348,7 @@ export function AdminReportsPage(): JSX.Element {
           </div>
         )}
 
-      </div>
+      </AdminWorkspace>
     </AdminShell>
   );
 }

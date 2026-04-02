@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
   useCreateNewsPostMutation,
   useDeleteNewsPostMutation,
@@ -222,10 +223,10 @@ export function AdminCommunicationsPage(): JSX.Element {
     <AdminShell title="Communications" searchPlaceholder="Search posts...">
       {composing && <ComposeModal onClose={() => setComposing(false)} />}
 
-      <div className="mx-auto max-w-4xl px-6 py-8 space-y-8">
-
-        {/* KPI row — Finance reference style */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <AdminWorkspace
+        description="Published posts, drafts, and member-facing club updates in one editorial rail."
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Posts</span>
@@ -290,7 +291,10 @@ export function AdminCommunicationsPage(): JSX.Element {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        }
+        title="Communications"
+      >
 
         {/* Editorial hero — shown only when no posts exist yet */}
         {!postsQuery.isLoading && total === 0 && (
@@ -386,7 +390,7 @@ export function AdminCommunicationsPage(): JSX.Element {
           </>
         )}
 
-      </div>
+      </AdminWorkspace>
     </AdminShell>
   );
 }

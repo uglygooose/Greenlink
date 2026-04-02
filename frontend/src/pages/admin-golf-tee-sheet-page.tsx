@@ -9,6 +9,7 @@ import {
 } from "../api/operations";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
 import { teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
@@ -329,6 +330,27 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
   const activeCourse = coursesQuery.data?.find((course) => course.id === courseId) ?? null;
   const warningMessage = teeSheetQuery.data?.warnings[0]?.message ?? "No weather or policy alerts for this day.";
+  const totalSlots = flattenedSlots.length;
+  const occupiedSlots = flattenedSlots.filter((item) => item.slot.bookings.length > 0).length;
+  const occupancyPct = totalSlots === 0 ? 0 : Math.round((occupiedSlots / totalSlots) * 100);
+  const checkedInBookings = flattenedSlots.reduce(
+    (sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").length,
+    0,
+  );
+  const checkedInPlayers = flattenedSlots.reduce(
+    (sum, item) =>
+      sum +
+      item.slot.bookings
+        .filter((booking) => booking.status === "checked_in")
+        .reduce((bookingSum, booking) => bookingSum + booking.party_size, 0),
+    0,
+  );
+  const openSlots = statusCounts.available + statusCounts.indeterminate + statusCounts.warning;
+  const openPlayerCapacity = flattenedSlots.reduce(
+    (sum, item) => sum + Math.max(item.slot.occupancy.remaining_player_capacity ?? 0, 0),
+    0,
+  );
+  const alertSignals = (teeSheetQuery.data?.warnings.length ?? 0) + statusCounts.warning + statusCounts.blocked;
 
   function openBookingDrawer(slot: FlattenedSlot): void {
     if (!isManageableSlot(slot.slot)) {
@@ -370,9 +392,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
   return (
     <AdminShell title="Tee Sheet" searchPlaceholder="Search tee times...">
-      <div className="p-6">
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <label className="relative flex items-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-low px-3 py-1.5">
+      <AdminWorkspace
+        actions={
+          <>
+            <label className="relative flex items-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-low px-3 py-2.5">
               <MaterialSymbol className="text-sm text-on-surface-variant" icon="calendar_month" />
               <span className="text-sm font-medium">{dateLabel(selectedDate)}</span>
               <MaterialSymbol className="text-sm text-on-surface-variant" icon="expand_more" />
@@ -385,22 +408,129 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             </label>
             <div className="flex gap-1">
               <button
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
                 onClick={() => setSelectedDate((current) => addDays(current, -1))}
                 type="button"
               >
                 <MaterialSymbol icon="chevron_left" />
               </button>
               <button
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
                 onClick={() => setSelectedDate((current) => addDays(current, 1))}
                 type="button"
               >
                 <MaterialSymbol icon="chevron_right" />
               </button>
             </div>
+            <label className="flex items-center gap-2 rounded-xl bg-surface-container-highest px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high">
+              <MaterialSymbol className="text-sm" icon="group_add" />
+              <select
+                className="border-none bg-transparent pr-5 text-sm font-semibold focus:ring-0"
+                onChange={(event) => setCourseId(event.target.value || null)}
+                value={courseId ?? ""}
+              >
+                {(coursesQuery.data ?? []).map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-primary-dim">
+              <MaterialSymbol className="text-sm" icon="person_add" />
+              <select
+                className="border-none bg-transparent pr-5 text-sm font-bold text-white focus:ring-0"
+                onChange={(event) => setMembershipType(event.target.value as BookingRuleAppliesTo)}
+                value={membershipType}
+              >
+                {MEMBERSHIP_OPTIONS.map((option) => (
+                  <option className="text-on-surface" key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        }
+        dateLabel={dateLabel(selectedDate)}
+        description={`Course: ${activeCourse?.name ?? "Loading course"} • ${membershipType} preview`}
+        kpis={
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Tee Occupancy</span>
+                <MaterialSymbol className="text-primary" icon="golf_course" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {teeSheetQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{occupancyPct}%</span>
+                    <span className="text-xs font-medium text-primary">{occupiedSlots}/{totalSlots} slots</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Checked In / On Course</span>
+                <MaterialSymbol className="text-emerald-500" icon="flag" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {teeSheetQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{checkedInBookings}</span>
+                    <span className="text-xs font-medium text-emerald-600">{checkedInPlayers} players</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Open Slots</span>
+                <MaterialSymbol className="text-secondary" icon="grid_view" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {teeSheetQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{openSlots}</span>
+                    <span className="text-xs font-medium text-secondary">{openPlayerCapacity} player spaces</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-amber-500">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Flags / Pace / Alerts</span>
+                <MaterialSymbol className="text-amber-500" icon="warning" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {teeSheetQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{alertSignals}</span>
+                    <span className="text-xs font-medium text-amber-600">
+                      {statusCounts.warning} flags · {statusCounts.blocked} blocked
+                    </span>
+                  </>
+                )}
+              </div>
+              <p className="mt-3 text-xs text-on-surface-variant">{warningMessage}</p>
+            </div>
           </div>
-          <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+        }
+        title="Daily Tee Sheet"
+      >
+          <div className="hidden">
             <div>
               <h2 className="font-headline text-2xl font-bold tracking-tight text-on-surface">Daily Tee Sheet</h2>
               <p className="text-sm text-on-surface-variant">
@@ -620,7 +750,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             </div>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="hidden">
             <div className="flex flex-col justify-between rounded-xl bg-primary p-6 text-white">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Utilization</span>
@@ -664,7 +794,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
               </div>
             </div>
           </div>
-        </div>
+      </AdminWorkspace>
 
       {selectedSlot ? (
         <BookingManagementDrawer
