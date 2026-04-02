@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import SuperadminShell from "../components/shell/SuperadminShell";
+import { usePricingMatricesQuery, useRuleSetsQuery } from "../features/golf-settings/hooks";
 import {
   useAssignSuperadminClubUserMutation,
   useCreateSuperadminClubMutation,
@@ -21,6 +22,7 @@ import type {
 type NoticeTone = "success" | "error" | "info";
 
 const STEP_ORDER: ClubOnboardingStep[] = ["basic_info", "finance", "rules", "modules"];
+const MODULE_CATALOG = ["communications", "finance", "golf", "pos"] as const;
 
 function emptyClubForm(): SuperadminClubCreateInput {
   return {
@@ -95,11 +97,14 @@ export function SuperadminClubsPage(): JSX.Element {
   const [basicInfoForm, setBasicInfoForm] = useState<SuperadminClubCreateInput>(emptyClubForm);
   const [financeProfileId, setFinanceProfileId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<ClubOnboardingStep>("basic_info");
+  const [enabledModuleKeys, setEnabledModuleKeys] = useState<string[]>([]);
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [notice, setNotice] = useState<{ tone: NoticeTone; message: string } | null>(null);
 
   const clubsQuery = useSuperadminClubsQuery({ accessToken });
   const onboardingQuery = useSuperadminClubOnboardingQuery({ accessToken, clubId: selectedClubId });
+  const ruleSetsQuery = useRuleSetsQuery({ accessToken, selectedClubId });
+  const pricingMatricesQuery = usePricingMatricesQuery({ accessToken, selectedClubId });
   const assignmentCandidatesQuery = useSuperadminAssignmentCandidatesQuery({
     accessToken,
     clubId: selectedClubId,
@@ -143,6 +148,7 @@ export function SuperadminClubsPage(): JSX.Element {
     });
     setFinanceProfileId(onboardingQuery.data.finance.selected_accounting_profile_id);
     setCurrentStep(onboardingQuery.data.club.onboarding_current_step);
+    setEnabledModuleKeys(onboardingQuery.data.modules.enabled_module_keys);
   }, [onboardingQuery.data]);
 
   const stepMeta = currentStepDescription(currentStep);
@@ -155,6 +161,7 @@ export function SuperadminClubsPage(): JSX.Element {
       timezone?: string;
       onboarding_current_step: ClubOnboardingStep;
       preferred_accounting_profile_id?: string | null;
+      enabled_module_keys?: string[] | null;
     } = {
       onboarding_current_step: nextStep,
     };
@@ -165,6 +172,9 @@ export function SuperadminClubsPage(): JSX.Element {
     }
     if (currentStep === "finance" || nextStep === "finance") {
       payload.preferred_accounting_profile_id = financeProfileId;
+    }
+    if (currentStep === "modules" || nextStep === "modules") {
+      payload.enabled_module_keys = enabledModuleKeys;
     }
 
     try {
@@ -237,6 +247,15 @@ export function SuperadminClubsPage(): JSX.Element {
       });
     }
   }
+
+  function toggleModule(moduleKey: string): void {
+    setEnabledModuleKeys((current) =>
+      current.includes(moduleKey) ? current.filter((item) => item !== moduleKey) : [...current, moduleKey].sort(),
+    );
+  }
+
+  const activeRuleSets = (ruleSetsQuery.data ?? []).filter((item) => item.active);
+  const activePricingMatrices = (pricingMatricesQuery.data ?? []).filter((item) => item.active);
 
   function renderStepBody(): JSX.Element | null {
     if (!onboardingQuery.data) return null;
@@ -360,21 +379,93 @@ export function SuperadminClubsPage(): JSX.Element {
 
     if (currentStep === "rules") {
       return (
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl bg-surface-container-low px-5 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Rule Sets</p>
-            <p className="mt-3 text-2xl font-extrabold text-on-surface">{onboardingQuery.data.rules.rule_set_count}</p>
-            <p className="mt-2 text-sm text-slate-500">Existing booking rule sets linked to this club.</p>
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl bg-surface-container-low px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Rule Sets</p>
+              <p className="mt-3 text-2xl font-extrabold text-on-surface">{ruleSetsQuery.data?.length ?? 0}</p>
+              <p className="mt-2 text-sm text-slate-500">{activeRuleSets.length} active rule sets ready for evaluation.</p>
+            </div>
+            <div className="rounded-2xl bg-surface-container-low px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Pricing Matrices</p>
+              <p className="mt-3 text-2xl font-extrabold text-on-surface">{pricingMatricesQuery.data?.length ?? 0}</p>
+              <p className="mt-2 text-sm text-slate-500">
+                {activePricingMatrices.length} active pricing matrices available for rollout.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Rule Set Detail</p>
+                {ruleSetsQuery.isLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
+              </div>
+              {(ruleSetsQuery.data ?? []).map((ruleSet) => (
+                <div key={ruleSet.id} className="rounded-2xl bg-surface-container-low px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-on-surface">{ruleSet.name}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                        {ruleSet.applies_to} · priority {ruleSet.priority}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                        ruleSet.active
+                          ? "bg-primary-container text-on-primary-container"
+                          : "bg-surface-container-high text-on-surface-variant"
+                      }`}
+                    >
+                      {ruleSet.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-slate-500">{ruleSet.rules.length} rules in this set.</p>
+                </div>
+              ))}
+              {!ruleSetsQuery.isLoading && (ruleSetsQuery.data?.length ?? 0) === 0 ? (
+                <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500">
+                  No booking rule sets exist for this club yet.
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Pricing Detail</p>
+                {pricingMatricesQuery.isLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
+              </div>
+              {(pricingMatricesQuery.data ?? []).map((matrix) => (
+                <div key={matrix.id} className="rounded-2xl bg-surface-container-low px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-on-surface">{matrix.name}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                        {matrix.rules.length} pricing rules
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                        matrix.active
+                          ? "bg-primary-container text-on-primary-container"
+                          : "bg-surface-container-high text-on-surface-variant"
+                      }`}
+                    >
+                      {matrix.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {!pricingMatricesQuery.isLoading && (pricingMatricesQuery.data?.length ?? 0) === 0 ? (
+                <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500">
+                  No pricing matrices exist for this club yet.
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="rounded-2xl bg-surface-container-low px-5 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Pricing Matrices</p>
-            <p className="mt-3 text-2xl font-extrabold text-on-surface">{onboardingQuery.data.rules.pricing_matrix_count}</p>
-            <p className="mt-2 text-sm text-slate-500">Existing pricing matrices available for operational rollout.</p>
-          </div>
-          <div className="rounded-2xl bg-surface-container-low px-5 py-4 md:col-span-2">
-            <p className="text-sm font-semibold text-on-surface">Rules UI remains intentionally narrow in this slice.</p>
+            <p className="text-sm font-semibold text-on-surface">Rules readiness now reflects live club data.</p>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              This step tracks readiness only. The existing rules and pricing systems remain the source of truth and will receive a dedicated onboarding pass later.
+              This step reads the real club-scoped rules and pricing records that the golf operations layer already uses.
+              It does not duplicate configuration into a separate onboarding store.
             </p>
           </div>
         </div>
@@ -385,21 +476,45 @@ export function SuperadminClubsPage(): JSX.Element {
       <div className="space-y-4">
         <div className="rounded-2xl bg-surface-container-low px-5 py-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Enabled Modules</p>
-          <p className="mt-3 text-2xl font-extrabold text-on-surface">{onboardingQuery.data.modules.enabled_module_keys.length}</p>
+          <p className="mt-3 text-2xl font-extrabold text-on-surface">{enabledModuleKeys.length}</p>
           <p className="mt-2 text-sm text-slate-500">These modules are what the club admin and staff shell will expose at go-live.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {onboardingQuery.data.modules.enabled_module_keys.length > 0 ? (
-            onboardingQuery.data.modules.enabled_module_keys.map((moduleKey) => (
-              <div key={moduleKey} className="rounded-2xl bg-surface-container-low px-5 py-4">
-                <p className="text-sm font-semibold capitalize text-on-surface">{moduleKey.replace(/_/g, " ")}</p>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500 md:col-span-2">
-              No modules are enabled yet. This slice keeps module configuration scaffolded only.
-            </div>
-          )}
+          {MODULE_CATALOG.map((moduleKey) => {
+            const enabled = enabledModuleKeys.includes(moduleKey);
+            return (
+              <button
+                key={moduleKey}
+                className={`rounded-2xl px-5 py-4 text-left ${
+                  enabled ? "bg-primary-container/45" : "bg-surface-container-low"
+                }`}
+                onClick={() => toggleModule(moduleKey)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold capitalize text-on-surface">{moduleKey.replace(/_/g, " ")}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {enabled ? "Enabled for club rollout." : "Disabled for now."}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                      enabled
+                        ? "bg-primary-container text-on-primary-container"
+                        : "bg-surface-container-high text-on-surface-variant"
+                    }`}
+                  >
+                    {enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm leading-6 text-slate-500">
+          Module changes persist back into the real club module records that session bootstrap uses for club
+          environments.
         </div>
       </div>
     );
@@ -608,7 +723,7 @@ export function SuperadminClubsPage(): JSX.Element {
                         <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Modules</p>
                           <p className="mt-2 text-sm font-semibold text-on-surface">
-                            {onboardingQuery.data?.modules.enabled_module_keys.length ?? 0} enabled
+                            {enabledModuleKeys.length} enabled
                           </p>
                         </div>
                       </div>

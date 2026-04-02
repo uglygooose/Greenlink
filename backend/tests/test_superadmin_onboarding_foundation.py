@@ -11,6 +11,7 @@ from app.models import (
     ClubMembership,
     ClubMembershipRole,
     ClubMembershipStatus,
+    ClubModule,
     ClubOnboardingState,
     ClubOnboardingStep,
     Person,
@@ -169,6 +170,35 @@ def test_superadmin_can_assign_existing_linked_user_to_club(
     membership = db_session.query(ClubMembership).filter_by(club_id=club.id, person_id=staff_user.person_id).one()
     assert membership.role == ClubMembershipRole.CLUB_STAFF
     assert membership.status == ClubMembershipStatus.ACTIVE
+
+
+def test_superadmin_can_update_enabled_modules_through_onboarding(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    db_session.add(ClubModule(club_id=club.id, module_key="golf", enabled=True))
+    db_session.commit()
+    headers = _auth_headers(client, "root@example.com")
+
+    response = client.put(
+        f"/api/superadmin/clubs/{club.id}/onboarding",
+        headers=headers,
+        json={
+            "onboarding_current_step": "modules",
+            "enabled_module_keys": ["finance", "communications"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["club"]["onboarding_current_step"] == "modules"
+    assert sorted(payload["modules"]["enabled_module_keys"]) == ["communications", "finance"]
+    module_keys = sorted(
+        module.module_key
+        for module in db_session.query(ClubModule).filter(ClubModule.club_id == club.id).all()
+    )
+    assert module_keys == ["communications", "finance"]
 
 
 def test_superadmin_routes_are_forbidden_to_club_admin(

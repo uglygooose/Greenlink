@@ -7,6 +7,7 @@ import {
   cancelBooking,
   checkInBooking,
   completeBooking,
+  createBooking,
   markBookingNoShow,
 } from "../api/operations";
 import { AdminGolfTeeSheetPage } from "./admin-golf-tee-sheet-page";
@@ -15,6 +16,7 @@ import type { BookingNoShowResult } from "../types/bookings";
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
 const mockUseTeeSheetDayQuery = vi.fn();
+const mockUseClubDirectoryQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -22,6 +24,10 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/golf-settings/hooks", () => ({
   useCoursesQuery: () => mockUseCoursesQuery(),
+}));
+
+vi.mock("../features/people/hooks", () => ({
+  useClubDirectoryQuery: () => mockUseClubDirectoryQuery(),
 }));
 
 vi.mock("../features/tee-sheet/hooks", () => ({
@@ -41,6 +47,7 @@ vi.mock("../api/operations", () => ({
   cancelBooking: vi.fn(),
   checkInBooking: vi.fn(),
   completeBooking: vi.fn(),
+  createBooking: vi.fn(),
   markBookingNoShow: vi.fn(),
 }));
 
@@ -166,6 +173,110 @@ describe("AdminGolfTeeSheetPage", () => {
       isLoading: false,
       error: null,
     });
+
+    mockUseClubDirectoryQuery.mockReturnValue({
+      data: [
+        {
+          person: { id: "person-1", full_name: "Member One" },
+          membership: { role: "MEMBER" },
+        },
+        {
+          person: { id: "person-2", full_name: "Staff One" },
+          membership: { role: "CLUB_STAFF" },
+        },
+      ],
+    });
+  });
+
+  test("creates a booking from an open slot through the backend endpoint", async () => {
+    mockUseTeeSheetDayQuery.mockReturnValue({
+      data: {
+        ...teeSheetPayload,
+        rows: [
+          {
+            ...teeSheetPayload.rows[0],
+            slots: [
+              {
+                ...teeSheetPayload.rows[0].slots[0],
+                bookings: [],
+                party_summary: {
+                  member_count: 0,
+                  guest_count: 0,
+                  staff_count: 0,
+                  total_players: 0,
+                  has_activity: false,
+                },
+                occupancy: {
+                  ...teeSheetPayload.rows[0].slots[0].occupancy,
+                  occupied_player_count: 0,
+                  reserved_player_count: 0,
+                  confirmed_booking_count: 0,
+                  reserved_booking_count: 0,
+                  remaining_player_capacity: 4,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    vi.mocked(createBooking).mockResolvedValue({
+      decision: "allowed",
+      booking: {
+        id: "booking-2",
+        status: "reserved",
+        party_size: 2,
+        slot_datetime: "2026-03-30T04:00:00Z",
+        participants: [
+          { display_name: "Member One", participant_type: "member", is_primary: true },
+          { display_name: "Guest One", participant_type: "guest", is_primary: false },
+        ],
+      },
+      availability: {
+        applies_to: "member",
+        availability_status: "allowed",
+        blockers: [],
+        warnings: [],
+        resolved_checks: [{ code: "slot_capacity_available", reason: "Capacity available", details: {} }],
+        unresolved_checks: [],
+      },
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /create booking for blue 06:00/i }));
+    expect(await screen.findByRole("heading", { name: "Create Booking" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/club person/i), { target: { value: "person-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /add participant/i }));
+    fireEvent.change(screen.getAllByLabelText(/participant type/i)[1], { target: { value: "guest" } });
+    fireEvent.change(screen.getByPlaceholderText(/guest name/i), { target: { value: "Guest One" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create booking$/i }));
+
+    await waitFor(() => {
+      expect(createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          course_id: "course-1",
+          tee_id: "tee-1",
+          slot_datetime: "2026-03-30T04:00:00Z",
+          applies_to: "member",
+          participants: [
+            { participant_type: "member", person_id: "person-1", guest_name: null, is_primary: true },
+            { participant_type: "guest", person_id: null, guest_name: "Guest One", is_primary: false },
+          ],
+        }),
+        {
+          accessToken: "token",
+          selectedClubId: "club-1",
+        },
+      );
+    });
+
+    expect(await screen.findByText("Booking created. Tee sheet refreshed from backend state.")).toBeInTheDocument();
   });
 
   test("opens the booking drawer and cancels through the backend endpoint", async () => {

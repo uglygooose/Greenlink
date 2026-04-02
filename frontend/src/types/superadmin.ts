@@ -115,6 +115,7 @@ export interface SuperadminClubOnboardingUpdateInput {
   onboarding_state?: ClubOnboardingState;
   onboarding_current_step?: ClubOnboardingStep;
   preferred_accounting_profile_id?: string | null;
+  enabled_module_keys?: string[] | null;
 }
 
 export interface SuperadminClubAssignmentInput {

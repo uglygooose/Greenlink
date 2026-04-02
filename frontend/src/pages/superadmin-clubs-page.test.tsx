@@ -12,6 +12,8 @@ const mockUseSuperadminAssignmentCandidatesQuery = vi.fn();
 const mockUseCreateSuperadminClubMutation = vi.fn();
 const mockUseUpdateSuperadminClubOnboardingMutation = vi.fn();
 const mockUseAssignSuperadminClubUserMutation = vi.fn();
+const mockUseRuleSetsQuery = vi.fn();
+const mockUsePricingMatricesQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -24,6 +26,11 @@ vi.mock("../features/superadmin/hooks", () => ({
   useCreateSuperadminClubMutation: () => mockUseCreateSuperadminClubMutation(),
   useUpdateSuperadminClubOnboardingMutation: () => mockUseUpdateSuperadminClubOnboardingMutation(),
   useAssignSuperadminClubUserMutation: () => mockUseAssignSuperadminClubUserMutation(),
+}));
+
+vi.mock("../features/golf-settings/hooks", () => ({
+  useRuleSetsQuery: (args: unknown) => mockUseRuleSetsQuery(args),
+  usePricingMatricesQuery: (args: unknown) => mockUsePricingMatricesQuery(args),
 }));
 
 function buildQueryClient(): QueryClient {
@@ -91,7 +98,7 @@ function buildOnboardingDetail() {
       setup_complete: false,
     },
     modules: {
-      enabled_module_keys: ["golf_ops"],
+      enabled_module_keys: ["golf"],
       setup_complete: true,
     },
     assignments: [
@@ -153,6 +160,16 @@ describe("SuperadminClubsPage", () => {
       mutateAsync: vi.fn().mockResolvedValue({ status: "active" }),
       isPending: false,
     });
+
+    mockUseRuleSetsQuery.mockReturnValue({
+      data: [{ id: "rules-1", name: "Member Base", applies_to: "member", priority: 10, active: true, rules: [{}, {}] }],
+      isLoading: false,
+    });
+
+    mockUsePricingMatricesQuery.mockReturnValue({
+      data: [{ id: "pricing-1", name: "Standard", active: true, rules: [{}, {}] }],
+      isLoading: false,
+    });
   });
 
   test("renders the selected club onboarding workspace", async () => {
@@ -195,6 +212,39 @@ describe("SuperadminClubsPage", () => {
       expect(mutateAsync).toHaveBeenCalledWith({
         clubId: "club-1",
         payload: { person_id: "person-3", role: "club_staff" },
+      });
+    });
+  });
+
+  test("persists module toggles through the onboarding update flow", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      ...buildOnboardingDetail(),
+      club: { ...buildClub(), onboarding_current_step: "modules" },
+      modules: {
+        enabled_module_keys: ["communications", "finance"],
+        setup_complete: true,
+      },
+    });
+    mockUseUpdateSuperadminClubOnboardingMutation.mockReturnValue({ mutateAsync, isPending: false });
+    mockUseSuperadminClubOnboardingQuery.mockReturnValue({
+      data: {
+        ...buildOnboardingDetail(),
+        club: { ...buildClub(), onboarding_current_step: "modules" },
+      },
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /4\. modules/i }));
+    fireEvent.click(screen.getByRole("button", { name: /communications/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^save draft$/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        clubId: "club-1",
+        payload: {
+          onboarding_current_step: "modules",
+          enabled_module_keys: ["communications", "golf"],
+        },
       });
     });
   });

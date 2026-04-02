@@ -2,6 +2,8 @@ import { apiRequest } from "./client";
 import type {
   BookingCancelResult,
   BookingCheckInResult,
+  BookingCreateInput,
+  BookingCreateResult,
   BookingCompleteResult,
   BookingNoShowResult,
 } from "../types/bookings";
@@ -191,6 +193,18 @@ export function fetchTeeSheetDay(
     method: "GET",
     accessToken,
     selectedClubId,
+  });
+}
+
+export function createBooking(
+  payload: BookingCreateInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingCreateResult> {
+  return apiRequest<BookingCreateResult>("/api/golf/bookings", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
   });
 }
 

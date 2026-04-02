@@ -5,16 +5,25 @@ import {
   cancelBooking,
   checkInBooking,
   completeBooking,
+  createBooking,
   markBookingNoShow,
 } from "../api/operations";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
+import { useClubDirectoryQuery } from "../features/people/hooks";
+import { BookingCreateDrawer } from "../features/tee-sheet/booking-create-drawer";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
 import { teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { useSession } from "../session/session-context";
-import type { BookingLifecycleMutationResult } from "../types/bookings";
+import type {
+  BookingCreateInput,
+  BookingCreateParticipantInput,
+  BookingCreateResult,
+  BookingLifecycleMutationResult,
+  BookingParticipantType,
+} from "../types/bookings";
 import type { BookingRuleAppliesTo } from "../types/operations";
 import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../types/tee-sheet";
 
@@ -29,6 +38,7 @@ type FlattenedSlot = {
   rowKey: string;
   rowLabel: string;
   colorCode: string | null;
+  teeId: string | null;
   slot: TeeSheetSlotView;
   occupants: OccupantChip[];
 };
@@ -36,6 +46,14 @@ type FlattenedSlot = {
 type SelectedSlotKey = {
   rowKey: string;
   slotDatetime: string;
+};
+
+type CreateParticipantDraft = {
+  key: string;
+  participant_type: BookingParticipantType;
+  person_id: string | null;
+  guest_name: string;
+  is_primary: boolean;
 };
 
 type OperationNotice = {
@@ -171,6 +189,49 @@ function asMessage(error: unknown): string {
   return "Request failed";
 }
 
+function slotCanCreate(slot: TeeSheetSlotView): boolean {
+  return slot.bookings.length === 0 && slot.display_status !== "blocked" && slot.display_status !== "reserved";
+}
+
+function primaryParticipantType(membershipType: BookingRuleAppliesTo): BookingParticipantType {
+  return membershipType === "staff" ? "staff" : "member";
+}
+
+function initialCreateParticipants(membershipType: BookingRuleAppliesTo): CreateParticipantDraft[] {
+  return [
+    {
+      key: "primary",
+      participant_type: primaryParticipantType(membershipType),
+      person_id: null,
+      guest_name: "",
+      is_primary: true,
+    },
+  ];
+}
+
+function nextParticipantKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random()}`;
+}
+
+function bookingCreateFeedback(result: BookingCreateResult): { tone: "error" | "info"; message: string } {
+  if (result.failures[0]) {
+    return { tone: "error", message: result.failures[0].message };
+  }
+  if (result.availability?.blockers[0]) {
+    return { tone: "error", message: result.availability.blockers[0].reason };
+  }
+  if (result.availability?.unresolved_checks[0]) {
+    return { tone: "info", message: result.availability.unresolved_checks[0].reason };
+  }
+  return {
+    tone: "error",
+    message: result.decision === "indeterminate" ? "Booking could not be resolved for this slot." : "Booking creation blocked.",
+  };
+}
+
 export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const queryClient = useQueryClient();
@@ -181,15 +242,23 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [drawerFeedbackMessage, setDrawerFeedbackMessage] = useState<string | null>(null);
   const [drawerFeedbackTone, setDrawerFeedbackTone] = useState<"error" | "info" | null>(null);
   const [operationNotice, setOperationNotice] = useState<OperationNotice | null>(null);
+  const [createParticipants, setCreateParticipants] = useState<CreateParticipantDraft[]>(
+    initialCreateParticipants("member"),
+  );
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
+  const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
 
   useEffect(() => {
     if (!courseId && coursesQuery.data?.length) {
       setCourseId(coursesQuery.data[0].id);
     }
   }, [courseId, coursesQuery.data]);
+
+  useEffect(() => {
+    setCreateParticipants(initialCreateParticipants(membershipType));
+  }, [membershipType]);
 
   const teeSheetQuery = useTeeSheetDayQuery({
     accessToken,
@@ -207,6 +276,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
           rowKey: row.row_key,
           rowLabel: row.label,
           colorCode: row.color_code,
+          teeId: row.tee_id,
           slot,
           occupants: buildOccupants(slot),
         })),
@@ -328,6 +398,36 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     onError: handleLifecycleError,
   });
 
+  const createMutation = useMutation({
+    mutationFn: (payload: BookingCreateInput) =>
+      createBooking(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async (result) => {
+      if (result.decision === "allowed") {
+        setDrawerFeedbackMessage(null);
+        setDrawerFeedbackTone(null);
+        setSelectedSlotKey(null);
+        setOperationNotice({
+          tone: "success",
+          message: "Booking created. Tee sheet refreshed from backend state.",
+        });
+        await invalidateTeeSheetReadModel();
+        setCreateParticipants(initialCreateParticipants(membershipType));
+        return;
+      }
+
+      const feedback = bookingCreateFeedback(result);
+      setDrawerFeedbackTone(feedback.tone);
+      setDrawerFeedbackMessage(feedback.message);
+    },
+    onError: (error) => {
+      setDrawerFeedbackTone("error");
+      setDrawerFeedbackMessage(asMessage(error));
+    },
+  });
+
   const activeCourse = coursesQuery.data?.find((course) => course.id === courseId) ?? null;
   const warningMessage = teeSheetQuery.data?.warnings[0]?.message ?? "No weather or policy alerts for this day.";
   const totalSlots = flattenedSlots.length;
@@ -353,12 +453,13 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const alertSignals = (teeSheetQuery.data?.warnings.length ?? 0) + statusCounts.warning + statusCounts.blocked;
 
   function openBookingDrawer(slot: FlattenedSlot): void {
-    if (!isManageableSlot(slot.slot)) {
+    if (!isManageableSlot(slot.slot) && !slotCanCreate(slot.slot)) {
       return;
     }
     setOperationNotice(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
+    setCreateParticipants(initialCreateParticipants(membershipType));
     setSelectedSlotKey({
       rowKey: slot.rowKey,
       slotDatetime: slot.slot.slot_datetime,
@@ -387,8 +488,71 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       : completeMutation.isPending
         ? completeMutation.variables ?? null
         : noShowMutation.isPending
-          ? noShowMutation.variables ?? null
+      ? noShowMutation.variables ?? null
       : null;
+  const directory = directoryQuery.data ?? [];
+
+  function updateCreateParticipant(key: string, patch: Partial<CreateParticipantDraft>): void {
+    setCreateParticipants((current) =>
+      current.map((participant) => (participant.key === key ? { ...participant, ...patch } : participant)),
+    );
+  }
+
+  function addCreateParticipant(): void {
+    setCreateParticipants((current) => {
+      if (current.length >= 4) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          key: nextParticipantKey(),
+          participant_type: "guest",
+          person_id: null,
+          guest_name: "",
+          is_primary: false,
+        },
+      ];
+    });
+  }
+
+  function removeCreateParticipant(key: string): void {
+    setCreateParticipants((current) => current.filter((participant) => participant.key !== key || participant.is_primary));
+  }
+
+  function createPayloadForSlot(slot: FlattenedSlot): BookingCreateInput {
+    const participants: BookingCreateParticipantInput[] = createParticipants.map((participant) => ({
+      participant_type: participant.participant_type,
+      person_id: participant.participant_type === "guest" ? null : participant.person_id,
+      guest_name: participant.participant_type === "guest" ? participant.guest_name.trim() : null,
+      is_primary: participant.is_primary,
+    }));
+    const primary = createParticipants.find((participant) => participant.is_primary);
+    const appliesTo =
+      primary?.participant_type === "staff"
+        ? "staff"
+        : primary?.participant_type === "member"
+          ? "member"
+          : undefined;
+    return {
+      course_id: courseId as string,
+      tee_id: slot.teeId,
+      slot_datetime: slot.slot.slot_datetime,
+      slot_interval_minutes: teeSheetQuery.data?.interval_minutes ?? null,
+      source: "admin",
+      applies_to: appliesTo,
+      reference_datetime: teeSheetQuery.data?.reference_datetime ?? null,
+      participants,
+    };
+  }
+
+  async function handleCreateSlotBooking(slot: FlattenedSlot): Promise<void> {
+    setOperationNotice(null);
+    setDrawerFeedbackMessage(null);
+    setDrawerFeedbackTone(null);
+    const payload = createPayloadForSlot(slot);
+    await createMutation.mutateAsync(payload);
+  }
 
   return (
     <AdminShell title="Tee Sheet" searchPlaceholder="Search tee times...">
@@ -627,6 +791,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                       (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") &&
                       (item.slot.party_summary.total_players ?? 0) === 0;
                     const isManageable = isManageableSlot(item.slot);
+                    const isCreatable = slotCanCreate(item.slot);
                     const rowClassName =
                       item.slot.display_status === "blocked"
                         ? "tee-row transition-colors group bg-red-50/30"
@@ -634,11 +799,11 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
                     return (
                       <tr
-                        className={`${rowClassName}${isManageable ? " cursor-pointer" : ""}`}
+                        className={`${rowClassName}${isManageable || isCreatable ? " cursor-pointer" : ""}`}
                         key={`${item.rowLabel}-${item.slot.slot_datetime}`}
                         onClick={() => openBookingDrawer(item)}
                         onKeyDown={(event) => {
-                          if (!isManageable) {
+                          if (!isManageable && !isCreatable) {
                             return;
                           }
                           if (event.key === "Enter" || event.key === " ") {
@@ -646,8 +811,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             openBookingDrawer(item);
                           }
                         }}
-                        role={isManageable ? "button" : undefined}
-                        tabIndex={isManageable ? 0 : undefined}
+                        role={isManageable || isCreatable ? "button" : undefined}
+                        tabIndex={isManageable || isCreatable ? 0 : undefined}
                       >
                         <td className="px-6 py-4">
                           <div className="space-y-1">
@@ -696,9 +861,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {isManageable ? (
+                          {isManageable || isCreatable ? (
                             <button
-                              aria-label={`Manage bookings for ${item.rowLabel} ${item.slot.local_time.slice(0, 5)}`}
+                              aria-label={`${isManageable ? "Manage bookings" : "Create booking"} for ${item.rowLabel} ${item.slot.local_time.slice(0, 5)}`}
                               className="rounded-lg bg-primary px-3 py-1.5 text-[10px] font-bold uppercase tracking-tight text-white transition-colors hover:bg-primary-dim"
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -706,7 +871,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               }}
                               type="button"
                             >
-                              Manage
+                              {isManageable ? "Manage" : "Create"}
                             </button>
                           ) : (
                             <button className="rounded p-1 text-slate-300" disabled type="button">
@@ -797,41 +962,62 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       </AdminWorkspace>
 
       {selectedSlot ? (
-        <BookingManagementDrawer
-          colorCode={selectedSlot.colorCode}
-          feedbackMessage={drawerFeedbackMessage}
-          feedbackTone={drawerFeedbackTone}
-          onCheckIn={(bookingId) => {
-            setOperationNotice(null);
-            setDrawerFeedbackMessage(null);
-            setDrawerFeedbackTone(null);
-            checkInMutation.mutate(bookingId);
-          }}
-          onComplete={(bookingId) => {
-            setOperationNotice(null);
-            setDrawerFeedbackMessage(null);
-            setDrawerFeedbackTone(null);
-            completeMutation.mutate(bookingId);
-          }}
-          onNoShow={(bookingId) => {
-            setOperationNotice(null);
-            setDrawerFeedbackMessage(null);
-            setDrawerFeedbackTone(null);
-            noShowMutation.mutate(bookingId);
-          }}
-          onCancel={(bookingId) => {
-            setOperationNotice(null);
-            setDrawerFeedbackMessage(null);
-            setDrawerFeedbackTone(null);
-            cancelMutation.mutate(bookingId);
-          }}
-          onClose={closeBookingDrawer}
-          pendingAction={pendingAction}
-          pendingBookingId={pendingBookingId}
-          rowLabel={selectedSlot.rowLabel}
-          selectedDate={selectedDate}
-          slot={selectedSlot.slot}
-        />
+        isManageableSlot(selectedSlot.slot) ? (
+          <BookingManagementDrawer
+            colorCode={selectedSlot.colorCode}
+            feedbackMessage={drawerFeedbackMessage}
+            feedbackTone={drawerFeedbackTone}
+            onCheckIn={(bookingId) => {
+              setOperationNotice(null);
+              setDrawerFeedbackMessage(null);
+              setDrawerFeedbackTone(null);
+              checkInMutation.mutate(bookingId);
+            }}
+            onComplete={(bookingId) => {
+              setOperationNotice(null);
+              setDrawerFeedbackMessage(null);
+              setDrawerFeedbackTone(null);
+              completeMutation.mutate(bookingId);
+            }}
+            onNoShow={(bookingId) => {
+              setOperationNotice(null);
+              setDrawerFeedbackMessage(null);
+              setDrawerFeedbackTone(null);
+              noShowMutation.mutate(bookingId);
+            }}
+            onCancel={(bookingId) => {
+              setOperationNotice(null);
+              setDrawerFeedbackMessage(null);
+              setDrawerFeedbackTone(null);
+              cancelMutation.mutate(bookingId);
+            }}
+            onClose={closeBookingDrawer}
+            pendingAction={pendingAction}
+            pendingBookingId={pendingBookingId}
+            rowLabel={selectedSlot.rowLabel}
+            selectedDate={selectedDate}
+            slot={selectedSlot.slot}
+          />
+        ) : (
+          <BookingCreateDrawer
+            colorCode={selectedSlot.colorCode}
+            creating={createMutation.isPending}
+            directory={directory}
+            feedbackMessage={drawerFeedbackMessage}
+            feedbackTone={drawerFeedbackTone}
+            onAddParticipant={addCreateParticipant}
+            onChangeParticipant={updateCreateParticipant}
+            onClose={closeBookingDrawer}
+            onCreate={() => {
+              void handleCreateSlotBooking(selectedSlot);
+            }}
+            onRemoveParticipant={removeCreateParticipant}
+            participants={createParticipants}
+            rowLabel={selectedSlot.rowLabel}
+            selectedDate={selectedDate}
+            slot={selectedSlot.slot}
+          />
+        )
       ) : null}
     </AdminShell>
   );

@@ -188,6 +188,8 @@ class SuperadminOnboardingService:
 
         if payload.preferred_accounting_profile_id is None and "preferred_accounting_profile_id" in payload.model_fields_set:
             config.preferred_accounting_profile_id = None
+        if payload.enabled_module_keys is not None:
+            self._replace_modules(club_id=club.id, module_keys=payload.enabled_module_keys)
 
         if payload.onboarding_state is None:
             club.onboarding_state = self._derive_onboarding_state(club=club, config=config).value
@@ -206,6 +208,7 @@ class SuperadminOnboardingService:
                     if config.preferred_accounting_profile_id is not None
                     else None
                 ),
+                "enabled_module_keys": self._enabled_module_keys(club.id),
             },
             correlation_id=correlation_id,
             club_id=club.id,
@@ -451,6 +454,13 @@ class SuperadminOnboardingService:
                 ).all()
             )
         )
+
+    def _replace_modules(self, *, club_id: uuid.UUID, module_keys: list[str]) -> None:
+        existing = self.db.scalars(select(ClubModule).where(ClubModule.club_id == club_id)).all()
+        for module in existing:
+            self.db.delete(module)
+        for key in sorted({item.strip() for item in module_keys if item and item.strip()}):
+            self.db.add(ClubModule(club_id=club_id, module_key=key, enabled=True))
 
     def _registry_status(self, club: Club) -> str:
         if not club.active:

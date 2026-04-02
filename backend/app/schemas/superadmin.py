@@ -113,6 +113,7 @@ class SuperadminClubOnboardingUpdateRequest(BaseModel):
     onboarding_state: ClubOnboardingState | None = None
     onboarding_current_step: ClubOnboardingStep | None = None
     preferred_accounting_profile_id: uuid.UUID | None = None
+    enabled_module_keys: list[str] | None = None
 
 
 class SuperadminClubAssignmentUpsertRequest(BaseModel):
