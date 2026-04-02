@@ -9,7 +9,8 @@ import type {
 } from "../../types/pos";
 
 export const posKeys = {
-  products: (clubId: string) => ["pos", clubId, "products"] as const,
+  products: (clubId: string, includeInactive = false) =>
+    ["pos", clubId, "products", includeInactive ? "all" : "active"] as const,
 };
 
 function isReady(accessToken: string | null, selectedClubId: string | null): boolean {
@@ -19,13 +20,19 @@ function isReady(accessToken: string | null, selectedClubId: string | null): boo
 interface PosQueryOptions {
   accessToken: string | null;
   selectedClubId: string | null;
+  includeInactive?: boolean;
 }
 
-export function usePosProductsQuery({ accessToken, selectedClubId }: PosQueryOptions) {
+export function usePosProductsQuery({
+  accessToken,
+  selectedClubId,
+  includeInactive = false,
+}: PosQueryOptions) {
+  const params = includeInactive ? "?include_inactive=true" : "";
   return useQuery<PosProduct[]>({
-    queryKey: posKeys.products(selectedClubId ?? "none"),
+    queryKey: posKeys.products(selectedClubId ?? "none", includeInactive),
     queryFn: () =>
-      apiRequest<PosProduct[]>("/api/pos/products", {
+      apiRequest<PosProduct[]>(`/api/pos/products${params}`, {
         method: "GET",
         accessToken: accessToken as string,
         selectedClubId: selectedClubId as string,

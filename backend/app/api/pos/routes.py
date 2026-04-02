@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.routes.club_access import (
@@ -29,6 +29,7 @@ def _correlation_id(request: Request) -> str | None:
 
 @router.get("/products", response_model=list[PosProductResponse])
 def list_products(
+    include_inactive: bool = Query(default=False),  # noqa: B008
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
@@ -37,7 +38,10 @@ def list_products(
     require_operations_read(current_user, context)
     assert context.selected_club is not None
     service = PosService(db)
-    return service.list_products(club_id=context.selected_club.id)
+    return service.list_products(
+        club_id=context.selected_club.id,
+        include_inactive=include_inactive,
+    )
 
 
 @router.post("/transactions", response_model=PosTransactionResult)

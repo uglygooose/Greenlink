@@ -102,53 +102,73 @@ export function AdminHalfwayPage(): JSX.Element {
       <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
 
         {/* KPI row */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Today's Revenue */}
-          <div className="rounded-2xl bg-primary p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Today's Revenue</span>
-              <MaterialSymbol filled icon="payments" className="opacity-60" />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today's Revenue</span>
+              <MaterialSymbol className="text-primary" icon="payments" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold">
-              {journalQuery.isLoading ? "—" : `R${todayRevenue.toFixed(2)}`}
-            </p>
-            <p className="mt-1 text-xs opacity-70">{todayTxCount} transactions</p>
+            <div className="flex items-baseline gap-2">
+              {journalQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">R{todayRevenue.toFixed(2)}</span>
+                  <span className="text-xs font-medium text-primary">{todayTxCount} tx</span>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Avg Spend */}
-          <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Avg Spend</span>
-              <MaterialSymbol icon="show_chart" className="text-emerald-500" />
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Avg Spend</span>
+              <MaterialSymbol className="text-emerald-500" icon="show_chart" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold text-on-surface">
-              {journalQuery.isLoading ? "—" : `R${avgSpend.toFixed(2)}`}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">per transaction</p>
+            <div className="flex items-baseline gap-2">
+              {journalQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">R{avgSpend.toFixed(2)}</span>
+                  <span className="text-xs font-medium text-emerald-600">per tx</span>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Active Queue */}
-          <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Active Queue</span>
-              <MaterialSymbol icon="pending_actions" className="text-amber-500" />
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-amber-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Queue</span>
+              <MaterialSymbol className="text-amber-500" icon="pending_actions" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold text-on-surface">
-              {activeOrdersQuery.isLoading ? "—" : queueOrders.length}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">orders in progress</p>
+            <div className="flex items-baseline gap-2">
+              {activeOrdersQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{queueOrders.length}</span>
+                  <span className="text-xs font-medium text-amber-600">in progress</span>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Orders Today */}
-          <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Orders Today</span>
-              <MaterialSymbol icon="receipt_long" className="text-blue-500" />
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Orders Today</span>
+              <MaterialSymbol className="text-secondary" icon="receipt_long" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold text-on-surface">
-              {allOrdersQuery.isLoading ? "—" : todayOrders.length}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">total orders placed</p>
+            <div className="flex items-baseline gap-2">
+              {allOrdersQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{todayOrders.length}</span>
+                  <span className="text-xs font-medium text-secondary">placed</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

@@ -12,7 +12,8 @@ from app.api.routes.club_access import (
     resolve_required_club_context,
 )
 from app.auth.dependencies import get_current_user, get_db
-from app.models import User
+from app.core.exceptions import AuthorizationError
+from app.models import ClubMembershipRole, User, UserType
 from app.models.enums import NewsPostStatus
 from app.schemas.comms import (
     NewsPostCreateRequest,
@@ -23,6 +24,32 @@ from app.schemas.comms import (
 from app.services.comms.news_post_service import NewsPostService
 
 router = APIRouter()
+
+
+def _require_news_feed_read(current_user: User, context) -> None:
+    if current_user.user_type == UserType.SUPERADMIN:
+        return
+    if context.selected_membership is None:
+        raise AuthorizationError("Selected club access is required")
+    if context.selected_membership.role not in {
+        ClubMembershipRole.CLUB_ADMIN,
+        ClubMembershipRole.CLUB_STAFF,
+        ClubMembershipRole.MEMBER,
+    }:
+        raise AuthorizationError("Published news is not available for this membership role")
+
+
+@router.get("/feed", response_model=NewsPostListResponse)
+def list_published_news_feed(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> NewsPostListResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    _require_news_feed_read(current_user, context)
+    assert context.selected_club is not None
+    service = NewsPostService(db)
+    return service.list_published_feed(club_id=context.selected_club.id)
 
 
 @router.get("/posts", response_model=NewsPostListResponse)
@@ -49,22 +76,10 @@ def create_news_post(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
-    # resolve the person record for the current user within this club
-    from sqlalchemy import select
-    from app.models.person import Person
-    from app.models.club_membership import ClubMembership
-    membership = db.scalars(
-        select(ClubMembership)
-        .where(
-            ClubMembership.club_id == context.selected_club.id,
-            ClubMembership.user_id == current_user.id,
-        )
-    ).first()
-    author_person_id = membership.person_id if membership else None
     service = NewsPostService(db)
     return service.create_post(
         club_id=context.selected_club.id,
-        author_person_id=author_person_id,
+        author_person_id=current_user.person_id,
         payload=payload,
     )
 

@@ -136,7 +136,7 @@ function PostCard({ post }: PostCardProps): JSX.Element {
   const deleteMutation = useDeleteNewsPostMutation();
 
   return (
-    <div className={`rounded-2xl border bg-surface-container-lowest p-5 shadow-sm ${post.pinned ? "border-primary/20" : "border-slate-100"}`}>
+    <div className={`rounded-2xl border bg-surface-container-lowest p-5 shadow-sm transition-shadow hover:shadow-md ${post.pinned ? "border-primary/20" : "border-slate-100"}`}>
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           {post.pinned && (
@@ -206,14 +206,14 @@ function PostCard({ post }: PostCardProps): JSX.Element {
 export function AdminCommunicationsPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const [tab, setTab]           = useState<Tab>("all");
+  const [tab, setTab]             = useState<Tab>("all");
   const [composing, setComposing] = useState(false);
 
   const statusFilter = tab === "all" ? undefined : tab === "published" ? "published" : "draft";
   const postsQuery = useNewsPostsQuery({ accessToken, selectedClubId, status: statusFilter as any });
 
-  const posts = postsQuery.data?.posts ?? [];
-  const total = postsQuery.data?.total_count ?? 0;
+  const posts          = postsQuery.data?.posts ?? [];
+  const total          = postsQuery.data?.total_count ?? 0;
   const publishedCount = posts.filter((p) => p.status === "published").length;
   const draftCount     = posts.filter((p) => p.status === "draft").length;
   const pinnedCount    = posts.filter((p) => p.pinned).length;
@@ -224,79 +224,168 @@ export function AdminCommunicationsPage(): JSX.Element {
 
       <div className="mx-auto max-w-4xl px-6 py-8 space-y-8">
 
-        {/* KPI row */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-2xl bg-primary p-5 text-white shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Total Posts</p>
-            <p className="mt-2 font-headline text-3xl font-extrabold">{postsQuery.isLoading ? "—" : total}</p>
+        {/* KPI row — Finance reference style */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Posts</span>
+              <MaterialSymbol className="text-primary" icon="newspaper" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {postsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <span className="font-headline text-3xl font-extrabold text-on-surface">{total}</span>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Published</p>
-            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{postsQuery.isLoading ? "—" : publishedCount}</p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Published</span>
+              <MaterialSymbol className="text-emerald-500" icon="check_circle" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {postsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{publishedCount}</span>
+                  <span className="text-xs font-medium text-emerald-600">live</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Drafts</p>
-            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{postsQuery.isLoading ? "—" : draftCount}</p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-slate-300">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Drafts</span>
+              <MaterialSymbol className="text-slate-400" icon="edit_note" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {postsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{draftCount}</span>
+                  <span className="text-xs font-medium text-slate-400">unpublished</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Pinned</p>
-            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{postsQuery.isLoading ? "—" : pinnedCount}</p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pinned</span>
+              <MaterialSymbol className="text-secondary" filled icon="push_pin" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {postsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{pinnedCount}</span>
+                  <span className="text-xs font-medium text-secondary">featured</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex gap-1 rounded-xl border border-slate-200 bg-surface-container-lowest p-1">
-            {(["all", "published", "draft"] as Tab[]).map((t) => (
+        {/* Editorial hero — shown only when no posts exist yet */}
+        {!postsQuery.isLoading && total === 0 && (
+          <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest px-8 py-12 shadow-sm">
+            <div className="mx-auto max-w-sm text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-primary-container">
+                <MaterialSymbol className="text-4xl text-primary" filled icon="campaign" />
+              </div>
+              <h2 className="font-headline text-2xl font-extrabold text-on-surface">Club Communications</h2>
+              <p className="mt-3 text-sm leading-relaxed text-slate-500">
+                Keep members informed with announcements, news, and club updates. Publish directly to the member portal with full visibility controls.
+              </p>
               <button
-                className={`rounded-lg px-4 py-1.5 text-sm font-bold transition-colors ${tab === t ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:text-on-surface"}`}
-                key={t}
+                className="mt-8 flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim mx-auto"
                 type="button"
-                onClick={() => setTab(t)}
+                onClick={() => setComposing(true)}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                <MaterialSymbol icon="add" />
+                Create First Post
               </button>
-            ))}
-          </div>
-          <button
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
-            type="button"
-            onClick={() => setComposing(true)}
-          >
-            <MaterialSymbol icon="add" />
-            New Post
-          </button>
-        </div>
+            </div>
 
-        {/* Posts */}
-        {postsQuery.isLoading && (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => <div className="h-36 animate-pulse rounded-2xl bg-slate-100" key={i} />)}
-          </div>
-        )}
-
-        {!postsQuery.isLoading && posts.length === 0 && (
-          <div className="flex flex-col items-center gap-4 py-16 text-center">
-            <MaterialSymbol className="text-5xl text-slate-200" filled icon="newspaper" />
-            <p className="text-sm font-medium text-slate-400">
-              {tab === "all" ? "No posts yet. Create your first one." : `No ${tab} posts.`}
-            </p>
-            <button
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
-              type="button"
-              onClick={() => setComposing(true)}
-            >
-              <MaterialSymbol icon="add" />
-              Create Post
-            </button>
+            <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {[
+                { icon: "public",    title: "Public Posts",   desc: "Visible to anyone visiting the club portal — great for events and general news." },
+                { icon: "group",     title: "Members Only",   desc: "Restricted to logged-in members. Share internal updates and private notices." },
+                { icon: "push_pin",  title: "Pin to Top",     desc: "Pinned posts float above the feed so important messages stay front and centre." },
+              ].map(({ icon, title, desc }) => (
+                <div className="rounded-xl border border-slate-100 bg-surface p-5" key={title}>
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-container">
+                    <MaterialSymbol className="text-lg text-primary" icon={icon} />
+                  </div>
+                  <h4 className="mb-1.5 text-sm font-bold text-on-surface">{title}</h4>
+                  <p className="text-xs leading-relaxed text-slate-500">{desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        <div className="space-y-4">
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
-          ))}
-        </div>
+        {/* Toolbar + post list — shown when posts exist */}
+        {(postsQuery.isLoading || total > 0) && (
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex gap-1 rounded-xl border border-slate-200 bg-surface-container-lowest p-1">
+                {(["all", "published", "draft"] as Tab[]).map((t) => (
+                  <button
+                    className={`rounded-lg px-4 py-1.5 text-sm font-bold transition-colors ${tab === t ? "bg-primary text-white shadow-sm" : "text-slate-500 hover:text-on-surface"}`}
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                  >
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
+                type="button"
+                onClick={() => setComposing(true)}
+              >
+                <MaterialSymbol icon="add" />
+                New Post
+              </button>
+            </div>
+
+            {postsQuery.isLoading && (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => <div className="h-36 animate-pulse rounded-2xl bg-slate-100" key={i} />)}
+              </div>
+            )}
+
+            {!postsQuery.isLoading && posts.length === 0 && (
+              <div className="flex flex-col items-center gap-4 py-16 text-center">
+                <MaterialSymbol className="text-5xl text-slate-200" filled icon="newspaper" />
+                <p className="text-sm font-medium text-slate-400">No {tab === "all" ? "" : tab} posts yet.</p>
+                <button
+                  className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
+                  type="button"
+                  onClick={() => setComposing(true)}
+                >
+                  <MaterialSymbol icon="add" />
+                  Create Post
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {posts.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))}
+            </div>
+          </>
+        )}
+
       </div>
     </AdminShell>
   );

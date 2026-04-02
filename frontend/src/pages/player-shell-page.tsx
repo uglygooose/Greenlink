@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
+import { usePublishedNewsFeedQuery } from "../features/comms/hooks";
 import { useSession } from "../session/session-context";
 
 type BookingCard = {
@@ -13,28 +14,6 @@ type BookingCard = {
   detail: string;
   muted?: boolean;
 };
-
-type ClubUpdate = {
-  badgeClassName: string;
-  badgeLabel: string;
-  title: string;
-  description: string;
-};
-
-const CLUB_UPDATES: ClubUpdate[] = [
-  {
-    badgeClassName: "text-primary",
-    badgeLabel: "Facility",
-    title: "Course maintenance on Monday morning",
-    description: "Back nine closed until 12:00 PM.",
-  },
-  {
-    badgeClassName: "text-tertiary",
-    badgeLabel: "Dining",
-    title: "New seasonal menu at the clubhouse",
-    description: "Fresh organic selections from local farms.",
-  },
-];
 
 function initials(name: string | undefined): string {
   return (
@@ -51,11 +30,32 @@ function firstName(name: string | undefined): string {
   return name?.split(" ").filter(Boolean)[0] ?? "Member";
 }
 
+function formatNewsDate(value: string | null): string {
+  if (!value) return "Recently posted";
+  return new Intl.DateTimeFormat("en-ZA", {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(value));
+}
+
+function summarizeBody(body: string): string {
+  const normalized = body.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 96) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 93).trimEnd()}...`;
+}
+
 export function PlayerShellPage(): JSX.Element {
-  const { bootstrap, logout } = useSession();
+  const { accessToken, bootstrap, logout } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
   const displayName = bootstrap?.user.display_name ?? "John";
   const selectedClub = bootstrap?.selected_club?.name ?? "GreenLink";
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+  const { data: publishedNews, isLoading: isNewsLoading } = usePublishedNewsFeedQuery({
+    accessToken,
+    selectedClubId,
+  });
 
   const upcomingBookings: BookingCard[] = [
     {
@@ -190,17 +190,31 @@ export function PlayerShellPage(): JSX.Element {
         <section>
           <h2 className="mb-4 text-lg font-bold font-headline">Club Updates</h2>
           <div className="space-y-3">
-            {CLUB_UPDATES.map((update) => (
-              <div className="flex gap-4 rounded-xl bg-surface-container-low p-4" key={update.title}>
-                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-container">
-                  <MaterialSymbol className="text-2xl text-on-surface-variant" icon="image" />
+            {isNewsLoading && (
+              <div className="rounded-xl bg-surface-container-low p-4 text-sm text-on-surface-variant">
+                Loading club updates...
+              </div>
+            )}
+            {!isNewsLoading && (publishedNews?.posts.length ?? 0) === 0 && (
+              <div className="rounded-xl bg-surface-container-low p-4 text-sm text-on-surface-variant">
+                No club updates have been published yet.
+              </div>
+            )}
+            {(publishedNews?.posts ?? []).map((post) => (
+              <div className="flex gap-4 rounded-xl bg-surface-container-low p-4" key={post.id}>
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-container text-primary">
+                  <MaterialSymbol className="text-2xl" icon={post.pinned ? "push_pin" : "article"} />
                 </div>
                 <div className="flex flex-col justify-center">
-                  <span className={`mb-1 text-[10px] font-bold uppercase tracking-widest ${update.badgeClassName}`}>
-                    {update.badgeLabel}
+                  <span
+                    className={`mb-1 text-[10px] font-bold uppercase tracking-widest ${
+                      post.pinned ? "text-primary" : "text-tertiary"
+                    }`}
+                  >
+                    {post.pinned ? "Pinned Update" : formatNewsDate(post.published_at)}
                   </span>
-                  <h4 className="text-sm font-bold leading-tight">{update.title}</h4>
-                  <p className="mt-1 text-xs text-on-surface-variant">{update.description}</p>
+                  <h4 className="text-sm font-bold leading-tight">{post.title}</h4>
+                  <p className="mt-1 text-xs text-on-surface-variant">{summarizeBody(post.body)}</p>
                 </div>
               </div>
             ))}

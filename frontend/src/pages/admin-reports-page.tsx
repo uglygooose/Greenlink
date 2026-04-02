@@ -86,36 +86,75 @@ export function AdminReportsPage(): JSX.Element {
       <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
 
         {/* Summary KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="rounded-2xl bg-primary p-5 text-white shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Total Revenue</p>
-            <p className="mt-2 font-headline text-2xl font-extrabold">
-              {journalQuery.isLoading ? "—" : formatR(totalRevenue)}
-            </p>
-            <p className="mt-1 text-[10px] opacity-70">{chargeEntries.length} charge records</p>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Revenue</span>
+              <MaterialSymbol className="text-primary" icon="payments" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {journalQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{formatR(totalRevenue)}</span>
+                  <span className="text-xs font-medium text-primary">{chargeEntries.length} charges</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Members</p>
-            <p className="mt-2 font-headline text-2xl font-extrabold text-on-surface">
-              {directoryQuery.isLoading ? "—" : members.length}
-            </p>
-            <p className="mt-1 text-[10px] text-slate-400">{coursesQuery.data?.length ?? 0} courses</p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Members</span>
+              <MaterialSymbol className="text-secondary" icon="group" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {directoryQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{members.length}</span>
+                  <span className="text-xs font-medium text-secondary">{coursesQuery.data?.length ?? 0} courses</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Orders</p>
-            <p className="mt-2 font-headline text-2xl font-extrabold text-on-surface">
-              {ordersQuery.isLoading ? "—" : totalOrders}
-            </p>
-            <p className="mt-1 text-[10px] text-slate-400">
-              {orders.filter((o) => o.status === "collected").length} collected
-            </p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Orders</span>
+              <MaterialSymbol className="text-emerald-500" icon="receipt_long" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {ordersQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{totalOrders}</span>
+                  <span className="text-xs font-medium text-emerald-600">
+                    {orders.filter((o) => o.status === "collected").length} collected
+                  </span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm border border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Finance Accounts</p>
-            <p className="mt-2 font-headline text-2xl font-extrabold text-on-surface">
-              {accountsQuery.isLoading ? "—" : accounts.length}
-            </p>
-            <p className="mt-1 text-[10px] text-error">{inArrears} in arrears</p>
+
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Finance Accounts</span>
+              <MaterialSymbol className="text-error" icon="account_balance" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {accountsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{accounts.length}</span>
+                  <span className="text-xs font-medium text-error">{inArrears} in arrears</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

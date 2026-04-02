@@ -105,46 +105,40 @@ export function AdminDashboardPage(): JSX.Element {
 
         {/* KPI cards */}
         <div className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Outstanding */}
-          <div className="relative overflow-hidden rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-4 flex items-start justify-between">
-              <div className="rounded-lg bg-error-container p-2 text-on-error-container">
-                <MaterialSymbol icon="account_balance" />
-              </div>
-              {accountsQuery.isSuccess && inArrears.length > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-error-container px-2 py-0.5 text-[10px] font-bold text-error">
-                  <MaterialSymbol className="text-[12px]" icon="warning" />
-                  {inArrears.length}
-                </span>
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding</span>
+              <MaterialSymbol className="text-error" icon="account_balance" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {accountsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{formatAmount(totalOutstanding)}</span>
+                  <span className="text-xs font-medium text-error">{inArrears.length} accounts</span>
+                </>
               )}
             </div>
-            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Outstanding</p>
-            {accountsQuery.isLoading ? (
-              <div className="h-8 w-24 animate-pulse rounded bg-slate-100" />
-            ) : (
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">{formatAmount(totalOutstanding)}</h3>
-            )}
-            <p className="mt-1 text-[10px] text-slate-400">{inArrears.length} accounts in arrears</p>
           </div>
 
-          {/* Tee Occupancy */}
-          <div className="relative overflow-hidden rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-4 flex items-start justify-between">
-              <div className="rounded-lg bg-secondary-container p-2 text-on-secondary-container">
-                <MaterialSymbol icon="golf_course" />
-              </div>
-              {occupancyPct !== null && (
-                <span className="text-xs font-bold text-emerald-600">{bookedSlots}/{totalSlots}</span>
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Tee Occupancy</span>
+              <MaterialSymbol className="text-primary" icon="golf_course" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              {teeSheetQuery.isLoading || coursesQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : occupancyPct !== null ? (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{occupancyPct}%</span>
+                  <span className="text-xs font-medium text-primary">{bookedSlots}/{totalSlots} slots</span>
+                </>
+              ) : (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
               )}
             </div>
-            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Tee Occupancy</p>
-            {teeSheetQuery.isLoading || coursesQuery.isLoading ? (
-              <div className="h-8 w-16 animate-pulse rounded bg-slate-100" />
-            ) : occupancyPct !== null ? (
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">{occupancyPct}%</h3>
-            ) : (
-              <h3 className="font-headline text-2xl font-extrabold text-slate-300">—</h3>
-            )}
             {occupancyPct !== null && (
               <div className="mt-3 h-1 w-full rounded-full bg-slate-100">
                 <div className="h-1 rounded-full bg-primary" style={{ width: `${occupancyPct}%` }} />
@@ -152,37 +146,38 @@ export function AdminDashboardPage(): JSX.Element {
             )}
           </div>
 
-          {/* Members */}
-          <div className="relative overflow-hidden rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-4">
-              <div className="inline-block rounded-lg bg-tertiary-container p-2 text-on-tertiary-container">
-                <MaterialSymbol icon="group" />
-              </div>
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Members</span>
+              <MaterialSymbol className="text-secondary" icon="group" />
             </div>
-            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Members</p>
-            {directoryQuery.isLoading ? (
-              <div className="h-8 w-16 animate-pulse rounded bg-slate-100" />
-            ) : (
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">{memberCount ?? "—"}</h3>
-            )}
-            <p className="mt-1 text-[10px] text-slate-400">Active club directory</p>
+            <div className="flex items-baseline gap-2">
+              {directoryQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{memberCount ?? "—"}</span>
+                  <span className="text-xs font-medium text-secondary">members</span>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Today's Revenue */}
-          <div className="relative overflow-hidden rounded-2xl bg-primary p-6 text-white shadow-sm">
-            <div className="mb-4 flex items-start justify-between">
-              <div className="rounded-lg bg-white/20 p-2">
-                <MaterialSymbol icon="payments" />
-              </div>
-              <span className="text-[10px] font-bold uppercase opacity-70">Today</span>
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">POS Revenue Today</span>
+              <MaterialSymbol className="text-emerald-500" icon="payments" />
             </div>
-            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider opacity-80">POS Revenue</p>
-            {journalQuery.isLoading ? (
-              <div className="h-8 w-24 animate-pulse rounded bg-white/20" />
-            ) : (
-              <h3 className="font-headline text-2xl font-extrabold">{formatAmount(todayPosRevenue)}</h3>
-            )}
-            <p className="mt-1 text-[10px] opacity-70">POS + order charges</p>
+            <div className="flex items-baseline gap-2">
+              {journalQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{formatAmount(todayPosRevenue)}</span>
+                  <span className="text-xs font-medium text-emerald-600">today</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

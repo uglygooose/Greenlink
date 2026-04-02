@@ -12,7 +12,11 @@ export function AdminProShopPage(): JSX.Element {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  const productsQuery = usePosProductsQuery({ accessToken, selectedClubId });
+  const productsQuery = usePosProductsQuery({
+    accessToken,
+    selectedClubId,
+    includeInactive: true,
+  });
   const products = productsQuery.data ?? [];
 
   const categories = Array.from(
@@ -43,38 +47,56 @@ export function AdminProShopPage(): JSX.Element {
       <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
 
         {/* KPI row */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl bg-primary p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Total Products</span>
-              <MaterialSymbol filled icon="store" className="opacity-60" />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Products</span>
+              <MaterialSymbol className="text-primary" icon="store" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold">
-              {productsQuery.isLoading ? "—" : products.length}
-            </p>
-            <p className="mt-1 text-xs opacity-70">{categories.length} categories</p>
+            <div className="flex items-baseline gap-2">
+              {productsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{products.length}</span>
+                  <span className="text-xs font-medium text-primary">{categories.length} categories</span>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Active</span>
-              <MaterialSymbol icon="check_circle" className="text-emerald-500" />
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active</span>
+              <MaterialSymbol className="text-emerald-500" icon="check_circle" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold text-on-surface">
-              {productsQuery.isLoading ? "—" : activeCount}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">available for sale</p>
+            <div className="flex items-baseline gap-2">
+              {productsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{activeCount}</span>
+                  <span className="text-xs font-medium text-emerald-600">for sale</span>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Inactive</span>
-              <MaterialSymbol icon="hide_source" className="text-slate-300" />
+          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-slate-300">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Inactive</span>
+              <MaterialSymbol className="text-slate-400" icon="hide_source" />
             </div>
-            <p className="mt-3 font-headline text-3xl font-extrabold text-on-surface">
-              {productsQuery.isLoading ? "—" : inactiveCount}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">hidden from POS</p>
+            <div className="flex items-baseline gap-2">
+              {productsQuery.isLoading ? (
+                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+              ) : (
+                <>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">{inactiveCount}</span>
+                  <span className="text-xs font-medium text-slate-400">hidden</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

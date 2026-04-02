@@ -146,7 +146,7 @@ describe("AdminOrderQueuePage", () => {
   test("defaults to open orders and hides collected orders from the queue list", async () => {
     renderPage();
 
-    expect(await screen.findByText("Order Queue")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Order Queue", level: 1 })).toBeInTheDocument();
     expect(screen.getByText("Order order-1")).toBeInTheDocument();
     expect(screen.getByText("Order order-2")).toBeInTheDocument();
     expect(screen.queryByText("Order order-3")).not.toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("AdminOrderQueuePage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /open order order-1/i }));
 
-    expect(await screen.findByText("Staff Order Queue")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Order Queue", level: 3 })).toBeInTheDocument();
     expect(screen.getByText("Chicken Wrap")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^mark preparing$/i }));
@@ -221,7 +221,7 @@ describe("AdminOrderQueuePage", () => {
     expect(
       await screen.findByText("Only placed orders may transition to cancelled in this phase"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Staff Order Queue")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Order Queue", level: 3 })).toBeInTheDocument();
   });
 
   test("shows only the valid next action for a preparing order", async () => {
@@ -457,6 +457,6 @@ describe("AdminOrderQueuePage", () => {
     expect(
       await screen.findByText("Only collected orders may post a finance charge in this phase"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Staff Order Queue")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Order Queue", level: 3 })).toBeInTheDocument();
   });
 });

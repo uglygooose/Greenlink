@@ -34,12 +34,18 @@ class PosService:
         self.ledger_service = LedgerService(db)
         self.publisher = DatabaseEventPublisher(db)
 
-    def list_products(self, *, club_id: uuid.UUID) -> list[PosProductResponse]:
+    def list_products(
+        self,
+        *,
+        club_id: uuid.UUID,
+        include_inactive: bool = False,
+    ) -> list[PosProductResponse]:
+        stmt = select(Product).where(Product.club_id == club_id)
+        if not include_inactive:
+            stmt = stmt.where(Product.active.is_(True))
         products = list(
             self.db.scalars(
-                select(Product)
-                .where(Product.club_id == club_id, Product.active.is_(True))
-                .order_by(Product.category.asc(), Product.name.asc())
+                stmt.order_by(Product.category.asc(), Product.name.asc())
             ).all()
         )
         return [PosProductResponse.model_validate(p) for p in products]
@@ -58,9 +64,14 @@ class PosService:
                 failures=["At least one item is required"],
             )
 
-        total_amount = sum(
-            item.unit_price * item.quantity for item in payload.items
+        normalized_items = self._normalize_transaction_items(
+            club_id=club_id,
+            items=payload.items,
         )
+        if isinstance(normalized_items, PosTransactionResult):
+            return normalized_items
+
+        total_amount = sum(item.unit_price * item.quantity for item in normalized_items)
 
         finance_transaction_id: uuid.UUID | None = None
 
@@ -120,7 +131,7 @@ class PosService:
                 unit_price_snapshot=item.unit_price,
                 quantity=item.quantity,
             )
-            for item in payload.items
+            for item in normalized_items
         ]
         self.db.add_all(item_models)
         self.db.commit()
@@ -135,7 +146,7 @@ class PosService:
             payload={
                 "tender_type": payload.tender_type.value,
                 "total_amount": str(total_amount),
-                "item_count": len(payload.items),
+                "item_count": len(normalized_items),
                 "finance_transaction_id": str(finance_transaction_id) if finance_transaction_id else None,
             },
             correlation_id=None,
@@ -150,6 +161,52 @@ class PosService:
             transaction=self._to_transaction_detail(hydrated),
             failures=[],
         )
+
+    def _normalize_transaction_items(
+        self,
+        *,
+        club_id: uuid.UUID,
+        items,
+    ):
+        product_ids = sorted({item.product_id for item in items if item.product_id is not None})
+        products_by_id: dict[uuid.UUID, Product] = {}
+        if product_ids:
+            products_by_id = {
+                product.id: product
+                for product in self.db.scalars(
+                    select(Product).where(Product.club_id == club_id, Product.id.in_(product_ids))
+                ).all()
+            }
+
+        normalized_items = []
+        for item in items:
+            if item.product_id is None:
+                normalized_items.append(item)
+                continue
+
+            product = products_by_id.get(item.product_id)
+            if product is None:
+                return PosTransactionResult(
+                    decision="blocked",
+                    transaction_applied=False,
+                    failures=["Selected product is not available for this club"],
+                )
+            if not product.active:
+                return PosTransactionResult(
+                    decision="blocked",
+                    transaction_applied=False,
+                    failures=["Inactive products cannot be sold through POS"],
+                )
+
+            normalized_items.append(
+                item.model_copy(
+                    update={
+                        "item_name": product.name,
+                        "unit_price": product.price,
+                    }
+                )
+            )
+        return normalized_items
 
     def _resolve_finance_account(
         self,

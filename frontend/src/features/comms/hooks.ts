@@ -13,6 +13,7 @@ import type {
 export const commsKeys = {
   posts: (clubId: string, status?: NewsPostStatus | null) =>
     ["comms", clubId, "posts", status ?? "all"] as const,
+  feed: (clubId: string) => ["comms", clubId, "feed"] as const,
 };
 
 function isReady(accessToken: string | null, selectedClubId: string | null): boolean {
@@ -31,6 +32,22 @@ export function useNewsPostsQuery({ accessToken, selectedClubId, status }: Comms
     queryKey: commsKeys.posts(selectedClubId ?? "none", status),
     queryFn: () =>
       apiRequest<NewsPostListResponse>(`/api/comms/posts${params}`, {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function usePublishedNewsFeedQuery({
+  accessToken,
+  selectedClubId,
+}: Omit<CommsQueryOptions, "status">) {
+  return useQuery<NewsPostListResponse>({
+    queryKey: commsKeys.feed(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<NewsPostListResponse>("/api/comms/feed", {
         method: "GET",
         accessToken: accessToken as string,
         selectedClubId: selectedClubId as string,

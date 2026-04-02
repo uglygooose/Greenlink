@@ -39,6 +39,16 @@ export function AdminPosTerminalPage(): JSX.Element {
     activeCategory === "all"
       ? products
       : products.filter((p) => (p.category ?? "Other") === activeCategory);
+  const tenderOptions: Array<{
+    value: TenderType;
+    icon: string;
+    label: string;
+    disabled?: boolean;
+  }> = [
+    { value: "cash", icon: "payments", label: "Cash" },
+    { value: "card", icon: "credit_card", label: "Card" },
+    { value: "member_account", icon: "account_balance", label: "Account", disabled: true },
+  ];
 
   function addToCart(productId: string | null, itemName: string, unitPrice: string): void {
     setCart((prev) => {
@@ -95,23 +105,28 @@ export function AdminPosTerminalPage(): JSX.Element {
     if (cart.length === 0) return;
     setCheckoutStatus("loading");
     setErrorMsg(null);
+    try {
+      const result = await createTransaction.mutateAsync({
+        items: cart.map((c) => ({
+          product_id: c.product_id,
+          item_name: c.item_name,
+          unit_price: c.unit_price,
+          quantity: c.quantity,
+        })),
+        tender_type: selectedTender,
+      });
 
-    const result = await createTransaction.mutateAsync({
-      items: cart.map((c) => ({
-        product_id: c.product_id,
-        item_name: c.item_name,
-        unit_price: c.unit_price,
-        quantity: c.quantity,
-      })),
-      tender_type: selectedTender,
-    });
+      if (result.decision === "allowed" && result.transaction_applied) {
+        setCheckoutStatus("success");
+        setCart([]);
+        return;
+      }
 
-    if (result.decision === "allowed" && result.transaction_applied) {
-      setCheckoutStatus("success");
-      setCart([]);
-    } else {
       setCheckoutStatus("error");
       setErrorMsg(result.failures.join(", ") || "Transaction failed");
+    } catch (error) {
+      setCheckoutStatus("error");
+      setErrorMsg(error instanceof Error ? error.message : "Transaction failed");
     }
   }
 
@@ -301,29 +316,40 @@ export function AdminPosTerminalPage(): JSX.Element {
                 </div>
 
                 <div className="mb-4 grid grid-cols-3 gap-2">
-                  {(["cash", "card", "member_account"] as TenderType[]).map((tender) => {
-                    const isSelected = selectedTender === tender;
-                    const icon = tender === "cash" ? "payments" : tender === "card" ? "credit_card" : "account_balance";
-                    const label = tender === "member_account" ? "Account" : tender.charAt(0).toUpperCase() + tender.slice(1);
+                  {tenderOptions.map((tender) => {
+                    const isSelected = selectedTender === tender.value;
                     return (
                       <button
                         className={
-                          isSelected
+                          tender.disabled
+                            ? "flex cursor-not-allowed flex-col items-center justify-center rounded-xl bg-surface-container-low py-3 text-outline-variant opacity-50"
+                            : isSelected
                             ? "flex flex-col items-center justify-center rounded-xl border-2 border-primary/20 bg-surface-container-low py-3 transition-colors active:scale-95 hover:bg-surface-container"
                             : "flex flex-col items-center justify-center rounded-xl bg-surface-container-low py-3 transition-colors active:scale-95 hover:bg-surface-container"
                         }
-                        key={tender}
-                        onClick={() => setSelectedTender(tender)}
+                        disabled={tender.disabled}
+                        key={tender.value}
+                        onClick={() => setSelectedTender(tender.value)}
                         type="button"
                       >
-                        <MaterialSymbol className={`mb-1 ${isSelected ? "text-primary" : "text-on-surface"}`} icon={icon} />
-                        <span className={`text-[10px] font-bold uppercase tracking-tight ${isSelected ? "text-primary" : ""}`}>
-                          {label}
+                        <MaterialSymbol
+                          className={`mb-1 ${tender.disabled ? "text-outline-variant" : isSelected ? "text-primary" : "text-on-surface"}`}
+                          icon={tender.icon}
+                        />
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-tight ${
+                            tender.disabled ? "text-outline-variant" : isSelected ? "text-primary" : ""
+                          }`}
+                        >
+                          {tender.label}
                         </span>
                       </button>
                     );
                   })}
                 </div>
+                <p className="mb-4 text-center text-xs text-on-surface-variant">
+                  Member account checkout stays disabled until member lookup is wired into this terminal.
+                </p>
 
                 <button
                   className="flex w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-primary to-primary-dim py-5 text-lg font-bold text-white shadow-lg shadow-primary/20 transition-all active:scale-[0.98] disabled:opacity-50"

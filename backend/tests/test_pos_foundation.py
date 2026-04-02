@@ -184,6 +184,26 @@ def test_list_products_returns_active_only(client: TestClient, db_session: Sessi
     assert "Inactive Item" not in names
 
 
+def test_list_products_can_include_inactive_for_admin_catalog(
+    client: TestClient, db_session: Session
+) -> None:
+    club = _create_club(db_session, name="POS Catalog Club", slug=f"pos-cat-{uuid.uuid4().hex[:6]}")
+    staff_user = _create_user(db_session, email=f"pos_catalog_{uuid.uuid4().hex[:6]}@test.com")
+    _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
+
+    _create_product(db_session, club=club, name="Logo Cap", price=Decimal("25.00"), active=True)
+    _create_product(db_session, club=club, name="Retired Polo", price=Decimal("49.00"), active=False)
+
+    headers = _auth_headers(client, email=staff_user.email)
+    headers["X-Club-Id"] = str(club.id)
+
+    response = client.get("/api/pos/products?include_inactive=true", headers=headers)
+    assert response.status_code == 200
+    names = [p["name"] for p in response.json()]
+    assert "Logo Cap" in names
+    assert "Retired Polo" in names
+
+
 def test_list_products_club_scoped(client: TestClient, db_session: Session) -> None:
     club_a = _create_club(db_session, name="POS Club A", slug=f"pos-a-{uuid.uuid4().hex[:6]}")
     club_b = _create_club(db_session, name="POS Club B", slug=f"pos-b-{uuid.uuid4().hex[:6]}")
@@ -364,6 +384,81 @@ def test_create_pos_transaction_with_product_id(client: TestClient, db_session: 
     assert data["decision"] == "allowed"
     assert data["transaction"]["items"][0]["product_id"] == str(product.id)
     assert data["transaction"]["items"][0]["item_name_snapshot"] == "Golf Glove"
+    assert data["transaction"]["items"][0]["unit_price_snapshot"] == "22.00"
+
+
+def test_create_pos_transaction_uses_canonical_product_details(
+    client: TestClient, db_session: Session
+) -> None:
+    club = _create_club(
+        db_session,
+        name="POS Canonical Club",
+        slug=f"pos-canon-{uuid.uuid4().hex[:6]}",
+    )
+    staff_user = _create_user(db_session, email=f"pos_canon_{uuid.uuid4().hex[:6]}@test.com")
+    _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
+    product = _create_product(db_session, club=club, name="Cart Rental", price=Decimal("35.00"))
+
+    headers = _auth_headers(client, email=staff_user.email)
+    headers["X-Club-Id"] = str(club.id)
+
+    payload = {
+        "items": [
+            {
+                "product_id": str(product.id),
+                "item_name": "Tampered Name",
+                "unit_price": "1.00",
+                "quantity": 2,
+            }
+        ],
+        "tender_type": "cash",
+    }
+    response = client.post("/api/pos/transactions", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "allowed"
+    assert data["transaction"]["total_amount"] == "70.00"
+    assert data["transaction"]["items"][0]["item_name_snapshot"] == "Cart Rental"
+    assert data["transaction"]["items"][0]["unit_price_snapshot"] == "35.00"
+
+
+def test_create_pos_transaction_blocks_inactive_product(
+    client: TestClient, db_session: Session
+) -> None:
+    club = _create_club(
+        db_session,
+        name="POS Inactive Club",
+        slug=f"pos-inactive-{uuid.uuid4().hex[:6]}",
+    )
+    staff_user = _create_user(db_session, email=f"pos_inactive_{uuid.uuid4().hex[:6]}@test.com")
+    _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
+    product = _create_product(
+        db_session,
+        club=club,
+        name="Hidden Marker",
+        price=Decimal("12.00"),
+        active=False,
+    )
+
+    headers = _auth_headers(client, email=staff_user.email)
+    headers["X-Club-Id"] = str(club.id)
+
+    payload = {
+        "items": [
+            {
+                "product_id": str(product.id),
+                "item_name": product.name,
+                "unit_price": "12.00",
+                "quantity": 1,
+            }
+        ],
+        "tender_type": "cash",
+    }
+    response = client.post("/api/pos/transactions", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "blocked"
+    assert any("inactive" in failure.lower() for failure in data["failures"])
 
 
 def test_create_pos_transaction_line_totals(client: TestClient, db_session: Session) -> None:

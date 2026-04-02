@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.datetime import utc_now
 from app.core.exceptions import NotFoundError
 from app.models.enums import NewsPostStatus
+from app.models.enums import NewsPostVisibility
 from app.models.news_post import NewsPost
 from app.models.person import Person
 from app.schemas.comms import (
@@ -62,6 +63,30 @@ class NewsPostService:
             stmt = stmt.where(NewsPost.status == status)
 
         posts = list(self.db.scalars(stmt).all())
+        return NewsPostListResponse(
+            posts=[_to_response(p) for p in posts],
+            total_count=len(posts),
+        )
+
+    def list_published_feed(self, *, club_id: uuid.UUID) -> NewsPostListResponse:
+        posts = list(
+            self.db.scalars(
+                select(NewsPost)
+                .where(
+                    NewsPost.club_id == club_id,
+                    NewsPost.status == NewsPostStatus.PUBLISHED,
+                    NewsPost.visibility.in_(
+                        [NewsPostVisibility.PUBLIC, NewsPostVisibility.MEMBERS_ONLY]
+                    ),
+                )
+                .options(selectinload(NewsPost.author))
+                .order_by(
+                    NewsPost.pinned.desc(),
+                    NewsPost.published_at.desc(),
+                    NewsPost.created_at.desc(),
+                )
+            ).all()
+        )
         return NewsPostListResponse(
             posts=[_to_response(p) for p in posts],
             total_count=len(posts),

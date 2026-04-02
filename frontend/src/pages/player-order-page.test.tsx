@@ -10,6 +10,7 @@ import type { OrderCreateResult, OrderMenuItem } from "../types/orders";
 
 const mockUseSession = vi.fn();
 const mockUseOrderMenuQuery = vi.fn();
+const mockUsePublishedNewsFeedQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -17,6 +18,10 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/orders/hooks", () => ({
   useOrderMenuQuery: () => mockUseOrderMenuQuery(),
+}));
+
+vi.mock("../features/comms/hooks", () => ({
+  usePublishedNewsFeedQuery: () => mockUsePublishedNewsFeedQuery(),
 }));
 
 vi.mock("../api/operations", () => ({
@@ -129,6 +134,15 @@ describe("Player ordering flow", () => {
           unit_price: "18.00",
         }),
       ],
+      isLoading: false,
+      error: null,
+    });
+
+    mockUsePublishedNewsFeedQuery.mockReturnValue({
+      data: {
+        posts: [],
+        total_count: 0,
+      },
       isLoading: false,
       error: null,
     });
