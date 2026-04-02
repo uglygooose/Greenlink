@@ -8,7 +8,8 @@ const NAV_ITEMS = [
   { label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
   { label: "Members",   icon: "group",           href: "/admin/members" },
   { label: "Finance",   icon: "payments",        href: "/admin/finance" },
-  { label: "Inventory", icon: "inventory_2",     href: "/admin/inventory" },
+  { label: "Pro Shop",  icon: "store",           href: "/admin/pro-shop" },
+  { label: "Halfway",   icon: "storefront",      href: "/admin/halfway" },
   { label: "Comms",     icon: "chat_bubble",     href: "/admin/communications" },
   { label: "Reports",   icon: "analytics",       href: "/admin/reports" },
 ];

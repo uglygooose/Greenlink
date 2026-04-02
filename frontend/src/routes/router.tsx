@@ -3,6 +3,7 @@ import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom"
 import { ProtectedRoute } from "../components/protected-route";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
+import { AdminHalfwayPage } from "../pages/admin-halfway-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
@@ -47,6 +48,7 @@ const router = createBrowserRouter([
       { path: "members", element: <AdminMembersPage /> },
       { path: "finance", element: <AdminFinancePage /> },
       { path: "communications", element: <AdminCommunicationsPage /> },
+      { path: "halfway", element: <AdminHalfwayPage /> },
       { path: "pos-terminal", element: <AdminPosTerminalPage /> },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },
     ],

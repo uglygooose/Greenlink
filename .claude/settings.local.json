@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -3.12 -m uv run pytest tests/test_order_foundation.py -v --tb=short)",
+      "Bash(ls c:/Users/athom/Documents/Projects/GreenLink/backend/app/models/order*.py c:/Users/athom/Documents/Projects/GreenLink/backend/app/services/order_service.py c:/Users/athom/Documents/Projects/GreenLink/backend/app/api/orders/routes.py)",
+      "Bash(find c:/Users/athom/Documents/Projects/GreenLink/frontend/src -name player* -o -name *player*)",
+      "Bash(npx vitest:*)",
+      "Bash(py -3.12 -m uv run python -c \":*)",
+      "Bash(py -3.12 -m uv run pytest tests/ -q)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc:*)",
+      "Bash(py -3.12 -m uv run alembic upgrade head)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s http://localhost:8000/api/health/live)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:5173 -o /dev/null -w \"%{http_code}\")",
+      "Bash(grep -rn \"password\\\\|admin@\\\\|member@\\\\|staff@\\\\|superadmin@\" /c/Users/athom/Documents/Projects/GreenLink/backend/ --include=*.py -l)",
+      "Bash(py -3.12 -m uv run python -m app.scripts.seed_users)",
+      "Bash(find /c/Users/athom/Documents/Projects/GreenLink/.claude/worktrees/agent-ab068919 -name admin-*.tsx)"
+    ]
+  }
+}
