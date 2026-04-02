@@ -4,6 +4,8 @@ import { ProtectedRoute } from "../components/protected-route";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
+import { AdminProShopPage } from "../pages/admin-pro-shop-page";
+import { AdminReportsPage } from "../pages/admin-reports-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
@@ -49,6 +51,8 @@ const router = createBrowserRouter([
       { path: "finance", element: <AdminFinancePage /> },
       { path: "communications", element: <AdminCommunicationsPage /> },
       { path: "halfway", element: <AdminHalfwayPage /> },
+      { path: "pro-shop", element: <AdminProShopPage /> },
+      { path: "reports", element: <AdminReportsPage /> },
       { path: "pos-terminal", element: <AdminPosTerminalPage /> },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },
     ],

@@ -8,7 +8,7 @@ import type { FinanceTransactionType } from "../types/finance";
 function formatAmount(amount: string): string {
   const n = parseFloat(amount);
   const abs = Math.abs(n).toFixed(2);
-  return n < 0 ? `-$${abs}` : `$${abs}`;
+  return n < 0 ? `-R${abs}` : `R${abs}`;
 }
 
 function formatDate(iso: string): string {
@@ -57,6 +57,10 @@ export function AdminFinancePage(): JSX.Element {
   const unpaidCount = accounts.filter((a) => parseFloat(a.balance) < 0).length;
   const totalTxCount = accounts.reduce((sum, a) => sum + a.transaction_count, 0);
 
+  const totalCollected = (journal?.entries ?? [])
+    .filter((e) => e.type === "payment")
+    .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+
   return (
     <AdminShell title="Cashbook Flow" searchPlaceholder="Search transactions...">
         <div className="p-8">
@@ -72,7 +76,7 @@ export function AdminFinancePage(): JSX.Element {
                   <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
                 ) : (
                   <>
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">${totalUnpaid}</span>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">R{totalUnpaid}</span>
                     <span className="text-xs font-medium text-error">{unpaidCount} accounts</span>
                   </>
                 )}
@@ -98,16 +102,19 @@ export function AdminFinancePage(): JSX.Element {
 
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Accounting Status</span>
-                <MaterialSymbol className="text-secondary" icon="verified_user" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Collected</span>
+                <MaterialSymbol className="text-secondary" icon="price_check" />
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-on-surface">Synced with Xero</span>
-                <span className="rounded-full bg-secondary-container px-2 py-0.5 text-[10px] font-bold uppercase text-on-secondary-container">
-                  Live
-                </span>
+              <div className="flex items-baseline gap-2">
+                {journalQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">R{totalCollected.toFixed(2)}</span>
+                    <span className="text-xs font-medium text-secondary">payments</span>
+                  </>
+                )}
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">Last automated sync: 14 mins ago</p>
             </div>
           </div>
 
