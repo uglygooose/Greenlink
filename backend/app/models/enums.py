@@ -129,6 +129,17 @@ class FinanceTransactionSource(StrEnum):
     MANUAL = "manual"
 
 
+class FinanceExportProfile(StrEnum):
+    JOURNAL_BASIC = "journal_basic"
+
+
+class FinanceExportBatchStatus(StrEnum):
+    DRAFT = "draft"
+    GENERATED = "generated"
+    EXPORTED = "exported"
+    VOID = "void"
+
+
 class OrderSource(StrEnum):
     PLAYER_APP = "player_app"
     STAFF = "staff"

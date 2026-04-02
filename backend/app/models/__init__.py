@@ -23,6 +23,8 @@ from app.models.enums import (
     ClubMembershipRole,
     ClubMembershipStatus,
     FinanceAccountStatus,
+    FinanceExportBatchStatus,
+    FinanceExportProfile,
     FinanceTransactionSource,
     FinanceTransactionType,
     IntegrityIssueScope,
@@ -39,6 +41,7 @@ from app.models.enums import (
 )
 from app.models.news_post import NewsPost
 from app.models.finance.account import FinanceAccount
+from app.models.finance.export_batch import FinanceExportBatch
 from app.models.finance.transaction import FinanceTransaction
 from app.models.order import Order
 from app.models.order_item import OrderItem
@@ -78,6 +81,9 @@ __all__ = [
     "DomainEventRecord",
     "FinanceAccount",
     "FinanceAccountStatus",
+    "FinanceExportBatch",
+    "FinanceExportBatchStatus",
+    "FinanceExportProfile",
     "FinanceTransaction",
     "FinanceTransactionSource",
     "FinanceTransactionType",
