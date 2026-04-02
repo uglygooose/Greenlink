@@ -3,18 +3,22 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enums import StartLane
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class TeeSheetSlotState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "tee_sheet_slot_states"
     __table_args__ = (
-        UniqueConstraint("course_id", "tee_id", "slot_datetime", name="uq_tee_sheet_slot_states_scope_slot"),
+        UniqueConstraint(
+            "course_id", "tee_id", "start_lane", "slot_datetime",
+            name="uq_tee_sheet_slot_states_scope_slot",
+        ),
     )
 
     club_id: Mapped[uuid.UUID] = mapped_column(
@@ -26,6 +30,7 @@ class TeeSheetSlotState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tees.id", ondelete="CASCADE"))
+    start_lane: Mapped[StartLane | None] = mapped_column(Enum(StartLane), nullable=True)
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     player_capacity: Mapped[int | None] = mapped_column(Integer)
     occupied_player_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

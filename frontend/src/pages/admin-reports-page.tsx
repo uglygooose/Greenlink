@@ -3,15 +3,19 @@ import { NavLink } from "react-router-dom";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
-import { useFinanceAccountsQuery, useFinanceJournalQuery } from "../features/finance/hooks";
+import {
+  useFinanceOutstandingSummaryQuery,
+  useFinanceRevenueSummaryQuery,
+  useFinanceTransactionVolumeSummaryQuery,
+} from "../features/finance/hooks";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
 import type { FinanceTransactionSource, FinanceTransactionType } from "../types/finance";
 
-function formatR(amount: number): string {
-  return `R${Math.abs(amount).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatR(amount: string): string {
+  return `R${Math.abs(parseFloat(amount)).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const SOURCE_META: Record<FinanceTransactionSource, { label: string; icon: string; color: string }> = {
@@ -33,54 +37,41 @@ export function AdminReportsPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
 
-  const journalQuery   = useFinanceJournalQuery({ accessToken, selectedClubId });
-  const accountsQuery  = useFinanceAccountsQuery({ accessToken, selectedClubId });
+  const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
+  const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
+  const transactionVolumeSummaryQuery = useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId });
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
-  const ordersQuery    = useOrdersQuery({ accessToken, selectedClubId, status: null });
-  const coursesQuery   = useCoursesQuery({ accessToken, selectedClubId });
+  const ordersQuery = useOrdersQuery({ accessToken, selectedClubId, status: null });
+  const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
 
-  const entries  = journalQuery.data?.entries ?? [];
-  const accounts = accountsQuery.data ?? [];
-  const members  = directoryQuery.data ?? [];
-  const orders   = ordersQuery.data ?? [];
+  const revenuePeriod = revenueSummaryQuery.data?.month;
+  const transactionVolumePeriod = transactionVolumeSummaryQuery.data?.month;
+  const outstandingSummary = outstandingSummaryQuery.data;
+  const members = directoryQuery.data ?? [];
+  const orders = ordersQuery.data ?? [];
 
-  // Revenue by source (charges only)
-  const chargeEntries = entries.filter((e) => e.type === "charge");
-  const revenueBySource = (Object.keys(SOURCE_META) as FinanceTransactionSource[]).map((source) => {
-    const sourceEntries = chargeEntries.filter((e) => e.source === source);
-    const total = sourceEntries.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-    return { source, total, count: sourceEntries.length };
-  }).filter((r) => r.count > 0);
+  const revenueBySource = revenuePeriod?.by_source ?? [];
+  const maxRevenue = Math.max(
+    ...revenueBySource.map((item) => parseFloat(item.total_revenue)),
+    1,
+  );
 
-  const totalRevenue = revenueBySource.reduce((sum, r) => sum + r.total, 0);
-  const maxRevenue   = Math.max(...revenueBySource.map((r) => r.total), 1);
+  const transactionTypes = transactionVolumePeriod?.by_type ?? [];
+  const maxTransactionVolume = Math.max(
+    ...transactionTypes.map((item) => parseFloat(item.total_absolute_amount)),
+    1,
+  );
 
-  // Transaction type breakdown
-  const txByType = (Object.keys(TYPE_META) as FinanceTransactionType[]).map((type) => {
-    const typeEntries = entries.filter((e) => e.type === type);
-    const total = typeEntries.reduce((sum, e) => sum + Math.abs(parseFloat(e.amount)), 0);
-    return { type, total, count: typeEntries.length };
-  }).filter((r) => r.count > 0);
-
-  const maxTx = Math.max(...txByType.map((r) => r.total), 1);
-
-  // Member role breakdown
-  const adminCount = members.filter((m) => m.membership.role === "CLUB_ADMIN").length;
-  const staffCount = members.filter((m) => m.membership.role === "CLUB_STAFF").length;
+  const adminCount = members.filter((member) => member.membership.role === "CLUB_ADMIN").length;
+  const staffCount = members.filter((member) => member.membership.role === "CLUB_STAFF").length;
   const memberOnlyCount = members.length - adminCount - staffCount;
 
-  // Order status breakdown
   const ordersByStatus = ["placed", "preparing", "ready", "collected", "cancelled"].map((status) => ({
     status,
-    count: orders.filter((o) => o.status === status).length,
-  })).filter((o) => o.count > 0);
+    count: orders.filter((order) => order.status === status).length,
+  })).filter((order) => order.count > 0);
 
   const totalOrders = orders.length;
-
-  // Accounts health
-  const inArrears    = accounts.filter((a) => parseFloat(a.balance) < 0).length;
-  const inCredit     = accounts.filter((a) => parseFloat(a.balance) > 0).length;
-  const zero         = accounts.filter((a) => parseFloat(a.balance) === 0).length;
 
   return (
     <AdminShell title="Reports" searchPlaceholder="Search reports...">
@@ -88,83 +79,82 @@ export function AdminReportsPage(): JSX.Element {
         description="Cross-module finance, membership, and order reporting from live operational data."
         kpis={
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Revenue</span>
-              <MaterialSymbol className="text-primary" icon="payments" />
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Revenue</span>
+                <MaterialSymbol className="text-primary" icon="payments" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {revenueSummaryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">â€”</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {formatR(revenuePeriod?.total_revenue ?? "0.00")}
+                    </span>
+                    <span className="text-xs font-medium text-primary">{revenuePeriod?.charge_count ?? 0} charges</span>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              {journalQuery.isLoading ? (
-                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
-              ) : (
-                <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{formatR(totalRevenue)}</span>
-                  <span className="text-xs font-medium text-primary">{chargeEntries.length} charges</span>
-                </>
-              )}
-            </div>
-          </div>
 
-          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Members</span>
-              <MaterialSymbol className="text-secondary" icon="group" />
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Members</span>
+                <MaterialSymbol className="text-secondary" icon="group" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {directoryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">â€”</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{members.length}</span>
+                    <span className="text-xs font-medium text-secondary">{coursesQuery.data?.length ?? 0} courses</span>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              {directoryQuery.isLoading ? (
-                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
-              ) : (
-                <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{members.length}</span>
-                  <span className="text-xs font-medium text-secondary">{coursesQuery.data?.length ?? 0} courses</span>
-                </>
-              )}
-            </div>
-          </div>
 
-          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Orders</span>
-              <MaterialSymbol className="text-emerald-500" icon="receipt_long" />
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Orders</span>
+                <MaterialSymbol className="text-emerald-500" icon="receipt_long" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {ordersQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">â€”</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{totalOrders}</span>
+                    <span className="text-xs font-medium text-emerald-600">
+                      {orders.filter((order) => order.status === "collected").length} collected
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              {ordersQuery.isLoading ? (
-                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
-              ) : (
-                <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{totalOrders}</span>
-                  <span className="text-xs font-medium text-emerald-600">
-                    {orders.filter((o) => o.status === "collected").length} collected
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
 
-          <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Finance Accounts</span>
-              <MaterialSymbol className="text-error" icon="account_balance" />
+            <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Finance Accounts</span>
+                <MaterialSymbol className="text-error" icon="account_balance" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {outstandingSummaryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">â€”</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{outstandingSummary?.total_accounts ?? 0}</span>
+                    <span className="text-xs font-medium text-error">{outstandingSummary?.accounts_in_arrears ?? 0} in arrears</span>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              {accountsQuery.isLoading ? (
-                <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
-              ) : (
-                <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{accounts.length}</span>
-                  <span className="text-xs font-medium text-error">{inArrears} in arrears</span>
-                </>
-              )}
-            </div>
-          </div>
           </div>
         }
         title="Reports"
       >
-
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-
-          {/* Revenue by Source */}
           <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="font-headline text-base font-bold text-on-surface">Revenue by Source</h3>
@@ -172,82 +162,76 @@ export function AdminReportsPage(): JSX.Element {
                 Full Journal
               </NavLink>
             </div>
-            {journalQuery.isLoading ? (
-              <div className="space-y-3">{[1,2,3].map((i) => <div className="h-8 animate-pulse rounded bg-slate-100" key={i} />)}</div>
+            {revenueSummaryQuery.isLoading ? (
+              <div className="space-y-3">{[1, 2, 3].map((item) => <div className="h-8 animate-pulse rounded bg-slate-100" key={item} />)}</div>
             ) : revenueBySource.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">No revenue data yet.</p>
             ) : (
               <div className="space-y-4">
-                {revenueBySource
-                  .sort((a, b) => b.total - a.total)
-                  .map(({ source, total, count }) => {
-                    const meta = SOURCE_META[source];
-                    return (
-                      <div key={source}>
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <MaterialSymbol className="text-sm text-slate-500" icon={meta.icon} />
-                            <span className="text-sm font-semibold text-on-surface">{meta.label}</span>
-                            <span className="text-[10px] text-slate-400">{count} entries</span>
-                          </div>
-                          <span className="text-sm font-bold text-on-surface">{formatR(total)}</span>
+                {revenueBySource.map(({ source, total_revenue, charge_count }) => {
+                  const meta = SOURCE_META[source];
+                  return (
+                    <div key={source}>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MaterialSymbol className="text-sm text-slate-500" icon={meta.icon} />
+                          <span className="text-sm font-semibold text-on-surface">{meta.label}</span>
+                          <span className="text-[10px] text-slate-400">{charge_count} entries</span>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className={`h-full rounded-full ${meta.color} transition-all`}
-                            style={{ width: `${(total / maxRevenue) * 100}%` }}
-                          />
-                        </div>
+                        <span className="text-sm font-bold text-on-surface">{formatR(total_revenue)}</span>
                       </div>
-                    );
-                  })}
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${meta.color} transition-all`}
+                          style={{ width: `${(parseFloat(total_revenue) / maxRevenue) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
                 <div className="border-t border-slate-100 pt-3">
                   <div className="flex items-center justify-between text-sm font-bold text-on-surface">
                     <span>Total</span>
-                    <span>{formatR(totalRevenue)}</span>
+                    <span>{formatR(revenuePeriod?.total_revenue ?? "0.00")}</span>
                   </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Transaction Type Breakdown */}
           <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
             <h3 className="mb-5 font-headline text-base font-bold text-on-surface">Transaction Types</h3>
-            {journalQuery.isLoading ? (
-              <div className="space-y-3">{[1,2,3].map((i) => <div className="h-8 animate-pulse rounded bg-slate-100" key={i} />)}</div>
-            ) : txByType.length === 0 ? (
+            {transactionVolumeSummaryQuery.isLoading ? (
+              <div className="space-y-3">{[1, 2, 3].map((item) => <div className="h-8 animate-pulse rounded bg-slate-100" key={item} />)}</div>
+            ) : transactionTypes.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">No transactions yet.</p>
             ) : (
               <div className="space-y-4">
-                {txByType
-                  .sort((a, b) => b.count - a.count)
-                  .map(({ type, total, count }) => {
-                    const meta = TYPE_META[type];
-                    return (
-                      <div key={type}>
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${meta.color}`} />
-                            <span className="text-sm font-semibold text-on-surface">{meta.label}</span>
-                            <span className="text-[10px] text-slate-400">{count}</span>
-                          </div>
-                          <span className="text-sm font-bold text-on-surface">{formatR(total)}</span>
+                {transactionTypes.map(({ type, total_absolute_amount, transaction_count }) => {
+                  const meta = TYPE_META[type];
+                  return (
+                    <div key={type}>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${meta.color}`} />
+                          <span className="text-sm font-semibold text-on-surface">{meta.label}</span>
+                          <span className="text-[10px] text-slate-400">{transaction_count}</span>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className={`h-full rounded-full ${meta.color} transition-all`}
-                            style={{ width: `${(total / maxTx) * 100}%` }}
-                          />
-                        </div>
+                        <span className="text-sm font-bold text-on-surface">{formatR(total_absolute_amount)}</span>
                       </div>
-                    );
-                  })}
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${meta.color} transition-all`}
+                          style={{ width: `${(parseFloat(total_absolute_amount) / maxTransactionVolume) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Member Directory Breakdown */}
           <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="font-headline text-base font-bold text-on-surface">Member Breakdown</h3>
@@ -256,14 +240,14 @@ export function AdminReportsPage(): JSX.Element {
               </NavLink>
             </div>
             {directoryQuery.isLoading ? (
-              <div className="space-y-3">{[1,2,3].map((i) => <div className="h-8 animate-pulse rounded bg-slate-100" key={i} />)}</div>
+              <div className="space-y-3">{[1, 2, 3].map((item) => <div className="h-8 animate-pulse rounded bg-slate-100" key={item} />)}</div>
             ) : (
               <div className="space-y-4">
                 {[
                   { label: "Members", count: memberOnlyCount, color: "bg-primary" },
                   { label: "Staff",   count: staffCount,      color: "bg-secondary" },
                   { label: "Admins",  count: adminCount,      color: "bg-tertiary" },
-                ].filter((r) => r.count > 0).map(({ label, count, color }) => (
+                ].filter((row) => row.count > 0).map(({ label, count, color }) => (
                   <div key={label}>
                     <div className="mb-1.5 flex items-center justify-between">
                       <span className="text-sm font-semibold text-on-surface">{label}</span>
@@ -287,7 +271,6 @@ export function AdminReportsPage(): JSX.Element {
             )}
           </div>
 
-          {/* Account Health */}
           <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="font-headline text-base font-bold text-on-surface">Account Health</h3>
@@ -295,14 +278,14 @@ export function AdminReportsPage(): JSX.Element {
                 Resolve
               </NavLink>
             </div>
-            {accountsQuery.isLoading ? (
-              <div className="space-y-3">{[1,2,3].map((i) => <div className="h-8 animate-pulse rounded bg-slate-100" key={i} />)}</div>
+            {outstandingSummaryQuery.isLoading ? (
+              <div className="space-y-3">{[1, 2, 3].map((item) => <div className="h-8 animate-pulse rounded bg-slate-100" key={item} />)}</div>
             ) : (
               <div className="space-y-4">
                 {[
-                  { label: "In Credit",  count: inCredit,  color: "bg-emerald-500" },
-                  { label: "Zero Balance", count: zero,    color: "bg-slate-300" },
-                  { label: "In Arrears", count: inArrears, color: "bg-error" },
+                  { label: "In Credit", count: outstandingSummary?.accounts_in_credit ?? 0, color: "bg-emerald-500" },
+                  { label: "Zero Balance", count: outstandingSummary?.accounts_settled ?? 0, color: "bg-slate-300" },
+                  { label: "In Arrears", count: outstandingSummary?.accounts_in_arrears ?? 0, color: "bg-error" },
                 ].map(({ label, count, color }) => (
                   <div key={label}>
                     <div className="mb-1.5 flex items-center justify-between">
@@ -312,7 +295,7 @@ export function AdminReportsPage(): JSX.Element {
                     <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                       <div
                         className={`h-full rounded-full ${color} transition-all`}
-                        style={{ width: `${accounts.length > 0 ? (count / accounts.length) * 100 : 0}%` }}
+                        style={{ width: `${(outstandingSummary?.total_accounts ?? 0) > 0 ? (count / (outstandingSummary?.total_accounts ?? 1)) * 100 : 0}%` }}
                       />
                     </div>
                   </div>
@@ -320,7 +303,7 @@ export function AdminReportsPage(): JSX.Element {
                 <div className="border-t border-slate-100 pt-3">
                   <div className="flex justify-between text-sm font-bold text-on-surface">
                     <span>Total Accounts</span>
-                    <span>{accounts.length}</span>
+                    <span>{outstandingSummary?.total_accounts ?? 0}</span>
                   </div>
                 </div>
               </div>
@@ -328,7 +311,6 @@ export function AdminReportsPage(): JSX.Element {
           </div>
         </div>
 
-        {/* Order status summary */}
         {ordersByStatus.length > 0 && (
           <div className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm border border-slate-100">
             <div className="mb-5 flex items-center justify-between">
@@ -347,7 +329,6 @@ export function AdminReportsPage(): JSX.Element {
             </div>
           </div>
         )}
-
       </AdminWorkspace>
     </AdminShell>
   );

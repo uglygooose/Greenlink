@@ -12,11 +12,14 @@ import type {
   FinanceAccountLedger,
   FinanceAccountSummary,
   FinanceClubJournal,
+  FinanceOutstandingSummary,
+  FinanceRevenueSummary,
   FinanceExportBatchCreateInput,
   FinanceExportBatchCreateResult,
   FinanceExportBatchDetail,
   FinanceExportBatchListResponse,
   FinanceExportBatchVoidResult,
+  FinanceTransactionVolumeSummary,
 } from "../../types/finance";
 
 function isReady(accessToken: string | null, selectedClubId: string | null): boolean {
@@ -31,6 +34,9 @@ interface FinanceQueryOptions {
 export const financeKeys = {
   accounts: (clubId: string) => ["finance", clubId, "accounts"] as const,
   journal: (clubId: string) => ["finance", clubId, "journal"] as const,
+  revenueSummary: (clubId: string) => ["finance", clubId, "summary", "revenue"] as const,
+  outstandingSummary: (clubId: string) => ["finance", clubId, "summary", "outstanding"] as const,
+  transactionVolumeSummary: (clubId: string) => ["finance", clubId, "summary", "transaction-volume"] as const,
   ledger: (clubId: string, accountId: string) => ["finance", clubId, "ledger", accountId] as const,
   exportBatches: (clubId: string) => ["finance", clubId, "export-batches"] as const,
   accountingProfiles: (clubId: string) => ["finance", clubId, "accounting-profiles"] as const,
@@ -58,6 +64,45 @@ export function useFinanceJournalQuery({ accessToken, selectedClubId }: FinanceQ
     queryKey: financeKeys.journal(selectedClubId ?? "none"),
     queryFn: () =>
       apiRequest<FinanceClubJournal>("/api/finance/journal", {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useFinanceRevenueSummaryQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
+  return useQuery<FinanceRevenueSummary>({
+    queryKey: financeKeys.revenueSummary(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<FinanceRevenueSummary>("/api/finance/summaries/revenue", {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
+  return useQuery<FinanceOutstandingSummary>({
+    queryKey: financeKeys.outstandingSummary(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<FinanceOutstandingSummary>("/api/finance/summaries/outstanding", {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
+  return useQuery<FinanceTransactionVolumeSummary>({
+    queryKey: financeKeys.transactionVolumeSummary(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<FinanceTransactionVolumeSummary>("/api/finance/summaries/transaction-volume", {
         method: "GET",
         accessToken: accessToken as string,
         selectedClubId: selectedClubId as string,

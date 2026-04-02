@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -13,6 +14,7 @@ from app.models import (
     FinanceTransactionSource,
     FinanceTransactionType,
 )
+from app.models.enums import TenderType
 
 
 class FinanceTransactionCreateRequest(BaseModel):
@@ -55,6 +57,22 @@ class FinanceTransactionCreateResult(BaseModel):
     balance: Decimal
 
 
+class FinanceTenderRecordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    club_id: uuid.UUID
+    account_id: uuid.UUID
+    source: FinanceTransactionSource
+    reference_id: uuid.UUID | None = None
+    tender_type: TenderType
+    amount: Decimal
+    charge_transaction_id: uuid.UUID | None = None
+    settlement_transaction_id: uuid.UUID | None = None
+    description: str
+    created_at: datetime
+
+
 class FinanceLedgerEntryResponse(FinanceTransactionResponse):
     running_balance: Decimal
 
@@ -93,6 +111,69 @@ class FinanceJournalEntryResponse(FinanceTransactionResponse):
 class FinanceClubJournalResponse(BaseModel):
     entries: list[FinanceJournalEntryResponse]
     total_count: int
+
+
+class FinanceSummaryPeriod(StrEnum):
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+
+
+class FinanceSummaryWindowResponse(BaseModel):
+    period: FinanceSummaryPeriod
+    date_from: date
+    date_to: date
+
+
+class FinanceRevenueSourceSummaryResponse(BaseModel):
+    source: FinanceTransactionSource
+    total_revenue: Decimal
+    charge_count: int
+
+
+class FinanceRevenuePeriodSummaryResponse(FinanceSummaryWindowResponse):
+    total_revenue: Decimal
+    operational_revenue: Decimal
+    charge_count: int
+    by_source: list[FinanceRevenueSourceSummaryResponse]
+
+
+class FinanceRevenueSummaryResponse(BaseModel):
+    timezone: str
+    reference_datetime: datetime
+    day: FinanceRevenuePeriodSummaryResponse
+    week: FinanceRevenuePeriodSummaryResponse
+    month: FinanceRevenuePeriodSummaryResponse
+
+
+class FinanceTransactionVolumeTypeSummaryResponse(BaseModel):
+    type: FinanceTransactionType
+    transaction_count: int
+    total_absolute_amount: Decimal
+
+
+class FinanceTransactionVolumePeriodSummaryResponse(FinanceSummaryWindowResponse):
+    total_transaction_count: int
+    by_type: list[FinanceTransactionVolumeTypeSummaryResponse]
+
+
+class FinanceTransactionVolumeSummaryResponse(BaseModel):
+    timezone: str
+    reference_datetime: datetime
+    day: FinanceTransactionVolumePeriodSummaryResponse
+    week: FinanceTransactionVolumePeriodSummaryResponse
+    month: FinanceTransactionVolumePeriodSummaryResponse
+
+
+class FinanceOutstandingSummaryResponse(BaseModel):
+    total_accounts: int
+    accounts_in_arrears: int
+    accounts_in_credit: int
+    accounts_settled: int
+    total_outstanding_amount: Decimal
+    unpaid_order_postings_count: int
+    unpaid_order_postings_amount: Decimal
+    pending_items_count: int
 
 
 class FinanceExportBatchPreviewRow(BaseModel):

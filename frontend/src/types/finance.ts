@@ -1,6 +1,7 @@
 export type FinanceAccountStatus = "active" | "suspended" | "closed";
 export type FinanceTransactionType = "charge" | "payment" | "adjustment" | "refund";
 export type FinanceTransactionSource = "booking" | "pos" | "order" | "manual" | "settlement";
+export type FinanceSummaryPeriod = "day" | "week" | "month";
 
 export interface FinanceAccountCustomerSummary {
   id: string;
@@ -34,6 +35,63 @@ export interface FinanceJournalEntry {
 export interface FinanceClubJournal {
   entries: FinanceJournalEntry[];
   total_count: number;
+}
+
+export interface FinanceSummaryWindow {
+  period: FinanceSummaryPeriod;
+  date_from: string;
+  date_to: string;
+}
+
+export interface FinanceRevenueSourceSummary {
+  source: FinanceTransactionSource;
+  total_revenue: string;
+  charge_count: number;
+}
+
+export interface FinanceRevenuePeriodSummary extends FinanceSummaryWindow {
+  total_revenue: string;
+  operational_revenue: string;
+  charge_count: number;
+  by_source: FinanceRevenueSourceSummary[];
+}
+
+export interface FinanceRevenueSummary {
+  timezone: string;
+  reference_datetime: string;
+  day: FinanceRevenuePeriodSummary;
+  week: FinanceRevenuePeriodSummary;
+  month: FinanceRevenuePeriodSummary;
+}
+
+export interface FinanceTransactionVolumeTypeSummary {
+  type: FinanceTransactionType;
+  transaction_count: number;
+  total_absolute_amount: string;
+}
+
+export interface FinanceTransactionVolumePeriodSummary extends FinanceSummaryWindow {
+  total_transaction_count: number;
+  by_type: FinanceTransactionVolumeTypeSummary[];
+}
+
+export interface FinanceTransactionVolumeSummary {
+  timezone: string;
+  reference_datetime: string;
+  day: FinanceTransactionVolumePeriodSummary;
+  week: FinanceTransactionVolumePeriodSummary;
+  month: FinanceTransactionVolumePeriodSummary;
+}
+
+export interface FinanceOutstandingSummary {
+  total_accounts: number;
+  accounts_in_arrears: number;
+  accounts_in_credit: number;
+  accounts_settled: number;
+  total_outstanding_amount: string;
+  unpaid_order_postings_count: number;
+  unpaid_order_postings_amount: string;
+  pending_items_count: number;
 }
 
 export interface FinanceLedgerEntry extends FinanceJournalEntry {

@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session, selectinload
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
+    Booking,
+    BookingPaymentStatus,
     FinanceAccount,
     FinanceAccountStatus,
+    FinanceTenderRecord,
     FinanceTransaction,
     FinanceTransactionSource,
     FinanceTransactionType,
@@ -25,6 +28,7 @@ from app.schemas.order_settlement import (
     OrderSettlementResult,
     OrderSettlementTransactionDetail,
 )
+from app.schemas.orders import OrderTenderRecordDetail
 from app.services.finance.ledger_service import LedgerService
 from app.services.order_service import OrderService
 
@@ -50,30 +54,11 @@ class OrderSettlementService:
                 failures=["order_id was not found in the selected club"],
             )
 
-        if order.finance_payment_transaction_id is not None:
-            transaction = self._load_transaction(
+        if order.finance_tender_record_id is not None:
+            return self._return_existing_tender_state(
                 club_id=club_id,
-                transaction_id=order.finance_payment_transaction_id,
-            )
-            if transaction is None:
-                return OrderSettlementResult(
-                    decision="blocked",
-                    settlement_applied=False,
-                    order=self._to_settlement_order_detail(order, tender_type=None),
-                    failures=["Linked finance payment transaction was not found for this order"],
-                )
-
-            tender_type = self._extract_tender_type(transaction.description)
-            return OrderSettlementResult(
-                decision="allowed",
-                settlement_applied=False,
-                order=self._to_settlement_order_detail(order, tender_type=tender_type),
-                transaction=self._to_settlement_transaction_detail(
-                    transaction,
-                    tender_type=tender_type,
-                ),
-                balance=self._compute_balance(club_id=club_id, account_id=transaction.account_id),
-                failures=[],
+                order=order,
+                requested_tender_type=payload.tender_type,
             )
 
         if order.status != OrderStatus.COLLECTED:
@@ -122,28 +107,65 @@ class OrderSettlementService:
             )
 
         settlement_amount = abs(charge_transaction.amount)
-        created = self.ledger_service.create_transaction(
+        tender_record = FinanceTenderRecord(
             club_id=club_id,
-            payload=FinanceTransactionCreateRequest(
-                account_id=finance_account.id,
-                amount=settlement_amount,
-                type=FinanceTransactionType.PAYMENT,
-                source=FinanceTransactionSource.ORDER,
-                reference_id=order.id,
-                description=f"Payment for order {order.id} - {payload.tender_type.value}",
-            ),
+            account_id=finance_account.id,
+            source=FinanceTransactionSource.ORDER,
+            reference_id=order.id,
+            tender_type=payload.tender_type,
+            amount=settlement_amount,
+            charge_transaction_id=charge_transaction.id,
+            description=f"Tender for order {order.id} - {payload.tender_type.value}",
         )
+        self.db.add(tender_record)
+        self.db.flush()
 
-        order.finance_payment_transaction_id = created.transaction.id
+        payment_transaction = None
+        settlement_applied = False
+        if payload.tender_type != TenderType.MEMBER_ACCOUNT:
+            created = self.ledger_service.create_transaction(
+                club_id=club_id,
+                payload=FinanceTransactionCreateRequest(
+                    account_id=finance_account.id,
+                    amount=settlement_amount,
+                    type=FinanceTransactionType.PAYMENT,
+                    source=FinanceTransactionSource.ORDER,
+                    reference_id=order.id,
+                    description=f"Payment for order {order.id} - {payload.tender_type.value}",
+                ),
+            )
+            payment_transaction = self._load_transaction(
+                club_id=club_id,
+                transaction_id=created.transaction.id,
+            )
+            tender_record.settlement_transaction_id = created.transaction.id
+            order.finance_payment_transaction_id = created.transaction.id
+            settlement_applied = True
+
+        order.finance_tender_record_id = tender_record.id
+        booking = self._load_booking(order)
+        if booking is not None:
+            booking.payment_status = (
+                BookingPaymentStatus.PAID
+                if settlement_applied
+                else BookingPaymentStatus.PENDING
+            )
+            self.db.add(booking)
+
+        self.db.add(tender_record)
         self.db.add(order)
         self.publisher.publish(
-            event_type="order.payment_recorded",
+            event_type="order.tender_recorded",
             aggregate_type="order",
             aggregate_id=str(order.id),
             payload={
                 "tender_type": payload.tender_type.value,
-                "payment_transaction_id": str(created.transaction.id),
+                "payment_transaction_id": (
+                    str(payment_transaction.id) if payment_transaction is not None else None
+                ),
+                "tender_record_id": str(tender_record.id),
                 "charge_transaction_id": str(order.finance_charge_transaction_id),
+                "settlement_applied": settlement_applied,
             },
             correlation_id=None,
             club_id=club_id,
@@ -154,20 +176,25 @@ class OrderSettlementService:
         hydrated = self.order_service.get_order(club_id=club_id, order_id=order.id)
         return OrderSettlementResult(
             decision="allowed",
-            settlement_applied=True,
+            settlement_applied=settlement_applied,
             order=self._to_settlement_order_detail(hydrated, tender_type=payload.tender_type),
+            tender=self._to_tender_detail(tender_record, settlement_applied=settlement_applied),
             transaction=self._to_settlement_transaction_detail(
-                self._load_transaction(club_id=club_id, transaction_id=created.transaction.id),
+                payment_transaction,
                 tender_type=payload.tender_type,
             ),
-            balance=created.balance,
+            balance=self._compute_balance(club_id=club_id, account_id=finance_account.id),
             failures=[],
         )
 
     def _load_order(self, *, club_id: uuid.UUID, order_id: uuid.UUID) -> Order | None:
         return self.db.scalar(
             select(Order)
-            .options(selectinload(Order.items), selectinload(Order.person))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.person),
+                selectinload(Order.finance_tender_record),
+            )
             .where(Order.id == order_id, Order.club_id == club_id)
         )
 
@@ -181,6 +208,19 @@ class OrderSettlementService:
             select(FinanceTransaction).where(
                 FinanceTransaction.id == transaction_id,
                 FinanceTransaction.club_id == club_id,
+            )
+        )
+
+    def _load_tender_record(
+        self,
+        *,
+        club_id: uuid.UUID,
+        tender_record_id: uuid.UUID,
+    ) -> FinanceTenderRecord | None:
+        return self.db.scalar(
+            select(FinanceTenderRecord).where(
+                FinanceTenderRecord.id == tender_record_id,
+                FinanceTenderRecord.club_id == club_id,
             )
         )
 
@@ -210,25 +250,28 @@ class OrderSettlementService:
         )
         return balance if balance is not None else Decimal("0.00")
 
-    def _extract_tender_type(self, description: str) -> TenderType | None:
-        for tender_type in TenderType:
-            if description.endswith(tender_type.value):
-                return tender_type
-        return None
-
     def _to_settlement_order_detail(
         self,
         order: Order,
         *,
         tender_type: TenderType | None,
     ) -> OrderSettlementOrderDetail:
-        base_detail = self.order_service.to_order_detail(order)
-        return OrderSettlementOrderDetail(
-            **base_detail.model_dump(),
-            finance_payment_transaction_id=order.finance_payment_transaction_id,
-            finance_payment_posted=order.finance_payment_transaction_id is not None,
-            payment_tender_type=tender_type,
-        )
+        detail = self.order_service.to_order_detail(order).model_dump()
+        if tender_type is not None:
+            detail["payment_tender_type"] = tender_type
+        return OrderSettlementOrderDetail(**detail)
+
+    def _to_tender_detail(
+        self,
+        tender_record: FinanceTenderRecord | None,
+        *,
+        settlement_applied: bool,
+    ) -> OrderTenderRecordDetail | None:
+        if tender_record is None:
+            return None
+        detail = OrderTenderRecordDetail.model_validate(tender_record).model_dump()
+        detail["settlement_applied"] = settlement_applied
+        return OrderTenderRecordDetail(**detail)
 
     def _to_settlement_transaction_detail(
         self,
@@ -249,4 +292,82 @@ class OrderSettlementService:
             description=transaction.description,
             created_at=transaction.created_at,
             tender_type=tender_type,
+        )
+
+    def _load_booking(self, order: Order) -> Booking | None:
+        if order.booking_id is None:
+            return None
+        return self.db.get(Booking, order.booking_id)
+
+    def _return_existing_tender_state(
+        self,
+        *,
+        club_id: uuid.UUID,
+        order: Order,
+        requested_tender_type: TenderType,
+    ) -> OrderSettlementResult:
+        tender_record = self._load_tender_record(
+            club_id=club_id,
+            tender_record_id=order.finance_tender_record_id,
+        )
+        if tender_record is None:
+            return OrderSettlementResult(
+                decision="blocked",
+                settlement_applied=False,
+                order=self._to_settlement_order_detail(order, tender_type=None),
+                failures=["Linked finance tender record was not found for this order"],
+            )
+
+        if tender_record.tender_type != requested_tender_type:
+            return OrderSettlementResult(
+                decision="blocked",
+                settlement_applied=False,
+                order=self._to_settlement_order_detail(
+                    order,
+                    tender_type=tender_record.tender_type,
+                ),
+                tender=self._to_tender_detail(
+                    tender_record,
+                    settlement_applied=tender_record.settlement_transaction_id is not None,
+                ),
+                failures=[
+                    f"Tender already recorded as {tender_record.tender_type.value} for this order"
+                ],
+            )
+
+        payment_transaction = None
+        if order.finance_payment_transaction_id is not None:
+            payment_transaction = self._load_transaction(
+                club_id=club_id,
+                transaction_id=order.finance_payment_transaction_id,
+            )
+            if payment_transaction is None:
+                return OrderSettlementResult(
+                    decision="blocked",
+                    settlement_applied=False,
+                    order=self._to_settlement_order_detail(
+                        order,
+                        tender_type=tender_record.tender_type,
+                    ),
+                    tender=self._to_tender_detail(tender_record, settlement_applied=False),
+                    failures=["Linked finance payment transaction was not found for this order"],
+                )
+
+        return OrderSettlementResult(
+            decision="allowed",
+            settlement_applied=False,
+            order=self._to_settlement_order_detail(
+                order,
+                tender_type=tender_record.tender_type,
+            ),
+            tender=self._to_tender_detail(
+                tender_record,
+                settlement_applied=payment_transaction is not None,
+            ),
+            transaction=self._to_settlement_transaction_detail(
+                payment_transaction,
+                tender_type=tender_record.tender_type,
+            ),
+            balance=self._compute_balance(club_id=club_id, account_id=tender_record.account_id),
+            failures=[],
         )

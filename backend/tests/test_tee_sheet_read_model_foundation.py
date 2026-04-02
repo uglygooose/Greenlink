@@ -234,11 +234,15 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
 
     assert payload["interval_minutes"] == 30
     assert payload["membership_type"] == "member"
-    assert len(payload["rows"]) == 1
-    assert payload["rows"][0]["label"] == "Blue"
-    assert len(payload["rows"][0]["slots"]) == 2
-    first_view = payload["rows"][0]["slots"][0]
-    second_view = payload["rows"][0]["slots"][1]
+    assert len(payload["rows"]) == 2
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    hole_10_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_10")
+    assert hole_1_row["label"] == "Blue"
+    assert hole_10_row["label"] == "Blue"
+    assert len(hole_1_row["slots"]) == 2
+    assert len(hole_10_row["slots"]) == 2
+    first_view = hole_1_row["slots"][0]
+    second_view = hole_1_row["slots"][1]
     assert first_view["occupancy"]["reserved_player_count"] == 2
     assert first_view["party_summary"]["total_players"] == 2
     assert first_view["party_summary"]["member_count"] == 1
@@ -255,6 +259,7 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
     assert second_view["bookings"] == []
     assert second_view["display_status"] == "reserved"
     assert second_view["state_flags"]["reserved_state_active"] is True
+    assert hole_10_row["slots"][0]["bookings"] == []
 
 
 def test_tee_sheet_day_defaults_reference_datetime_and_generates_rows_per_tee(
@@ -321,11 +326,13 @@ def test_tee_sheet_day_defaults_reference_datetime_and_generates_rows_per_tee(
     assert response.status_code == 200
     payload = response.json()
 
-    assert len(payload["rows"]) == 2
-    assert payload["rows"][0]["label"] == "Blue"
-    assert payload["rows"][1]["label"] == "White"
-    assert len(payload["rows"][0]["slots"]) == 1
-    assert payload["rows"][0]["slots"][0]["bookings"] == []
+    assert len(payload["rows"]) == 4
+    labels = [row["label"] for row in payload["rows"]]
+    assert labels.count("Blue") == 2
+    assert labels.count("White") == 2
+    assert {row["start_lane"] for row in payload["rows"]} == {"hole_1", "hole_10"}
+    assert all(len(row["slots"]) == 1 for row in payload["rows"])
+    assert all(row["slots"][0]["bookings"] == [] for row in payload["rows"])
     assert any(
         warning["code"] == "reference_datetime_defaulted_to_request_time"
         for warning in payload["warnings"]

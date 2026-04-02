@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError
@@ -22,6 +22,7 @@ from app.models import (
     ClubMembershipStatus,
     Course,
     Person,
+    StartLane,
     Tee,
     TeeSheetSlotState,
 )
@@ -176,12 +177,14 @@ class BookingService:
             club_id=club_id,
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
+            start_lane=payload.start_lane,
             slot_datetime=context.effective_datetime,
         )
         slot_state = self._load_slot_state(
             club_id=club_id,
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
+            start_lane=payload.start_lane,
             slot_datetime=context.effective_datetime,
         )
         _, booking_state = self.booking_state_service.build_inputs_from_persisted_state(
@@ -238,6 +241,7 @@ class BookingService:
             club_id=club_id,
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
+            start_lane=payload.start_lane,
             slot_datetime=context.effective_datetime,
             slot_interval_minutes=slot_interval_minutes,
             status=BookingStatus.RESERVED,
@@ -398,6 +402,7 @@ class BookingService:
         club_id: uuid.UUID,
         course_id: uuid.UUID,
         tee_id: uuid.UUID | None,
+        start_lane: StartLane | None,
         slot_datetime: datetime | None,
     ) -> list[Booking]:
         if slot_datetime is None:
@@ -415,6 +420,12 @@ class BookingService:
             statement = statement.where(Booking.tee_id.is_(None))
         else:
             statement = statement.where(Booking.tee_id == tee_id)
+        if start_lane is None or start_lane == StartLane.HOLE_1:
+            statement = statement.where(
+                or_(Booking.start_lane == StartLane.HOLE_1, Booking.start_lane.is_(None))
+            )
+        else:
+            statement = statement.where(Booking.start_lane == start_lane)
         return list(self.db.scalars(statement).unique().all())
 
     def _load_slot_state(
@@ -423,6 +434,7 @@ class BookingService:
         club_id: uuid.UUID,
         course_id: uuid.UUID,
         tee_id: uuid.UUID | None,
+        start_lane: StartLane | None,
         slot_datetime: datetime | None,
     ) -> TeeSheetSlotState | None:
         if slot_datetime is None:
@@ -436,6 +448,15 @@ class BookingService:
             statement = statement.where(TeeSheetSlotState.tee_id.is_(None))
         else:
             statement = statement.where(TeeSheetSlotState.tee_id == tee_id)
+        if start_lane is None or start_lane == StartLane.HOLE_1:
+            statement = statement.where(
+                or_(
+                    TeeSheetSlotState.start_lane == StartLane.HOLE_1,
+                    TeeSheetSlotState.start_lane.is_(None),
+                )
+            )
+        else:
+            statement = statement.where(TeeSheetSlotState.start_lane == start_lane)
         return self.db.scalar(statement)
 
     def _count_bookings_for_local_day(

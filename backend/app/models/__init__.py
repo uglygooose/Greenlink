@@ -13,6 +13,7 @@ from app.models.course import Course
 from app.models.domain_event_record import DomainEventRecord
 from app.models.enums import (
     BookingParticipantType,
+    BookingPaymentStatus,
     BookingRuleAppliesTo,
     BookingRuleConflictStrategy,
     BookingRuleScopeType,
@@ -39,12 +40,14 @@ from app.models.enums import (
     PricingRuleAppliesTo,
     PricingTimeBand,
     ReadinessStatus,
+    StartLane,
     UserType,
 )
 from app.models.news_post import NewsPost
 from app.models.finance.accounting_export_profile import AccountingExportProfile
 from app.models.finance.account import FinanceAccount
 from app.models.finance.export_batch import FinanceExportBatch
+from app.models.finance.tender_record import FinanceTenderRecord
 from app.models.finance.transaction import FinanceTransaction
 from app.models.order import Order
 from app.models.order_item import OrderItem
@@ -66,6 +69,7 @@ __all__ = [
     "Booking",
     "BookingParticipant",
     "BookingParticipantType",
+    "BookingPaymentStatus",
     "BookingSource",
     "BookingStatus",
     "BookingRule",
@@ -88,6 +92,7 @@ __all__ = [
     "FinanceAccount",
     "FinanceAccountStatus",
     "FinanceExportBatch",
+    "FinanceTenderRecord",
     "FinanceExportBatchStatus",
     "FinanceExportProfile",
     "FinanceTransaction",
@@ -113,6 +118,7 @@ __all__ = [
     "PricingTimeBand",
     "PlatformState",
     "ReadinessStatus",
+    "StartLane",
     "Tee",
     "TeeSheetSlotState",
     "User",

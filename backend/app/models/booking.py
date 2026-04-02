@@ -3,12 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
-from app.models.enums import BookingSource, BookingStatus
+from app.models.enums import BookingPaymentStatus, BookingSource, BookingStatus, StartLane
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -28,6 +28,7 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tees.id", ondelete="CASCADE"))
+    start_lane: Mapped[StartLane | None] = mapped_column(Enum(StartLane), nullable=True)
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     slot_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), nullable=False)
@@ -40,6 +41,12 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     primary_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL"))
     primary_membership_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("club_memberships.id", ondelete="SET NULL")
+    )
+    cart_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    caddie_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    fee_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    payment_status: Mapped[BookingPaymentStatus | None] = mapped_column(
+        Enum(BookingPaymentStatus), nullable=True
     )
 
     participants = relationship(

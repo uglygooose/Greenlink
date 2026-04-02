@@ -1,5 +1,5 @@
 import type { BookingRuleAppliesTo } from "./operations";
-import type { BookingParticipantSummary, BookingStatus } from "./bookings";
+import type { BookingParticipantSummary, BookingPaymentStatus, BookingStatus, StartLane } from "./bookings";
 
 export type TeeSheetSlotDisplayStatus = "available" | "blocked" | "reserved" | "indeterminate" | "warning";
 
@@ -49,6 +49,11 @@ export interface TeeSheetSlotView {
     status: BookingStatus;
     party_size: number;
     slot_datetime: string;
+    start_lane?: StartLane | null;
+    cart_flag?: boolean;
+    caddie_flag?: boolean;
+    fee_label?: string | null;
+    payment_status?: BookingPaymentStatus | null;
     participants: BookingParticipantSummary[];
   }>;
 }
@@ -56,6 +61,7 @@ export interface TeeSheetSlotView {
 export interface TeeSheetRow {
   row_key: string;
   tee_id: string | null;
+  start_lane: StartLane | null;
   label: string;
   color_code: string | null;
   slots: TeeSheetSlotView[];

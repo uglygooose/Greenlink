@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import TenderType
 from app.schemas.finance import FinanceTransactionResponse
-from app.schemas.orders import OrderDetailResponse
+from app.schemas.orders import OrderDetailResponse, OrderTenderRecordDetail
 
 
 class OrderSettlementRecordRequest(BaseModel):
@@ -31,9 +31,7 @@ class OrderSettlementDecision(StrEnum):
 
 
 class OrderSettlementOrderDetail(OrderDetailResponse):
-    finance_payment_transaction_id: uuid.UUID | None = None
-    finance_payment_posted: bool = False
-    payment_tender_type: TenderType | None = None
+    pass
 
 
 class OrderSettlementTransactionDetail(FinanceTransactionResponse):
@@ -44,6 +42,7 @@ class OrderSettlementResult(BaseModel):
     decision: OrderSettlementDecision
     settlement_applied: bool = False
     order: OrderSettlementOrderDetail | None = None
+    tender: OrderTenderRecordDetail | None = None
     transaction: OrderSettlementTransactionDetail | None = None
     balance: Decimal | None = None
     failures: list[str] = Field(default_factory=list)

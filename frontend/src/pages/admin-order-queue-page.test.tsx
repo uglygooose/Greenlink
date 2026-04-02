@@ -66,6 +66,11 @@ function buildOrderSummary(overrides: Partial<OrderSummary> = {}): OrderSummary 
     booking_id: "booking-1",
     finance_charge_transaction_id: null,
     finance_charge_posted: false,
+    finance_payment_transaction_id: null,
+    finance_payment_posted: false,
+    finance_tender_record_id: null,
+    tender_recorded: false,
+    payment_tender_type: null,
     source: "staff",
     status: "placed",
     created_at: "2026-03-30T10:00:00Z",
@@ -290,6 +295,34 @@ describe("AdminOrderQueuePage", () => {
 
     expect(await screen.findByRole("button", { name: /^post charge$/i })).toBeInTheDocument();
     expect(screen.getByText("Charge not posted")).toBeInTheDocument();
+  });
+
+  test("shows recorded member-account tender without implying payment settlement", async () => {
+    mockUseOrderDetailQuery.mockReturnValue({
+      data: buildOrderDetail({
+        id: "order-3",
+        status: "collected",
+        finance_charge_posted: true,
+        finance_charge_transaction_id: "txn-charge-1",
+        finance_payment_posted: false,
+        finance_payment_transaction_id: null,
+        finance_tender_record_id: "tender-1",
+        tender_recorded: true,
+        payment_tender_type: "member_account",
+      }),
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /open order order-1/i }));
+
+    expect(await screen.findByText("Tender recorded")).toBeInTheDocument();
+    expect(screen.getByText("Account")).toBeInTheDocument();
+    expect(screen.getByText("Outstanding remains on member ledger")).toBeInTheDocument();
+    expect(screen.getByText("tender-1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /record tender/i })).not.toBeInTheDocument();
   });
 
   test("hides post charge when a collected order already has a posted charge", async () => {

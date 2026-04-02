@@ -1,22 +1,24 @@
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
+import type { BookingPaymentStatus } from "../../types/bookings";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
 type FeedbackTone = "error" | "info";
 
 interface BookingManagementDrawerProps {
-  selectedDate: string;
-  rowLabel: string;
   colorCode: string | null;
-  slot: TeeSheetSlotView;
-  pendingAction: "cancel" | "check_in" | "complete" | "no_show" | null;
-  pendingBookingId: string | null;
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone | null;
+  laneLabel: string;
+  onCancel: (bookingId: string) => void;
   onCheckIn: (bookingId: string) => void;
+  onClose: () => void;
   onComplete: (bookingId: string) => void;
   onNoShow: (bookingId: string) => void;
-  onCancel: (bookingId: string) => void;
-  onClose: () => void;
+  pendingAction: "cancel" | "check_in" | "complete" | "no_show" | null;
+  pendingBookingId: string | null;
+  selectedDate: string;
+  slot: TeeSheetSlotView;
+  teeLabel: string;
 }
 
 function formatDateLabel(value: string): string {
@@ -26,10 +28,6 @@ function formatDateLabel(value: string): string {
     day: "numeric",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
-}
-
-function formatBookingLabel(bookingId: string): string {
-  return `Booking ${bookingId.slice(0, 8)}`;
 }
 
 function bookingStatusClassName(status: string): string {
@@ -47,13 +45,30 @@ function bookingStatusLabel(status: string): string {
   return status.replace("_", " ");
 }
 
+function paymentStatusClassName(status: BookingPaymentStatus | null | undefined): string {
+  switch (status) {
+    case "paid":
+      return "bg-primary-container/50 text-on-primary-container";
+    case "pending":
+      return "bg-secondary-container text-on-secondary-container";
+    case "complimentary":
+      return "bg-surface-container-high text-on-surface";
+    case "waived":
+      return "bg-amber-100 text-amber-800";
+    default:
+      return "bg-surface-container-high text-on-surface";
+  }
+}
+
+function paymentStatusLabel(status: BookingPaymentStatus | null | undefined): string {
+  return status ? status.replace("_", " ") : "unassigned";
+}
+
 function participantSummary(
   participants: Array<{ display_name: string; is_primary: boolean }>,
   partySize: number,
 ): string {
-  const names = participants
-    .map((participant) => participant.display_name)
-    .filter(Boolean);
+  const names = participants.map((participant) => participant.display_name).filter(Boolean);
   if (names.length > 0) {
     return names.join(", ");
   }
@@ -76,8 +91,8 @@ interface ActionButtonProps {
   icon: string;
   isPending: boolean;
   label: string;
-  pendingLabel: string;
   onClick: () => void;
+  pendingLabel: string;
 }
 
 function ActionButton({
@@ -86,8 +101,8 @@ function ActionButton({
   icon,
   isPending,
   label,
-  pendingLabel,
   onClick,
+  pendingLabel,
 }: ActionButtonProps): JSX.Element {
   return (
     <button
@@ -104,19 +119,20 @@ function ActionButton({
 }
 
 export function BookingManagementDrawer({
-  selectedDate,
-  rowLabel,
   colorCode,
-  slot,
-  pendingAction,
-  pendingBookingId,
   feedbackMessage,
   feedbackTone,
+  laneLabel,
+  onCancel,
   onCheckIn,
+  onClose,
   onComplete,
   onNoShow,
-  onCancel,
-  onClose,
+  pendingAction,
+  pendingBookingId,
+  selectedDate,
+  slot,
+  teeLabel,
 }: BookingManagementDrawerProps): JSX.Element {
   return (
     <>
@@ -149,9 +165,11 @@ export function BookingManagementDrawer({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
-                <p className="mt-1 text-sm font-bold text-on-surface">{rowLabel}</p>
+                <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
-                  {colorCode ? `${colorCode} • ` : ""}
+                  {teeLabel}
+                  {colorCode ? ` · ${colorCode}` : ""}
+                  {" · "}
                   {slot.party_summary.total_players ?? 0} players in active view
                 </p>
               </div>
@@ -186,7 +204,7 @@ export function BookingManagementDrawer({
                 <article className="rounded-2xl bg-surface-container-low p-4" key={booking.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-on-surface">{formatBookingLabel(booking.id)}</p>
+                      <p className="text-sm font-bold text-on-surface">Booking {booking.id.slice(0, 8)}</p>
                       <p className="mt-1 truncate text-[11px] text-slate-500">{booking.id}</p>
                     </div>
                     <span
@@ -206,6 +224,26 @@ export function BookingManagementDrawer({
                       <span className="leading-relaxed">
                         {participantSummary(booking.participants, booking.party_size)}
                       </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${paymentStatusClassName(booking.payment_status)}`}>
+                        {paymentStatusLabel(booking.payment_status)}
+                      </span>
+                      <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
+                        {booking.fee_label ?? "Rate pending"}
+                      </span>
+                      {booking.cart_flag ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
+                          <MaterialSymbol className="text-xs" icon="golf_course" />
+                          Cart
+                        </span>
+                      ) : null}
+                      {booking.caddie_flag ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
+                          <MaterialSymbol className="text-xs" icon="person" />
+                          Caddie
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 

@@ -6,8 +6,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import BookingParticipantType, BookingSource, BookingStatus
-from app.models.enums import BookingRuleAppliesTo
+from app.models import BookingParticipantType, BookingPaymentStatus, BookingSource, BookingStatus
+from app.models.enums import BookingRuleAppliesTo, StartLane
 from app.schemas.availability import AvailabilityPolicyResult
 
 
@@ -36,12 +36,13 @@ class BookingCreateParticipantInput(BaseModel):
 class BookingCreateRequest(BaseModel):
     course_id: uuid.UUID
     tee_id: uuid.UUID | None = None
+    start_lane: StartLane | None = None
     slot_datetime: datetime
     slot_interval_minutes: int | None = Field(default=None, ge=1, le=240)
     source: BookingSource = BookingSource.ADMIN
     applies_to: BookingRuleAppliesTo | None = None
     reference_datetime: datetime | None = None
-    participants: list[BookingCreateParticipantInput] = Field(min_length=1, max_length=32)
+    participants: list[BookingCreateParticipantInput] = Field(default_factory=list, max_length=32)
 
     @field_validator("slot_datetime", "reference_datetime")
     @classmethod
@@ -54,6 +55,8 @@ class BookingCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_participants(self) -> BookingCreateRequest:
+        if self.source == BookingSource.MEMBER_PORTAL and not self.participants:
+            return self
         primary_participants = [
             participant for participant in self.participants if participant.is_primary
         ]
@@ -108,6 +111,7 @@ class BookingSummary(BaseModel):
     club_id: uuid.UUID
     course_id: uuid.UUID
     tee_id: uuid.UUID | None = None
+    start_lane: StartLane | None = None
     slot_datetime: datetime
     slot_interval_minutes: int
     status: BookingStatus
@@ -115,6 +119,10 @@ class BookingSummary(BaseModel):
     party_size: int
     primary_person_id: uuid.UUID | None = None
     primary_membership_id: uuid.UUID | None = None
+    cart_flag: bool = False
+    caddie_flag: bool = False
+    fee_label: str | None = None
+    payment_status: BookingPaymentStatus | None = None
     created_at: datetime
     updated_at: datetime
     participants: list[BookingParticipantSummary] = Field(default_factory=list)
@@ -220,3 +228,59 @@ class BookingNoShowResult(BookingLifecycleMutationResult):
     booking_id: uuid.UUID
     decision: BookingNoShowDecision
     failures: list[BookingNoShowFailureDetail] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Booking move
+# ---------------------------------------------------------------------------
+
+
+class BookingMoveInput(BaseModel):
+    """HTTP request body for the move endpoint — booking_id comes from the URL path."""
+
+    target_slot_datetime: datetime
+    target_start_lane: StartLane | None = None
+    target_tee_id: uuid.UUID | None = None
+
+    @field_validator("target_slot_datetime")
+    @classmethod
+    def validate_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("target_slot_datetime must include an explicit timezone offset")
+        return value
+
+
+class BookingMoveRequest(BaseModel):
+    """Internal service request — assembled from URL path + body."""
+
+    booking_id: uuid.UUID
+    target_slot_datetime: datetime
+    target_start_lane: StartLane | None = None
+    target_tee_id: uuid.UUID | None = None
+
+    @field_validator("target_slot_datetime")
+    @classmethod
+    def validate_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("target_slot_datetime must include an explicit timezone offset")
+        return value
+
+
+class BookingMoveDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingMoveFailureDetail(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+    current_status: BookingStatus | None = None
+
+
+class BookingMoveResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingMoveDecision
+    transition_applied: bool = False
+    booking: BookingSummary | None = None
+    failures: list[BookingMoveFailureDetail] = Field(default_factory=list)

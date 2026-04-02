@@ -174,6 +174,18 @@ class TenderType(StrEnum):
     MEMBER_ACCOUNT = "member_account"
 
 
+class StartLane(StrEnum):
+    HOLE_1 = "hole_1"
+    HOLE_10 = "hole_10"
+
+
+class BookingPaymentStatus(StrEnum):
+    PENDING = "pending"
+    PAID = "paid"
+    COMPLIMENTARY = "complimentary"
+    WAIVED = "waived"
+
+
 class NewsPostVisibility(StrEnum):
     PUBLIC = "public"
     MEMBERS_ONLY = "members_only"

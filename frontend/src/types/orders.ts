@@ -48,6 +48,8 @@ export interface OrderSummary {
   finance_charge_posted: boolean;
   finance_payment_transaction_id?: string | null;
   finance_payment_posted?: boolean;
+  finance_tender_record_id?: string | null;
+  tender_recorded?: boolean;
   payment_tender_type?: TenderType | null;
   source: OrderSource;
   status: OrderStatus;
@@ -123,6 +125,20 @@ export interface OrderSettlementResult {
   decision: "allowed" | "blocked";
   settlement_applied: boolean;
   order: OrderDetail | null;
+  tender: {
+    id: string;
+    club_id: string;
+    account_id: string;
+    source: "booking" | "order" | "pos" | "manual";
+    reference_id: string | null;
+    tender_type: TenderType;
+    amount: string;
+    charge_transaction_id: string | null;
+    settlement_transaction_id: string | null;
+    description: string;
+    created_at: string;
+    settlement_applied: boolean;
+  } | null;
   transaction: {
     id: string;
     club_id: string;

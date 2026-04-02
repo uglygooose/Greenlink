@@ -171,7 +171,11 @@ class OrderService:
         )
         statement = (
             select(Order)
-            .options(selectinload(Order.items), selectinload(Order.person))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.person),
+                selectinload(Order.finance_tender_record),
+            )
             .where(Order.club_id == club_id)
             .order_by(open_status_rank.asc(), Order.created_at.desc())
         )
@@ -319,7 +323,11 @@ class OrderService:
     def _load_order(self, *, club_id: uuid.UUID, order_id: uuid.UUID) -> Order | None:
         return self.db.scalar(
             select(Order)
-            .options(selectinload(Order.items), selectinload(Order.person))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.person),
+                selectinload(Order.finance_tender_record),
+            )
             .where(Order.id == order_id, Order.club_id == club_id)
         )
 
@@ -414,6 +422,11 @@ class OrderService:
             booking_id=order.booking_id,
             finance_charge_transaction_id=order.finance_charge_transaction_id,
             finance_charge_posted=order.finance_charge_transaction_id is not None,
+            finance_payment_transaction_id=order.finance_payment_transaction_id,
+            finance_payment_posted=order.finance_payment_transaction_id is not None,
+            finance_tender_record_id=order.finance_tender_record_id,
+            tender_recorded=order.finance_tender_record_id is not None,
+            payment_tender_type=self._resolve_payment_tender_type(order),
             source=order.source,
             status=order.status,
             created_at=order.created_at,
@@ -438,3 +451,8 @@ class OrderService:
                 for item in order.items
             ],
         )
+
+    def _resolve_payment_tender_type(self, order: Order):
+        if order.finance_tender_record is not None:
+            return order.finance_tender_record.tender_type
+        return None

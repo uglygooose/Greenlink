@@ -19,16 +19,30 @@ from app.api.routes.operations_support import (
     to_tee_response,
 )
 from app.auth.dependencies import get_current_user, get_db
-from app.models import BookingRuleAppliesTo, Course, Tee, User
+from app.core.exceptions import AuthorizationError, NotFoundError
+from app.models import (
+    BookingParticipantType,
+    BookingRuleAppliesTo,
+    BookingSource,
+    ClubMembershipRole,
+    Course,
+    StartLane,
+    Tee,
+    User,
+)
 from app.schemas.bookings import (
     BookingCancelRequest,
     BookingCancelResult,
     BookingCheckInRequest,
     BookingCheckInResult,
+    BookingCreateParticipantInput,
     BookingCompleteRequest,
     BookingCompleteResult,
     BookingCreateRequest,
     BookingCreateResult,
+    BookingMoveInput,
+    BookingMoveRequest,
+    BookingMoveResult,
     BookingNoShowRequest,
     BookingNoShowResult,
 )
@@ -42,11 +56,59 @@ from app.schemas.tee_sheet import TeeSheetDayQuery, TeeSheetDayResponse
 from app.services.booking_cancellation_service import BookingCancellationService
 from app.services.booking_checkin_service import BookingCheckInService
 from app.services.booking_completion_service import BookingCompletionService
+from app.services.booking_move_service import BookingMoveService
 from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
 from app.services.tee_sheet_service import TeeSheetService
 
 router = APIRouter()
+
+
+def _is_member_context(context) -> bool:
+    return bool(
+        context.selected_membership
+        and context.selected_membership.role == ClubMembershipRole.MEMBER
+    )
+
+
+def _require_golf_read(*, current_user: User, context) -> None:
+    if _is_member_context(context):
+        return
+    require_operations_read(current_user, context)
+
+
+def _require_booking_create_access(
+    *,
+    current_user: User,
+    context,
+    payload: BookingCreateRequest,
+) -> None:
+    if payload.source == BookingSource.MEMBER_PORTAL and _is_member_context(context):
+        return
+    require_operations_write(current_user, context)
+
+
+def _normalize_member_portal_booking_payload(
+    *,
+    current_user: User,
+    payload: BookingCreateRequest,
+) -> BookingCreateRequest:
+    if payload.source != BookingSource.MEMBER_PORTAL:
+        return payload
+    if current_user.person_id is None:
+        raise NotFoundError("Person not found")
+    return payload.model_copy(
+        update={
+            "applies_to": BookingRuleAppliesTo.MEMBER,
+            "participants": [
+                BookingCreateParticipantInput(
+                    participant_type=BookingParticipantType.MEMBER,
+                    person_id=current_user.person_id,
+                    is_primary=True,
+                )
+            ],
+        }
+    )
 
 
 @router.get("/courses", response_model=list[CourseResponse])
@@ -56,7 +118,7 @@ def list_courses(
     db: Session = Depends(get_db),
 ) -> list[CourseResponse]:
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
-    require_operations_read(current_user, context)
+    _require_golf_read(current_user=current_user, context=context)
     assert context.selected_club is not None
     courses = db.scalars(
         select(Course).where(Course.club_id == context.selected_club.id).order_by(Course.name.asc())
@@ -142,6 +204,7 @@ def get_tee_sheet_day(
     course_id: uuid.UUID = Query(),
     day: date = Query(alias="date"),
     tee_id: uuid.UUID | None = Query(default=None),
+    start_lane: StartLane | None = Query(default=None),
     membership_type: BookingRuleAppliesTo = Query(default=BookingRuleAppliesTo.MEMBER),
     reference_datetime: datetime | None = Query(default=None),
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
@@ -149,8 +212,13 @@ def get_tee_sheet_day(
     db: Session = Depends(get_db),
 ) -> TeeSheetDayResponse:
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
-    require_operations_read(current_user, context)
+    _require_golf_read(current_user=current_user, context=context)
     assert context.selected_club is not None
+    normalized_membership_type = membership_type
+    if _is_member_context(context):
+        if membership_type != BookingRuleAppliesTo.MEMBER:
+            raise AuthorizationError("Member tee sheet access is limited to member availability")
+        normalized_membership_type = BookingRuleAppliesTo.MEMBER
     service = TeeSheetService(db)
     return service.load_day(
         TeeSheetDayQuery(
@@ -158,7 +226,8 @@ def get_tee_sheet_day(
             course_id=course_id,
             date=day,
             tee_id=tee_id,
-            membership_type=membership_type,
+            start_lane=start_lane,
+            membership_type=normalized_membership_type,
             reference_datetime=reference_datetime,
         )
     )
@@ -172,10 +241,37 @@ def create_booking(
     db: Session = Depends(get_db),
 ) -> BookingCreateResult:
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    _require_booking_create_access(current_user=current_user, context=context, payload=payload)
+    assert context.selected_club is not None
+    normalized_payload = _normalize_member_portal_booking_payload(
+        current_user=current_user,
+        payload=payload,
+    )
+    service = BookingService(db)
+    return service.create_booking(context.selected_club.id, normalized_payload)
+
+
+@router.post("/bookings/{booking_id}/move", response_model=BookingMoveResult)
+def move_booking(
+    booking_id: uuid.UUID,
+    payload: BookingMoveInput,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingMoveResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
-    service = BookingService(db)
-    return service.create_booking(context.selected_club.id, payload)
+    service = BookingMoveService(db)
+    return service.move_booking(
+        context.selected_club.id,
+        BookingMoveRequest(
+            booking_id=booking_id,
+            target_slot_datetime=payload.target_slot_datetime,
+            target_start_lane=payload.target_start_lane,
+            target_tee_id=payload.target_tee_id,
+        ),
+    )
 
 
 @router.post("/bookings/{booking_id}/cancel", response_model=BookingCancelResult)

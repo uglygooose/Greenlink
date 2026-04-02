@@ -8,7 +8,8 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import OrderSource, OrderStatus
-from app.schemas.finance import FinanceTransactionResponse
+from app.models.enums import TenderType
+from app.schemas.finance import FinanceTenderRecordResponse, FinanceTransactionResponse
 
 
 class OrderItemCreateInput(BaseModel):
@@ -71,6 +72,11 @@ class OrderSummaryResponse(BaseModel):
     booking_id: uuid.UUID | None = None
     finance_charge_transaction_id: uuid.UUID | None = None
     finance_charge_posted: bool = False
+    finance_payment_transaction_id: uuid.UUID | None = None
+    finance_payment_posted: bool = False
+    finance_tender_record_id: uuid.UUID | None = None
+    tender_recorded: bool = False
+    payment_tender_type: TenderType | None = None
     source: OrderSource
     status: OrderStatus
     created_at: datetime
@@ -209,3 +215,7 @@ class OrderChargePostResult(BaseModel):
     transaction: FinanceTransactionResponse | None = None
     balance: Decimal | None = None
     failures: list[OrderChargePostFailureDetail] = Field(default_factory=list)
+
+
+class OrderTenderRecordDetail(FinanceTenderRecordResponse):
+    settlement_applied: bool = False

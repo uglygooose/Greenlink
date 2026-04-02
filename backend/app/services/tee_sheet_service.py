@@ -4,11 +4,11 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Booking, ClubConfig, Course, Tee, TeeSheetSlotState
+from app.models import Booking, ClubConfig, Course, StartLane, Tee, TeeSheetSlotState
 from app.schemas.rule_context import ContextNotice, RuleContextInput
 from app.schemas.tee_sheet import (
     TeeSheetBookingParticipantSummary,
@@ -66,18 +66,24 @@ class TeeSheetService:
         slot_datetimes = self._generate_slot_datetimes(
             query.date, zone, club_config.operating_hours, interval_minutes
         )
-        row_tees = self._load_row_tees(query)
+        row_scopes = self._load_row_scopes(query)
         slot_states = self._load_slot_states(query, slot_datetimes)
         bookings = self._load_bookings(query, slot_datetimes)
         rows: list[TeeSheetRow] = []
-        for tee in row_tees:
-            row_key = str(tee.id) if tee is not None else f"course:{course.id}"
+        for tee, start_lane in row_scopes:
+            row_key = (
+                f"{tee.id if tee is not None else f'course:{course.id}'}:{start_lane.value}"
+            )
             row_label = tee.name if tee is not None else f"{course.name} sheet"
             color_code = tee.color_code if tee is not None else None
             slots: list[TeeSheetSlotView] = []
             for slot_datetime in slot_datetimes:
-                persisted_state = slot_states[(tee.id if tee is not None else None, slot_datetime)]
-                slot_bookings = bookings[(tee.id if tee is not None else None, slot_datetime)]
+                persisted_state = slot_states[
+                    (tee.id if tee is not None else None, start_lane, slot_datetime)
+                ]
+                slot_bookings = bookings[
+                    (tee.id if tee is not None else None, start_lane, slot_datetime)
+                ]
                 live_slot_bookings = [
                     booking
                     for booking in slot_bookings
@@ -151,6 +157,11 @@ class TeeSheetService:
                                 status=booking.status,
                                 party_size=booking.party_size,
                                 slot_datetime=booking.slot_datetime,
+                                start_lane=self._normalize_start_lane(booking.start_lane),
+                                cart_flag=booking.cart_flag,
+                                caddie_flag=booking.caddie_flag,
+                                fee_label=booking.fee_label,
+                                payment_status=booking.payment_status,
                                 participants=[
                                     TeeSheetBookingParticipantSummary(
                                         display_name=participant.display_name,
@@ -171,6 +182,7 @@ class TeeSheetService:
                 TeeSheetRow(
                     row_key=row_key,
                     tee_id=tee.id if tee is not None else None,
+                    start_lane=start_lane,
                     label=row_label,
                     color_code=color_code,
                     slots=slots,
@@ -190,7 +202,13 @@ class TeeSheetService:
             warnings=warnings,
         )
 
-    def _load_row_tees(self, query: TeeSheetDayQuery) -> list[Tee | None]:
+    def _load_row_scopes(
+        self, query: TeeSheetDayQuery
+    ) -> list[tuple[Tee | None, StartLane]]:
+        lanes = [query.start_lane] if query.start_lane is not None else [
+            StartLane.HOLE_1,
+            StartLane.HOLE_10,
+        ]
         if query.tee_id is not None:
             tee = self.db.scalar(
                 select(Tee)
@@ -199,7 +217,7 @@ class TeeSheetService:
             )
             if tee is None:
                 raise NotFoundError("Tee not found")
-            return [tee]
+            return [(tee, lane) for lane in lanes]
         tees = list(
             self.db.scalars(
                 select(Tee)
@@ -212,13 +230,14 @@ class TeeSheetService:
                 .order_by(Tee.name.asc())
             ).all()
         )
-        return tees or [None]
+        row_tees = tees or [None]
+        return [(tee, lane) for tee in row_tees for lane in lanes]
 
     def _load_slot_states(
         self,
         query: TeeSheetDayQuery,
         slot_datetimes: list[datetime],
-    ) -> dict[tuple[object, datetime], TeeSheetSlotState | None]:
+    ) -> dict[tuple[object, StartLane, datetime], TeeSheetSlotState | None]:
         if not slot_datetimes:
             return defaultdict(lambda: None)
         start_datetime = slot_datetimes[0]
@@ -231,17 +250,30 @@ class TeeSheetService:
         )
         if query.tee_id is not None:
             statement = statement.where(TeeSheetSlotState.tee_id == query.tee_id)
+        if query.start_lane is not None:
+            if query.start_lane == StartLane.HOLE_1:
+                statement = statement.where(
+                    or_(
+                        TeeSheetSlotState.start_lane == StartLane.HOLE_1,
+                        TeeSheetSlotState.start_lane.is_(None),
+                    )
+                )
+            else:
+                statement = statement.where(TeeSheetSlotState.start_lane == query.start_lane)
         states = list(self.db.scalars(statement).all())
         indexed = defaultdict(lambda: None)
         for state in states:
-            indexed[(state.tee_id, state.slot_datetime)] = state
+            lane = self._normalize_start_lane(state.start_lane)
+            key = (state.tee_id, lane, state.slot_datetime)
+            if indexed[key] is None or state.start_lane is not None:
+                indexed[key] = state
         return indexed
 
     def _load_bookings(
         self,
         query: TeeSheetDayQuery,
         slot_datetimes: list[datetime],
-    ) -> dict[tuple[object, datetime], list[Booking]]:
+    ) -> dict[tuple[object, StartLane, datetime], list[Booking]]:
         if not slot_datetimes:
             return defaultdict(list)
         start_datetime = slot_datetimes[0]
@@ -258,10 +290,21 @@ class TeeSheetService:
         )
         if query.tee_id is not None:
             statement = statement.where(Booking.tee_id == query.tee_id)
+        if query.start_lane is not None:
+            if query.start_lane == StartLane.HOLE_1:
+                statement = statement.where(
+                    or_(
+                        Booking.start_lane == StartLane.HOLE_1,
+                        Booking.start_lane.is_(None),
+                    )
+                )
+            else:
+                statement = statement.where(Booking.start_lane == query.start_lane)
         records = list(self.db.scalars(statement).unique().all())
         indexed = defaultdict(list)
         for booking in records:
-            indexed[(booking.tee_id, booking.slot_datetime)].append(booking)
+            lane = self._normalize_start_lane(booking.start_lane)
+            indexed[(booking.tee_id, lane, booking.slot_datetime)].append(booking)
         return indexed
 
     def _generate_slot_datetimes(
@@ -307,3 +350,6 @@ class TeeSheetService:
         if not hours.isdigit() or not minutes.isdigit():
             return None
         return time(hour=int(hours), minute=int(minutes))
+
+    def _normalize_start_lane(self, start_lane: StartLane | None) -> StartLane:
+        return start_lane or StartLane.HOLE_1

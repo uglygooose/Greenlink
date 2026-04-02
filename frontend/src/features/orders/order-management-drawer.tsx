@@ -176,6 +176,10 @@ export function OrderManagementDrawer({
     settlementOrder?.finance_payment_transaction_id ?? order.finance_payment_transaction_id ?? null;
   const financePaymentPosted =
     settlementOrder?.finance_payment_posted ?? order.finance_payment_posted ?? false;
+  const financeTenderRecordId =
+    settlementOrder?.finance_tender_record_id ?? order.finance_tender_record_id ?? null;
+  const tenderRecorded =
+    settlementOrder?.tender_recorded ?? order.tender_recorded ?? false;
   const paymentTenderType =
     settlementOrder?.payment_tender_type ?? recordPaymentMutation.data?.transaction?.tender_type ?? order.payment_tender_type ?? null;
   const effectiveFeedbackMessage = feedbackMessage ?? settlementFeedbackMessage;
@@ -208,10 +212,16 @@ export function OrderManagementDrawer({
 
     setSelectedTender(null);
     setSettlementFeedbackTone("info");
+    if (result.tender?.tender_type === "member_account" && !result.settlement_applied) {
+      setSettlementFeedbackMessage(
+        "Tender recorded to member account. Charge remains outstanding on the ledger.",
+      );
+      return;
+    }
     setSettlementFeedbackMessage(
       result.settlement_applied
         ? "Payment recorded. Drawer refreshed from backend state."
-        : "Payment was already recorded. Drawer refreshed from backend state.",
+        : "Tender was already recorded. Drawer refreshed from backend state.",
     );
   }
 
@@ -310,17 +320,29 @@ export function OrderManagementDrawer({
 
           {order.status === "collected" && order.finance_charge_posted ? (
             <section className="rounded-2xl bg-surface-container-low p-4">
-              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Payment</p>
-              {financePaymentPosted ? (
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Tender</p>
+              {tenderRecorded ? (
                 <div className="mt-3 space-y-2 text-sm text-on-surface">
                   <div className="flex items-center gap-2">
                     <MaterialSymbol className="text-sm text-slate-400" icon="payments" />
-                    <span>Payment recorded</span>
+                    <span>{financePaymentPosted ? "Payment recorded" : "Tender recorded"}</span>
                   </div>
                   {paymentTenderType ? (
                     <div className="flex items-center gap-2">
                       <MaterialSymbol className="text-sm text-slate-400" icon={tenderIcon(paymentTenderType)} />
                       <span>{tenderLabel(paymentTenderType)}</span>
+                    </div>
+                  ) : null}
+                  {!financePaymentPosted && paymentTenderType === "member_account" ? (
+                    <div className="flex items-center gap-2">
+                      <MaterialSymbol className="text-sm text-slate-400" icon="schedule" />
+                      <span>Outstanding remains on member ledger</span>
+                    </div>
+                  ) : null}
+                  {financeTenderRecordId ? (
+                    <div className="flex items-center gap-2">
+                      <MaterialSymbol className="text-sm text-slate-400" icon="confirmation_number" />
+                      <span className="break-all">{financeTenderRecordId}</span>
                     </div>
                   ) : null}
                   {financePaymentTransactionId ? (
@@ -354,12 +376,12 @@ export function OrderManagementDrawer({
                       void handleRecordPayment();
                     }}
                     type="button"
-                  >
+                    >
                     <MaterialSymbol
                       className="text-sm"
                       icon={recordPaymentMutation.isPending ? "progress_activity" : "payments"}
                     />
-                    <span>{recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}</span>
+                    <span>{recordPaymentMutation.isPending ? "Recording..." : "Record Tender"}</span>
                   </button>
                 </div>
               )}

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     AccountCustomer,
+    Booking,
+    BookingPaymentStatus,
     FinanceAccount,
     FinanceAccountStatus,
     FinanceTransaction,
@@ -141,6 +143,11 @@ class OrderFinancePostingService:
         )
 
         order.finance_charge_transaction_id = created.transaction.id
+        if order.booking_id is not None:
+            booking = self.db.get(Booking, order.booking_id)
+            if booking is not None:
+                booking.payment_status = BookingPaymentStatus.PENDING
+                self.db.add(booking)
         self.db.add(order)
         self.db.commit()
 

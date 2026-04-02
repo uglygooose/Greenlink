@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
-import type { ClubPersonEntry } from "../../types/people";
 import type { BookingCreateParticipantInput, BookingParticipantType } from "../../types/bookings";
+import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
 type FeedbackTone = "error" | "info";
@@ -21,15 +21,16 @@ interface BookingCreateDrawerProps {
   directory: ClubPersonEntry[];
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone | null;
+  laneLabel: string;
   onAddParticipant: () => void;
   onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
   onClose: () => void;
   onCreate: () => void;
   onRemoveParticipant: (key: string) => void;
   participants: DraftParticipant[];
-  rowLabel: string;
   selectedDate: string;
   slot: TeeSheetSlotView;
+  teeLabel: string;
 }
 
 function formatDateLabel(value: string): string {
@@ -71,15 +72,16 @@ export function BookingCreateDrawer({
   directory,
   feedbackMessage,
   feedbackTone,
+  laneLabel,
   onAddParticipant,
   onChangeParticipant,
   onClose,
   onCreate,
   onRemoveParticipant,
   participants,
-  rowLabel,
   selectedDate,
   slot,
+  teeLabel,
 }: BookingCreateDrawerProps): JSX.Element {
   const payloadPreview = useMemo(() => asPayload(participants), [participants]);
 
@@ -114,9 +116,11 @@ export function BookingCreateDrawer({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
-                <p className="mt-1 text-sm font-bold text-on-surface">{rowLabel}</p>
+                <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
-                  {colorCode ? `${colorCode} • ` : ""}
+                  {teeLabel}
+                  {colorCode ? ` · ${colorCode}` : ""}
+                  {" · "}
                   {slot.occupancy.remaining_player_capacity ?? 0} player spaces remaining
                 </p>
               </div>
@@ -168,6 +172,7 @@ export function BookingCreateDrawer({
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Participant Type
                     <select
+                      aria-label="Participant Type"
                       className="rounded-2xl bg-white px-4 py-3 text-sm text-on-surface outline-none"
                       onChange={(event) =>
                         onChangeParticipant(participant.key, {
@@ -201,6 +206,7 @@ export function BookingCreateDrawer({
                     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                       Club Person
                       <select
+                        aria-label="Club Person"
                         className="rounded-2xl bg-white px-4 py-3 text-sm text-on-surface outline-none"
                         onChange={(event) => onChangeParticipant(participant.key, { person_id: event.target.value || null })}
                         value={participant.person_id ?? ""}
@@ -220,6 +226,7 @@ export function BookingCreateDrawer({
 
             {participants.length < 4 ? (
               <button
+                aria-label="Add participant"
                 className="inline-flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface"
                 onClick={onAddParticipant}
                 type="button"

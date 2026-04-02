@@ -13,6 +13,7 @@ import { AdminGolfTeeSheetPage } from "../pages/admin-golf-tee-sheet-page";
 import { AdminOrderQueuePage } from "../pages/admin-order-queue-page";
 import { AdminPosTerminalPage } from "../pages/admin-pos-terminal-page";
 import { LoginPage } from "../pages/login-page";
+import { PlayerBookPage } from "../pages/player-book-page";
 import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
@@ -71,6 +72,7 @@ const router = createBrowserRouter([
     element: <ProtectedRoute shell="player" />,
     children: [
       { path: "home", element: <PlayerShellPage /> },
+      { path: "book", element: <PlayerBookPage /> },
       { path: "order", element: <PlayerOrderPage /> },
       { path: "*", element: <Navigate to="/player/home" replace /> },
     ],

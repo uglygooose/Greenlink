@@ -27,6 +27,7 @@ from app.models import (
     ClubMembershipStatus,
     Course,
     Person,
+    StartLane,
     Tee,
     TeeSheetSlotState,
     User,
@@ -252,6 +253,91 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     assert first_slot["occupancy"]["reserved_player_count"] == 2
     assert first_slot["party_summary"]["member_count"] == 1
     assert first_slot["party_summary"]["guest_count"] == 1
+
+
+def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_sheet(
+    client: TestClient, db_session: Session
+) -> None:
+    member = _create_user(db_session, email="member-portal@example.com")
+    club = _create_club(db_session, name="Member Portal Club", slug="member-portal-club")
+    _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    course, tee = _seed_course_stack(db_session, club=club)
+    _seed_club_config(db_session, club=club)
+    _seed_rules(db_session, club=club)
+
+    slot_datetime = datetime(2026, 4, 10, 4, 0, tzinfo=UTC)
+    db_session.add(
+        TeeSheetSlotState(
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            start_lane=StartLane.HOLE_10,
+            slot_datetime=slot_datetime,
+            player_capacity=4,
+            manually_blocked=False,
+            reserved_state_active=False,
+            competition_controlled=False,
+            event_controlled=False,
+            externally_unavailable=False,
+        )
+    )
+    db_session.commit()
+
+    headers = _auth_headers(client, member.email, str(club.id))
+
+    courses_response = client.get("/api/golf/courses", headers=headers)
+    assert courses_response.status_code == 200
+    assert courses_response.json()[0]["id"] == str(course.id)
+
+    create_response = client.post(
+        "/api/golf/bookings",
+        headers=headers,
+        json={
+            "course_id": str(course.id),
+            "tee_id": str(tee.id),
+            "start_lane": "hole_10",
+            "slot_datetime": slot_datetime.isoformat(),
+            "source": "member_portal",
+            "reference_datetime": datetime(2026, 4, 1, 6, 0, tzinfo=UTC).isoformat(),
+            "participants": [],
+        },
+    )
+    assert create_response.status_code == 200
+    payload = create_response.json()
+
+    assert payload["decision"] == "allowed"
+    assert payload["booking"]["source"] == "member_portal"
+    assert payload["booking"]["primary_person_id"] == str(member.person_id)
+    assert payload["booking"]["start_lane"] == "hole_10"
+    assert payload["booking"]["party_size"] == 1
+    assert payload["booking"]["participants"][0]["display_name"] == member.person.full_name
+    assert payload["booking"]["participants"][0]["participant_type"] == "member"
+
+    tee_sheet = client.get(
+        "/api/golf/tee-sheet/day",
+        headers=headers,
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 4, 10).isoformat(),
+            "membership_type": "member",
+        },
+    )
+    assert tee_sheet.status_code == 200
+    rows = tee_sheet.json()["rows"]
+    target_row = next(
+        row
+        for row in rows
+        if row["tee_id"] == str(tee.id) and row["start_lane"] == "hole_10"
+    )
+    target_slot = next(
+        slot
+        for slot in target_row["slots"]
+        if slot["slot_datetime"] == slot_datetime.isoformat().replace("+00:00", "Z")
+    )
+    assert target_slot["occupancy"]["reserved_player_count"] == 1
+    assert target_slot["party_summary"]["member_count"] == 1
+    assert target_slot["bookings"][0]["id"] == payload["booking"]["id"]
+    assert target_slot["bookings"][0]["start_lane"] == "hole_10"
 
 
 def test_booking_create_blocks_when_slot_capacity_is_exceeded(client: TestClient, db_session: Session) -> None:

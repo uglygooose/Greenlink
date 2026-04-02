@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import BookingParticipantType, BookingRuleAppliesTo, BookingStatus
+from app.models.enums import BookingParticipantType, BookingPaymentStatus, BookingRuleAppliesTo, BookingStatus, StartLane
 from app.schemas.availability import AvailabilityTrace
 from app.schemas.booking_state import (
     AvailabilityDecisionInput,
@@ -29,6 +29,7 @@ class TeeSheetDayQuery(BaseModel):
     course_id: uuid.UUID
     date: date
     tee_id: uuid.UUID | None = None
+    start_lane: StartLane | None = None
     membership_type: BookingRuleAppliesTo = BookingRuleAppliesTo.MEMBER
     reference_datetime: datetime | None = None
 
@@ -69,6 +70,11 @@ class TeeSheetBookingSummary(BaseModel):
     status: BookingStatus
     party_size: int
     slot_datetime: datetime
+    start_lane: StartLane | None = None
+    cart_flag: bool = False
+    caddie_flag: bool = False
+    fee_label: str | None = None
+    payment_status: BookingPaymentStatus | None = None
     participants: list[TeeSheetBookingParticipantSummary] = Field(default_factory=list)
 
 
@@ -94,6 +100,7 @@ class TeeSheetSlotView(BaseModel):
 class TeeSheetRow(BaseModel):
     row_key: str
     tee_id: uuid.UUID | None = None
+    start_lane: StartLane | None = None
     label: str
     color_code: str | None = None
     slots: list[TeeSheetSlotView]

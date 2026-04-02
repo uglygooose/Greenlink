@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -28,13 +29,17 @@ from app.schemas.finance import (
     FinanceExportBatchCreateResult,
     FinanceExportBatchDetailResponse,
     FinanceExportBatchListResponse,
+    FinanceOutstandingSummaryResponse,
+    FinanceRevenueSummaryResponse,
     FinanceTransactionCreateRequest,
     FinanceTransactionCreateResult,
     FinanceExportBatchVoidResult,
+    FinanceTransactionVolumeSummaryResponse,
 )
 from app.services.finance.accounting_profile_mapping_service import AccountingProfileMappingService
 from app.services.finance.export_batch_service import FinanceExportBatchService
 from app.services.finance.ledger_service import LedgerService
+from app.services.finance.read_model_service import FinanceReadModelService
 
 router = APIRouter()
 
@@ -77,6 +82,53 @@ def get_club_journal(
     assert context.selected_club is not None
     service = LedgerService(db)
     return service.get_club_journal(club_id=context.selected_club.id)
+
+
+@router.get("/summaries/revenue", response_model=FinanceRevenueSummaryResponse)
+def get_finance_revenue_summary(
+    reference_datetime: datetime | None = Query(default=None),
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceRevenueSummaryResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    service = FinanceReadModelService(db)
+    return service.get_revenue_summary(
+        club_id=context.selected_club.id,
+        reference_datetime=reference_datetime,
+    )
+
+
+@router.get("/summaries/outstanding", response_model=FinanceOutstandingSummaryResponse)
+def get_finance_outstanding_summary(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceOutstandingSummaryResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    service = FinanceReadModelService(db)
+    return service.get_outstanding_summary(club_id=context.selected_club.id)
+
+
+@router.get("/summaries/transaction-volume", response_model=FinanceTransactionVolumeSummaryResponse)
+def get_finance_transaction_volume_summary(
+    reference_datetime: datetime | None = Query(default=None),
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceTransactionVolumeSummaryResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    service = FinanceReadModelService(db)
+    return service.get_transaction_volume_summary(
+        club_id=context.selected_club.id,
+        reference_datetime=reference_datetime,
+    )
 
 
 @router.get("/accounts/{account_id}/ledger", response_model=FinanceAccountLedgerResponse)

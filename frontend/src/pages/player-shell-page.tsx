@@ -130,13 +130,13 @@ export function PlayerShellPage(): JSX.Element {
           </div>
         </section>
 
-        <button
+        <Link
           className="flex w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-primary to-primary-dim py-5 text-on-primary shadow-lg transition-transform duration-100 active:scale-95"
-          type="button"
+          to="/player/book"
         >
           <MaterialSymbol filled icon="add_circle" />
           <span className="font-headline text-lg font-bold">Book Golf</span>
-        </button>
+        </Link>
 
         <Link
           className="flex items-center justify-between rounded-xl bg-surface-container-lowest px-5 py-4 shadow-sm transition-colors hover:bg-surface-container-low"
