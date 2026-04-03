@@ -7,10 +7,12 @@ import type { SuperadminLayoutContext } from "../routes/superadmin-layout";
 import {
   useAssignSuperadminClubUserMutation,
   useCreateSuperadminClubMutation,
+  useDeleteSuperadminClubMutation,
   useSuperadminAssignmentCandidatesQuery,
   useSuperadminClubOnboardingQuery,
   useSuperadminClubsQuery,
   useUpdateSuperadminClubOnboardingMutation,
+  useUpdateSuperadminClubStatusMutation,
 } from "../features/superadmin/hooks";
 import { useSession } from "../session/session-context";
 import type {
@@ -95,6 +97,7 @@ export function SuperadminClubsPage(): JSX.Element {
   const { search } = useOutletContext<SuperadminLayoutContext>();
   const [selectedClubId, setSelectedClubId] = useState<string | null>(bootstrap?.selected_club_id ?? null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [clubForm, setClubForm] = useState<SuperadminClubCreateInput>(emptyClubForm);
   const [basicInfoForm, setBasicInfoForm] = useState<SuperadminClubCreateInput>(emptyClubForm);
   const [financeProfileId, setFinanceProfileId] = useState<string | null>(null);
@@ -113,6 +116,8 @@ export function SuperadminClubsPage(): JSX.Element {
   });
   const createClubMutation = useCreateSuperadminClubMutation();
   const updateOnboardingMutation = useUpdateSuperadminClubOnboardingMutation();
+  const updateClubStatusMutation = useUpdateSuperadminClubStatusMutation();
+  const deleteClubMutation = useDeleteSuperadminClubMutation();
   const assignClubUserMutation = useAssignSuperadminClubUserMutation();
 
   const clubs = clubsQuery.data?.items ?? [];
@@ -229,6 +234,33 @@ export function SuperadminClubsPage(): JSX.Element {
       await setSelectedClub(club.id);
     } catch {
       // Keep the local workspace responsive even if bootstrap refresh lags.
+    }
+  }
+
+  async function handleToggleActive(): Promise<void> {
+    if (!selectedClubId || !selectedClub) return;
+    setNotice(null);
+    try {
+      await updateClubStatusMutation.mutateAsync({ clubId: selectedClubId, active: !selectedClub.active });
+      setNotice({
+        tone: "success",
+        message: selectedClub.active ? `${selectedClub.name} paused.` : `${selectedClub.name} reactivated.`,
+      });
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Failed to update club status." });
+    }
+  }
+
+  async function handleDeleteClub(): Promise<void> {
+    if (!selectedClubId || !selectedClub) return;
+    setIsDeleteConfirmOpen(false);
+    setNotice(null);
+    try {
+      await deleteClubMutation.mutateAsync(selectedClubId);
+      setSelectedClubId(null);
+      setNotice({ tone: "info", message: `${selectedClub.name} has been permanently removed.` });
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Failed to delete club." });
     }
   }
 
@@ -615,13 +647,35 @@ export function SuperadminClubsPage(): JSX.Element {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] ${statusBadgeClass(selectedClub.registry_status)}`}>
                       {selectedClub.registry_status}
                     </span>
                     <span className="rounded-full bg-surface-container-low px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                       {onboardingQuery.data?.progress_percent ?? 0}% progress
                     </span>
+                    <button
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+                        selectedClub.active
+                          ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          : "bg-primary-container text-on-primary-container hover:bg-primary-container/70"
+                      }`}
+                      disabled={updateClubStatusMutation.isPending}
+                      onClick={() => { void handleToggleActive(); }}
+                      type="button"
+                    >
+                      {selectedClub.active ? "Pause Club" : "Reactivate"}
+                    </button>
+                    {selectedClub.registry_status !== "active" && (
+                      <button
+                        className="rounded-full bg-error/10 px-3 py-1.5 text-xs font-bold text-error transition-colors hover:bg-error/20 disabled:opacity-50"
+                        disabled={deleteClubMutation.isPending}
+                        onClick={() => setIsDeleteConfirmOpen(true)}
+                        type="button"
+                      >
+                        Delete Club
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -818,6 +872,44 @@ export function SuperadminClubsPage(): JSX.Element {
           </section>
         </div>
       </div>
+
+      {isDeleteConfirmOpen && selectedClub ? (
+        <>
+          <button
+            aria-label="Close delete confirm"
+            className="fixed inset-0 z-40 bg-slate-900/40"
+            onClick={() => setIsDeleteConfirmOpen(false)}
+            type="button"
+          />
+          <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-8 shadow-2xl">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-error/10">
+              <MaterialSymbol className="text-error" icon="delete_forever" />
+            </div>
+            <h2 className="mt-4 font-headline text-xl font-bold text-on-surface">Delete {selectedClub.name}?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              This permanently removes the club and all its onboarding data. This action cannot be undone.
+              Only clubs that are not live can be deleted.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-surface-container-low"
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-error px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-error/90 disabled:opacity-50"
+                disabled={deleteClubMutation.isPending}
+                onClick={() => { void handleDeleteClub(); }}
+                type="button"
+              >
+                {deleteClubMutation.isPending ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {isCreateOpen ? (
         <>

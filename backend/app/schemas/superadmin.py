@@ -6,7 +6,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import ClubMembershipRole, ClubMembershipStatus, ClubOnboardingState, ClubOnboardingStep
+from app.models import (
+    ClubMembershipRole,
+    ClubMembershipStatus,
+    ClubOnboardingState,
+    ClubOnboardingStep,
+)
 
 
 class SuperadminClubCreateRequest(BaseModel):
@@ -114,6 +119,10 @@ class SuperadminClubOnboardingUpdateRequest(BaseModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     preferred_accounting_profile_id: uuid.UUID | None = None
     enabled_module_keys: list[str] | None = None
+
+
+class SuperadminClubStatusUpdateRequest(BaseModel):
+    active: bool
 
 
 class SuperadminClubAssignmentUpsertRequest(BaseModel):

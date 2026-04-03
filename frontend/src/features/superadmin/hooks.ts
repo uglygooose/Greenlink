@@ -114,6 +114,44 @@ export function useUpdateSuperadminClubOnboardingMutation() {
   });
 }
 
+export function useUpdateSuperadminClubStatusMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: ({ clubId, active }: { clubId: string; active: boolean }) =>
+      apiRequest<SuperadminClubSummary>(`/api/superadmin/clubs/${clubId}/status`, {
+        method: "PATCH",
+        accessToken: accessToken as string,
+        body: JSON.stringify({ active }),
+      }),
+    onSuccess: async (result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.onboarding(variables.clubId) });
+      queryClient.setQueryData<SuperadminClubSummary>(
+        superadminKeys.onboarding(variables.clubId),
+        (old) => (old ? { ...old, club: result } : old),
+      );
+    },
+  });
+}
+
+export function useDeleteSuperadminClubMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: (clubId: string) =>
+      apiRequest<void>(`/api/superadmin/clubs/${clubId}`, {
+        method: "DELETE",
+        accessToken: accessToken as string,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+    },
+  });
+}
+
 export function useAssignSuperadminClubUserMutation() {
   const queryClient = useQueryClient();
   const { accessToken } = useSession();

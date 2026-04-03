@@ -15,6 +15,7 @@ from app.schemas.superadmin import (
     SuperadminClubListResponse,
     SuperadminClubOnboardingDetailResponse,
     SuperadminClubOnboardingUpdateRequest,
+    SuperadminClubStatusUpdateRequest,
     SuperadminClubSummary,
 )
 from app.services.superadmin_onboarding_service import SuperadminOnboardingService
@@ -43,6 +44,36 @@ def create_superadmin_club(
 ) -> SuperadminClubSummary:
     return SuperadminOnboardingService(db).create_club(
         payload=payload,
+        actor_user_id=current_user.id,
+        correlation_id=_correlation_id(request),
+    )
+
+
+@router.patch("/clubs/{club_id}/status", response_model=SuperadminClubSummary)
+def update_superadmin_club_status(
+    club_id: uuid.UUID,
+    payload: SuperadminClubStatusUpdateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_superadmin),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> SuperadminClubSummary:
+    return SuperadminOnboardingService(db).set_club_active(
+        club_id=club_id,
+        active=payload.active,
+        actor_user_id=current_user.id,
+        correlation_id=_correlation_id(request),
+    )
+
+
+@router.delete("/clubs/{club_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_superadmin_club(
+    club_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(get_current_superadmin),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> None:
+    SuperadminOnboardingService(db).delete_club(
+        club_id=club_id,
         actor_user_id=current_user.id,
         correlation_id=_correlation_id(request),
     )

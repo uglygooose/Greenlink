@@ -24,11 +24,13 @@ from app.models import (
     PricingMatrix,
     User,
 )
+from app.models.domain_event_record import DomainEventRecord
+from app.models.platform_state import PlatformState
 from app.schemas.superadmin import (
     OnboardingStepStatus,
+    SuperadminAssignedUserSummary,
     SuperadminAssignmentCandidate,
     SuperadminAssignmentCandidateListResponse,
-    SuperadminAssignedUserSummary,
     SuperadminClubAssignmentResponse,
     SuperadminClubAssignmentUpsertRequest,
     SuperadminClubCreateRequest,
@@ -225,6 +227,70 @@ class SuperadminOnboardingService:
         )
         self.db.commit()
         return self.get_onboarding_detail(club_id=club.id)
+
+    def set_club_active(
+        self,
+        *,
+        club_id: uuid.UUID,
+        active: bool,
+        actor_user_id: uuid.UUID,
+        correlation_id: str | None = None,
+    ) -> SuperadminClubSummary:
+        club = self._get_club(club_id)
+        if club.active == active:
+            return self._club_summary(club)
+        club.active = active
+        self.db.add(club)
+        self.publisher.publish(
+            event_type="club.deactivated" if not active else "club.reactivated",
+            aggregate_type="club",
+            aggregate_id=str(club.id),
+            payload={"active": active},
+            correlation_id=correlation_id,
+            club_id=club.id,
+            actor_user_id=actor_user_id,
+        )
+        self.db.commit()
+        self.db.refresh(club)
+        return self._club_summary(club)
+
+    def delete_club(
+        self,
+        *,
+        club_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        correlation_id: str | None = None,
+    ) -> None:
+        club = self._get_club(club_id)
+        if self._registry_status(club) == "active":
+            raise AppError(
+                code="superadmin_club_delete_forbidden",
+                message="Live clubs cannot be deleted. Deactivate the club first.",
+                status_code=409,
+            )
+        # Null out domain event records and platform state refs (no CASCADE on those FKs)
+        for record in self.db.scalars(
+            select(DomainEventRecord).where(DomainEventRecord.club_id == club_id)
+        ).all():
+            record.club_id = None
+            self.db.add(record)
+        for state in self.db.scalars(
+            select(PlatformState).where(PlatformState.initial_club_id == club_id)
+        ).all():
+            state.initial_club_id = None
+            self.db.add(state)
+        self.db.flush()
+        self.publisher.publish(
+            event_type="club.deleted",
+            aggregate_type="club",
+            aggregate_id=str(club_id),
+            payload={"slug": club.slug, "name": club.name},
+            correlation_id=correlation_id,
+            club_id=None,
+            actor_user_id=actor_user_id,
+        )
+        self.db.delete(club)
+        self.db.commit()
 
     def search_assignment_candidates(
         self, *, query: str | None = None, limit: int = 12
