@@ -1,4 +1,30 @@
 const env = import.meta.env;
 
 export const appEnv = env.VITE_APP_ENV ?? "development";
-export const apiBaseUrl = env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function normalizeBaseUrl(value: string): string {
+  if (typeof window === "undefined") {
+    return value.replace(/\/$/, "");
+  }
+
+  try {
+    const url = new URL(value);
+    const frontendHostname = window.location.hostname;
+    if (
+      isLoopbackHost(url.hostname) &&
+      isLoopbackHost(frontendHostname) &&
+      url.hostname !== frontendHostname
+    ) {
+      url.hostname = frontendHostname;
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value.replace(/\/$/, "");
+  }
+}
+
+export const apiBaseUrl = normalizeBaseUrl(env.VITE_API_BASE_URL ?? "http://localhost:8000");

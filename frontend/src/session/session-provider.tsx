@@ -6,6 +6,7 @@ import { fetchBootstrap } from "../api/session";
 import {
   AUTH_TOKEN_CHANGED_EVENT,
   SESSION_EXPIRED_EVENT,
+  emitSessionExpired,
   getAccessToken,
   getSelectedClubId,
   setAccessToken as persistAccessToken,
@@ -24,6 +25,16 @@ export function SessionProvider({ children }: Props): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
+  function expireSession(): void {
+    persistAccessToken(null);
+    setSelectedClubId(null);
+    setAccessTokenState(null);
+    setBootstrap(null);
+    setLoading(false);
+    setInitialized(true);
+    emitSessionExpired();
+  }
+
   useEffect(() => {
     if (!accessToken) {
       setInitialized(true);
@@ -40,12 +51,20 @@ export function SessionProvider({ children }: Props): JSX.Element {
         setInitialized(true);
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
-          const refreshed = await authApi.refresh();
-          setAccessToken(refreshed.access_token);
-          const data = await fetchBootstrap(refreshed.access_token, selectedClubId);
-          setBootstrap(data);
-          setInitialized(true);
-          return;
+          try {
+            const refreshed = await authApi.refresh();
+            setAccessToken(refreshed.access_token);
+            const data = await fetchBootstrap(refreshed.access_token, selectedClubId);
+            setBootstrap(data);
+            setInitialized(true);
+            return;
+          } catch (refreshError) {
+            if (refreshError instanceof ApiError && refreshError.status === 401) {
+              expireSession();
+              return;
+            }
+            throw refreshError;
+          }
         }
         throw error;
       } finally {
@@ -122,11 +141,19 @@ export function SessionProvider({ children }: Props): JSX.Element {
       return data;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        const refreshed = await refresh();
-        const data = await fetchBootstrap(refreshed.access_token, selectedClubId);
-        setBootstrap(data);
-        setInitialized(true);
-        return data;
+        try {
+          const refreshed = await refresh();
+          const data = await fetchBootstrap(refreshed.access_token, selectedClubId);
+          setBootstrap(data);
+          setInitialized(true);
+          return data;
+        } catch (refreshError) {
+          if (refreshError instanceof ApiError && refreshError.status === 401) {
+            expireSession();
+            return null;
+          }
+          throw refreshError;
+        }
       }
       throw error;
     } finally {

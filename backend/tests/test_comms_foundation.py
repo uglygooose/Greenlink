@@ -171,10 +171,10 @@ def test_create_news_post_uses_current_user_person_as_author(
         name="Comms Admin Club",
         slug=f"comms-admin-{uuid.uuid4().hex[:6]}",
     )
-    staff_user = _create_user(db_session, email=f"comms_staff_{uuid.uuid4().hex[:6]}@test.com")
-    _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
+    admin_user = _create_user(db_session, email=f"comms_admin_{uuid.uuid4().hex[:6]}@test.com")
+    _assign_membership(db_session, user=admin_user, club=club, role=ClubMembershipRole.CLUB_ADMIN)
 
-    headers = _auth_headers(client, email=staff_user.email)
+    headers = _auth_headers(client, email=admin_user.email)
     headers["X-Club-Id"] = str(club.id)
 
     response = client.post(
@@ -192,4 +192,34 @@ def test_create_news_post_uses_current_user_person_as_author(
     data = response.json()
     assert data["title"] == "Opening Hours"
     assert data["status"] == "published"
-    assert data["author"]["person_id"] == str(staff_user.person_id)
+    assert data["author"]["person_id"] == str(admin_user.person_id)
+
+
+def test_staff_user_cannot_create_news_posts(
+    client: TestClient, db_session: Session
+) -> None:
+    club = _create_club(
+        db_session,
+        name="Comms Staff Club",
+        slug=f"comms-staff-{uuid.uuid4().hex[:6]}",
+    )
+    staff_user = _create_user(db_session, email=f"comms_staff_{uuid.uuid4().hex[:6]}@test.com")
+    _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
+
+    headers = _auth_headers(client, email=staff_user.email)
+    headers["X-Club-Id"] = str(club.id)
+
+    response = client.post(
+        "/api/comms/posts",
+        headers=headers,
+        json={
+            "title": "Staff Update",
+            "body": "Staff should not publish member updates.",
+            "visibility": "members_only",
+            "pinned": False,
+            "publish": True,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Club admin access is required for club configuration changes"
