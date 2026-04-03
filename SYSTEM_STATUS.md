@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-03 18:30 SAST
+Last updated: 2026-04-03 18:45 SAST
 
 ## Canonical Snapshot Role
 
@@ -24,23 +24,25 @@ This file is the canonical current snapshot of actual repo state.
 
 - Status: Partial
 - Live: accounts, journal, ledger, revenue summary, outstanding summary, transaction-volume summary, canonical export batches, accounting export profile mapping
-- Backend now returns pre-computed pct fields on each summary item (`revenue_share_pct`, `volume_share_pct`, `accounts_*_pct`) — AdminReportsPage consumes these directly, zero client-side finance math remains
+- Backend now returns pre-computed pct fields on each summary item (`revenue_share_pct`, `volume_share_pct`, `accounts_*_pct`); `AdminReportsPage` consumes these directly and no client-side finance math remains
 - Not built: external sync, reconciliation, package-specific export validation
 
 ## Orders and POS Status
 
 - Status: Partial
 - Live: player ordering, admin order queue, charge posting, settlement recording, POS terminal
-- POS terminal is inside the router-owned AdminLayout — no standalone nav chrome
+- POS terminal is inside the router-owned AdminLayout; no standalone nav chrome
 - Not built: member account checkout in POS
 
 ## SA Status
 
 - Status: Partial
 - Live: superadmin route group, persistent shell, club registry, club creation, onboarding workspace (Basic Info, Finance, Rules, Modules)
-- Live: backend-owned onboarding progression — frontend sends intent only
-- Live: Overview page at `/superadmin/overview` — fleet KPIs, finance/team readiness bars, needs-attention action list, clubs table
-- Live: club pause/reactivate (`PATCH /clubs/{id}/status`), club delete (`DELETE /clubs/{id}`, blocked for live clubs)
+- Live: backend-owned onboarding progression; frontend sends intent only
+- Live: overview page at `/superadmin/overview` with fleet KPIs, finance/team readiness bars, needs-attention list, and clubs table
+- Live: club pause/reactivate (`PATCH /clubs/{id}/status`) and club delete (`DELETE /clubs/{id}`, blocked for live clubs)
+- Live: overview and clubs actions carry a concrete `clubId` route selection into the registry
+- Live: superadmin can hand off into club-scoped admin workspaces (`/admin/finance`, `/admin/golf/settings`, `/admin/dashboard`) after selecting a club
 - Default redirect is `/superadmin/overview`; sidebar has two real nav items (Overview, Clubs)
 - Not built: full Rules and Modules configuration, invitation/provisioning flow
 
@@ -48,7 +50,7 @@ This file is the canonical current snapshot of actual repo state.
 
 - Status: Partial
 - Live: player home, player ordering, club updates news feed
-- No fake upcoming bookings — honest empty state until backend member-booking read model exists
+- No fake upcoming bookings; honest empty state until a backend member-booking read model exists
 - Not built: booking read model, booking flow, profile flow
 
 ## Known Constraints
@@ -63,13 +65,12 @@ This file is the canonical current snapshot of actual repo state.
 
 ## Known Risks
 
-- Login still hard-navigates superadmin users to `/admin/select-club` before route protection corrects to `/superadmin/overview`.
-- No player member-booking read model exists yet — player-home bookings remain empty state.
+- No player member-booking read model exists yet; player-home bookings remain empty state.
 - Non-finance reporting visuals (order status, member breakdown) still compose charts from backend records in the frontend; a dedicated reporting aggregation slice does not exist yet.
 
 ## Latest Validation
 
-- `frontend`: `npm.cmd run typecheck` — clean
-- `frontend`: targeted Vitest suites for persistent shells, finance pages, player home, and superadmin onboarding
-- `backend`: `py -m uv run pytest -q` — full suite
-- `backend`: `py -m uv run ruff check .` — passes (pre-existing E501 in superadmin service)
+- `frontend`: `npm.cmd run typecheck` - clean
+- `frontend`: targeted Vitest suites for persistent shells, route protection, finance pages, player home, and superadmin onboarding
+- `backend`: `py -m uv run pytest -q` - full suite
+- `backend`: `py -m uv run ruff check .` - passes (pre-existing E501 in superadmin service)

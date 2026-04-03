@@ -1,5 +1,5 @@
 GREENLINK CODEX EXECUTION RULES
-Last updated: 2026-04-03 18:30 SAST
+Last updated: 2026-04-03 18:45 SAST
 
 Canonical role:
 - Canonical implementation rules file.
@@ -30,7 +30,7 @@ Finance rules
 - No frontend financial calculations.
 - React must not compute finance totals, balances, arrears, revenue, outstanding values, transaction-volume KPIs, chart widths, or proportions.
 - Finance KPI displays and chart bars must use backend read-model endpoints and their pre-computed pct fields only.
-- Backend summary items carry `revenue_share_pct`, `volume_share_pct`, and `accounts_*_pct` — use these for bar widths, never derive them client-side.
+- Backend summary items carry `revenue_share_pct`, `volume_share_pct`, and `accounts_*_pct`; use these for bar widths, never derive them client-side.
 - If a backend finance summary does not exist for a metric, remove the metric or show a neutral unavailable state.
 - Do not preserve finance cards by recreating the same math elsewhere in React.
 
@@ -43,11 +43,13 @@ Superadmin onboarding rules
 - Do not introduce a generic workflow engine for onboarding.
 
 Superadmin club management rules
-- Pause and reactivate use PATCH /superadmin/clubs/{id}/status — `{ active: bool }`.
-- Hard delete uses DELETE /superadmin/clubs/{id} — blocked for live clubs (registry_status == "active").
-- Delete must clear non-cascading FK columns (domain_event_record.club_id, platform_state.initial_club_id) before deleting the club row.
+- Pause and reactivate use PATCH `/superadmin/clubs/{id}/status` with `{ active: bool }`.
+- Hard delete uses DELETE `/superadmin/clubs/{id}` and is blocked for live clubs (`registry_status == "active"`).
+- Delete must clear non-cascading FK columns (`domain_event_record.club_id`, `platform_state.initial_club_id`) before deleting the club row.
 - Delete confirmation modal is required in the UI before executing.
-- Superadmin nav contains only live routes — do not add placeholder items that link to the same page.
+- Superadmin nav contains only live routes; do not add placeholder items that link to the same page.
+- Superadmin overview and clubs actions must carry a concrete club selection into the destination route; do not drop users into unscoped admin pages when the action is club-specific.
+- Superadmin may bridge into existing club-scoped `/admin/*` workspaces after selecting a club; do not duplicate finance, rules, or dashboard surfaces inside superadmin when the admin workspace already exists.
 
 Tee sheet and booking rules
 - Tee sheet is a read model.

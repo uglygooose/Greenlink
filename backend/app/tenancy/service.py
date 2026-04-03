@@ -50,7 +50,10 @@ class TenancyService:
             if raw_selected_club_id is not None:
                 selected_club = self.db.get(Club, raw_selected_club_id)
                 if selected_club is None:
-                    raise NotFoundError("Selected club not found")
+                    if allow_unselected and not require_explicit_selection:
+                        raw_selected_club_id = None
+                    else:
+                        raise NotFoundError("Selected club not found")
             elif not allow_unselected:
                 raise AuthorizationError("Club selection is required")
             return TenancyContext(

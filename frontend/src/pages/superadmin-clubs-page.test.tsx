@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { ApiError } from "../api/client";
 import { SuperadminLayout } from "../routes/superadmin-layout";
 import { SuperadminClubsPage } from "./superadmin-clubs-page";
 
@@ -12,6 +13,8 @@ const mockUseSuperadminClubOnboardingQuery = vi.fn();
 const mockUseSuperadminAssignmentCandidatesQuery = vi.fn();
 const mockUseCreateSuperadminClubMutation = vi.fn();
 const mockUseUpdateSuperadminClubOnboardingMutation = vi.fn();
+const mockUseUpdateSuperadminClubStatusMutation = vi.fn();
+const mockUseDeleteSuperadminClubMutation = vi.fn();
 const mockUseAssignSuperadminClubUserMutation = vi.fn();
 const mockUseRuleSetsQuery = vi.fn();
 const mockUsePricingMatricesQuery = vi.fn();
@@ -26,6 +29,8 @@ vi.mock("../features/superadmin/hooks", () => ({
   useSuperadminAssignmentCandidatesQuery: (args: unknown) => mockUseSuperadminAssignmentCandidatesQuery(args),
   useCreateSuperadminClubMutation: () => mockUseCreateSuperadminClubMutation(),
   useUpdateSuperadminClubOnboardingMutation: () => mockUseUpdateSuperadminClubOnboardingMutation(),
+  useUpdateSuperadminClubStatusMutation: () => mockUseUpdateSuperadminClubStatusMutation(),
+  useDeleteSuperadminClubMutation: () => mockUseDeleteSuperadminClubMutation(),
   useAssignSuperadminClubUserMutation: () => mockUseAssignSuperadminClubUserMutation(),
 }));
 
@@ -51,6 +56,7 @@ function renderPage(): void {
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route path="clubs" element={<SuperadminClubsPage />} />
           </Route>
+          <Route path="/admin/finance" element={<div>Finance Workspace</div>} />
         </Routes>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -158,6 +164,16 @@ describe("SuperadminClubsPage", () => {
 
     mockUseUpdateSuperadminClubOnboardingMutation.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(buildOnboardingDetail()),
+      isPending: false,
+    });
+
+    mockUseUpdateSuperadminClubStatusMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ ...buildClub(), active: false, registry_status: "paused" }),
+      isPending: false,
+    });
+
+    mockUseDeleteSuperadminClubMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
       isPending: false,
     });
 
@@ -286,6 +302,78 @@ describe("SuperadminClubsPage", () => {
           preferred_accounting_profile_id: "profile-1",
         },
       });
+    });
+  });
+
+  test("clears the selected club after deleting the active club", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    const setSelectedClub = vi.fn().mockResolvedValue(undefined);
+    mockUseDeleteSuperadminClubMutation.mockReturnValue({ mutateAsync, isPending: false });
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      bootstrap: {
+        selected_club_id: "club-1",
+        user: { display_name: "Root Admin", user_type: "superadmin" },
+      },
+      setSelectedClub,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /delete club/i }));
+    fireEvent.click(screen.getByRole("button", { name: /delete permanently/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith("club-1");
+      expect(setSelectedClub).toHaveBeenCalledWith(null);
+    });
+  });
+
+  test("recovers registry state when delete returns 404", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(new ApiError(404, "Club not found"));
+    const setSelectedClub = vi.fn().mockResolvedValue(undefined);
+    mockUseDeleteSuperadminClubMutation.mockReturnValue({ mutateAsync, isPending: false });
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      bootstrap: {
+        selected_club_id: "club-1",
+        user: { display_name: "Root Admin", user_type: "superadmin" },
+      },
+      setSelectedClub,
+    });
+    mockUseSuperadminClubsQuery.mockReturnValue({
+      data: { items: [buildClub()], total_count: 1 },
+      isLoading: false,
+      refetch: vi.fn().mockResolvedValue({ data: { items: [], total_count: 0 } }),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /delete club/i }));
+    fireEvent.click(screen.getByRole("button", { name: /delete permanently/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith("club-1");
+      expect(setSelectedClub).toHaveBeenCalledWith(null);
+      expect(screen.getByText(/registry refreshed/i)).toBeInTheDocument();
+    });
+  });
+
+  test("opens the finance workspace from the finance step", async () => {
+    const setSelectedClub = vi.fn().mockResolvedValue(undefined);
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      bootstrap: {
+        selected_club_id: "club-1",
+        user: { display_name: "Root Admin", user_type: "superadmin" },
+      },
+      setSelectedClub,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /open finance workspace/i }));
+
+    await waitFor(() => {
+      expect(setSelectedClub).toHaveBeenCalledWith("club-1");
+      expect(screen.getByText("Finance Workspace")).toBeInTheDocument();
     });
   });
 });

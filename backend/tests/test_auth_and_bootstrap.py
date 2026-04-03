@@ -236,3 +236,33 @@ def test_superadmin_can_preview_without_default_club(
     )
     assert selected.status_code == 200
     assert selected.json()["selected_club_id"] == str(club.id)
+
+
+def test_superadmin_bootstrap_ignores_deleted_selected_club(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Archived Club", slug="archived-club")
+    login = _login(client, "root@example.com")
+    access_token = login["access_token"]
+
+    selected = client.get(
+        f"/api/session/bootstrap?selected_club_id={club.id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["selected_club_id"] == str(club.id)
+
+    db_session.delete(club)
+    db_session.commit()
+
+    deleted_selected = client.get(
+        f"/api/session/bootstrap?selected_club_id={club.id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert deleted_selected.status_code == 200
+    payload = deleted_selected.json()
+    assert payload["selected_club_id"] is None
+    assert payload["selected_club"] is None
+    assert payload["available_clubs"] == []
+    assert payload["landing_path"] == "/superadmin/clubs"

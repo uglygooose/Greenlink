@@ -145,7 +145,7 @@ export function SuperadminOverviewPage(): JSX.Element {
                 <NavLink
                   className="flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-3 transition-colors hover:bg-surface-container"
                   key={club.id}
-                  to="/superadmin/clubs"
+                  to={`/superadmin/clubs?clubId=${club.id}`}
                 >
                   <div>
                     <p className="text-sm font-semibold text-on-surface">{club.name}</p>
@@ -188,7 +188,11 @@ export function SuperadminOverviewPage(): JSX.Element {
         ) : (
           <div className="divide-y divide-slate-100">
             {stats.recentClubs.map((club) => (
-              <div className="flex items-center justify-between py-3" key={club.id}>
+              <NavLink
+                className="flex items-center justify-between py-3 transition-colors hover:bg-surface-container-low/60"
+                key={club.id}
+                to={`/superadmin/clubs?clubId=${club.id}`}
+              >
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
                     <MaterialSymbol className="text-sm text-primary" icon="sports_golf" />
@@ -208,7 +212,7 @@ export function SuperadminOverviewPage(): JSX.Element {
                     {statusLabel(club.registry_status)}
                   </span>
                 </div>
-              </div>
+              </NavLink>
             ))}
           </div>
         )}

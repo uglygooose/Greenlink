@@ -26,8 +26,8 @@ export function LoginPage(): JSX.Element {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await login(email, password);
-      navigate(result.user.user_type === "superadmin" ? "/admin/select-club" : "/", { replace: true });
+      await login(email, password);
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

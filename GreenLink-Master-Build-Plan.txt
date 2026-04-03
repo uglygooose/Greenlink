@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-03 18:30 SAST
+Last updated: 2026-04-03 18:45 SAST
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -16,7 +16,7 @@ Phase 2 - Core Club Operations
   - Not built: booking creation/editing UX
 - Orders queue and finance posting: COMPLETED
 - POS terminal foundation: COMPLETED
-  - POS now inside router-owned AdminLayout — no standalone nav chrome
+  - POS now inside router-owned AdminLayout; no standalone nav chrome
 - Communications news-post CRUD and player feed: COMPLETED
 
 Phase 3 - Finance
@@ -25,8 +25,8 @@ Phase 3 - Finance
 - FIN-3 Accounting export profile mapping: COMPLETED
 - FIN-4 Admin finance frontend boundary: COMPLETED
   - All five admin pages (dashboard, finance, reports, members, halfway) use backend summaries only
-  - Backend computes revenue_share_pct, volume_share_pct, and account health pct fields
-  - AdminReportsPage chart bars driven entirely by backend-provided pct fields — zero client-side finance math
+  - Backend computes `revenue_share_pct`, `volume_share_pct`, and account health pct fields
+  - `AdminReportsPage` chart bars are driven entirely by backend-provided pct fields; zero client-side finance math
 - FIN-5 External accounting sync / validation / reconciliation: NOT BUILT
 
 Phase 4 - Superadmin
@@ -39,27 +39,33 @@ Phase 4 - Superadmin
 - SA-4 Superadmin Overview page: COMPLETED
   - Fleet KPIs (total / live / onboarding / paused)
   - Finance-readiness and team-assignment progress bars
-  - Needs-attention action list (onboarding clubs missing finance or team)
-  - All clubs table — derived from existing club list endpoint, no new backend
+  - Needs-attention action list links into the targeted club in the registry
+  - All clubs table is derived from the existing club list endpoint; rows link into targeted club detail
 - SA-5 Club lifecycle management: COMPLETED
-  - Pause (PATCH /clubs/{id}/status) — toggles active, any club
-  - Reactivate — same endpoint, reverses pause
-  - Delete (DELETE /clubs/{id}) — hard delete, blocked for live clubs (409)
-  - Frontend: pause/resume pill + delete button with confirmation modal in club detail header
-- SA-6 Invitation / provisioning workflow: NOT BUILT
+  - Pause (PATCH `/clubs/{id}/status`) toggles active on any club
+  - Reactivate uses the same endpoint and reverses pause
+  - Delete (DELETE `/clubs/{id}`) hard deletes and is blocked for live clubs (409)
+  - Frontend: pause/resume pill plus delete button with confirmation modal in club detail header
+- SA-6 Superadmin to admin workspace handoff: COMPLETED
+  - Finance step opens `/admin/finance` for the selected club
+  - Rules step opens `/admin/golf/settings` for the selected club
+  - Modules step previews `/admin/dashboard` for the selected club
+  - `ProtectedRoute` allows superadmin entry into club-scoped admin routes when a selected club exists
+- SA-7 Invitation / provisioning workflow: NOT BUILT
 
 Phase 5 - Player
 - PL-1 Player home and ordering: PARTIAL
   - Live: home, order, news feed
-  - No fake upcoming bookings — honest empty state
+  - No fake upcoming bookings; honest empty state
 - PL-2 Player booking flow: NOT BUILT
 - PL-3 Player profile flow: NOT BUILT
 
 Cross-cutting corrections completed
-- Persistent admin shell (all /admin/* including POS now inside AdminLayout): COMPLETED
+- Persistent admin shell (all `/admin/*` including POS now inside AdminLayout): COMPLETED
 - Persistent superadmin shell: COMPLETED
 - Superadmin onboarding progression ownership (backend-owned): COMPLETED
 - Player home booking truth cleanup: COMPLETED
 - Finance chart math moved to backend (pct fields on summary items): COMPLETED
 - Repo authority/status documentation: COMPLETED
 - Superadmin dead nav items replaced with live pages: COMPLETED
+- Superadmin route handoff into GreenLink admin workspaces: COMPLETED

@@ -63,6 +63,7 @@ npm.cmd run test
 - Non-superadmin users with one active membership auto-select that club.
 - Non-superadmin users with multiple active memberships must provide selected club context.
 - Superadmin can authenticate without a selected club and resolves to the dedicated `/superadmin/clubs` workspace.
+- Once a superadmin selects a club, superadmin actions may hand off into existing club-scoped `/admin/*` workspaces for finance, golf settings, and dashboard preview.
 - Zero-active-membership users can authenticate but bootstrap returns no usable club-scoped shell.
 - Refresh tokens are cookie-backed and rotated on refresh; logout revokes the current session.
 
@@ -70,7 +71,7 @@ npm.cmd run test
 
 - Auth foundation and refresh-token rotation
 - Session bootstrap and tenancy resolution
-- Router-owned persistent admin and superadmin shells (all /admin/* including POS inside AdminLayout)
+- Router-owned persistent admin and superadmin shells (all `/admin/*` including POS inside AdminLayout)
 - Golf operations backend plus admin tee-sheet lifecycle UI
 - People and membership foundations
 - Finance accounts, journal, backend summaries with pre-computed pct fields, canonical export batches, and accounting profile mapping
@@ -79,6 +80,7 @@ npm.cmd run test
 - Superadmin club onboarding with backend-owned progression
 - Superadmin overview page (fleet KPIs, readiness bars, needs-attention list)
 - Club lifecycle management: pause, reactivate, and delete from superadmin
+- Superadmin handoff into real admin workspaces for finance, rules/settings, and dashboard preview
 
 ## Current major gaps
 

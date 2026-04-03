@@ -128,7 +128,7 @@ export function useUpdateSuperadminClubStatusMutation() {
     onSuccess: async (result, variables) => {
       await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
       await queryClient.invalidateQueries({ queryKey: superadminKeys.onboarding(variables.clubId) });
-      queryClient.setQueryData<SuperadminClubSummary>(
+      queryClient.setQueryData<SuperadminClubOnboardingDetail>(
         superadminKeys.onboarding(variables.clubId),
         (old) => (old ? { ...old, club: result } : old),
       );
@@ -141,12 +141,26 @@ export function useDeleteSuperadminClubMutation() {
   const { accessToken } = useSession();
 
   return useMutation({
-    mutationFn: (clubId: string) =>
-      apiRequest<void>(`/api/superadmin/clubs/${clubId}`, {
-        method: "DELETE",
-        accessToken: accessToken as string,
-      }),
-    onSuccess: async () => {
+    mutationFn: async (clubId: string) => {
+      try {
+        await apiRequest<void>(`/api/superadmin/clubs/${clubId}`, {
+          method: "DELETE",
+          accessToken: accessToken as string,
+        });
+      } catch (error) {
+        if (error instanceof Error && "status" in error && error.status === 404) {
+          return;
+        }
+        throw error;
+      }
+    },
+    onSuccess: async (_, clubId) => {
+      queryClient.setQueryData<SuperadminClubListResponse | undefined>(superadminKeys.clubs, (old) => {
+        if (!old) return old;
+        const items = old.items.filter((club) => club.id !== clubId);
+        return { ...old, items, total_count: items.length };
+      });
+      queryClient.removeQueries({ queryKey: superadminKeys.onboarding(clubId) });
       await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
     },
   });

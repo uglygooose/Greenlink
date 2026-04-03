@@ -109,3 +109,20 @@ test("renders superadmin shell when session is aligned with the superadmin route
   );
   expect(await screen.findByText("Superadmin Shell")).toBeInTheDocument();
 });
+
+test("allows a superadmin with a selected club into admin routes", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        user: { ...baseBootstrap.user, user_type: "superadmin" },
+        role_shell: "superadmin",
+        landing_path: "/superadmin/clubs",
+        default_workspace: "clubs",
+      },
+    },
+    ["/admin"],
+  );
+  expect(await screen.findByText("Admin Shell")).toBeInTheDocument();
+});

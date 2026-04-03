@@ -1,6 +1,6 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-03 18:30 SAST
+Last updated: 2026-04-03 18:45 SAST
 
 ## Canonical Role
 
@@ -49,11 +49,11 @@ The canonical authority set is:
 ### FIN - Finance
 - Partial
 - FinanceAccount, append-only FinanceTransaction, journal, ledger, revenue summary, outstanding summary, and transaction-volume summary are built.
-- Revenue summary items now carry `revenue_share_pct`; transaction-volume items carry `volume_share_pct`; outstanding summary carries `accounts_in_arrears_pct`, `accounts_in_credit_pct`, `accounts_settled_pct` — all computed backend-side.
+- Revenue summary items now carry `revenue_share_pct`; transaction-volume items carry `volume_share_pct`; outstanding summary carries `accounts_in_arrears_pct`, `accounts_in_credit_pct`, and `accounts_settled_pct`, all computed backend-side.
 - Canonical export batches and mapped accounting export profiles are built.
 - No external accounting sync, reconciliation engine, or package-specific validation layer exists.
 - Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`) use backend summary endpoints only. No finance math in React.
-- `AdminReportsPage` chart bar widths driven entirely by backend-provided pct fields.
+- `AdminReportsPage` chart bar widths are driven entirely by backend-provided pct fields.
 
 ### Orders and POS
 - Partial
@@ -73,8 +73,14 @@ The canonical authority set is:
 - Club registry, club creation, and onboarding workspace (Basic Info, Finance, Rules, Modules) are live.
 - Rules and Modules steps are readiness scaffolds, not full configuration surfaces.
 - Superadmin nav has two live routes: Overview (`/superadmin/overview`) and Clubs (`/superadmin/clubs`).
-- Overview page: fleet KPIs, finance-readiness and team-assignment progress bars, needs-attention list, clubs table — all derived from the club list endpoint.
+- Overview page: fleet KPIs, finance-readiness and team-assignment progress bars, needs-attention list, and clubs table, all derived from the club list endpoint.
+- Overview action items and club rows route into the targeted club detail using the clubs page with a `clubId` query parameter.
 - Club management: superadmin can pause (`PATCH /clubs/{id}/status`), reactivate, or permanently delete (`DELETE /clubs/{id}`) any non-live club. Delete is blocked for live clubs with a 409.
+- Superadmin can bridge into existing club-scoped admin workspaces after selecting a club:
+  - Finance step -> `/admin/finance`
+  - Rules step -> `/admin/golf/settings`
+  - Modules preview -> `/admin/dashboard`
+- `ProtectedRoute` allows that superadmin-to-admin bridge only when a selected club exists.
 - Default superadmin redirect is `/superadmin/overview`.
 
 ### Player
@@ -133,17 +139,16 @@ Not built:
 
 ## Known Risks
 
-- Login still hard-navigates superadmin users to `/admin/select-club` before route protection corrects them to `/superadmin/overview`.
 - Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`.
 - Some non-finance reporting visuals (order status breakdown, member breakdown) still compose charts in the frontend from backend records; a dedicated reporting aggregation slice does not exist yet.
 
 ## Validation State
 
 Latest validation:
-- `frontend`: `npm.cmd run typecheck` — passes clean
-- `frontend`: targeted Vitest suites for shell persistence, finance pages, player home, and superadmin onboarding
-- `backend`: `py -m uv run pytest -q` — full suite
-- `backend`: `py -m uv run ruff check .` — passes (pre-existing E501 violations in superadmin service are not introduced by this session)
+- `frontend`: `npm.cmd run typecheck` - passes clean
+- `frontend`: targeted Vitest suites for shell persistence, route protection, finance pages, player home, and superadmin onboarding
+- `backend`: `py -m uv run pytest -q` - full suite
+- `backend`: `py -m uv run ruff check .` - passes (pre-existing E501 violations in superadmin service are not introduced by this session)
 
 ## Final Rule
 

@@ -26,7 +26,12 @@ export function ProtectedRoute({ shell }: Props): JSX.Element {
     return <div className="centered-panel">No active club access is available for this account.</div>;
   }
 
-  if (shell && bootstrap.role_shell && shell !== bootstrap.role_shell) {
+  const allowSuperadminAdminBridge =
+    shell === "admin" &&
+    bootstrap.user.user_type === "superadmin" &&
+    bootstrap.selected_club_id !== null;
+
+  if (shell && bootstrap.role_shell && shell !== bootstrap.role_shell && !allowSuperadminAdminBridge) {
     return <Navigate to={bootstrap.landing_path} replace />;
   }
 

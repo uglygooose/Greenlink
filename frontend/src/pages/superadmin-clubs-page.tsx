@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { usePricingMatricesQuery, useRuleSetsQuery } from "../features/golf-settings/hooks";
@@ -92,9 +92,15 @@ function currentStepDescription(step: ClubOnboardingStep): { title: string; body
   };
 }
 
+function hasStatus(error: unknown, status: number): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === status;
+}
+
 export function SuperadminClubsPage(): JSX.Element {
   const { accessToken, bootstrap, setSelectedClub } = useSession();
   const { search } = useOutletContext<SuperadminLayoutContext>();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedClubId, setSelectedClubId] = useState<string | null>(bootstrap?.selected_club_id ?? null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -129,10 +135,17 @@ export function SuperadminClubsPage(): JSX.Element {
     );
   }, [clubs, search]);
   const selectedClub = onboardingQuery.data?.club;
+  const routeClubId = searchParams.get("clubId");
 
   useEffect(() => {
     if (clubs.length === 0) {
       setSelectedClubId(null);
+      return;
+    }
+    if (routeClubId && clubs.some((club) => club.id === routeClubId)) {
+      if (routeClubId !== selectedClubId) {
+        setSelectedClubId(routeClubId);
+      }
       return;
     }
     if (selectedClubId && clubs.some((club) => club.id === selectedClubId)) {
@@ -143,7 +156,7 @@ export function SuperadminClubsPage(): JSX.Element {
       return;
     }
     setSelectedClubId(clubs[0].id);
-  }, [bootstrap?.selected_club_id, clubs, selectedClubId]);
+  }, [bootstrap?.selected_club_id, clubs, routeClubId, selectedClubId]);
 
   useEffect(() => {
     if (!onboardingQuery.data) return;
@@ -159,6 +172,39 @@ export function SuperadminClubsPage(): JSX.Element {
   const currentStep = onboardingQuery.data?.club.onboarding_current_step ?? "basic_info";
   const currentStepIndex = STEP_ORDER.indexOf(currentStep);
   const stepMeta = currentStepDescription(currentStep);
+
+  function syncClubRoute(clubId: string | null): void {
+    const next = new URLSearchParams(searchParams);
+    if (clubId) {
+      next.set("clubId", clubId);
+    } else {
+      next.delete("clubId");
+    }
+    setSearchParams(next, { replace: true });
+  }
+
+  async function syncSelectedClub(clubId: string | null): Promise<void> {
+    syncClubRoute(clubId);
+    setSelectedClubId(clubId);
+    try {
+      await setSelectedClub(clubId);
+    } catch {
+      // Keep the local workspace responsive even if bootstrap refresh lags.
+    }
+  }
+
+  async function recoverMissingClub(): Promise<void> {
+    const refreshed = await clubsQuery.refetch();
+    const nextClubId = refreshed.data?.items[0]?.id ?? null;
+    await syncSelectedClub(nextClubId);
+    setNotice({ tone: "info", message: "That club no longer exists. Registry refreshed." });
+  }
+
+  async function openAdminWorkspace(path: string): Promise<void> {
+    if (!selectedClubId) return;
+    await syncSelectedClub(selectedClubId);
+    navigate(path);
+  }
 
   async function persistStep(action: SuperadminOnboardingAction): Promise<void> {
     if (!selectedClubId) return;
@@ -217,8 +263,7 @@ export function SuperadminClubsPage(): JSX.Element {
       });
       setIsCreateOpen(false);
       setClubForm(emptyClubForm());
-      setSelectedClubId(club.id);
-      await setSelectedClub(club.id);
+      await syncSelectedClub(club.id);
       setNotice({ tone: "success", message: `${club.name} created and onboarding started.` });
     } catch (error) {
       setNotice({
@@ -229,12 +274,7 @@ export function SuperadminClubsPage(): JSX.Element {
   }
 
   async function handleSelectClub(club: SuperadminClubSummary): Promise<void> {
-    setSelectedClubId(club.id);
-    try {
-      await setSelectedClub(club.id);
-    } catch {
-      // Keep the local workspace responsive even if bootstrap refresh lags.
-    }
+    await syncSelectedClub(club.id);
   }
 
   async function handleToggleActive(): Promise<void> {
@@ -247,6 +287,10 @@ export function SuperadminClubsPage(): JSX.Element {
         message: selectedClub.active ? `${selectedClub.name} paused.` : `${selectedClub.name} reactivated.`,
       });
     } catch (error) {
+      if (hasStatus(error, 404)) {
+        await recoverMissingClub();
+        return;
+      }
       setNotice({ tone: "error", message: error instanceof Error ? error.message : "Failed to update club status." });
     }
   }
@@ -255,11 +299,16 @@ export function SuperadminClubsPage(): JSX.Element {
     if (!selectedClubId || !selectedClub) return;
     setIsDeleteConfirmOpen(false);
     setNotice(null);
+    const fallbackClubId = clubs.find((club) => club.id !== selectedClubId)?.id ?? null;
     try {
       await deleteClubMutation.mutateAsync(selectedClubId);
-      setSelectedClubId(null);
+      await syncSelectedClub(fallbackClubId);
       setNotice({ tone: "info", message: `${selectedClub.name} has been permanently removed.` });
     } catch (error) {
+      if (hasStatus(error, 404)) {
+        await recoverMissingClub();
+        return;
+      }
       setNotice({ tone: "error", message: error instanceof Error ? error.message : "Failed to delete club." });
     }
   }
@@ -410,6 +459,17 @@ export function SuperadminClubsPage(): JSX.Element {
               No accounting profiles exist for this club yet. Build them in Finance, then return here to select the live mapping profile.
             </div>
           ) : null}
+          <div className="flex justify-end">
+            <button
+              className="rounded-2xl bg-surface-container px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high"
+              onClick={() => {
+                void openAdminWorkspace("/admin/finance");
+              }}
+              type="button"
+            >
+              Open Finance Workspace
+            </button>
+          </div>
         </div>
       );
     }
@@ -504,6 +564,17 @@ export function SuperadminClubsPage(): JSX.Element {
               This step reads the real club-scoped rules and pricing records that the golf operations layer already uses.
               It does not duplicate configuration into a separate onboarding store.
             </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                className="rounded-2xl bg-surface-container px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high"
+                onClick={() => {
+                  void openAdminWorkspace("/admin/golf/settings");
+                }}
+                type="button"
+              >
+                Open Golf Settings
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -552,6 +623,17 @@ export function SuperadminClubsPage(): JSX.Element {
         <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm leading-6 text-slate-500">
           Module changes persist back into the real club module records that session bootstrap uses for club
           environments.
+        </div>
+        <div className="flex justify-end">
+          <button
+            className="rounded-2xl bg-surface-container px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high"
+            onClick={() => {
+              void openAdminWorkspace("/admin/dashboard");
+            }}
+            type="button"
+          >
+            Preview Club Workspace
+          </button>
         </div>
       </div>
     );
