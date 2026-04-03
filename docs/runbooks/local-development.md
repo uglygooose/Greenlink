@@ -70,13 +70,13 @@ npm.cmd run test
 
 - Auth foundation and refresh-token rotation
 - Session bootstrap and tenancy resolution
-- Admin, player, and superadmin shell routing
+- Router-owned persistent admin and superadmin shells
 - Golf operations backend plus admin tee-sheet lifecycle UI
 - People and membership foundations
-- Finance accounts, journal, ledger, canonical export batches, and accounting profile mapping
+- Finance accounts, journal, backend summaries, canonical export batches, and accounting profile mapping
 - Orders, order finance posting, settlement recording, and POS foundation
 - Communications CRUD plus player published-post feed
-- Superadmin club onboarding foundation
+- Superadmin club onboarding foundation with backend-owned progression
 
 ## Current major gaps
 

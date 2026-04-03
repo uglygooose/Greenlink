@@ -1,9 +1,12 @@
 import { useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
-import { useFinanceAccountLedgerQuery, useFinanceAccountsQuery } from "../features/finance/hooks";
+import {
+  useFinanceAccountLedgerQuery,
+  useFinanceAccountsQuery,
+  useFinanceOutstandingSummaryQuery,
+} from "../features/finance/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { useSession } from "../session/session-context";
 import type { FinanceAccountSummary } from "../types/finance";
@@ -145,9 +148,11 @@ export function AdminMembersPage(): JSX.Element {
 
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
   const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
+  const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
 
   const members = directoryQuery.data ?? [];
   const accounts = accountsQuery.data ?? [];
+  const outstandingSummary = outstandingSummaryQuery.data;
 
   // Build a person_id → FinanceAccountSummary lookup
   const accountByPersonId = new Map<string, FinanceAccountSummary>();
@@ -176,11 +181,6 @@ export function AdminMembersPage(): JSX.Element {
       )
     : members;
 
-  const activeAccountCount = accounts.filter((account) => account.status === "active").length;
-  const accountsInArrears = accounts.filter((account) => parseFloat(account.balance) < 0);
-  const outstandingTotal = accountsInArrears
-    .reduce((sum, account) => sum + Math.abs(parseFloat(account.balance)), 0)
-    .toFixed(2);
   const noAccountCount = members.filter((member) => !accountByPersonId.has(member.person.id)).length;
   const newMemberCount = members.filter((member) => {
     const joinedAt = new Date(member.membership.joined_at).getTime();
@@ -190,7 +190,7 @@ export function AdminMembersPage(): JSX.Element {
   const pendingCount = 0;
 
   return (
-    <AdminShell title="Members" searchPlaceholder="Search members...">
+    <>
       <AdminWorkspace
         description="Directory visibility, finance account coverage, and member account health."
         kpis={
@@ -214,16 +214,16 @@ export function AdminMembersPage(): JSX.Element {
 
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-emerald-500">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Accounts</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Finance Accounts</span>
                 <MaterialSymbol className="text-emerald-500" icon="account_balance_wallet" />
               </div>
               <div className="flex items-baseline gap-2">
-                {accountsQuery.isLoading ? (
+                {outstandingSummaryQuery.isLoading ? (
                   <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
                 ) : (
                   <>
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">{activeAccountCount}</span>
-                    <span className="text-xs font-medium text-emerald-600">{accounts.length} total accounts</span>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">{outstandingSummary?.total_accounts ?? 0}</span>
+                    <span className="text-xs font-medium text-emerald-600">backend summary</span>
                   </>
                 )}
               </div>
@@ -235,12 +235,14 @@ export function AdminMembersPage(): JSX.Element {
                 <MaterialSymbol className="text-error" icon="pending_actions" />
               </div>
               <div className="flex items-baseline gap-2">
-                {accountsQuery.isLoading ? (
+                {outstandingSummaryQuery.isLoading ? (
                   <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
                 ) : (
                   <>
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">R{outstandingTotal}</span>
-                    <span className="text-xs font-medium text-error">{accountsInArrears.length} accounts</span>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {formatAmount(outstandingSummary?.total_outstanding_amount ?? "0.00")}
+                    </span>
+                    <span className="text-xs font-medium text-error">{outstandingSummary?.accounts_in_arrears ?? 0} accounts</span>
                   </>
                 )}
               </div>
@@ -448,6 +450,6 @@ export function AdminMembersPage(): JSX.Element {
           </div>
         </aside>
       )}
-    </AdminShell>
+    </>
   );
 }

@@ -1,116 +1,91 @@
 # GreenLink - Master System File
 
-## 1. System Definition
+Last updated: 2026-04-03 11:23 SAST
 
-GreenLink is a club-scoped golf operations platform built for real club execution.
+## Canonical Role
 
-It is not:
-- self-serve SaaS
-- a generic admin template
-- a theming product
-- a frontend-led system
+This file is the canonical current system definition.
 
-It is:
-- implementation-led
-- backend-truth driven
-- deterministic
-- operationally focused
-- built around club rollout, club execution, and controlled expansion
+The canonical authority set is:
+- `docs/MASTER_SYSTEM.md`
+- `GreenLink-Master-Build-Plan.txt`
+- `CODEX-EXECUTION-RULES.txt`
+- `SYSTEM_STATUS.md`
 
-## 2. Non-Negotiable Rules
+## Non-Negotiable Rules
 
 - Backend owns logic.
 - Frontend sends intent only.
-- No duplicated business rules across layers.
+- No duplicated business rules.
 - No hidden side effects.
 - No domain mixing.
-- Club-scoped truth must stay in shared models and services, not page-local state.
-- Narrow slices are preferred over broad rebuilds.
-- Existing benchmark HTML files and GreenLink design references are the UI authority.
+- Tee sheet is a read model.
+- Orders are not payments.
+- Admin and superadmin shells are router-owned persistent layouts.
+- Benchmark UI references remain the visual authority.
 
-## 3. Product Operating Model
-
-GreenLink has three distinct operating contexts:
-
-- Superadmin
-  - implementation
-  - onboarding
-  - rollout control
-  - club readiness
-- Club admin and staff
-  - live club operations
-  - finance, members, tee sheet, orders, comms, reporting
-- Player
-  - lightweight member-facing actions
-
-Superadmin is not "admin with more buttons". It is a separate operational mode.
-
-## 4. Current System State
+## Current System Definition
 
 ### Platform and auth
-- FastAPI backend with PostgreSQL runtime
-- JWT access tokens plus refresh-token rotation
-- `/api/session/bootstrap` is the frontend source of truth
-- club-scoped tenancy is enforced through auth plus selected-club resolution
-- seeded deterministic users exist for superadmin, admin, staff, and member
+- Completed
+- FastAPI backend with PostgreSQL runtime is in place.
+- JWT access tokens plus refresh-token rotation are in place.
+- `/api/session/bootstrap` remains the frontend bootstrap truth.
+- Club-scoped tenancy is enforced through auth plus selected-club resolution.
 
-### Identity
-- User -> Person -> ClubMembership model is in place
-- AccountCustomer exists as finance identity
-- people directory, membership, account-customer, and bulk-intake foundations are implemented
+### Identity and membership
+- Completed
+- User -> Person -> ClubMembership is the working identity model.
+- People directory, membership, account-customer, and bulk-intake foundations are built.
 
-### Rules and pricing
-- booking rule-set and pricing-matrix backend foundations are implemented
-- admin golf settings page exists, but it is still structurally older than the normalized admin workspaces
+### TS - Tee Sheet
+- Partial
+- Tee sheet read model exists.
+- Booking lifecycle and admin lifecycle actions are live.
+- Admin tee-sheet route is live.
+- Booking creation/editing UX is not built.
+- Recently fixed: admin tee-sheet now runs inside the router-owned persistent admin shell.
 
-### Golf operations
-- tee sheet read model exists
-- booking aggregate exists
-- lifecycle exists:
-  - reserved
-  - cancelled
-  - checked_in
-  - completed
-  - no_show
-- admin tee-sheet page is live for viewing and lifecycle actions
-- booking creation backend exists, but a full booking-creation UI flow is still missing
-
-### Finance
-- FinanceAccount and append-only FinanceTransaction are implemented
-- ledger and journal views derive from transactions
-- manual transactions, order charge posting, settlement recording, and member-account POS posting exist
-- canonical export batches are implemented
-- accounting export profile mapping is implemented above the canonical batch layer
+### FIN - Finance
+- Partial
+- FinanceAccount, append-only FinanceTransaction, journal, ledger, revenue summary, outstanding summary, and transaction-volume summary are built.
+- Canonical export batches and mapped accounting export profiles are built.
+- No external accounting sync, reconciliation engine, or package-specific validation layer exists.
+- Recently fixed:
+  - admin and finance KPI surfaces no longer compute finance totals in React
+  - `admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, and `admin-halfway` now display backend summary values only for finance KPIs
+  - unsupported finance visuals were removed instead of recreated in React
 
 ### Orders and POS
-- player ordering is live at `/player/order`
-- admin order queue is live at `/admin/orders`
-- order lifecycle is implemented:
-  - placed -> preparing -> ready -> collected
-  - placed -> cancelled
-- explicit charge posting and settlement recording exist
-- POS transaction foundation exists
-- POS terminal is live at `/admin/pos-terminal`
+- Partial
+- Player ordering, admin order queue, explicit charge posting, explicit settlement recording, and POS terminal are live.
+- POS terminal is nested inside the router-owned AdminLayout and renders no standalone navigation chrome of its own.
 
 ### Communications
-- admin news-post CRUD exists
-- published posts are available to player-facing read flows
-- player home now reads backend news posts instead of a static updates block
+- Partial
+- Admin news-post CRUD exists.
+- Published posts are available to player-facing read flows.
+- Player home reads backend news posts.
 
-### Superadmin onboarding
-- distinct superadmin shell and route exist
-- club registry exists
-- club creation exists
-- onboarding state and current step are persisted on club data
-- onboarding workspace exists with steps:
-  - Basic Info
-  - Finance
-  - Rules
-  - Modules
-- finance step links to existing accounting profiles
-- club admin and staff assignment is wired through existing membership models
+### SA - Superadmin
+- Partial
+- Distinct superadmin route group and shell exist.
+- Club registry and club creation exist.
+- Onboarding workspace exists for Basic Info, Finance, Rules, and Modules.
+- Rules and Modules remain readiness scaffolds, not full configuration surfaces.
+- Recently fixed:
+  - onboarding progression is backend-owned
+  - frontend no longer sets arbitrary current, next, or previous steps
+  - backend validates transitions and returns the resulting onboarding state
 
-## 5. Current Route Surface
+### Player
+- Partial
+- Player home and player ordering are live.
+- Player booking flow is not built.
+- Player profile route is not built.
+- Recently fixed: player home no longer shows fake upcoming bookings; it now shows an honest empty state until a backend member-booking read model exists.
+
+## Current Route Surface
 
 ### Admin
 - `/admin/dashboard`
@@ -132,88 +107,41 @@ Superadmin is not "admin with more buttons". It is a separate operational mode.
 - `/player/home`
 - `/player/order`
 
-Routes not yet implemented despite earlier planning expectations:
+Not built:
 - `/player/book`
 - `/player/profile`
 
-## 6. UI and Layout Authority
+## Layout and UI Authority
 
-Primary visual references:
-- `frontend/src/ui-benchmarks/`
-- `frontend/src/design-system/greenlink-design-system.md`
+- Admin shell is router-owned and persistent across `/admin/*` workspace navigation.
+- Superadmin shell is router-owned and persistent across `/superadmin/*` workspace navigation.
+- `ProtectedRoute` wraps the layout, not individual admin or superadmin pages.
+- Admin and superadmin pages render content areas only.
+- Benchmark references remain:
+  - `frontend/src/ui-benchmarks/`
+  - `frontend/src/design-system/greenlink-design-system.md`
 
-Layout rules:
-- persistent sidebar and topbar shells
-- workspace-level title row plus KPI band where appropriate
-- tonal layering over border-heavy framing
-- whitespace-driven structure
-- Finance page remains the admin KPI and rail reference
+## Known Gaps
 
-Admin workspace normalization is implemented across the main menu surfaces.
-POS terminal remains intentionally standalone.
+- Tee-sheet booking creation and editing UX is not built.
+- Golf settings remains visually older than the normalized admin workspaces.
+- Rules and Modules onboarding steps are not complete configuration UIs.
+- No player booking read model exists yet.
+- No external accounting sync or reconciliation engine exists.
 
-## 7. Finance Export Architecture
+## Known Risks
 
-Canonical export layer:
-- persisted FinanceExportBatch
-- deterministic `journal_basic` profile
-- date-range batch generation
-- preview, download, history, and void workflow
-- idempotent generate-or-return-existing behavior
+- Login still hard-navigates superadmin users to `/admin/select-club` before route protection corrects them to `/superadmin/clubs`.
+- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`.
+- Some reporting views still compose non-finance operational charts in the frontend from backend records because no dedicated reporting slice exists yet.
 
-Mapped export layer:
-- persisted club-scoped AccountingExportProfile
-- mapping config stored separately from canonical batches
-- transformed `generic_journal_mapped` output generated from canonical batch payloads
-- deterministic preview and download workflow
+## Validation State
 
-GreenLink remains the operational source system.
-It does not replace external accounting software and does not yet perform live external API sync.
+Latest correction-pass validation:
+- `frontend`: `npm.cmd run typecheck`
+- `frontend`: targeted Vitest suites for shell persistence, finance pages, player home, and superadmin onboarding
+- `backend`: `py -m uv run pytest backend/tests/test_superadmin_onboarding_foundation.py -q`
 
-## 8. Superadmin Onboarding Architecture
+## Final Rule
 
-Superadmin onboarding writes into the same club and club-config structures used by live club operations.
-
-This means:
-- no parallel onboarding-only config store
-- finance profile linkage writes to real club config
-- club assignments write to real club memberships
-- rules and module readiness read from real system data
-
-## 9. Known Gaps
-
-- tee sheet still lacks full booking creation and editing UX
-- golf settings page remains visually and structurally behind the normalized admin workspaces
-- finance export currently uses canonical and mapped CSV output only; no external package-specific validation or transport exists yet
-- reports remain largely frontend-derived summaries rather than a dedicated reporting backend
-- player app is still partial
-- POS member-account flow remains intentionally constrained
-- communications admin UI is live, but editing depth remains narrow
-- superadmin onboarding rules and modules steps are readiness scaffolds, not full configuration UIs
-
-## 10. Known Risks
-
-- login page still hard-navigates superadmin users to `/admin/select-club` before protected-route correction redirects to `/superadmin/clubs`
-- local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`
-- dashboard and reports still compute some operational summaries in frontend code
-- several older docs and comments can drift if not updated alongside shipping slices
-
-## 11. Current Reference Validation
-
-Recent full application validation before this documentation update:
-- frontend typecheck passed
-- frontend tests passed
-- backend tests passed
-
-The authoritative runtime and planning references from this point are:
-- this file
-- `docs/architecture/current-system-status.md`
-- `docs/contracts/`
-- `docs/runbooks/local-development.md`
-
-## 12. Final Rule
-
-If older planning notes, stale summaries, or previous handoff text contradict current code:
-
-- current code wins
-- this file should be updated to match that code
+If code and older notes disagree, code wins first and this file must be updated immediately after.

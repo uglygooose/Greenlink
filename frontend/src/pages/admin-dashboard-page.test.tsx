@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AdminDashboardPage } from "./admin-dashboard-page";
 
 const mockUseSession = vi.fn();
-const mockUseFinanceAccountsQuery = vi.fn();
 const mockUseFinanceJournalQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
@@ -19,7 +18,6 @@ vi.mock("../session/session-context", () => ({
 }));
 
 vi.mock("../features/finance/hooks", () => ({
-  useFinanceAccountsQuery: () => mockUseFinanceAccountsQuery(),
   useFinanceJournalQuery: () => mockUseFinanceJournalQuery(),
   useFinanceOutstandingSummaryQuery: () => mockUseFinanceOutstandingSummaryQuery(),
   useFinanceRevenueSummaryQuery: () => mockUseFinanceRevenueSummaryQuery(),
@@ -71,17 +69,6 @@ describe("AdminDashboardPage", () => {
           branding: { logo_object_key: null, name: "Club One" },
         },
       },
-    });
-
-    mockUseFinanceAccountsQuery.mockReturnValue({
-      data: [
-        {
-          id: "account-1",
-          balance: "-25.00",
-          account_customer: { account_code: "GL-001" },
-        },
-      ],
-      isLoading: false,
     });
     mockUseFinanceJournalQuery.mockReturnValue({
       data: {
@@ -176,5 +163,7 @@ describe("AdminDashboardPage", () => {
     expect(normalizedText).toContain("R99900");
     expect(screen.getByText("4 accounts")).toBeInTheDocument();
     expect(normalizedText).toContain("R32100");
+    expect(screen.getByText(/items awaiting settlement totaling/i)).toBeInTheDocument();
+    expect(screen.queryByText("GL-001")).not.toBeInTheDocument();
   });
 });

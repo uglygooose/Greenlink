@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
   useCreateNewsPostMutation,
@@ -220,7 +219,7 @@ export function AdminCommunicationsPage(): JSX.Element {
   const pinnedCount    = posts.filter((p) => p.pinned).length;
 
   return (
-    <AdminShell title="Communications" searchPlaceholder="Search posts...">
+    <>
       {composing && <ComposeModal onClose={() => setComposing(false)} />}
 
       <AdminWorkspace
@@ -391,6 +390,6 @@ export function AdminCommunicationsPage(): JSX.Element {
         )}
 
       </AdminWorkspace>
-    </AdminShell>
+    </>
   );
 }

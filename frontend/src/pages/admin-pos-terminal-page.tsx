@@ -1,16 +1,9 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { useCreatePosTransactionMutation, usePosProductsQuery } from "../features/pos/hooks";
 import { useSession } from "../session/session-context";
 import type { CartItem, TenderType } from "../types/pos";
-
-function sidebarLinkClass(isActive: boolean): string {
-  return isActive
-    ? "flex items-center gap-3 rounded-l-xl bg-white px-4 py-3 font-semibold text-[#2B6954] shadow-sm transition-all dark:bg-slate-900 dark:text-[#3da082]"
-    : "flex items-center gap-3 px-4 py-3 font-semibold text-slate-600 transition-all hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800";
-}
 
 function formatPrice(value: string | number): string {
   return `$${Number(value).toFixed(2)}`;
@@ -131,65 +124,8 @@ export function AdminPosTerminalPage(): JSX.Element {
   }
 
   return (
-    <div className="overflow-hidden text-on-surface">
-      <div className="flex h-screen w-full">
-        <aside className="sticky top-0 flex h-screen w-64 flex-col border-r border-slate-200 bg-slate-50 transition-transform duration-200 ease-in-out dark:border-slate-800 dark:bg-slate-950">
-          <div className="p-6">
-            <div className="mb-8 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white">
-                <MaterialSymbol icon="sports_golf" />
-              </div>
-              <div>
-                <h2 className="font-headline font-bold leading-tight text-on-surface">Pro Shop</h2>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Active Session</p>
-              </div>
-            </div>
-            <button
-              className="mb-8 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-primary-dim px-4 py-3 font-semibold text-white shadow-md shadow-primary/10 transition-all active:scale-95"
-              onClick={clearCart}
-              type="button"
-            >
-              <MaterialSymbol icon="add" />
-              New Sale
-            </button>
-            <nav className="space-y-1">
-              <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/pos-terminal">
-                <MaterialSymbol icon="point_of_sale" />
-                POS
-              </NavLink>
-              <NavLink className={({ isActive }) => sidebarLinkClass(isActive)} to="/admin/finance">
-                <MaterialSymbol icon="account_balance_wallet" />
-                Finance
-              </NavLink>
-            </nav>
-          </div>
-        </aside>
-
-        <main className="flex flex-1 flex-col overflow-hidden">
-          <header className="z-10 flex h-20 items-center justify-between bg-surface-container-lowest px-8">
-            <div className="relative max-w-2xl flex-1">
-              <MaterialSymbol className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" icon="search" />
-              <input
-                className="w-full rounded-xl border-none bg-surface-container-low py-3 pl-12 pr-4 text-sm transition-all placeholder:text-outline-variant focus:ring-2 focus:ring-primary/20"
-                placeholder="Search products..."
-                type="text"
-              />
-            </div>
-            <div className="ml-8 flex items-center gap-4">
-              <div className="flex items-center gap-3 rounded-xl border border-transparent bg-surface-container-low px-4 py-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-dim">
-                  <MaterialSymbol className="text-sm text-on-surface-variant" icon="person" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-tighter text-outline-variant">Active Customer</p>
-                  <p className="text-sm font-semibold text-on-surface">Walk-in Guest</p>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          <div className="flex flex-1 overflow-hidden">
-            <div className="flex-1 overflow-y-auto bg-background p-8">
+    <div className="flex h-full overflow-hidden text-on-surface">
+      <div className="flex-1 overflow-y-auto bg-background p-8">
               <div className="mb-6 flex items-center justify-between">
                 <h1 className="font-headline text-2xl font-bold text-on-surface">Quick Sale</h1>
                 <div className="flex gap-2">
@@ -362,9 +298,6 @@ export function AdminPosTerminalPage(): JSX.Element {
                 </button>
               </div>
             </aside>
-          </div>
-        </main>
-      </div>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import SuperadminShell from "../components/shell/SuperadminShell";
 import { usePricingMatricesQuery, useRuleSetsQuery } from "../features/golf-settings/hooks";
+import type { SuperadminLayoutContext } from "../routes/superadmin-layout";
 import {
   useAssignSuperadminClubUserMutation,
   useCreateSuperadminClubMutation,
@@ -15,6 +16,7 @@ import { useSession } from "../session/session-context";
 import type {
   ClubOnboardingStep,
   ClubRegistryStatus,
+  SuperadminOnboardingAction,
   SuperadminClubCreateInput,
   SuperadminClubSummary,
 } from "../types/superadmin";
@@ -90,13 +92,12 @@ function currentStepDescription(step: ClubOnboardingStep): { title: string; body
 
 export function SuperadminClubsPage(): JSX.Element {
   const { accessToken, bootstrap, setSelectedClub } = useSession();
-  const [search, setSearch] = useState("");
+  const { search } = useOutletContext<SuperadminLayoutContext>();
   const [selectedClubId, setSelectedClubId] = useState<string | null>(bootstrap?.selected_club_id ?? null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [clubForm, setClubForm] = useState<SuperadminClubCreateInput>(emptyClubForm);
   const [basicInfoForm, setBasicInfoForm] = useState<SuperadminClubCreateInput>(emptyClubForm);
   const [financeProfileId, setFinanceProfileId] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState<ClubOnboardingStep>("basic_info");
   const [enabledModuleKeys, setEnabledModuleKeys] = useState<string[]>([]);
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [notice, setNotice] = useState<{ tone: NoticeTone; message: string } | null>(null);
@@ -147,47 +148,51 @@ export function SuperadminClubsPage(): JSX.Element {
       timezone: onboardingQuery.data.club.timezone,
     });
     setFinanceProfileId(onboardingQuery.data.finance.selected_accounting_profile_id);
-    setCurrentStep(onboardingQuery.data.club.onboarding_current_step);
     setEnabledModuleKeys(onboardingQuery.data.modules.enabled_module_keys);
   }, [onboardingQuery.data]);
 
+  const currentStep = onboardingQuery.data?.club.onboarding_current_step ?? "basic_info";
+  const currentStepIndex = STEP_ORDER.indexOf(currentStep);
   const stepMeta = currentStepDescription(currentStep);
 
-  async function persistStep(nextStep: ClubOnboardingStep, mode: "save" | "next" | "previous"): Promise<void> {
+  async function persistStep(action: SuperadminOnboardingAction): Promise<void> {
     if (!selectedClubId) return;
     const payload: {
+      action: SuperadminOnboardingAction;
+      acted_step: ClubOnboardingStep;
       name?: string;
       location?: string;
       timezone?: string;
-      onboarding_current_step: ClubOnboardingStep;
       preferred_accounting_profile_id?: string | null;
       enabled_module_keys?: string[] | null;
     } = {
-      onboarding_current_step: nextStep,
+      action,
+      acted_step: currentStep,
     };
-    if (currentStep === "basic_info" || nextStep === "basic_info") {
+    if (currentStep === "basic_info") {
       payload.name = basicInfoForm.name.trim();
       payload.location = basicInfoForm.location.trim();
       payload.timezone = basicInfoForm.timezone.trim();
     }
-    if (currentStep === "finance" || nextStep === "finance") {
+    if (currentStep === "finance") {
       payload.preferred_accounting_profile_id = financeProfileId;
     }
-    if (currentStep === "modules" || nextStep === "modules") {
+    if (currentStep === "modules") {
       payload.enabled_module_keys = enabledModuleKeys;
     }
 
     try {
       const result = await updateOnboardingMutation.mutateAsync({ clubId: selectedClubId, payload });
-      setCurrentStep(result.club.onboarding_current_step);
       setNotice({
         tone: "success",
         message:
-          mode === "save"
+          action === "save_draft"
             ? "Onboarding draft saved."
-            : mode === "next"
-              ? `${formatStepLabel(nextStep)} is now the current onboarding step.`
-              : `Returned to ${formatStepLabel(nextStep)}.`,
+            : action === "complete_step"
+              ? result.club.onboarding_current_step === currentStep
+                ? `${formatStepLabel(currentStep)} completed.`
+                : `${formatStepLabel(result.club.onboarding_current_step)} is now the current onboarding step.`
+              : `Returned to ${formatStepLabel(result.club.onboarding_current_step)}.`,
       });
     } catch (error) {
       setNotice({
@@ -521,12 +526,7 @@ export function SuperadminClubsPage(): JSX.Element {
   }
 
   return (
-    <SuperadminShell
-      onSearchChange={setSearch}
-      searchPlaceholder="Search clubs..."
-      searchValue={search}
-      title="Club Onboarding"
-    >
+    <>
       <div className="space-y-6 pt-6">
         {notice ? (
           <section className={`rounded-2xl px-5 py-4 text-sm ${noticeClass(notice.tone)}`}>
@@ -627,13 +627,9 @@ export function SuperadminClubsPage(): JSX.Element {
 
                 <div className="grid gap-3 md:grid-cols-4">
                   {onboardingQuery.data?.steps.map((step) => (
-                    <button
+                    <div
                       key={step.key}
                       className="space-y-3 rounded-2xl bg-surface-container-low px-4 py-4 text-left"
-                      onClick={() => {
-                        setCurrentStep(step.key);
-                      }}
-                      type="button"
                     >
                       <div className={`h-1.5 rounded-full ${stepAccent(step.status, step.ready)}`} />
                       <div className="space-y-1">
@@ -644,7 +640,7 @@ export function SuperadminClubsPage(): JSX.Element {
                           {step.status === "current" ? "In progress" : step.status === "complete" ? "Complete" : "Upcoming"}
                         </p>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
 
@@ -668,10 +664,9 @@ export function SuperadminClubsPage(): JSX.Element {
                     <div className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
                       <button
                         className="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:opacity-50"
-                        disabled={STEP_ORDER.indexOf(currentStep) === 0 || updateOnboardingMutation.isPending}
+                        disabled={currentStepIndex === 0 || updateOnboardingMutation.isPending}
                         onClick={() => {
-                          const previousStep = STEP_ORDER[Math.max(0, STEP_ORDER.indexOf(currentStep) - 1)];
-                          void persistStep(previousStep, "previous");
+                          void persistStep("return_to_previous_step");
                         }}
                         type="button"
                       >
@@ -683,7 +678,7 @@ export function SuperadminClubsPage(): JSX.Element {
                         <button
                           className="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container"
                           onClick={() => {
-                            void persistStep(currentStep, "save");
+                            void persistStep("save_draft");
                           }}
                           type="button"
                         >
@@ -691,14 +686,13 @@ export function SuperadminClubsPage(): JSX.Element {
                         </button>
                         <button
                           className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim disabled:opacity-50"
-                          disabled={STEP_ORDER.indexOf(currentStep) === STEP_ORDER.length - 1 || updateOnboardingMutation.isPending}
+                          disabled={updateOnboardingMutation.isPending}
                           onClick={() => {
-                            const nextStep = STEP_ORDER[Math.min(STEP_ORDER.length - 1, STEP_ORDER.indexOf(currentStep) + 1)];
-                            void persistStep(nextStep, "next");
+                            void persistStep("complete_step");
                           }}
                           type="button"
                         >
-                          <span>Next</span>
+                          <span>Complete Step</span>
                           <MaterialSymbol icon="arrow_forward" />
                         </button>
                       </div>
@@ -903,6 +897,6 @@ export function SuperadminClubsPage(): JSX.Element {
           </aside>
         </>
       ) : null}
-    </SuperadminShell>
+    </>
   );
 }

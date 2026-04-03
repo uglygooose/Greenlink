@@ -129,6 +129,7 @@ class FinanceRevenueSourceSummaryResponse(BaseModel):
     source: FinanceTransactionSource
     total_revenue: Decimal
     charge_count: int
+    revenue_share_pct: Decimal
 
 
 class FinanceRevenuePeriodSummaryResponse(FinanceSummaryWindowResponse):
@@ -150,6 +151,7 @@ class FinanceTransactionVolumeTypeSummaryResponse(BaseModel):
     type: FinanceTransactionType
     transaction_count: int
     total_absolute_amount: Decimal
+    volume_share_pct: Decimal
 
 
 class FinanceTransactionVolumePeriodSummaryResponse(FinanceSummaryWindowResponse):
@@ -170,6 +172,9 @@ class FinanceOutstandingSummaryResponse(BaseModel):
     accounts_in_arrears: int
     accounts_in_credit: int
     accounts_settled: int
+    accounts_in_arrears_pct: Decimal
+    accounts_in_credit_pct: Decimal
+    accounts_settled_pct: Decimal
     total_outstanding_amount: Decimal
     unpaid_order_postings_count: int
     unpaid_order_postings_amount: Decimal

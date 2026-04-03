@@ -91,7 +91,7 @@ def test_superadmin_can_create_club_and_initialize_onboarding(
     assert payload["registry_status"] == "onboarding"
 
 
-def test_superadmin_can_update_finance_selection_and_current_step(
+def test_superadmin_can_complete_finance_step_and_advance_to_rules(
     client: TestClient, db_session: Session
 ) -> None:
     root = _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
@@ -133,7 +133,8 @@ def test_superadmin_can_update_finance_selection_and_current_step(
         f"/api/superadmin/clubs/{club.id}/onboarding",
         headers=headers,
         json={
-            "onboarding_current_step": "rules",
+            "action": "complete_step",
+            "acted_step": "finance",
             "preferred_accounting_profile_id": str(profile.id),
         },
     )
@@ -143,6 +144,48 @@ def test_superadmin_can_update_finance_selection_and_current_step(
     assert payload["club"]["onboarding_current_step"] == "rules"
     assert payload["finance"]["selected_accounting_profile_id"] == str(profile.id)
     assert payload["finance"]["setup_complete"] is True
+
+
+def test_superadmin_onboarding_rejects_arbitrary_step_targeting(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    headers = _auth_headers(client, "root@example.com")
+
+    response = client.put(
+        f"/api/superadmin/clubs/{club.id}/onboarding",
+        headers=headers,
+        json={
+            "action": "complete_step",
+            "acted_step": "rules",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "superadmin_onboarding_step_mismatch"
+
+
+def test_superadmin_can_return_to_previous_onboarding_step(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    headers = _auth_headers(client, "root@example.com")
+
+    response = client.put(
+        f"/api/superadmin/clubs/{club.id}/onboarding",
+        headers=headers,
+        json={
+            "action": "return_to_previous_step",
+            "acted_step": "finance",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["club"]["onboarding_current_step"] == "basic_info"
 
 
 def test_superadmin_can_assign_existing_linked_user_to_club(
@@ -177,6 +220,8 @@ def test_superadmin_can_update_enabled_modules_through_onboarding(
 ) -> None:
     _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
     club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    club.onboarding_current_step = ClubOnboardingStep.MODULES.value
+    db_session.add(club)
     db_session.add(ClubModule(club_id=club.id, module_key="golf", enabled=True))
     db_session.commit()
     headers = _auth_headers(client, "root@example.com")
@@ -185,7 +230,8 @@ def test_superadmin_can_update_enabled_modules_through_onboarding(
         f"/api/superadmin/clubs/{club.id}/onboarding",
         headers=headers,
         json={
-            "onboarding_current_step": "modules",
+            "action": "save_draft",
+            "acted_step": "modules",
             "enabled_module_keys": ["finance", "communications"],
         },
     )

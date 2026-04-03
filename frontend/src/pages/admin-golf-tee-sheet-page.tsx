@@ -10,7 +10,6 @@ import {
   moveBooking,
 } from "../api/operations";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
@@ -454,7 +453,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   }
 
   return (
-    <AdminShell title="Tee Sheet" searchPlaceholder="Search tee times...">
+    <>
       <AdminWorkspace
         title="Daily Tee Sheet"
         dateLabel={dateLabel(selectedDate)}
@@ -496,8 +495,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
           </section>)}
         </div>
         <div className="mt-4 flex items-center justify-between rounded-xl bg-surface-container-low px-6 py-4"><span className="text-xs font-medium text-slate-500">Showing {slots.length} of {slots.length} lane slots</span><div className="flex gap-2"><button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold transition-colors hover:bg-slate-50" onClick={() => setSelectedDate((c) => addDays(c, -1))} type="button">Previous</button><button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold transition-colors hover:bg-slate-50" onClick={() => setSelectedDate((c) => addDays(c, 1))} type="button">Next</button></div></div>
-      </AdminWorkspace>
+    </AdminWorkspace>
       {selectedSlot ? canManage(selectedSlot.slot) ? <BookingManagementDrawer colorCode={selectedSlot.colorCode} feedbackMessage={drawerFeedbackMessage} feedbackTone={drawerFeedbackTone} laneLabel={selectedSlot.laneLabel} onCancel={(id) => { setNotice(null); setDrawerFeedbackMessage(null); setDrawerFeedbackTone(null); cancelMutation.mutate(id); }} onCheckIn={(id) => { setNotice(null); setDrawerFeedbackMessage(null); setDrawerFeedbackTone(null); checkInMutation.mutate(id); }} onClose={close} onComplete={(id) => { setNotice(null); setDrawerFeedbackMessage(null); setDrawerFeedbackTone(null); completeMutation.mutate(id); }} onNoShow={(id) => { setNotice(null); setDrawerFeedbackMessage(null); setDrawerFeedbackTone(null); noShowMutation.mutate(id); }} pendingAction={pendingAction} pendingBookingId={pendingBookingId} selectedDate={selectedDate} slot={selectedSlot.slot} teeLabel={selectedSlot.rowLabel} /> : <BookingCreateDrawer colorCode={selectedSlot.colorCode} creating={createMutation.isPending} directory={directory} feedbackMessage={drawerFeedbackMessage} feedbackTone={drawerFeedbackTone} laneLabel={selectedSlot.laneLabel} onAddParticipant={addDraft} onChangeParticipant={updateDraft} onClose={close} onCreate={() => { setNotice(null); setDrawerFeedbackMessage(null); setDrawerFeedbackTone(null); void createMutation.mutateAsync(createPayload(selectedSlot)); }} onRemoveParticipant={removeDraft} participants={drafts} selectedDate={selectedDate} slot={selectedSlot.slot} teeLabel={selectedSlot.rowLabel} /> : null}
-    </AdminShell>
+    </>
   );
 }

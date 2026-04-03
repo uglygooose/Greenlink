@@ -333,8 +333,117 @@ def test_finance_outstanding_summary_returns_balances_and_unpaid_order_postings(
         "accounts_in_arrears": 1,
         "accounts_in_credit": 1,
         "accounts_settled": 1,
+        "accounts_in_arrears_pct": "33.33",
+        "accounts_in_credit_pct": "33.33",
+        "accounts_settled_pct": "33.33",
         "total_outstanding_amount": "110.00",
         "unpaid_order_postings_count": 1,
         "unpaid_order_postings_amount": "30.00",
         "pending_items_count": 3,
     }
+
+
+def test_finance_chart_proportions_sum_correctly_and_match_raw_data(
+    client: TestClient, db_session: Session
+) -> None:
+    """Backend-owned pct fields for chart bars must be consistent with raw amounts and sum to ~100%."""
+    club = _create_club(db_session, slug=f"fin-pct-{uuid.uuid4().hex[:6]}")
+    admin = _create_user(
+        db_session,
+        email=f"fin_pct_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
+    account = _create_finance_account(db_session, club=club, account_code="PCT-001")
+    account2 = _create_finance_account(db_session, club=club, account_code="PCT-002")
+
+    ref_dt = "2026-04-10T10:00:00+02:00"
+
+    # Two revenue sources this month: POS 75.00, Booking 25.00 → total 100.00
+    _post_transaction(
+        db_session,
+        club=club,
+        account=account,
+        amount=Decimal("-75.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.POS,
+        description="POS charge",
+        created_at=datetime(2026, 4, 5, 8, 0, tzinfo=UTC),
+    )
+    _post_transaction(
+        db_session,
+        club=club,
+        account=account,
+        amount=Decimal("-25.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.BOOKING,
+        description="Booking charge",
+        created_at=datetime(2026, 4, 6, 8, 0, tzinfo=UTC),
+    )
+    # Payment for transaction volume: 40.00
+    _post_transaction(
+        db_session,
+        club=club,
+        account=account2,
+        amount=Decimal("40.00"),
+        tx_type=FinanceTransactionType.PAYMENT,
+        source=FinanceTransactionSource.MANUAL,
+        description="Manual payment",
+        created_at=datetime(2026, 4, 7, 8, 0, tzinfo=UTC),
+    )
+
+    headers = _auth_headers(client, email=admin.email, club_id=str(club.id))
+
+    # --- Revenue share pcts ---
+    revenue_resp = client.get(
+        "/api/finance/summaries/revenue",
+        headers=headers,
+        params={"reference_datetime": ref_dt},
+    )
+    assert revenue_resp.status_code == 200
+    revenue = revenue_resp.json()
+    month_by_source = revenue["month"]["by_source"]
+    # Shares must reflect raw data: POS=75%, Booking=25%
+    pct_by_source = {item["source"]: float(item["revenue_share_pct"]) for item in month_by_source}
+    assert abs(pct_by_source["pos"] - 75.0) < 0.01
+    assert abs(pct_by_source["booking"] - 25.0) < 0.01
+    # Proportions must sum to 100
+    total_revenue_pct = sum(float(item["revenue_share_pct"]) for item in month_by_source)
+    assert abs(total_revenue_pct - 100.0) < 0.1
+
+    # --- Volume share pcts ---
+    volume_resp = client.get(
+        "/api/finance/summaries/transaction-volume",
+        headers=headers,
+        params={"reference_datetime": ref_dt},
+    )
+    assert volume_resp.status_code == 200
+    volume = volume_resp.json()
+    month_by_type = volume["month"]["by_type"]
+    # charge absolute: 100.00 (75+25), payment absolute: 40.00 → total 140.00
+    pct_by_type = {item["type"]: float(item["volume_share_pct"]) for item in month_by_type}
+    assert abs(pct_by_type["charge"] - (100.0 / 140.0 * 100)) < 0.1
+    assert abs(pct_by_type["payment"] - (40.0 / 140.0 * 100)) < 0.1
+    # Proportions must sum to 100
+    total_volume_pct = sum(float(item["volume_share_pct"]) for item in month_by_type)
+    assert abs(total_volume_pct - 100.0) < 0.1
+
+    # --- Account health pcts ---
+    # account (arrears: balance -100.00), account2 (credit: balance +40.00)
+    outstanding_resp = client.get("/api/finance/summaries/outstanding", headers=headers)
+    assert outstanding_resp.status_code == 200
+    out = outstanding_resp.json()
+    assert out["total_accounts"] == 2
+    assert out["accounts_in_arrears"] == 1
+    assert out["accounts_in_credit"] == 1
+    # Each is 50% of 2 accounts
+    assert abs(float(out["accounts_in_arrears_pct"]) - 50.0) < 0.01
+    assert abs(float(out["accounts_in_credit_pct"]) - 50.0) < 0.01
+    assert abs(float(out["accounts_settled_pct"]) - 0.0) < 0.01
+    # Health pcts must sum to 100
+    health_total = (
+        float(out["accounts_in_arrears_pct"])
+        + float(out["accounts_in_credit_pct"])
+        + float(out["accounts_settled_pct"])
+    )
+    assert abs(health_total - 100.0) < 0.1

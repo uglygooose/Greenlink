@@ -163,6 +163,14 @@ class SuperadminOnboardingService:
     ) -> SuperadminClubOnboardingDetailResponse:
         club = self._get_club(club_id)
         config = self._get_or_create_config(club, persist=True)
+        current_step = ClubOnboardingStep(club.onboarding_current_step)
+
+        if payload.acted_step != current_step:
+            raise AppError(
+                code="superadmin_onboarding_step_mismatch",
+                message="Onboarding action must target the backend current step",
+                status_code=400,
+            )
 
         if payload.name is not None:
             club.name = payload.name.strip()
@@ -171,10 +179,6 @@ class SuperadminOnboardingService:
         if payload.timezone is not None:
             club.timezone = payload.timezone.strip()
             config.timezone = club.timezone
-        if payload.onboarding_current_step is not None:
-            club.onboarding_current_step = payload.onboarding_current_step.value
-        if payload.onboarding_state is not None:
-            club.onboarding_state = payload.onboarding_state.value
         if payload.preferred_accounting_profile_id is not None:
             profile = self.db.scalar(
                 select(AccountingExportProfile).where(
@@ -191,8 +195,13 @@ class SuperadminOnboardingService:
         if payload.enabled_module_keys is not None:
             self._replace_modules(club_id=club.id, module_keys=payload.enabled_module_keys)
 
-        if payload.onboarding_state is None:
-            club.onboarding_state = self._derive_onboarding_state(club=club, config=config).value
+        readiness = self._onboarding_readiness(club=club, config=config)
+        club.onboarding_current_step = self._resolve_onboarding_step(
+            current_step=current_step,
+            action=payload.action,
+            readiness=readiness,
+        ).value
+        club.onboarding_state = self._derive_onboarding_state(club=club, config=config).value
 
         self.db.add(club)
         self.db.add(config)
@@ -522,17 +531,56 @@ class SuperadminOnboardingService:
                 score += 0.5 if step.ready else 0.25
         return round((score / len(steps)) * 100)
 
-    def _derive_onboarding_state(self, *, club: Club, config: ClubConfig) -> ClubOnboardingState:
-        if not self._basic_info_ready(club):
-            return ClubOnboardingState.DATA_PENDING
+    def _onboarding_readiness(self, *, club: Club, config: ClubConfig) -> dict[ClubOnboardingStep, bool]:
         profiles = self._finance_profiles(club.id)
         selected_profile = next(
             (profile for profile in profiles if profile.id == config.preferred_accounting_profile_id and profile.is_active),
             None,
         )
-        rules_ready = self._count_rule_sets(club.id) > 0 and self._count_pricing_matrices(club.id) > 0
-        modules_ready = len(self._enabled_module_keys(club.id)) > 0
-        if selected_profile is not None and rules_ready and modules_ready:
+        return {
+            ClubOnboardingStep.BASIC_INFO: self._basic_info_ready(club),
+            ClubOnboardingStep.FINANCE: selected_profile is not None,
+            ClubOnboardingStep.RULES: self._count_rule_sets(club.id) > 0 and self._count_pricing_matrices(club.id) > 0,
+            ClubOnboardingStep.MODULES: len(self._enabled_module_keys(club.id)) > 0,
+        }
+
+    def _resolve_onboarding_step(
+        self,
+        *,
+        current_step: ClubOnboardingStep,
+        action: str,
+        readiness: dict[ClubOnboardingStep, bool],
+    ) -> ClubOnboardingStep:
+        current_index = STEP_ORDER.index(current_step)
+        if action == "save_draft":
+            return current_step
+        if action == "return_to_previous_step":
+            if current_index == 0:
+                raise AppError(
+                    code="superadmin_onboarding_step_invalid_transition",
+                    message="Cannot move before the first onboarding step",
+                    status_code=400,
+                )
+            return STEP_ORDER[current_index - 1]
+        if not readiness[current_step]:
+            raise AppError(
+                code="superadmin_onboarding_step_not_ready",
+                message="Current onboarding step is not ready to complete",
+                status_code=400,
+            )
+        if current_index == len(STEP_ORDER) - 1:
+            return current_step
+        return STEP_ORDER[current_index + 1]
+
+    def _derive_onboarding_state(self, *, club: Club, config: ClubConfig) -> ClubOnboardingState:
+        readiness = self._onboarding_readiness(club=club, config=config)
+        if not readiness[ClubOnboardingStep.BASIC_INFO]:
+            return ClubOnboardingState.DATA_PENDING
+        if (
+            readiness[ClubOnboardingStep.FINANCE]
+            and readiness[ClubOnboardingStep.RULES]
+            and readiness[ClubOnboardingStep.MODULES]
+        ):
             return ClubOnboardingState.READY_FOR_GO_LIVE
         return ClubOnboardingState.SETUP_IN_PROGRESS
 

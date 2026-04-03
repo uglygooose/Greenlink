@@ -1,0 +1,63 @@
+GREENLINK CODEX EXECUTION RULES
+Last updated: 2026-04-03 11:23 SAST
+
+Canonical role:
+- Canonical implementation rules file.
+
+Core rules
+- Backend owns all logic.
+- Frontend sends intent only.
+- No duplicated logic across backend and frontend.
+- No hidden side effects.
+- No domain mixing.
+- Narrow slices only. No broad rebuilds.
+- Do not refactor unrelated code during correction work.
+
+UI rules
+- Benchmark UI files are the visual authority.
+- Adapt benchmark structure; do not redesign it.
+- Do not invent a new design system or new UI patterns during correction work.
+
+Routing and shell rules
+- Persistent shell is required for admin and superadmin workspaces.
+- Admin and superadmin shells must be router-owned layout routes.
+- `ProtectedRoute` wraps the layout, not individual pages.
+- Admin and superadmin pages render content areas only.
+- Do not reintroduce page-level `AdminShell` or `SuperadminShell`.
+- POS terminal remains an intentional standalone route unless a future authority file changes that rule.
+
+Finance rules
+- No frontend financial calculations.
+- React must not compute finance totals, balances, arrears, revenue, outstanding values, or transaction-volume KPIs.
+- Finance KPI displays must use backend read-model endpoints only.
+- If a backend finance summary does not exist for a metric, remove the metric or show a neutral unavailable state.
+- Do not preserve finance cards by recreating the same math elsewhere in React.
+
+Superadmin onboarding rules
+- Onboarding progression is backend-only.
+- Frontend must not set current, next, or previous onboarding steps.
+- Frontend must not set onboarding state directly.
+- Frontend sends step intent only.
+- Backend validates transitions, rejects invalid progression, and returns the resulting state.
+- Do not introduce a generic workflow engine for onboarding.
+
+Tee sheet and booking rules
+- Tee sheet is a read model.
+- Do not write tee-sheet state directly from the frontend.
+- Booking lifecycle transitions remain backend-owned.
+
+Orders and payment rules
+- Orders are not payments.
+- Order placement, charge posting, and settlement recording remain distinct concerns.
+
+Player truth rules
+- No fake booking data in player UI.
+- Do not create placeholder booking arrays to fill empty states.
+- If a backend member-booking read model does not exist, show loading or empty state only.
+
+Documentation rules
+- `docs/MASTER_SYSTEM.md` is the canonical current system definition.
+- `GreenLink-Master-Build-Plan.txt` is the canonical phase/slice plan.
+- `CODEX-EXECUTION-RULES.txt` is the canonical implementation-rules file.
+- `SYSTEM_STATUS.md` is the canonical current-state snapshot.
+- Remove, align, or clearly archive any overlapping doc that conflicts with these files.

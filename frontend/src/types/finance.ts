@@ -47,6 +47,7 @@ export interface FinanceRevenueSourceSummary {
   source: FinanceTransactionSource;
   total_revenue: string;
   charge_count: number;
+  revenue_share_pct: string;
 }
 
 export interface FinanceRevenuePeriodSummary extends FinanceSummaryWindow {
@@ -68,6 +69,7 @@ export interface FinanceTransactionVolumeTypeSummary {
   type: FinanceTransactionType;
   transaction_count: number;
   total_absolute_amount: string;
+  volume_share_pct: string;
 }
 
 export interface FinanceTransactionVolumePeriodSummary extends FinanceSummaryWindow {
@@ -88,6 +90,9 @@ export interface FinanceOutstandingSummary {
   accounts_in_arrears: number;
   accounts_in_credit: number;
   accounts_settled: number;
+  accounts_in_arrears_pct: string;
+  accounts_in_credit_pct: string;
+  accounts_settled_pct: string;
   total_outstanding_amount: string;
   unpaid_order_postings_count: number;
   unpaid_order_postings_amount: string;

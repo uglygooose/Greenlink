@@ -107,11 +107,11 @@ class SuperadminClubOnboardingDetailResponse(BaseModel):
 
 
 class SuperadminClubOnboardingUpdateRequest(BaseModel):
+    action: Literal["save_draft", "complete_step", "return_to_previous_step"]
+    acted_step: ClubOnboardingStep
     name: str | None = Field(default=None, min_length=1, max_length=255)
     location: str | None = Field(default=None, min_length=1, max_length=255)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
-    onboarding_state: ClubOnboardingState | None = None
-    onboarding_current_step: ClubOnboardingStep | None = None
     preferred_accounting_profile_id: uuid.UUID | None = None
     enabled_module_keys: list[str] | None = None
 

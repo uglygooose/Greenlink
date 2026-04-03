@@ -8,7 +8,6 @@ import {
   markOrderReady,
   postOrderCharge,
 } from "../api/operations";
-import AdminShell from "../components/shell/AdminShell";
 import { OrderManagementDrawer } from "../features/orders/order-management-drawer";
 import { useOrderDetailQuery, useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
@@ -255,7 +254,7 @@ export function AdminOrderQueuePage(): JSX.Element {
           : null;
 
   return (
-    <AdminShell title="Order Queue" searchPlaceholder="Search orders...">
+    <>
       <div className="p-6">
           <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
             <div>
@@ -519,7 +518,6 @@ export function AdminOrderQueuePage(): JSX.Element {
           />
         )
       ) : null}
-
-    </AdminShell>
+    </>
   );
 }

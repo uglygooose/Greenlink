@@ -189,11 +189,23 @@ class FinanceReadModelService:
 
         unpaid_order_balances = [abs(balance) for balance in order_net_by_reference.values() if balance < 0]
 
+        total_accounts = len(accounts)
+        hundred = Decimal("100")
+        zero_pct = Decimal("0.00")
+
+        def _pct(count: int) -> Decimal:
+            if total_accounts == 0:
+                return zero_pct
+            return (Decimal(count) / Decimal(total_accounts) * hundred).quantize(Decimal("0.01"))
+
         return FinanceOutstandingSummaryResponse(
-            total_accounts=len(accounts),
+            total_accounts=total_accounts,
             accounts_in_arrears=accounts_in_arrears,
             accounts_in_credit=accounts_in_credit,
             accounts_settled=accounts_settled,
+            accounts_in_arrears_pct=_pct(accounts_in_arrears),
+            accounts_in_credit_pct=_pct(accounts_in_credit),
+            accounts_settled_pct=_pct(accounts_settled),
             total_outstanding_amount=total_outstanding_amount,
             unpaid_order_postings_count=len(unpaid_order_balances),
             unpaid_order_postings_amount=sum(unpaid_order_balances, start=ZERO),
@@ -255,11 +267,17 @@ class FinanceReadModelService:
         window: SummaryWindow,
         bucket: dict[str, object],
     ) -> FinanceRevenuePeriodSummaryResponse:
+        total_revenue: Decimal = bucket["total_revenue"]
         by_source = [
             FinanceRevenueSourceSummaryResponse(
                 source=source,
                 total_revenue=values["total_revenue"],
                 charge_count=values["charge_count"],
+                revenue_share_pct=(
+                    (values["total_revenue"] / total_revenue * Decimal("100")).quantize(Decimal("0.01"))
+                    if total_revenue > ZERO
+                    else ZERO
+                ),
             )
             for source, values in sorted(
                 bucket["by_source"].items(),
@@ -282,11 +300,20 @@ class FinanceReadModelService:
         window: SummaryWindow,
         bucket: dict[str, object],
     ) -> FinanceTransactionVolumePeriodSummaryResponse:
+        total_absolute_amount: Decimal = sum(
+            (values["total_absolute_amount"] for values in bucket["by_type"].values()),
+            start=ZERO,
+        )
         by_type = [
             FinanceTransactionVolumeTypeSummaryResponse(
                 type=tx_type,
                 transaction_count=values["transaction_count"],
                 total_absolute_amount=values["total_absolute_amount"],
+                volume_share_pct=(
+                    (values["total_absolute_amount"] / total_absolute_amount * Decimal("100")).quantize(Decimal("0.01"))
+                    if total_absolute_amount > ZERO
+                    else ZERO
+                ),
             )
             for tx_type, values in sorted(
                 bucket["by_type"].items(),

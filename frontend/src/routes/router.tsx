@@ -1,6 +1,7 @@
 import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom";
 
 import { ProtectedRoute } from "../components/protected-route";
+import { AdminLayout } from "./admin-layout";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
@@ -18,6 +19,7 @@ import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
 import { SuperadminClubsPage } from "../pages/superadmin-clubs-page";
+import { SuperadminLayout } from "./superadmin-layout";
 import { useSession } from "../session/session-context";
 
 function RootRedirect(): JSX.Element {
@@ -45,17 +47,22 @@ const router = createBrowserRouter([
     element: <ProtectedRoute shell="admin" />,
     children: [
       { path: "select-club", element: <SelectClubPage /> },
-      { path: "dashboard", element: <AdminDashboardPage /> },
-      { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
-      { path: "golf/settings", element: <AdminGolfSettingsPage /> },
-      { path: "orders", element: <AdminOrderQueuePage /> },
-      { path: "members", element: <AdminMembersPage /> },
-      { path: "finance", element: <AdminFinancePage /> },
-      { path: "communications", element: <AdminCommunicationsPage /> },
-      { path: "halfway", element: <AdminHalfwayPage /> },
-      { path: "pro-shop", element: <AdminProShopPage /> },
-      { path: "reports", element: <AdminReportsPage /> },
-      { path: "pos-terminal", element: <AdminPosTerminalPage /> },
+      {
+        element: <AdminLayout />,
+        children: [
+          { path: "dashboard", element: <AdminDashboardPage /> },
+          { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
+          { path: "golf/settings", element: <AdminGolfSettingsPage /> },
+          { path: "orders", element: <AdminOrderQueuePage /> },
+          { path: "members", element: <AdminMembersPage /> },
+          { path: "finance", element: <AdminFinancePage /> },
+          { path: "communications", element: <AdminCommunicationsPage /> },
+          { path: "halfway", element: <AdminHalfwayPage /> },
+          { path: "pro-shop", element: <AdminProShopPage /> },
+          { path: "reports", element: <AdminReportsPage /> },
+          { path: "pos-terminal", element: <AdminPosTerminalPage /> },
+        ],
+      },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },
     ],
   },
@@ -63,7 +70,10 @@ const router = createBrowserRouter([
     path: "/superadmin",
     element: <ProtectedRoute shell="superadmin" />,
     children: [
-      { path: "clubs", element: <SuperadminClubsPage /> },
+      {
+        element: <SuperadminLayout />,
+        children: [{ path: "clubs", element: <SuperadminClubsPage /> }],
+      },
       { path: "*", element: <Navigate to="/superadmin/clubs" replace /> },
     ],
   },

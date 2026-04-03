@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { SuperadminLayout } from "../routes/superadmin-layout";
 import { SuperadminClubsPage } from "./superadmin-clubs-page";
 
 const mockUseSession = vi.fn();
@@ -46,7 +47,11 @@ function renderPage(): void {
   render(
     <MemoryRouter initialEntries={["/superadmin/clubs"]}>
       <QueryClientProvider client={buildQueryClient()}>
-        <SuperadminClubsPage />
+        <Routes>
+          <Route path="/superadmin" element={<SuperadminLayout />}>
+            <Route path="clubs" element={<SuperadminClubsPage />} />
+          </Route>
+        </Routes>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -234,7 +239,6 @@ describe("SuperadminClubsPage", () => {
     });
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /4\. modules/i }));
     fireEvent.click(screen.getByRole("button", { name: /communications/i }));
     fireEvent.click(screen.getByRole("button", { name: /^save draft$/i }));
 
@@ -242,8 +246,44 @@ describe("SuperadminClubsPage", () => {
       expect(mutateAsync).toHaveBeenCalledWith({
         clubId: "club-1",
         payload: {
-          onboarding_current_step: "modules",
+          action: "save_draft",
+          acted_step: "modules",
           enabled_module_keys: ["communications", "golf"],
+        },
+      });
+    });
+  });
+
+  test("sends complete-step intent instead of selecting the next step in React", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      ...buildOnboardingDetail(),
+      club: { ...buildClub(), onboarding_current_step: "rules" },
+      steps: [
+        { key: "basic_info" as const, label: "Basic Info", status: "complete" as const, ready: true },
+        { key: "finance" as const, label: "Finance", status: "complete" as const, ready: true },
+        { key: "rules" as const, label: "Rules", status: "current" as const, ready: false },
+        { key: "modules" as const, label: "Modules", status: "upcoming" as const, ready: false },
+      ],
+      finance: {
+        ...buildOnboardingDetail().finance,
+        selected_accounting_profile_id: "profile-1",
+        selected_accounting_profile_name: "Generic Ops",
+        setup_complete: true,
+      },
+    });
+    mockUseUpdateSuperadminClubOnboardingMutation.mockReturnValue({ mutateAsync, isPending: false });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/accounting profile/i), { target: { value: "profile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /complete step/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        clubId: "club-1",
+        payload: {
+          action: "complete_step",
+          acted_step: "finance",
+          preferred_accounting_profile_id: "profile-1",
         },
       });
     });

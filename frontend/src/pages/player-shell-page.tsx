@@ -7,14 +7,6 @@ import { UserAvatar } from "../components/benchmark/user-avatar";
 import { usePublishedNewsFeedQuery } from "../features/comms/hooks";
 import { useSession } from "../session/session-context";
 
-type BookingCard = {
-  month: string;
-  day: string;
-  course: string;
-  detail: string;
-  muted?: boolean;
-};
-
 function initials(name: string | undefined): string {
   return (
     name
@@ -57,22 +49,6 @@ export function PlayerShellPage(): JSX.Element {
     selectedClubId,
   });
 
-  const upcomingBookings: BookingCard[] = [
-    {
-      month: "Oct",
-      day: "14",
-      course: selectedClub,
-      detail: "08:30 AM • 4 Players",
-    },
-    {
-      month: "Oct",
-      day: "21",
-      course: "The Valley Links",
-      detail: "10:15 AM • 2 Players",
-      muted: true,
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-background pb-24 text-on-surface">
       <header className="fixed top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-100/50 bg-white/80 px-6 backdrop-blur-md dark:border-slate-800/50 dark:bg-slate-900/80">
@@ -97,19 +73,21 @@ export function PlayerShellPage(): JSX.Element {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
                 <div className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-lg">
-                <div className="border-b border-slate-100 px-4 py-3">
-                  <p className="text-xs font-bold text-on-surface">{displayName}</p>
-                  <p className="text-[10px] text-slate-400">{bootstrap?.user.email}</p>
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-xs font-bold text-on-surface">{displayName}</p>
+                    <p className="text-[10px] text-slate-400">{bootstrap?.user.email}</p>
+                  </div>
+                  <button
+                    className="flex w-full items-center gap-3 px-4 py-3 text-sm text-error transition-colors hover:bg-slate-50"
+                    type="button"
+                    onClick={() => {
+                      void logout();
+                    }}
+                  >
+                    <MaterialSymbol className="text-base" icon="logout" />
+                    Sign out
+                  </button>
                 </div>
-                <button
-                  className="flex w-full items-center gap-3 px-4 py-3 text-sm text-error transition-colors hover:bg-slate-50"
-                  type="button"
-                  onClick={() => { void logout(); }}
-                >
-                  <MaterialSymbol className="text-base" icon="logout" />
-                  Sign out
-                </button>
-              </div>
               </>
             )}
           </div>
@@ -126,7 +104,7 @@ export function PlayerShellPage(): JSX.Element {
           </div>
           <div className="flex flex-col items-center rounded-xl bg-surface-container-lowest p-3 shadow-sm">
             <MaterialSymbol className="mb-1 text-primary" icon="partly_cloudy_day" />
-            <span className="font-headline text-sm font-bold">18°C</span>
+            <span className="font-headline text-sm font-bold">18C</span>
           </div>
         </section>
 
@@ -153,37 +131,12 @@ export function PlayerShellPage(): JSX.Element {
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-bold font-headline">Upcoming Bookings</h2>
-            <button className="text-sm font-semibold text-primary" type="button">
-              View all
-            </button>
           </div>
-          <div className="space-y-4">
-            {upcomingBookings.map((booking) => (
-              <div
-                className={
-                  booking.muted
-                    ? "flex items-center gap-4 rounded-xl bg-surface-container-lowest p-5 shadow-sm opacity-80"
-                    : "flex items-center gap-4 rounded-xl bg-surface-container-lowest p-5 shadow-sm"
-                }
-                key={`${booking.course}-${booking.day}`}
-              >
-                <div
-                  className={
-                    booking.muted
-                      ? "flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-surface-container-high text-on-surface-variant"
-                      : "flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-primary-container text-on-primary-container"
-                  }
-                >
-                  <span className="text-[10px] font-bold uppercase leading-none">{booking.month}</span>
-                  <span className="text-lg font-bold leading-none">{booking.day}</span>
-                </div>
-                <div className="flex-grow">
-                  <h3 className="font-bold text-on-surface">{booking.course}</h3>
-                  <p className="text-sm text-on-surface-variant">{booking.detail}</p>
-                </div>
-                <MaterialSymbol className="text-outline-variant" icon="chevron_right" />
-              </div>
-            ))}
+          <div className="rounded-xl bg-surface-container-lowest p-5 shadow-sm">
+            <p className="text-sm font-semibold text-on-surface">No upcoming bookings available.</p>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              This section stays empty until a backend member-booking read model is available.
+            </p>
           </div>
         </section>
 

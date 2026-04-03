@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
   downloadFinanceExportBatch,
@@ -14,6 +13,9 @@ import {
   useFinanceExportBatchDetailQuery,
   useFinanceExportBatchesQuery,
   useFinanceJournalQuery,
+  useFinanceOutstandingSummaryQuery,
+  useFinanceRevenueSummaryQuery,
+  useFinanceTransactionVolumeSummaryQuery,
   useUpdateAccountingExportProfileMutation,
   useVoidFinanceExportBatchMutation,
 } from "../features/finance/hooks";
@@ -153,6 +155,9 @@ export function AdminFinancePage(): JSX.Element {
 
   const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
   const journalQuery = useFinanceJournalQuery({ accessToken, selectedClubId });
+  const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
+  const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
+  const transactionVolumeSummaryQuery = useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId });
   const exportBatchesQuery = useFinanceExportBatchesQuery({ accessToken, selectedClubId });
   const exportBatchDetailQuery = useFinanceExportBatchDetailQuery({ accessToken, selectedClubId, batchId: selectedBatchId });
   const accountingProfilesQuery = useAccountingExportProfilesQuery({ accessToken, selectedClubId });
@@ -173,16 +178,9 @@ export function AdminFinancePage(): JSX.Element {
   const selectedBatch = exportBatchDetailQuery.data;
   const accountingProfiles = accountingProfilesQuery.data?.profiles ?? [];
   const mappedPreview = mappedExportPreviewQuery.data;
-
-  const totalUnpaid = accounts.reduce((sum, account) => {
-    const balance = parseFloat(account.balance);
-    return balance < 0 ? sum + Math.abs(balance) : sum;
-  }, 0);
-  const unpaidCount = accounts.filter((account) => parseFloat(account.balance) < 0).length;
-  const totalTransactionCount = accounts.reduce((sum, account) => sum + account.transaction_count, 0);
-  const totalCollected = (journal?.entries ?? [])
-    .filter((entry) => entry.type === "payment")
-    .reduce((sum, entry) => sum + parseFloat(entry.amount), 0);
+  const outstandingSummary = outstandingSummaryQuery.data;
+  const revenueSummary = revenueSummaryQuery.data;
+  const transactionVolumeSummary = transactionVolumeSummaryQuery.data;
 
   useEffect(() => {
     if (accountingProfiles.length === 0) {
@@ -332,7 +330,7 @@ export function AdminFinancePage(): JSX.Element {
   }
 
   return (
-    <AdminShell title="Cashbook Flow" searchPlaceholder="Search transactions...">
+    <>
       <AdminWorkspace
         title="Cashbook Flow"
         description="Journal visibility, account exposure, canonical export batching, and mapped accounting handoff."
@@ -340,32 +338,58 @@ export function AdminFinancePage(): JSX.Element {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Unpaid</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding</span>
                 <MaterialSymbol className="text-error" icon="pending_actions" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">R{totalUnpaid.toFixed(2)}</span>
-                <span className="text-xs font-medium text-error">{unpaidCount} accounts</span>
+                {outstandingSummaryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {formatCurrency(outstandingSummary?.total_outstanding_amount ?? "0.00", false)}
+                    </span>
+                    <span className="text-xs font-medium text-error">{outstandingSummary?.accounts_in_arrears ?? 0} accounts</span>
+                  </>
+                )}
               </div>
             </div>
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-primary">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Transactions</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Month Transaction Volume</span>
                 <MaterialSymbol className="text-primary" icon="receipt_long" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">{totalTransactionCount}</span>
-                <span className="text-xs font-medium text-primary">{accounts.length} accounts</span>
+                {transactionVolumeSummaryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {transactionVolumeSummary?.month.total_transaction_count ?? 0}
+                    </span>
+                    <span className="text-xs font-medium text-primary">month to date</span>
+                  </>
+                )}
               </div>
             </div>
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Collected</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Month Revenue</span>
                 <MaterialSymbol className="text-secondary" icon="price_check" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">R{totalCollected.toFixed(2)}</span>
-                <span className="text-xs font-medium text-secondary">payments</span>
+                {revenueSummaryQuery.isLoading ? (
+                  <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
+                ) : (
+                  <>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {formatCurrency(revenueSummary?.month.total_revenue ?? "0.00", false)}
+                    </span>
+                    <span className="text-xs font-medium text-secondary">
+                      operational {formatCurrency(revenueSummary?.month.operational_revenue ?? "0.00", false)}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -836,6 +860,6 @@ export function AdminFinancePage(): JSX.Element {
           </aside>
         </>
       ) : null}
-    </AdminShell>
+    </>
   );
 }

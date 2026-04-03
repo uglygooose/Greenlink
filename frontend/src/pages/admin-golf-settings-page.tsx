@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import AdminShell from "../components/shell/AdminShell";
-
 import {
   createCourse,
   createPricingMatrix,
@@ -634,13 +632,11 @@ export function AdminGolfSettingsPage(): JSX.Element {
 
   if (!selectedClubId) {
     return (
-      <AdminShell title="Golf Settings" searchPlaceholder="Search settings...">
-        <section className="admin-card">
-          <p className="eyebrow">Golf Settings</p>
-          <h1>Club context required</h1>
-          <p className="muted">Select an active club before loading operational rules.</p>
-        </section>
-      </AdminShell>
+      <section className="admin-card">
+        <p className="eyebrow">Golf Settings</p>
+        <h1>Club context required</h1>
+        <p className="muted">Select an active club before loading operational rules.</p>
+      </section>
     );
   }
 
@@ -664,7 +660,6 @@ export function AdminGolfSettingsPage(): JSX.Element {
   }
 
   return (
-    <AdminShell title="Golf Settings" searchPlaceholder="Search settings...">
     <div className="admin-content-stack">
       <section className="admin-card">
         <div className="section-heading">
@@ -958,7 +953,6 @@ export function AdminGolfSettingsPage(): JSX.Element {
         {errors.pricingUpdate ? <p className="error-text">{errors.pricingUpdate}</p> : null}
       </section>
     </div>
-    </AdminShell>
   );
 }
 

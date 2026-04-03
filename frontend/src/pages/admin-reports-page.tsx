@@ -1,7 +1,6 @@
 import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
   useFinanceOutstandingSummaryQuery,
@@ -51,16 +50,7 @@ export function AdminReportsPage(): JSX.Element {
   const orders = ordersQuery.data ?? [];
 
   const revenueBySource = revenuePeriod?.by_source ?? [];
-  const maxRevenue = Math.max(
-    ...revenueBySource.map((item) => parseFloat(item.total_revenue)),
-    1,
-  );
-
   const transactionTypes = transactionVolumePeriod?.by_type ?? [];
-  const maxTransactionVolume = Math.max(
-    ...transactionTypes.map((item) => parseFloat(item.total_absolute_amount)),
-    1,
-  );
 
   const adminCount = members.filter((member) => member.membership.role === "CLUB_ADMIN").length;
   const staffCount = members.filter((member) => member.membership.role === "CLUB_STAFF").length;
@@ -74,8 +64,7 @@ export function AdminReportsPage(): JSX.Element {
   const totalOrders = orders.length;
 
   return (
-    <AdminShell title="Reports" searchPlaceholder="Search reports...">
-      <AdminWorkspace
+    <AdminWorkspace
         description="Cross-module finance, membership, and order reporting from live operational data."
         kpis={
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -168,7 +157,7 @@ export function AdminReportsPage(): JSX.Element {
               <p className="py-8 text-center text-sm text-slate-400">No revenue data yet.</p>
             ) : (
               <div className="space-y-4">
-                {revenueBySource.map(({ source, total_revenue, charge_count }) => {
+                {revenueBySource.map(({ source, total_revenue, charge_count, revenue_share_pct }) => {
                   const meta = SOURCE_META[source];
                   return (
                     <div key={source}>
@@ -183,7 +172,7 @@ export function AdminReportsPage(): JSX.Element {
                       <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                         <div
                           className={`h-full rounded-full ${meta.color} transition-all`}
-                          style={{ width: `${(parseFloat(total_revenue) / maxRevenue) * 100}%` }}
+                          style={{ width: `${revenue_share_pct}%` }}
                         />
                       </div>
                     </div>
@@ -207,7 +196,7 @@ export function AdminReportsPage(): JSX.Element {
               <p className="py-8 text-center text-sm text-slate-400">No transactions yet.</p>
             ) : (
               <div className="space-y-4">
-                {transactionTypes.map(({ type, total_absolute_amount, transaction_count }) => {
+                {transactionTypes.map(({ type, total_absolute_amount, transaction_count, volume_share_pct }) => {
                   const meta = TYPE_META[type];
                   return (
                     <div key={type}>
@@ -222,7 +211,7 @@ export function AdminReportsPage(): JSX.Element {
                       <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                         <div
                           className={`h-full rounded-full ${meta.color} transition-all`}
-                          style={{ width: `${(parseFloat(total_absolute_amount) / maxTransactionVolume) * 100}%` }}
+                          style={{ width: `${volume_share_pct}%` }}
                         />
                       </div>
                     </div>
@@ -283,10 +272,10 @@ export function AdminReportsPage(): JSX.Element {
             ) : (
               <div className="space-y-4">
                 {[
-                  { label: "In Credit", count: outstandingSummary?.accounts_in_credit ?? 0, color: "bg-emerald-500" },
-                  { label: "Zero Balance", count: outstandingSummary?.accounts_settled ?? 0, color: "bg-slate-300" },
-                  { label: "In Arrears", count: outstandingSummary?.accounts_in_arrears ?? 0, color: "bg-error" },
-                ].map(({ label, count, color }) => (
+                  { label: "In Credit",    count: outstandingSummary?.accounts_in_credit ?? 0,  pct: outstandingSummary?.accounts_in_credit_pct ?? "0",  color: "bg-emerald-500" },
+                  { label: "Zero Balance", count: outstandingSummary?.accounts_settled ?? 0,     pct: outstandingSummary?.accounts_settled_pct ?? "0",     color: "bg-slate-300" },
+                  { label: "In Arrears",   count: outstandingSummary?.accounts_in_arrears ?? 0,  pct: outstandingSummary?.accounts_in_arrears_pct ?? "0",  color: "bg-error" },
+                ].map(({ label, count, pct, color }) => (
                   <div key={label}>
                     <div className="mb-1.5 flex items-center justify-between">
                       <span className="text-sm font-semibold text-on-surface">{label}</span>
@@ -295,7 +284,7 @@ export function AdminReportsPage(): JSX.Element {
                     <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                       <div
                         className={`h-full rounded-full ${color} transition-all`}
-                        style={{ width: `${(outstandingSummary?.total_accounts ?? 0) > 0 ? (count / (outstandingSummary?.total_accounts ?? 1)) * 100 : 0}%` }}
+                        style={{ width: `${pct}%` }}
                       />
                     </div>
                   </div>
@@ -329,7 +318,6 @@ export function AdminReportsPage(): JSX.Element {
             </div>
           </div>
         )}
-      </AdminWorkspace>
-    </AdminShell>
+    </AdminWorkspace>
   );
 }

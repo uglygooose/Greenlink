@@ -10,6 +10,7 @@ export type ClubOnboardingState =
 export type ClubOnboardingStep = "basic_info" | "finance" | "rules" | "modules";
 export type ClubRegistryStatus = "active" | "onboarding" | "paused";
 export type OnboardingStepStatus = "complete" | "current" | "upcoming";
+export type SuperadminOnboardingAction = "save_draft" | "complete_step" | "return_to_previous_step";
 
 export interface SuperadminClubSummary {
   id: string;
@@ -109,11 +110,11 @@ export interface SuperadminClubCreateInput {
 }
 
 export interface SuperadminClubOnboardingUpdateInput {
+  action: SuperadminOnboardingAction;
+  acted_step: ClubOnboardingStep;
   name?: string;
   location?: string;
   timezone?: string;
-  onboarding_state?: ClubOnboardingState;
-  onboarding_current_step?: ClubOnboardingStep;
   preferred_accounting_profile_id?: string | null;
   enabled_module_keys?: string[] | null;
 }

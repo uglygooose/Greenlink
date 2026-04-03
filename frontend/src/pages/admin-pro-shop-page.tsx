@@ -2,7 +2,6 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminShell from "../components/shell/AdminShell";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { usePosProductsQuery } from "../features/pos/hooks";
 import { useSession } from "../session/session-context";
@@ -44,8 +43,7 @@ export function AdminProShopPage(): JSX.Element {
   }, {});
 
   return (
-    <AdminShell title="Pro Shop" searchPlaceholder="Search products...">
-      <AdminWorkspace
+    <AdminWorkspace
         description="Product catalogue visibility, category coverage, and sellable stock state."
         kpis={
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
@@ -200,7 +198,6 @@ export function AdminProShopPage(): JSX.Element {
             </div>
           </div>
         ))}
-      </AdminWorkspace>
-    </AdminShell>
+    </AdminWorkspace>
   );
 }

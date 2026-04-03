@@ -8,6 +8,9 @@ import { AdminFinancePage } from "./admin-finance-page";
 const mockUseSession = vi.fn();
 const mockUseFinanceAccountsQuery = vi.fn();
 const mockUseFinanceJournalQuery = vi.fn();
+const mockUseFinanceOutstandingSummaryQuery = vi.fn();
+const mockUseFinanceRevenueSummaryQuery = vi.fn();
+const mockUseFinanceTransactionVolumeSummaryQuery = vi.fn();
 const mockUseFinanceExportBatchesQuery = vi.fn();
 const mockUseFinanceExportBatchDetailQuery = vi.fn();
 const mockUseAccountingExportProfilesQuery = vi.fn();
@@ -26,6 +29,9 @@ vi.mock("../session/session-context", () => ({
 vi.mock("../features/finance/hooks", () => ({
   useFinanceAccountsQuery: (args: unknown) => mockUseFinanceAccountsQuery(args),
   useFinanceJournalQuery: (args: unknown) => mockUseFinanceJournalQuery(args),
+  useFinanceOutstandingSummaryQuery: (args: unknown) => mockUseFinanceOutstandingSummaryQuery(args),
+  useFinanceRevenueSummaryQuery: (args: unknown) => mockUseFinanceRevenueSummaryQuery(args),
+  useFinanceTransactionVolumeSummaryQuery: (args: unknown) => mockUseFinanceTransactionVolumeSummaryQuery(args),
   useFinanceExportBatchesQuery: (args: unknown) => mockUseFinanceExportBatchesQuery(args),
   useFinanceExportBatchDetailQuery: (args: unknown) => mockUseFinanceExportBatchDetailQuery(args),
   useAccountingExportProfilesQuery: (args: unknown) => mockUseAccountingExportProfilesQuery(args),
@@ -210,6 +216,45 @@ describe("AdminFinancePage", () => {
       isError: false,
     });
 
+    mockUseFinanceOutstandingSummaryQuery.mockReturnValue({
+      data: {
+        total_accounts: 8,
+        accounts_in_arrears: 2,
+        accounts_in_credit: 3,
+        accounts_settled: 3,
+        total_outstanding_amount: "410.00",
+        unpaid_order_postings_count: 2,
+        unpaid_order_postings_amount: "150.00",
+        pending_items_count: 4,
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    mockUseFinanceRevenueSummaryQuery.mockReturnValue({
+      data: {
+        timezone: "Africa/Johannesburg",
+        reference_datetime: "2026-04-02T10:00:00Z",
+        day: { period: "day", date_from: "2026-04-02", date_to: "2026-04-02", total_revenue: "100.00", operational_revenue: "80.00", charge_count: 1, by_source: [] },
+        week: { period: "week", date_from: "2026-03-30", date_to: "2026-04-05", total_revenue: "900.00", operational_revenue: "600.00", charge_count: 8, by_source: [] },
+        month: { period: "month", date_from: "2026-04-01", date_to: "2026-04-30", total_revenue: "2500.00", operational_revenue: "1900.00", charge_count: 12, by_source: [] },
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    mockUseFinanceTransactionVolumeSummaryQuery.mockReturnValue({
+      data: {
+        timezone: "Africa/Johannesburg",
+        reference_datetime: "2026-04-02T10:00:00Z",
+        day: { period: "day", date_from: "2026-04-02", date_to: "2026-04-02", total_transaction_count: 2, by_type: [] },
+        week: { period: "week", date_from: "2026-03-30", date_to: "2026-04-05", total_transaction_count: 6, by_type: [] },
+        month: { period: "month", date_from: "2026-04-01", date_to: "2026-04-30", total_transaction_count: 15, by_type: [] },
+      },
+      isLoading: false,
+      isError: false,
+    });
+
     mockUseFinanceExportBatchesQuery.mockReturnValue({
       data: {
         batches: [{ ...buildBatchDetail(), rows: undefined }],
@@ -352,5 +397,15 @@ describe("AdminFinancePage", () => {
     });
 
     expect(await screen.findByText("Accounting profile Generic Journal Ops created.")).toBeInTheDocument();
+  });
+
+  test("renders finance KPI values from backend summaries instead of local account or journal math", () => {
+    renderPage();
+    const normalizedText = (document.body.textContent ?? "").replace(/[^\dA-Za-z]/g, "");
+
+    expect(normalizedText).toContain("R41000");
+    expect(screen.getByText("2 accounts")).toBeInTheDocument();
+    expect(normalizedText).toContain("15monthtodate");
+    expect(normalizedText).toContain("R250000");
   });
 });
