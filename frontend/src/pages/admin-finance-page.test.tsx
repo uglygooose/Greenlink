@@ -141,7 +141,9 @@ function buildMappedPreview() {
     file_name: "greenlink-generic_journal_mapped-generic_journal_ops-2026-04-01-to-2026-04-02.csv",
     content_hash: "mapped-hash-1",
     row_count: 2,
+    download_ready: true,
     metadata_json: { output_mode: "generic_journal_mapped" },
+    validation_errors: [],
     rows: [
       {
         date: "2026-04-01",
@@ -302,6 +304,37 @@ describe("AdminFinancePage", () => {
     expect(screen.getAllByDisplayValue("Generic Journal Ops")).toHaveLength(2);
     expect(screen.getByText("greenlink-generic_journal_mapped-generic_journal_ops-2026-04-01-to-2026-04-02.csv")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /download mapped csv/i })).toBeInTheDocument();
+  });
+
+  test("surfaces mapped export validation errors and blocks download until resolved", async () => {
+    mockUseAccountingMappedExportPreviewQuery.mockImplementation(({ batchId, profileId }: { batchId: string | null; profileId: string | null }) => ({
+      data:
+        batchId && profileId
+          ? {
+              ...buildMappedPreview(),
+              download_ready: false,
+              validation_errors: [
+                {
+                  code: "accounting_export_profile_invalid",
+                  message: "Profile mapping config is invalid: fallback_customer_code String should have at least 1 character",
+                  row_index: null,
+                  field: "fallback_customer_code",
+                },
+              ],
+            }
+          : undefined,
+      isLoading: false,
+      isError: false,
+    }));
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /01 apr 2026 to 02 apr 2026/i }));
+
+    expect(await screen.findByText(/Mapped export validation failed/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/fallback_customer_code String should have at least 1 character/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resolve validation errors/i })).toBeDisabled();
   });
 
   test("creates an accounting profile from the finance page form", async () => {

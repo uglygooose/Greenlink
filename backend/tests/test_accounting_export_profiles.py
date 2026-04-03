@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.domain.people.normalization import build_full_name, normalize_email
 from app.models import ClubMembershipRole, FinanceTransactionSource, FinanceTransactionType
-from app.models import AccountCustomer, Club, ClubMembership, ClubMembershipStatus, FinanceAccount, Person, User
+from app.models import (
+    AccountCustomer,
+    AccountingExportProfile,
+    Club,
+    ClubMembership,
+    ClubMembershipStatus,
+    FinanceAccount,
+    Person,
+    User,
+)
 from app.models.finance.transaction import FinanceTransaction
 
 
@@ -317,3 +326,81 @@ def test_accounting_export_profile_is_club_scoped(client, db_session: Session) -
     )
 
     assert preview.status_code == 404
+
+
+def test_mapped_export_preview_surfaces_validation_errors_and_download_rejects_invalid_shape(
+    client,
+    db_session: Session,
+) -> None:
+    club = _create_club(db_session, slug=f"aep-invalid-{uuid.uuid4().hex[:6]}")
+    admin = _create_user(
+        db_session,
+        email=f"aep_invalid_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
+    account = _create_finance_account(db_session, club=club, account_code="MAP-004")
+    _post_transaction(
+        db_session,
+        club=club,
+        account=account,
+        amount=Decimal("-22.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.ORDER,
+        description="Range charge",
+        created_at=datetime(2026, 4, 8, 7, 0, tzinfo=UTC),
+    )
+
+    headers = _auth_headers(client, email=admin.email, club_id=club.id)
+    batch = _create_canonical_batch(client, headers=headers)
+    invalid_profile = AccountingExportProfile(
+        club_id=club.id,
+        code="broken_export",
+        name="Broken Export",
+        target_system="generic_journal",
+        is_active=True,
+        mapping_config_json={
+            "reference_prefix": "GL",
+            "fallback_customer_code": "",
+            "transaction_mappings": {
+                "charge": {
+                    "debit_account_code": "1100-AR",
+                    "credit_account_code": "4000-SALES",
+                    "description_prefix": "Charge",
+                },
+                "payment": {
+                    "debit_account_code": "1000-BANK",
+                    "credit_account_code": "1100-AR",
+                    "description_prefix": "Payment",
+                },
+                "adjustment": {
+                    "debit_account_code": "9990-ADJUST",
+                    "credit_account_code": "9990-ADJUST",
+                    "description_prefix": "Adjust",
+                },
+            },
+        },
+        created_by_person_id=admin.person_id,
+    )
+    db_session.add(invalid_profile)
+    db_session.commit()
+    db_session.refresh(invalid_profile)
+
+    preview = client.get(
+        f"/api/finance/export-batches/{batch['id']}/mapped-export",
+        headers=headers,
+        params={"profile_id": invalid_profile.id},
+    )
+    download = client.get(
+        f"/api/finance/export-batches/{batch['id']}/mapped-export/download",
+        headers=headers,
+        params={"profile_id": invalid_profile.id},
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["download_ready"] is False
+    assert preview.json()["validation_errors"]
+    assert preview.json()["validation_errors"][0]["code"] == "accounting_export_profile_invalid"
+    assert "fallback_customer_code" in preview.json()["validation_errors"][0]["message"]
+    assert download.status_code == 422
+    assert download.json()["code"] == "accounting_export_validation_failed"

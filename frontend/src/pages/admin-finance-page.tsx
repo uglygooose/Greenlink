@@ -741,6 +741,26 @@ export function AdminFinancePage(): JSX.Element {
                             </div>
                             <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500"><span>{mappedPreview.row_count} rows</span><span>{mappedPreview.metadata_json.output_mode ?? "mapped export"}</span></div>
                           </div>
+                          {mappedPreview.validation_errors.length > 0 ? (
+                            <div className="rounded-xl border border-error/20 bg-error-container/40 p-4">
+                              <div className="flex items-start gap-3">
+                                <MaterialSymbol className="mt-0.5 text-base text-on-error-container" icon="error" />
+                                <div className="space-y-2">
+                                  <p className="text-sm font-bold text-on-error-container">Mapped export validation failed</p>
+                                  <ul className="space-y-1 text-sm text-on-error-container">
+                                    {mappedPreview.validation_errors.slice(0, 5).map((item) => (
+                                      <li key={`${item.code}-${item.row_index ?? "profile"}-${item.field ?? "general"}`}>{item.message}</li>
+                                    ))}
+                                  </ul>
+                                  {mappedPreview.validation_errors.length > 5 ? (
+                                    <p className="text-xs text-on-error-container/80">
+                                      {mappedPreview.validation_errors.length - 5} more validation issue(s) remain.
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="rounded-xl border border-slate-200 bg-white">
                             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                               <h4 className="font-headline text-base font-bold text-slate-900">Mapped Rows</h4>
@@ -764,9 +784,13 @@ export function AdminFinancePage(): JSX.Element {
                               </table>
                             </div>
                           </div>
-                          <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary-container/20 px-4 py-3 text-sm font-bold text-primary transition-colors hover:bg-primary-container/30 disabled:cursor-not-allowed disabled:opacity-60" disabled={isDownloadingMapped} onClick={() => void handleDownloadMappedExport()} type="button">
+                          <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary-container/20 px-4 py-3 text-sm font-bold text-primary transition-colors hover:bg-primary-container/30 disabled:cursor-not-allowed disabled:opacity-60" disabled={isDownloadingMapped || !mappedPreview.download_ready} onClick={() => void handleDownloadMappedExport()} type="button">
                             <MaterialSymbol className="text-base" icon={isDownloadingMapped ? "hourglass_top" : "download"} />
-                            {isDownloadingMapped ? "Downloading Mapped CSV..." : "Download Mapped CSV"}
+                            {isDownloadingMapped
+                              ? "Downloading Mapped CSV..."
+                              : mappedPreview.download_ready
+                                ? "Download Mapped CSV"
+                                : "Resolve Validation Errors"}
                           </button>
                         </>
                       ) : null}

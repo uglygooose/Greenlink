@@ -8,14 +8,21 @@ import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from decimal import InvalidOperation
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
-from app.models import AccountingExportProfile, FinanceExportProfile, FinanceTransactionType
+from app.models import (
+    AccountingExportProfile,
+    FinanceExportProfile,
+    FinanceTransactionSource,
+    FinanceTransactionType,
+)
 from app.schemas.finance import (
     AccountingExportProfileListResponse,
     AccountingExportProfileMappingConfig,
@@ -24,6 +31,7 @@ from app.schemas.finance import (
     AccountingMappedExportDownloadResult,
     AccountingMappedExportPreviewResponse,
     AccountingMappedExportPreviewRow,
+    AccountingMappedExportValidationError,
     FinanceExportBatchPreviewRow,
 )
 from app.services.finance.export_batch_service import FinanceExportBatchService
@@ -129,9 +137,7 @@ class AccountingProfileMappingService:
                 status_code=400,
             )
 
-        config = AccountingExportProfileMappingConfig.model_validate(profile.mapping_config_json)
-        canonical_rows = [FinanceExportBatchPreviewRow.model_validate(row) for row in batch.payload_json]
-        mapped_rows = self._map_rows(canonical_rows=canonical_rows, config=config)
+        mapped_rows, validation_errors = self._build_validated_mapped_rows(batch=batch, profile=profile)
         generated_at = utc_now()
         file_name = (
             f"greenlink-generic_journal_mapped-{profile.code}-"
@@ -149,6 +155,7 @@ class AccountingProfileMappingService:
             file_name=file_name,
             content_hash=content_hash,
             row_count=len(mapped_rows),
+            download_ready=len(validation_errors) == 0,
             metadata_json={
                 "output_mode": "generic_journal_mapped",
                 "source_batch_content_hash": batch.content_hash,
@@ -164,6 +171,7 @@ class AccountingProfileMappingService:
                     "source_type",
                 ],
             },
+            validation_errors=validation_errors,
             rows=mapped_rows,
         )
 
@@ -175,10 +183,52 @@ class AccountingProfileMappingService:
         profile_id: uuid.UUID,
     ) -> AccountingMappedExportDownloadResult:
         preview = self.build_mapped_export_preview(club_id=club_id, batch_id=batch_id, profile_id=profile_id)
+        if preview.validation_errors:
+            raise AppError(
+                code="accounting_export_validation_failed",
+                message=self._validation_failure_message(preview.validation_errors),
+                status_code=422,
+            )
         return AccountingMappedExportDownloadResult(
             file_name=preview.file_name,
             content=self._to_csv(preview.rows),
         )
+
+    def _build_validated_mapped_rows(
+        self,
+        *,
+        batch,
+        profile: AccountingExportProfile,
+    ) -> tuple[list[AccountingMappedExportPreviewRow], list[AccountingMappedExportValidationError]]:
+        validation_errors: list[AccountingMappedExportValidationError] = []
+        try:
+            config = AccountingExportProfileMappingConfig.model_validate(profile.mapping_config_json)
+        except ValidationError as exc:
+            return [], self._collect_model_validation_errors(
+                exc,
+                code="accounting_export_profile_invalid",
+                message_prefix="Profile mapping config is invalid",
+            )
+
+        canonical_rows: list[FinanceExportBatchPreviewRow] = []
+        for row_index, row in enumerate(batch.payload_json, start=1):
+            try:
+                canonical_rows.append(FinanceExportBatchPreviewRow.model_validate(row))
+            except ValidationError as exc:
+                validation_errors.extend(
+                    self._collect_model_validation_errors(
+                        exc,
+                        code="accounting_export_source_row_invalid",
+                        message_prefix=f"Canonical row {row_index} is invalid",
+                        row_index=row_index,
+                    )
+                )
+        if validation_errors:
+            return [], validation_errors
+
+        mapped_rows = self._map_rows(canonical_rows=canonical_rows, config=config)
+        validation_errors.extend(self._validate_mapped_rows(mapped_rows=mapped_rows, config=config))
+        return mapped_rows, validation_errors
 
     def _to_profile_response(self, profile: AccountingExportProfile) -> AccountingExportProfileResponse:
         return AccountingExportProfileResponse(
@@ -219,6 +269,158 @@ class AccountingProfileMappingService:
                 )
             )
         return rows
+
+    def _validate_mapped_rows(
+        self,
+        *,
+        mapped_rows: list[AccountingMappedExportPreviewRow],
+        config: AccountingExportProfileMappingConfig,
+    ) -> list[AccountingMappedExportValidationError]:
+        validation_errors: list[AccountingMappedExportValidationError] = []
+        reference_prefix = f"{config.reference_prefix}-"
+        for row_index, row in enumerate(mapped_rows, start=1):
+            if not row.reference.strip():
+                validation_errors.append(
+                    self._validation_error(
+                        code="accounting_export_reference_missing",
+                        message=f"Mapped row {row_index} is missing a reference",
+                        row_index=row_index,
+                        field="reference",
+                    )
+                )
+            elif not row.reference.startswith(reference_prefix):
+                validation_errors.append(
+                    self._validation_error(
+                        code="accounting_export_reference_prefix_invalid",
+                        message=(
+                            f"Mapped row {row_index} reference must start with "
+                            f"'{reference_prefix}'"
+                        ),
+                        row_index=row_index,
+                        field="reference",
+                    )
+                )
+
+            if not row.description.strip():
+                validation_errors.append(
+                    self._validation_error(
+                        code="accounting_export_description_missing",
+                        message=f"Mapped row {row_index} is missing a description",
+                        row_index=row_index,
+                        field="description",
+                    )
+                )
+
+            for field_name, value in (
+                ("debit_account_code", row.debit_account_code),
+                ("credit_account_code", row.credit_account_code),
+                ("customer_account_code", row.customer_account_code),
+            ):
+                if value.strip():
+                    continue
+                validation_errors.append(
+                    self._validation_error(
+                        code=f"accounting_export_{field_name}_missing",
+                        message=f"Mapped row {row_index} is missing {field_name.replace('_', ' ')}",
+                        row_index=row_index,
+                        field=field_name,
+                    )
+                )
+
+            try:
+                amount = Decimal(row.amount)
+            except InvalidOperation:
+                validation_errors.append(
+                    self._validation_error(
+                        code="accounting_export_amount_invalid",
+                        message=f"Mapped row {row_index} amount is not a valid decimal",
+                        row_index=row_index,
+                        field="amount",
+                    )
+                )
+            else:
+                if amount <= 0:
+                    validation_errors.append(
+                        self._validation_error(
+                            code="accounting_export_amount_non_positive",
+                            message=f"Mapped row {row_index} amount must be positive",
+                            row_index=row_index,
+                            field="amount",
+                        )
+                    )
+                elif amount.quantize(Decimal("0.01")) != amount:
+                    validation_errors.append(
+                        self._validation_error(
+                            code="accounting_export_amount_precision_invalid",
+                            message=f"Mapped row {row_index} amount must use two decimal places",
+                            row_index=row_index,
+                            field="amount",
+                        )
+                    )
+
+            try:
+                FinanceTransactionSource(row.source_type)
+            except ValueError:
+                validation_errors.append(
+                    self._validation_error(
+                        code="accounting_export_source_type_invalid",
+                        message=f"Mapped row {row_index} source type is not recognized",
+                        row_index=row_index,
+                        field="source_type",
+                    )
+                )
+
+        return validation_errors
+
+    def _collect_model_validation_errors(
+        self,
+        exc: ValidationError,
+        *,
+        code: str,
+        message_prefix: str,
+        row_index: int | None = None,
+    ) -> list[AccountingMappedExportValidationError]:
+        errors: list[AccountingMappedExportValidationError] = []
+        for item in exc.errors():
+            field = ".".join(str(part) for part in item["loc"]) or None
+            message = message_prefix
+            if field:
+                message = f"{message_prefix}: {field} {item['msg']}"
+            else:
+                message = f"{message_prefix}: {item['msg']}"
+            errors.append(
+                self._validation_error(
+                    code=code,
+                    message=message,
+                    row_index=row_index,
+                    field=field,
+                )
+            )
+        return errors
+
+    def _validation_error(
+        self,
+        *,
+        code: str,
+        message: str,
+        row_index: int | None = None,
+        field: str | None = None,
+    ) -> AccountingMappedExportValidationError:
+        return AccountingMappedExportValidationError(
+            code=code,
+            message=message,
+            row_index=row_index,
+            field=field,
+        )
+
+    def _validation_failure_message(
+        self,
+        validation_errors: list[AccountingMappedExportValidationError],
+    ) -> str:
+        top_messages = ", ".join(error.message for error in validation_errors[:3])
+        if len(validation_errors) > 3:
+            top_messages = f"{top_messages}, plus {len(validation_errors) - 3} more"
+        return f"Mapped export validation failed: {top_messages}"
 
     def _content_hash(self, rows: list[AccountingMappedExportPreviewRow]) -> str:
         canonical = json.dumps(

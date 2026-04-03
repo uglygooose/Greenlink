@@ -191,6 +191,15 @@ class FinanceExportBatchService:
     ) -> FinanceExportBatchVoidResult:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status != FinanceExportBatchStatus.VOID:
+            metadata = dict(batch.metadata_json or {})
+            metadata.setdefault(
+                "void_event",
+                {
+                    "voided_at": utc_now().isoformat(),
+                    "previous_status": batch.status.value,
+                },
+            )
+            batch.metadata_json = metadata
             batch.status = FinanceExportBatchStatus.VOID
             self.db.add(batch)
             self.db.commit()

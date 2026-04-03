@@ -319,6 +319,13 @@ class AccountingMappedExportPreviewRow(BaseModel):
     source_type: str
 
 
+class AccountingMappedExportValidationError(BaseModel):
+    code: str
+    message: str
+    row_index: int | None = None
+    field: str | None = None
+
+
 class AccountingMappedExportPreviewResponse(BaseModel):
     source_batch_id: uuid.UUID
     source_export_profile: FinanceExportProfile
@@ -330,7 +337,9 @@ class AccountingMappedExportPreviewResponse(BaseModel):
     file_name: str
     content_hash: str
     row_count: int
+    download_ready: bool
     metadata_json: dict[str, object]
+    validation_errors: list[AccountingMappedExportValidationError]
     rows: list[AccountingMappedExportPreviewRow]
 
 

@@ -224,6 +224,13 @@ export interface AccountingMappedExportPreviewRow {
   source_type: string;
 }
 
+export interface AccountingMappedExportValidationError {
+  code: string;
+  message: string;
+  row_index: number | null;
+  field: string | null;
+}
+
 export interface AccountingMappedExportPreview {
   source_batch_id: string;
   source_export_profile: FinanceExportProfile;
@@ -235,11 +242,13 @@ export interface AccountingMappedExportPreview {
   file_name: string;
   content_hash: string;
   row_count: number;
+  download_ready: boolean;
   metadata_json: {
     output_mode?: string;
     source_batch_content_hash?: string;
     source_batch_file_name?: string;
     column_order?: string[];
   };
+  validation_errors: AccountingMappedExportValidationError[];
   rows: AccountingMappedExportPreviewRow[];
 }

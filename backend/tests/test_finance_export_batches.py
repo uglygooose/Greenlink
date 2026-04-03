@@ -373,6 +373,59 @@ def test_voided_finance_export_batch_allows_regeneration(
     assert regenerated.json()["batch"]["id"] != batch_id
 
 
+def test_voided_finance_export_batch_preserves_payload_and_void_metadata(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    club = _create_club(db_session, slug=f"feb-void-meta-{uuid.uuid4().hex[:6]}")
+    admin = _create_user(
+        db_session,
+        email=f"feb_void_meta_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
+    account = _create_finance_account(db_session, club=club, account_code="EXP-007")
+    _post_transaction(
+        db_session,
+        club=club,
+        account=account,
+        amount=Decimal("-44.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.MANUAL,
+        description="Append-only charge",
+        created_at=datetime(2026, 4, 6, 8, 0, tzinfo=UTC),
+    )
+    headers = _auth_headers(client, email=admin.email, club_id=club.id)
+    created = client.post(
+        "/api/finance/export-batches",
+        headers=headers,
+        json={
+            "export_profile": "journal_basic",
+            "date_from": "2026-04-06",
+            "date_to": "2026-04-06",
+        },
+    )
+    batch_id = created.json()["batch"]["id"]
+    original_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
+
+    voided = client.post(f"/api/finance/export-batches/{batch_id}/void", headers=headers)
+    voided_again = client.post(f"/api/finance/export-batches/{batch_id}/void", headers=headers)
+    detail = client.get(f"/api/finance/export-batches/{batch_id}", headers=headers)
+    voided_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
+
+    assert voided.status_code == 200
+    assert voided_again.status_code == 200
+    assert voided_again.json()["void_applied"] is False
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "void"
+    assert detail.json()["metadata_json"]["void_event"]["previous_status"] == "generated"
+    assert "voided_at" in detail.json()["metadata_json"]["void_event"]
+    assert detail.json()["rows"][0]["description"] == "Append-only charge"
+    assert original_download.status_code == 200
+    assert voided_download.status_code == 200
+    assert voided_download.text == original_download.text
+
+
 def test_finance_export_batch_detail_is_club_scoped(
     client: TestClient,
     db_session: Session,
