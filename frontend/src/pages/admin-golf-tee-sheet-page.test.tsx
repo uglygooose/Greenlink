@@ -7,11 +7,13 @@ import {
   checkInBooking,
   createBooking,
   moveBooking,
+  updateBooking,
 } from "../api/operations";
 import { AdminGolfTeeSheetPage } from "./admin-golf-tee-sheet-page";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
+const mockUseTeesQuery = vi.fn();
 const mockUseTeeSheetDayQuery = vi.fn();
 const mockUseClubDirectoryQuery = vi.fn();
 
@@ -21,6 +23,7 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/golf-settings/hooks", () => ({
   useCoursesQuery: () => mockUseCoursesQuery(),
+  useTeesQuery: () => mockUseTeesQuery(),
 }));
 
 vi.mock("../features/people/hooks", () => ({
@@ -47,6 +50,7 @@ vi.mock("../api/operations", () => ({
   createBooking: vi.fn(),
   markBookingNoShow: vi.fn(),
   moveBooking: vi.fn(),
+  updateBooking: vi.fn(),
 }));
 
 function renderPage(): void {
@@ -189,11 +193,42 @@ describe("AdminGolfTeeSheetPage", () => {
         user: { display_name: "Club Admin" },
       },
     });
-    mockUseCoursesQuery.mockReturnValue({ data: [{ id: "course-1", name: "North" }] });
+    mockUseCoursesQuery.mockReturnValue({
+      data: [{ id: "course-1", name: "North" }],
+      isLoading: false,
+      error: null,
+    });
+    mockUseTeesQuery.mockReturnValue({
+      data: [{ id: "tee-1", course_id: "course-1", active: true }],
+      isLoading: false,
+      error: null,
+    });
     mockUseTeeSheetDayQuery.mockReturnValue({ data: teeSheetPayload, isLoading: false, error: null });
     mockUseClubDirectoryQuery.mockReturnValue({
       data: [{ person: { id: "person-1", full_name: "Member One" }, membership: { role: "MEMBER" } }],
     });
+  });
+
+  test("shows setup guidance when the club has no courses", () => {
+    mockUseCoursesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockUseTeesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: null, isLoading: false, error: null });
+
+    renderPage();
+
+    expect(screen.getByText("No courses are configured for this club.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open golf settings/i })).toHaveAttribute("href", "/admin/golf/settings");
+    expect(screen.queryByText("Showing 2 of 2 lane slots")).not.toBeInTheDocument();
+  });
+
+  test("shows setup guidance when the selected course has no active tees", () => {
+    mockUseTeesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: null, isLoading: false, error: null });
+
+    renderPage();
+
+    expect(screen.getByText("This course has no active tees.")).toBeInTheDocument();
+    expect(screen.getByText(/without at least one active tee definition/i)).toBeInTheDocument();
   });
 
   test("renders time-first lanes and commercial hooks from backend payload", async () => {
@@ -261,6 +296,32 @@ describe("AdminGolfTeeSheetPage", () => {
 
     await waitFor(() => {
       expect(checkInBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+  });
+
+  test("edits a reserved booking party through the drawer and sends backend intent", async () => {
+    vi.mocked(updateBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      booking: null,
+      availability: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /edit booking booking-1/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save booking booking-1/i }));
+
+    await waitFor(() => {
+      expect(updateBooking).toHaveBeenCalledWith(
+        "booking-1",
+        expect.objectContaining({
+          participants: expect.any(Array),
+        }),
+        expect.anything(),
+      );
     });
   });
 });

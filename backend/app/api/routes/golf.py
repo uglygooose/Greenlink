@@ -40,6 +40,8 @@ from app.schemas.bookings import (
     BookingCompleteResult,
     BookingCreateRequest,
     BookingCreateResult,
+    BookingUpdateRequest,
+    BookingUpdateResult,
     BookingMoveInput,
     BookingMoveRequest,
     BookingMoveResult,
@@ -59,6 +61,7 @@ from app.services.booking_completion_service import BookingCompletionService
 from app.services.booking_move_service import BookingMoveService
 from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
+from app.services.booking_update_service import BookingUpdateService
 from app.services.tee_sheet_service import TeeSheetService
 
 router = APIRouter()
@@ -249,6 +252,21 @@ def create_booking(
     )
     service = BookingService(db)
     return service.create_booking(context.selected_club.id, normalized_payload)
+
+
+@router.patch("/bookings/{booking_id}", response_model=BookingUpdateResult)
+def update_booking(
+    booking_id: uuid.UUID,
+    payload: BookingUpdateRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingUpdateResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingUpdateService(db)
+    return service.update_booking(context.selected_club.id, booking_id=booking_id, payload=payload)
 
 
 @router.post("/bookings/{booking_id}/move", response_model=BookingMoveResult)

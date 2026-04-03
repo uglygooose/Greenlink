@@ -1,11 +1,16 @@
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
-import type { BookingPaymentStatus } from "../../types/bookings";
+import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
+import type { BookingPaymentStatus, BookingSummary } from "../../types/bookings";
+import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
 type FeedbackTone = "error" | "info";
 
 interface BookingManagementDrawerProps {
   colorCode: string | null;
+  directory: ClubPersonEntry[];
+  editingBookingId: string | null;
+  editParticipants: DraftParticipant[];
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone | null;
   laneLabel: string;
@@ -13,9 +18,16 @@ interface BookingManagementDrawerProps {
   onCheckIn: (bookingId: string) => void;
   onClose: () => void;
   onComplete: (bookingId: string) => void;
+  onEditAddParticipant: () => void;
+  onEditCancel: () => void;
+  onEditChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
+  onEditRemoveParticipant: (key: string) => void;
+  onEditSave: (bookingId: string) => void;
+  onEditStart: (booking: BookingSummary) => void;
   onNoShow: (bookingId: string) => void;
   pendingAction: "cancel" | "check_in" | "complete" | "no_show" | null;
   pendingBookingId: string | null;
+  savingBookingId: string | null;
   selectedDate: string;
   slot: TeeSheetSlotView;
   teeLabel: string;
@@ -69,16 +81,12 @@ function participantSummary(
   partySize: number,
 ): string {
   const names = participants.map((participant) => participant.display_name).filter(Boolean);
-  if (names.length > 0) {
-    return names.join(", ");
-  }
+  if (names.length > 0) return names.join(", ");
   return `${partySize} players`;
 }
 
 function feedbackClassName(tone: FeedbackTone | null): string {
-  if (tone === "error") {
-    return "bg-error-container/40 text-on-error-container";
-  }
+  if (tone === "error") return "bg-error-container/40 text-on-error-container";
   return "bg-secondary-container text-on-secondary-container";
 }
 
@@ -118,8 +126,76 @@ function ActionButton({
   );
 }
 
+function EditPanel({
+  booking,
+  directory,
+  onAddParticipant,
+  onCancel,
+  onChangeParticipant,
+  onRemoveParticipant,
+  onSave,
+  participants,
+  saving,
+}: {
+  booking: BookingSummary;
+  directory: ClubPersonEntry[];
+  onAddParticipant: () => void;
+  onCancel: () => void;
+  onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
+  onRemoveParticipant: (key: string) => void;
+  onSave: () => void;
+  participants: DraftParticipant[];
+  saving: boolean;
+}): JSX.Element {
+  return (
+    <section className="space-y-4 rounded-2xl bg-surface-container p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Edit Booking</p>
+          <p className="mt-1 text-sm text-on-surface">Adjust participants and guests for this reserved booking.</p>
+        </div>
+        <button
+          className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm"
+          onClick={onCancel}
+          type="button"
+        >
+          Close Edit
+        </button>
+      </div>
+      <BookingPartyEditor
+        directory={directory}
+        onAddParticipant={onAddParticipant}
+        onChangeParticipant={onChangeParticipant}
+        onRemoveParticipant={onRemoveParticipant}
+        participants={participants}
+      />
+      <div className="flex items-center justify-end gap-3">
+        <button
+          className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-on-surface"
+          onClick={onCancel}
+          type="button"
+        >
+          Cancel
+        </button>
+        <button
+          aria-label={`Save booking ${booking.id}`}
+          className="rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          disabled={saving}
+          onClick={onSave}
+          type="button"
+        >
+          {saving ? "Saving..." : "Save Booking"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function BookingManagementDrawer({
   colorCode,
+  directory,
+  editingBookingId,
+  editParticipants,
   feedbackMessage,
   feedbackTone,
   laneLabel,
@@ -127,9 +203,16 @@ export function BookingManagementDrawer({
   onCheckIn,
   onClose,
   onComplete,
+  onEditAddParticipant,
+  onEditCancel,
+  onEditChangeParticipant,
+  onEditRemoveParticipant,
+  onEditSave,
+  onEditStart,
   onNoShow,
   pendingAction,
   pendingBookingId,
+  savingBookingId,
   selectedDate,
   slot,
   teeLabel,
@@ -142,7 +225,7 @@ export function BookingManagementDrawer({
         onClick={onClose}
         type="button"
       />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col bg-white shadow-2xl">
+      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between px-6 pb-5 pt-6">
           <div>
             <h3 className="font-headline text-lg font-extrabold text-slate-900">Booking Management</h3>
@@ -168,8 +251,8 @@ export function BookingManagementDrawer({
                 <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
                   {teeLabel}
-                  {colorCode ? ` · ${colorCode}` : ""}
-                  {" · "}
+                  {colorCode ? ` | ${colorCode}` : ""}
+                  {" | "}
                   {slot.party_summary.total_players ?? 0} players in active view
                 </p>
               </div>
@@ -199,9 +282,11 @@ export function BookingManagementDrawer({
               const isCompletePending = isPending && pendingAction === "complete";
               const isNoShowPending = isPending && pendingAction === "no_show";
               const isCancelPending = isPending && pendingAction === "cancel";
+              const isEditing = editingBookingId === booking.id;
+              const isSaving = savingBookingId === booking.id;
 
               return (
-                <article className="rounded-2xl bg-surface-container-low p-4" key={booking.id}>
+                <article className="space-y-4 rounded-2xl bg-surface-container-low p-4" key={booking.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-on-surface">Booking {booking.id.slice(0, 8)}</p>
@@ -214,7 +299,7 @@ export function BookingManagementDrawer({
                     </span>
                   </div>
 
-                  <div className="mt-4 space-y-2 text-sm text-on-surface">
+                  <div className="space-y-2 text-sm text-on-surface">
                     <div className="flex items-center gap-2">
                       <MaterialSymbol className="text-sm text-slate-400" icon="groups" />
                       <span>{booking.party_size} players</span>
@@ -233,26 +318,49 @@ export function BookingManagementDrawer({
                         {booking.fee_label ?? "Rate pending"}
                       </span>
                       {booking.cart_flag ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
-                          <MaterialSymbol className="text-xs" icon="golf_course" />
+                        <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
                           Cart
                         </span>
                       ) : null}
                       {booking.caddie_flag ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
-                          <MaterialSymbol className="text-xs" icon="person" />
+                        <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
                           Caddie
                         </span>
                       ) : null}
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-end gap-3">
+                  {isEditing ? (
+                    <EditPanel
+                      booking={booking}
+                      directory={directory}
+                      onAddParticipant={onEditAddParticipant}
+                      onCancel={onEditCancel}
+                      onChangeParticipant={onEditChangeParticipant}
+                      onRemoveParticipant={onEditRemoveParticipant}
+                      onSave={() => onEditSave(booking.id)}
+                      participants={editParticipants}
+                      saving={isSaving}
+                    />
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    {booking.status === "reserved" ? (
+                      <button
+                        aria-label={`Edit booking ${booking.id}`}
+                        className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-on-surface shadow-sm"
+                        disabled={isPending || isSaving}
+                        onClick={() => onEditStart(booking)}
+                        type="button"
+                      >
+                        Edit Party
+                      </button>
+                    ) : null}
                     {booking.status === "reserved" ? (
                       <>
                         <ActionButton
                           ariaLabel="Check In"
-                          disabled={isPending}
+                          disabled={isPending || isSaving}
                           icon="how_to_reg"
                           isPending={isCheckInPending}
                           label="Check In"
@@ -261,7 +369,7 @@ export function BookingManagementDrawer({
                         />
                         <ActionButton
                           ariaLabel="Mark No-Show"
-                          disabled={isPending}
+                          disabled={isPending || isSaving}
                           icon="person_off"
                           isPending={isNoShowPending}
                           label="Mark No-Show"
@@ -273,7 +381,7 @@ export function BookingManagementDrawer({
                     {booking.status === "checked_in" ? (
                       <ActionButton
                         ariaLabel="Complete Booking"
-                        disabled={isPending}
+                        disabled={isPending || isSaving}
                         icon="task_alt"
                         isPending={isCompletePending}
                         label="Complete Booking"
@@ -283,7 +391,7 @@ export function BookingManagementDrawer({
                     ) : null}
                     <ActionButton
                       ariaLabel="Cancel Booking"
-                      disabled={isPending}
+                      disabled={isPending || isSaving}
                       icon="event_busy"
                       isPending={isCancelPending}
                       label="Cancel Booking"

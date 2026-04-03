@@ -23,8 +23,13 @@ export interface BookingCreateInput {
 }
 
 export interface BookingParticipantSummary {
+  id?: string;
   display_name: string;
   participant_type: BookingParticipantType;
+  person_id?: string | null;
+  club_membership_id?: string | null;
+  guest_name?: string | null;
+  sort_order?: number;
   is_primary: boolean;
 }
 
@@ -81,6 +86,27 @@ export interface BookingCreateResult {
   booking: BookingSummary | null;
   availability: AvailabilityPolicyResult | null;
   failures: BookingCreateFailureDetail[];
+}
+
+export interface BookingUpdateInput {
+  participants: BookingCreateParticipantInput[];
+  applies_to?: "member" | "staff" | null;
+  reference_datetime?: string | null;
+}
+
+export interface BookingUpdateFailureDetail {
+  code: string;
+  message: string;
+  field?: string | null;
+  current_status?: BookingStatus | null;
+}
+
+export interface BookingUpdateResult {
+  booking_id: string;
+  decision: "allowed" | "blocked" | "indeterminate";
+  booking: BookingSummary | null;
+  availability: AvailabilityPolicyResult | null;
+  failures: BookingUpdateFailureDetail[];
 }
 
 export interface BookingLifecycleMutationFailureDetail {

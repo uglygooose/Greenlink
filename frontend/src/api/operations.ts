@@ -5,6 +5,8 @@ import type {
   BookingCreateInput,
   BookingCreateResult,
   BookingCompleteResult,
+  BookingUpdateInput,
+  BookingUpdateResult,
   BookingMoveInput,
   BookingMoveResult,
   BookingNoShowResult,
@@ -204,6 +206,19 @@ export function createBooking(
 ): Promise<BookingCreateResult> {
   return apiRequest<BookingCreateResult>("/api/golf/bookings", {
     method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateBooking(
+  bookingId: string,
+  payload: BookingUpdateInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingUpdateResult> {
+  return apiRequest<BookingUpdateResult>(`/api/golf/bookings/${bookingId}`, {
+    method: "PATCH",
     accessToken,
     selectedClubId,
     body: JSON.stringify(payload),

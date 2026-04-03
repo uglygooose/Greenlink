@@ -135,6 +135,65 @@ class BookingCreateResult(BaseModel):
     failures: list[BookingCreateFailureDetail] = Field(default_factory=list)
 
 
+class BookingUpdateRequest(BaseModel):
+    participants: list[BookingCreateParticipantInput] = Field(default_factory=list, max_length=32)
+    applies_to: BookingRuleAppliesTo | None = None
+    reference_datetime: datetime | None = None
+
+    @field_validator("reference_datetime")
+    @classmethod
+    def validate_timezone_aware_reference_datetime(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return value
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("reference_datetime must include an explicit timezone offset")
+        return value
+
+    @model_validator(mode="after")
+    def validate_participants(self) -> BookingUpdateRequest:
+        primary_participants = [
+            participant for participant in self.participants if participant.is_primary
+        ]
+        if len(primary_participants) != 1:
+            raise ValueError("exactly one primary participant is required")
+        if primary_participants[0].participant_type == BookingParticipantType.GUEST:
+            raise ValueError(
+                "primary participant must be a member or staff participant in this phase"
+            )
+        if self.applies_to is not None:
+            expected_applies_to = (
+                BookingRuleAppliesTo.STAFF
+                if primary_participants[0].participant_type == BookingParticipantType.STAFF
+                else BookingRuleAppliesTo.MEMBER
+            )
+            if self.applies_to != expected_applies_to:
+                raise ValueError(
+                    "applies_to must match the primary participant bucket in this phase"
+                )
+        return self
+
+
+class BookingUpdateFailureDetail(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+    current_status: BookingStatus | None = None
+
+
+class BookingUpdateDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+    INDETERMINATE = "indeterminate"
+
+
+class BookingUpdateResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingUpdateDecision
+    booking: BookingSummary | None = None
+    availability: AvailabilityPolicyResult | None = None
+    failures: list[BookingUpdateFailureDetail] = Field(default_factory=list)
+
+
 class BookingLifecycleMutationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
