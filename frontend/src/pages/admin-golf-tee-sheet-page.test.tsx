@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   checkInBooking,
@@ -234,15 +234,42 @@ describe("AdminGolfTeeSheetPage", () => {
   test("renders time-first lanes and commercial hooks from backend payload", async () => {
     renderPage();
 
+    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    expect(screen.getAllByText("Player 1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Player 2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Player 3").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Player 4").length).toBeGreaterThan(0);
     expect(screen.getByText("1st Tee")).toBeInTheDocument();
     expect(screen.getByText("10th Tee")).toBeInTheDocument();
-    expect(screen.getByText("06:00")).toBeInTheDocument();
+    expect(screen.getAllByText("06:00").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /open booking booking-1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open participant guest one/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 4/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
 
     expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cart").length).toBeGreaterThan(0);
+  });
+
+  test("keeps the operational toolbar sticky with date controls in view", () => {
+    renderPage();
+
+    expect(screen.getByTestId("tee-sheet-toolbar")).toHaveClass("sticky", "top-20");
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeInTheDocument();
+    expect(screen.getByText("Showing 2 of 2 lane slots")).toBeInTheDocument();
+  });
+
+  test("opens the create drawer for remaining player capacity on a partially filled slot", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+
+    expect(await screen.findByRole("heading", { name: /create booking/i })).toBeInTheDocument();
   });
 
   test("dispatches backend move with lane-aware target on drop", async () => {
@@ -296,6 +323,59 @@ describe("AdminGolfTeeSheetPage", () => {
 
     await waitFor(() => {
       expect(checkInBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+  });
+
+  describe("date navigation", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ now: new Date("2026-04-04T12:00:00.000Z") });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("displays today's date on initial render", () => {
+      renderPage();
+      // dateLabel formats with en-US locale; in UTC test env "2026-04-04T00:00:00" = April 4
+      expect(screen.getAllByText("April 4, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("next day button advances the selected date by one day", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      expect(screen.getAllByText("April 5, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("previous day button moves the selected date back by one day", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+      expect(screen.getAllByText("April 3, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("next and previous are symmetric — two forward then two back returns to today", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+      fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+      expect(screen.getAllByText("April 4, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("Today button returns to current date after navigating forward", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      expect(screen.getAllByText("April 5, 2026").length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole("button", { name: "Today" }));
+      expect(screen.getAllByText("April 4, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("future date navigation is not blocked by the frontend", () => {
+      renderPage();
+      // Advance 30 days forward — no frontend cap should prevent this
+      for (let i = 0; i < 30; i++) {
+        fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      }
+      expect(screen.getAllByText("May 4, 2026").length).toBeGreaterThan(0);
     });
   });
 

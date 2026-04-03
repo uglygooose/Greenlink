@@ -11,6 +11,7 @@ import {
   moveBooking,
   updateBooking,
 } from "../api/operations";
+import { ApiError } from "../api/client";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery, useTeesQuery } from "../features/golf-settings/hooks";
@@ -34,14 +35,16 @@ import type {
   StartLane,
 } from "../types/bookings";
 import type { BookingRuleAppliesTo, Tee } from "../types/operations";
-import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../types/tee-sheet";
+import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../types/tee-sheet";
 
-const MEMBERSHIP_OPTIONS: BookingRuleAppliesTo[] = ["member", "guest", "staff"];
 
 type Action = "cancel" | "check_in" | "complete" | "no_show";
+type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
 type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
+type TeeSheetBookingView = TeeSheetSlotView["bookings"][number];
+type ViewFilter = "all" | "blocked" | "checked_in" | "issues" | "unpaid";
 type LaneSlot = {
   colorCode: string | null;
   laneLabel: string;
@@ -51,6 +54,18 @@ type LaneSlot = {
   startLane: StartLane | null;
   teeId: string | null;
 };
+type SlotPlayerCell =
+  | {
+      booking: TeeSheetBookingView;
+      column: number;
+      kind: "occupied";
+      participant: BookingParticipantSummary;
+      primaryHandle: boolean;
+    }
+  | {
+      column: number;
+      kind: "empty";
+    };
 
 const COPY: Record<Action, { already: string; blocked: string; success: string }> = {
   cancel: {
@@ -75,14 +90,26 @@ const COPY: Record<Action, { already: string; blocked: string; success: string }
   },
 };
 
+const VIEW_FILTERS: Array<{ label: string; value: ViewFilter }> = [
+  { label: "All", value: "all" },
+  { label: "Unpaid", value: "unpaid" },
+  { label: "Checked In", value: "checked_in" },
+  { label: "Blocked", value: "blocked" },
+  { label: "Issues", value: "issues" },
+];
+
+function localDateString(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function todayValue(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDateString(new Date());
 }
 
 function addDays(value: string, amount: number): string {
   const date = new Date(`${value}T00:00:00`);
   date.setDate(date.getDate() + amount);
-  return date.toISOString().slice(0, 10);
+  return localDateString(date);
 }
 
 function laneLabel(value: StartLane | null): string {
@@ -152,8 +179,217 @@ function paymentLabel(value: BookingPaymentStatus | null | undefined): string {
   return value ? value.replace("_", " ") : "unassigned";
 }
 
+function bookingStatusLabel(value: TeeSheetBookingView["status"]): string {
+  return value.replace("_", " ");
+}
+
+function bookingStatusClass(value: TeeSheetBookingView["status"]): string {
+  switch (value) {
+    case "checked_in":
+      return "bg-secondary-container text-on-secondary-container";
+    case "completed":
+      return "bg-primary-container/60 text-on-primary-container";
+    case "no_show":
+    case "cancelled":
+      return "bg-error-container/30 text-on-error-container";
+    default:
+      return "bg-surface-container text-on-surface";
+  }
+}
+
 function detail(slot: TeeSheetSlotView): string {
   return slot.blockers[0]?.reason ?? slot.unresolved_checks[0]?.reason ?? slot.warnings[0]?.message ?? "Open for booking";
+}
+
+function slotCapacity(slot: TeeSheetSlotView): number {
+  const value = slot.occupancy.player_capacity ?? 4;
+  return Math.max(1, Math.min(value, 4));
+}
+
+function bookingPlayerCount(booking: TeeSheetBookingView): number {
+  return booking.participants.length > 0 ? booking.participants.length : booking.party_size;
+}
+
+function slotPlayerCount(slot: TeeSheetSlotView): number {
+  return slot.bookings.reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
+}
+
+function slotRemainingCapacity(slot: TeeSheetSlotView): number {
+  return Math.max(slotCapacity(slot) - slotPlayerCount(slot), 0);
+}
+
+function slotPlayerCells(slot: TeeSheetSlotView): SlotPlayerCell[] {
+  const capacity = slotCapacity(slot);
+  const cells: SlotPlayerCell[] = [];
+  for (const booking of slot.bookings) {
+    const participants =
+      booking.participants.length > 0
+        ? booking.participants
+        : Array.from({ length: booking.party_size }, (_, index) => ({
+            display_name: `Player ${index + 1}`,
+            participant_type: "guest" as const,
+            is_primary: index === 0,
+          }));
+    participants.forEach((participant, index) => {
+      if (cells.length < capacity) {
+        cells.push({
+          booking,
+          column: cells.length + 1,
+          kind: "occupied",
+          participant,
+          primaryHandle: index === 0,
+        });
+      }
+    });
+  }
+  while (cells.length < capacity) {
+    cells.push({ column: cells.length + 1, kind: "empty" });
+  }
+  return cells;
+}
+
+function participantTypeLabel(value: BookingParticipantType): string {
+  switch (value) {
+    case "staff":
+      return "Staff";
+    case "guest":
+      return "Guest";
+    default:
+      return "Member";
+  }
+}
+
+function bookingChipClass(booking: TeeSheetBookingView, primaryHandle: boolean): string {
+  const base = "group flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-all select-none";
+  if (!primaryHandle) {
+    return `${base} cursor-pointer bg-surface-container-low hover:bg-surface-container`;
+  }
+  if (booking.status === "checked_in") {
+    return `${base} cursor-grab bg-secondary-container/70 hover:bg-secondary-container active:cursor-grabbing`;
+  }
+  if (booking.payment_status === "pending") {
+    return `${base} cursor-grab bg-primary-container/70 hover:bg-primary-container active:cursor-grabbing`;
+  }
+  return `${base} cursor-grab bg-surface-container-low hover:bg-surface-container active:cursor-grabbing`;
+}
+
+function slotSummaryClass(slot: TeeSheetSlotView): string {
+  if (slot.display_status === "blocked") return "bg-error-container/20 text-on-error-container";
+  if (slot.display_status === "warning") return "bg-amber-100 text-amber-800";
+  if (slot.display_status === "reserved") return "bg-surface-container-high text-on-surface";
+  return "bg-surface-container-low text-on-surface";
+}
+
+function slotHasIssue(slot: TeeSheetSlotView): boolean {
+  return slot.display_status === "warning" || slot.display_status === "indeterminate";
+}
+
+function slotMatchesSearch(slot: LaneSlot, search: string): boolean {
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+  const participantText = slot.slot.bookings
+    .flatMap((booking) => booking.participants.map((participant) => participant.display_name))
+    .join(" ")
+    .toLowerCase();
+  const metadata = `${slot.rowLabel} ${slot.laneLabel} ${slot.slot.local_time.slice(0, 5)}`.toLowerCase();
+  return participantText.includes(query) || metadata.includes(query);
+}
+
+function slotMatchesFilter(slot: TeeSheetSlotView, filter: ViewFilter): boolean {
+  switch (filter) {
+    case "unpaid":
+      return slot.bookings.some((booking) => booking.payment_status === "pending");
+    case "checked_in":
+      return slot.bookings.some((booking) => booking.status === "checked_in");
+    case "blocked":
+      return slot.display_status === "blocked";
+    case "issues":
+      return slotHasIssue(slot) || slot.bookings.some((booking) => booking.payment_status === "pending");
+    default:
+      return true;
+  }
+}
+
+function updateSlotFromBookings(slot: TeeSheetSlotView, bookings: TeeSheetBookingView[]): TeeSheetSlotView {
+  const playerCapacity = slot.occupancy.player_capacity ?? 4;
+  const memberCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "member").length,
+    0,
+  );
+  const guestCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "guest").length,
+    0,
+  );
+  const staffCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "staff").length,
+    0,
+  );
+  const reservedPlayers = bookings
+    .filter((booking) => booking.status === "reserved")
+    .reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
+  const checkedInPlayers = bookings
+    .filter((booking) => booking.status === "checked_in")
+    .reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
+  const reservedBookings = bookings.filter((booking) => booking.status === "reserved").length;
+  const confirmedBookings = bookings.filter((booking) => booking.status === "checked_in").length;
+  return {
+    ...slot,
+    bookings,
+    occupancy: {
+      ...slot.occupancy,
+      occupied_player_count: checkedInPlayers,
+      reserved_player_count: reservedPlayers,
+      confirmed_booking_count: confirmedBookings,
+      reserved_booking_count: reservedBookings,
+      remaining_player_capacity:
+        playerCapacity == null ? slot.occupancy.remaining_player_capacity : Math.max(playerCapacity - checkedInPlayers - reservedPlayers, 0),
+    },
+    party_summary: {
+      ...slot.party_summary,
+      member_count: memberCount,
+      guest_count: guestCount,
+      staff_count: staffCount,
+      total_players: memberCount + guestCount + staffCount,
+      has_activity: memberCount + guestCount + staffCount > 0,
+    },
+  };
+}
+
+function optimisticallyMoveBooking(
+  day: TeeSheetDayResponse | undefined,
+  bookingId: string,
+  target: LaneSlot,
+): TeeSheetDayResponse | undefined {
+  if (!day) return day;
+  let bookingToMove: TeeSheetBookingView | null = null;
+  for (const row of day.rows) {
+    for (const slot of row.slots) {
+      const booking = slot.bookings.find((entry) => entry.id === bookingId);
+      if (booking) {
+        bookingToMove = {
+          ...booking,
+          slot_datetime: target.slot.slot_datetime,
+          start_lane: target.startLane,
+        };
+      }
+    }
+  }
+  if (!bookingToMove) return day;
+
+  return {
+    ...day,
+    rows: day.rows.map((row) => ({
+      ...row,
+      slots: row.slots.map((slot) => {
+        const isSource = slot.bookings.some((booking) => booking.id === bookingId);
+        const isTarget = row.row_key === target.rowKey && slot.slot_datetime === target.slot.slot_datetime;
+        if (!isSource && !isTarget) return slot;
+        let nextBookings = slot.bookings.filter((booking) => booking.id !== bookingId);
+        if (isTarget) nextBookings = [...nextBookings, bookingToMove as TeeSheetBookingView];
+        return updateSlotFromBookings(slot, nextBookings);
+      }),
+    })),
+  };
 }
 
 function canManage(slot: TeeSheetSlotView): boolean {
@@ -161,7 +397,7 @@ function canManage(slot: TeeSheetSlotView): boolean {
 }
 
 function canCreate(slot: TeeSheetSlotView): boolean {
-  return slot.bookings.length === 0 && slot.display_status !== "blocked" && slot.display_status !== "reserved";
+  return slot.display_status !== "blocked" && slot.display_status !== "reserved" && slotRemainingCapacity(slot) > 0;
 }
 
 function canDrop(slot: TeeSheetSlotView): boolean {
@@ -246,11 +482,13 @@ function SetupState({
 }
 
 export function AdminGolfTeeSheetPage(): JSX.Element {
-  const { accessToken, bootstrap } = useSession();
+  const { accessToken, bootstrap, initialized, loading } = useSession();
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(todayValue);
-  const [membershipType, setMembershipType] = useState<BookingRuleAppliesTo>("member");
+  const membershipType: BookingRuleAppliesTo = "member";
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [teeId, setTeeId] = useState<string | null>(null);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode | null>(null);
   const [selectedSlotKey, setSelectedSlotKey] = useState<SelectedSlotKey | null>(null);
   const [drawerFeedbackMessage, setDrawerFeedbackMessage] = useState<string | null>(null);
   const [drawerFeedbackTone, setDrawerFeedbackTone] = useState<"error" | "info" | null>(null);
@@ -258,13 +496,25 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [drafts, setDrafts] = useState<DraftParticipant[]>(initialDrafts("member"));
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showControlledRows, setShowControlledRows] = useState(true);
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<DraftParticipant[]>([]);
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
-  const teesQuery = useTeesQuery({ accessToken, selectedClubId });
-  const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
+  const sessionReady = initialized && !loading && Boolean(accessToken && bootstrap && selectedClubId);
+  const guardedAccessToken = sessionReady ? accessToken : null;
+  const guardedSelectedClubId = sessionReady ? selectedClubId : null;
+  const coursesQuery = useCoursesQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
+  const teesQuery = useTeesQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
+  const directoryQuery = useClubDirectoryQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
+  const activeCourseTees = useMemo(
+    () => (teesQuery.data ?? []).filter((tee: Tee) => tee.course_id === courseId && tee.active),
+    [courseId, teesQuery.data],
+  );
+  const selectedTeeId = activeCourseTees.some((tee) => tee.id === teeId) ? teeId : activeCourseTees[0]?.id ?? null;
+  const selectedTee = activeCourseTees.find((tee) => tee.id === selectedTeeId) ?? null;
 
   useEffect(() => {
     const courses = coursesQuery.data ?? [];
@@ -278,15 +528,18 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   }, [courseId, coursesQuery.data]);
 
   useEffect(() => {
-    setDrafts(initialDrafts(membershipType));
-  }, [membershipType]);
+    if (teeId !== selectedTeeId) {
+      setTeeId(selectedTeeId);
+    }
+  }, [selectedTeeId, teeId]);
 
   const teeSheetQuery = useTeeSheetDayQuery({
-    accessToken,
-    selectedClubId,
+    accessToken: guardedAccessToken,
+    selectedClubId: guardedSelectedClubId,
     courseId,
     date: selectedDate,
     membershipType,
+    teeId: selectedTeeId,
   });
 
   const slots = useMemo<LaneSlot[]>(
@@ -325,6 +578,20 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }));
   }, [slots]);
 
+  const filteredBuckets = useMemo(
+    () =>
+      buckets
+        .map((bucket) => ({
+          ...bucket,
+          slots: bucket.slots.filter((slot) => {
+            const visibleByState = showControlledRows || (slot.slot.display_status !== "blocked" && slot.slot.display_status !== "reserved");
+            return visibleByState && slotMatchesSearch(slot, searchTerm) && slotMatchesFilter(slot.slot, viewFilter);
+          }),
+        }))
+        .filter((bucket) => bucket.slots.length > 0),
+    [buckets, searchTerm, showControlledRows, viewFilter],
+  );
+
   const statusCounts = useMemo(
     () =>
       slots.reduce(
@@ -354,6 +621,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   useEffect(() => {
     if (selectedSlotKey && !selectedSlot) {
       setSelectedSlotKey(null);
+      setDrawerMode(null);
       setDrawerFeedbackMessage(null);
       setDrawerFeedbackTone(null);
       setEditingBookingId(null);
@@ -361,9 +629,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
   }, [selectedSlot, selectedSlotKey]);
 
+  const currentDayKey =
+    guardedSelectedClubId && courseId ? teeSheetKeys.day(guardedSelectedClubId, courseId, selectedDate, membershipType, selectedTeeId) : null;
+
   async function invalidate(): Promise<void> {
-    if (!selectedClubId || !courseId) return;
-    await queryClient.invalidateQueries({ queryKey: teeSheetKeys.day(selectedClubId, courseId, selectedDate, membershipType) });
+    if (!currentDayKey) return;
+    await queryClient.invalidateQueries({ queryKey: currentDayKey });
   }
 
   async function onLifecycleSuccess(action: Action, result: BookingLifecycleMutationResult): Promise<void> {
@@ -374,6 +645,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
+    setDrawerMode(null);
     setEditingBookingId(null);
     setEditDrafts([]);
     setNotice({ tone: result.transition_applied ? "success" : "info", message: result.transition_applied ? COPY[action].success : COPY[action].already });
@@ -422,6 +694,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       if (result.decision === "allowed") {
         setDrawerFeedbackMessage(null);
         setDrawerFeedbackTone(null);
+        setDrawerMode(null);
         setSelectedSlotKey(null);
         setNotice({ tone: "success", message: "Booking created. Tee sheet refreshed from backend state." });
         setDrafts(initialDrafts(membershipType));
@@ -445,6 +718,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       if (result.decision === "allowed") {
         setDrawerFeedbackMessage(null);
         setDrawerFeedbackTone(null);
+        setDrawerMode("manage");
         setEditingBookingId(null);
         setEditDrafts([]);
         setNotice({ tone: "success", message: "Booking updated. Tee sheet refreshed from backend state." });
@@ -468,10 +742,18 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         { target_slot_datetime: target.slot.slot_datetime, target_start_lane: target.startLane, target_tee_id: target.teeId },
         { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
       ),
-    onSuccess: async (result, variables) => {
+    onMutate: async ({ bookingId, target }) => {
+      if (!currentDayKey) return { previousDay: undefined };
+      await queryClient.cancelQueries({ queryKey: currentDayKey });
+      const previousDay = queryClient.getQueryData<TeeSheetDayResponse>(currentDayKey);
+      queryClient.setQueryData<TeeSheetDayResponse>(currentDayKey, (current) => optimisticallyMoveBooking(current, bookingId, target));
       setDragged(null);
       setActiveDropKey(null);
+      return { previousDay };
+    },
+    onSuccess: async (result, variables, context) => {
       if (result.decision === "blocked") {
+        if (currentDayKey && context?.previousDay) queryClient.setQueryData(currentDayKey, context.previousDay);
         const message = result.failures[0]?.message ?? "Move blocked.";
         setNotice({ tone: "error", message });
         if (selectedSlotKey?.rowKey === variables.target.rowKey && selectedSlotKey.slotDatetime === variables.target.slot.slot_datetime) {
@@ -483,15 +765,17 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       setDrawerFeedbackMessage(null);
       setDrawerFeedbackTone(null);
       setSelectedSlotKey(null);
+      setDrawerMode(null);
       setEditingBookingId(null);
       setEditDrafts([]);
       setNotice({
         tone: result.transition_applied ? "success" : "info",
-        message: result.transition_applied ? "Booking moved. Tee sheet refreshed from backend state." : "Booking was already at the requested slot.",
+        message: result.transition_applied ? "Booking moved." : "Booking was already at the requested slot.",
       });
-      await invalidate();
+      void invalidate();
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      if (currentDayKey && context?.previousDay) queryClient.setQueryData(currentDayKey, context.previousDay);
       setDragged(null);
       setActiveDropKey(null);
       setNotice({ tone: "error", message: asMessage(error) });
@@ -499,10 +783,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   });
 
   const activeCourse = coursesQuery.data?.find((course) => course.id === courseId) ?? null;
-  const activeCourseTees = useMemo(
-    () => (teesQuery.data ?? []).filter((tee: Tee) => tee.course_id === courseId && tee.active),
-    [courseId, teesQuery.data],
-  );
   const hasCourses = (coursesQuery.data?.length ?? 0) > 0;
   const setupMissingCourses = !coursesQuery.isLoading && !coursesQuery.error && !hasCourses;
   const setupMissingTees =
@@ -511,15 +791,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     !teesQuery.isLoading &&
     !teesQuery.error &&
     activeCourseTees.length === 0;
-  const configuredForSheet = Boolean(activeCourse && activeCourseTees.length > 0);
+  const configuredForSheet = Boolean(activeCourse && selectedTee);
 
-  const warningMessage = teeSheetQuery.data?.warnings[0]?.message ?? "No weather or policy alerts for this day.";
   const totalSlots = slots.length;
   const occupiedSlots = slots.filter((item) => item.slot.bookings.length > 0).length;
   const checkedInBookings = slots.reduce((sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").length, 0);
-  const checkedInPlayers = slots.reduce((sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").reduce((inner, booking) => inner + booking.party_size, 0), 0);
-  const openSlots = statusCounts.available + statusCounts.indeterminate + statusCounts.warning;
-  const openPlayerCapacity = slots.reduce((sum, item) => sum + Math.max(item.slot.occupancy.remaining_player_capacity ?? 0, 0), 0);
+  const checkedInPlayers = slots.reduce((sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").reduce((inner, booking) => inner + bookingPlayerCount(booking), 0), 0);
+  const openSlots = slots.filter((item) => canCreate(item.slot)).length;
+  const openPlayerCapacity = slots.reduce((sum, item) => sum + slotRemainingCapacity(item.slot), 0);
   const alertSignals = (teeSheetQuery.data?.warnings.length ?? 0) + statusCounts.warning + statusCounts.blocked;
   const occupancyPct = totalSlots === 0 ? 0 : Math.round((occupiedSlots / totalSlots) * 100);
   const pendingAction = cancelMutation.isPending ? "cancel" : checkInMutation.isPending ? "check_in" : completeMutation.isPending ? "complete" : noShowMutation.isPending ? "no_show" : null;
@@ -528,18 +807,32 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const savingBookingId = updateMutation.isPending ? updateMutation.variables?.bookingId ?? null : null;
   const directory = directoryQuery.data ?? [];
 
-  function open(slot: LaneSlot): void {
-    if (!canManage(slot.slot) && !canCreate(slot.slot)) return;
+  function openManage(slot: LaneSlot): void {
+    if (!canManage(slot.slot)) return;
     setNotice(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
     setDrafts(initialDrafts(membershipType));
+    setDrawerMode("manage");
+    setEditingBookingId(null);
+    setEditDrafts([]);
+    setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+  }
+
+  function openCreate(slot: LaneSlot): void {
+    if (!canCreate(slot.slot)) return;
+    setNotice(null);
+    setDrawerFeedbackMessage(null);
+    setDrawerFeedbackTone(null);
+    setDrafts(initialDrafts(membershipType));
+    setDrawerMode("create");
     setEditingBookingId(null);
     setEditDrafts([]);
     setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
   }
 
   function close(): void {
+    setDrawerMode(null);
     setSelectedSlotKey(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
@@ -633,8 +926,19 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setActiveDropKey(null);
   }
 
-  const description = `Course: ${activeCourse?.name ?? "Course setup required"} - ${membershipType} preview`;
+  const description = `Course: ${activeCourse?.name ?? "Course setup required"} · Tee: ${selectedTee?.name ?? "tee setup required"}`;
+  const teeSheetErrorMessage =
+    teeSheetQuery.error instanceof ApiError && teeSheetQuery.error.status === 401
+      ? "Session expired. Redirecting to login."
+      : teeSheetQuery.error?.message ?? null;
+  const jumpTimes = useMemo(
+    () => Array.from(new Set(buckets.map((bucket) => bucket.localTime.slice(0, 5)))),
+    [buckets],
+  );
   const showLiveEmptyState = configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length === 0;
+  const showFilteredEmptyState =
+    configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 && filteredBuckets.length === 0;
+  const visibleSlotCount = filteredBuckets.reduce((sum, bucket) => sum + bucket.slots.length, 0);
   return (
     <>
       <AdminWorkspace
@@ -643,20 +947,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         description={description}
         actions={
           <>
-            <label className="relative flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
-              <MaterialSymbol className="text-sm text-on-surface-variant" icon="calendar_month" />
-              <span className="font-medium">{dateLabel(selectedDate)}</span>
-              <MaterialSymbol className="text-sm text-on-surface-variant" icon="expand_more" />
-              <input className="absolute inset-0 cursor-pointer opacity-0" onChange={(event) => setSelectedDate(event.target.value)} type="date" value={selectedDate} />
-            </label>
-            <div className="flex gap-1">
-              <button className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container" onClick={() => setSelectedDate((current) => addDays(current, -1))} type="button">
-                <MaterialSymbol icon="chevron_left" />
-              </button>
-              <button className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container" onClick={() => setSelectedDate((current) => addDays(current, 1))} type="button">
-                <MaterialSymbol icon="chevron_right" />
-              </button>
-            </div>
             <label className="flex items-center gap-2 rounded-2xl bg-surface-container-high px-4 py-2.5 text-sm font-semibold text-on-surface">
               <MaterialSymbol className="text-sm" icon="flag" />
               <select
@@ -664,6 +954,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 disabled={!hasCourses}
                 onChange={(event) => {
                   setCourseId(event.target.value || null);
+                  setTeeId(null);
+                  setDrawerMode(null);
                   setSelectedSlotKey(null);
                   setEditingBookingId(null);
                   setEditDrafts([]);
@@ -683,60 +975,59 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 )}
               </select>
             </label>
-            <label className="flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-white">
-              <MaterialSymbol className="text-sm" icon="person_add" />
-              <select className="border-none bg-transparent pr-5 text-sm font-bold text-white focus:ring-0" onChange={(event) => setMembershipType(event.target.value as BookingRuleAppliesTo)} value={membershipType}>
-                {MEMBERSHIP_OPTIONS.map((option) => (
-                  <option className="text-on-surface" key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+            <label className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface">
+              <MaterialSymbol className="text-sm text-on-surface-variant" icon="golf_course" />
+              <select
+                className="border-none bg-transparent pr-5 text-sm font-semibold focus:ring-0"
+                disabled={activeCourseTees.length === 0}
+                onChange={(event) => {
+                  setTeeId(event.target.value || null);
+                  setDrawerMode(null);
+                  setSelectedSlotKey(null);
+                  setEditingBookingId(null);
+                  setEditDrafts([]);
+                  setDrawerFeedbackMessage(null);
+                  setDrawerFeedbackTone(null);
+                }}
+                value={selectedTeeId ?? ""}
+              >
+                {activeCourseTees.length > 0 ? (
+                  activeCourseTees.map((tee) => (
+                    <option key={tee.id} value={tee.id}>
+                      {tee.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No tees configured</option>
+                )}
               </select>
             </label>
           </>
         }
         kpis={
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-            <div className="rounded-[24px] bg-surface-container-lowest p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Occupancy</span>
-                <MaterialSymbol className="text-primary" icon="golf_course" />
-              </div>
-              <div className="flex items-end gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">{configuredForSheet ? `${occupancyPct}%` : "-"}</span>
-                <span className="pb-1 text-xs text-primary">{configuredForSheet ? `${occupiedSlots}/${totalSlots} lane slots` : "Awaiting setup"}</span>
-              </div>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-surface-container-lowest px-5 py-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <MaterialSymbol className="text-sm text-primary" icon="golf_course" />
+              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? `${occupancyPct}%` : "–"}</span>
+              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${occupiedSlots}/${totalSlots} slots` : "Occupancy"}</span>
             </div>
-            <div className="rounded-[24px] bg-surface-container-lowest p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Checked In</span>
-                <MaterialSymbol className="text-secondary" icon="how_to_reg" />
-              </div>
-              <div className="flex items-end gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">{configuredForSheet ? checkedInBookings : "-"}</span>
-                <span className="pb-1 text-xs text-secondary">{configuredForSheet ? `${checkedInPlayers} players` : "Awaiting setup"}</span>
-              </div>
+            <div className="h-4 w-px bg-outline-variant/30" />
+            <div className="flex items-center gap-2">
+              <MaterialSymbol className="text-sm text-secondary" icon="how_to_reg" />
+              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? checkedInBookings : "–"}</span>
+              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${checkedInPlayers} players` : "Checked In"}</span>
             </div>
-            <div className="rounded-[24px] bg-surface-container-lowest p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Open Capacity</span>
-                <MaterialSymbol className="text-emerald-600" icon="grid_view" />
-              </div>
-              <div className="flex items-end gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">{configuredForSheet ? openSlots : "-"}</span>
-                <span className="pb-1 text-xs text-emerald-600">{configuredForSheet ? `${openPlayerCapacity} spaces` : "Awaiting setup"}</span>
-              </div>
+            <div className="h-4 w-px bg-outline-variant/30" />
+            <div className="flex items-center gap-2">
+              <MaterialSymbol className="text-sm text-emerald-600" icon="grid_view" />
+              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? openSlots : "–"}</span>
+              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${openPlayerCapacity} open` : "Open Capacity"}</span>
             </div>
-            <div className="rounded-[24px] bg-surface-container-lowest p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Alerts</span>
-                <MaterialSymbol className="text-amber-500" icon="warning" />
-              </div>
-              <div className="flex items-end gap-2">
-                <span className="font-headline text-3xl font-extrabold text-on-surface">{configuredForSheet ? alertSignals : "-"}</span>
-                <span className="pb-1 text-xs text-amber-600">{configuredForSheet ? `${statusCounts.blocked} blocked` : "Awaiting setup"}</span>
-              </div>
-              <p className="mt-3 text-xs text-on-surface-variant">{configuredForSheet ? warningMessage : "Configure course and tee records to activate the operational sheet."}</p>
+            <div className="h-4 w-px bg-outline-variant/30" />
+            <div className="flex items-center gap-2">
+              <MaterialSymbol className="text-sm text-amber-500" icon="warning" />
+              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? alertSignals : "–"}</span>
+              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${statusCounts.blocked} blocked` : "Alerts"}</span>
             </div>
           </div>
         }
@@ -763,171 +1054,346 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         {configuredForSheet ? (
           <div className="space-y-4">
             {teeSheetQuery.isLoading ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">Loading tee sheet...</div> : null}
-            {teeSheetQuery.error ? <div className="rounded-2xl bg-error-container/30 px-6 py-5 text-sm text-error shadow-sm">{teeSheetQuery.error.message}</div> : null}
+            {teeSheetQuery.error ? <div className="rounded-2xl bg-error-container/30 px-6 py-5 text-sm text-error shadow-sm">{teeSheetErrorMessage}</div> : null}
             {showLiveEmptyState ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">No tee-sheet rows were generated for the selected day.</div> : null}
+            {showFilteredEmptyState ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">No tee-sheet rows match the current filters.</div> : null}
 
-            {buckets.map((bucket) => (
-              <section className="overflow-hidden rounded-[28px] bg-surface-container-lowest shadow-sm" key={bucket.slotDatetime}>
-                <div className="grid gap-4 bg-surface-container px-6 py-5 md:grid-cols-[140px_minmax(0,1fr)_auto] md:items-center">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Time</p>
-                    <h3 className="mt-1 font-headline text-2xl font-extrabold text-on-surface">{bucket.localTime.slice(0, 5)}</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span className="rounded-full bg-white px-3 py-1 font-semibold">{bucket.slots.length} lanes</span>
-                    <span className="rounded-full bg-white px-3 py-1 font-semibold">
-                      {bucket.slots.reduce((sum, slot) => sum + slot.slot.bookings.length, 0)} bookings
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 font-semibold">
-                      {bucket.slots.reduce((sum, slot) => sum + (slot.slot.party_summary.total_players ?? 0), 0)} players
-                    </span>
-                  </div>
-                  <div className="text-right text-xs text-slate-500">
-                    {bucket.slots.some((slot) => slot.slot.display_status === "blocked") ? "Blocked lanes need ops action." : "Operational view"}
-                  </div>
-                </div>
-
-                <div className="space-y-2 px-4 py-4">
-                  {bucket.slots.map((item) => {
-                    const reservedBlock = (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") && (item.slot.party_summary.total_players ?? 0) === 0;
-                    const allowedDrop = dropAllowed(item);
-                    const targetKey = dropKey(item);
-                    return (
-                      <div
-                        aria-label={`${item.laneLabel} lane row ${bucket.localTime.slice(0, 5)}`}
-                        className={`grid gap-4 rounded-[24px] px-5 py-5 md:grid-cols-[160px_minmax(0,1fr)_auto] ${activeDropKey === targetKey ? "bg-primary-container/30" : item.slot.display_status === "blocked" ? "bg-error-container/20" : "bg-surface-container-low"}`}
-                        data-testid={`lane-row-${item.rowKey}`}
-                        key={targetKey}
-                        onDragEnter={() => {
-                          if (allowedDrop) setActiveDropKey(targetKey);
-                        }}
-                        onDragLeave={() => {
-                          if (activeDropKey === targetKey) setActiveDropKey(null);
-                        }}
-                        onDragOver={(event) => {
-                          if (allowedDrop) {
-                            event.preventDefault();
-                            if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-                            setActiveDropKey(targetKey);
-                          }
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          if (allowedDrop && dragged) void moveMutation.mutateAsync({ bookingId: dragged.bookingId, target: item });
-                        }}
-                      >
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">{item.laneLabel}</p>
-                          <div>
-                            <p className="text-base font-bold text-on-surface">{item.rowLabel}</p>
-                            <p className="text-xs text-slate-500">
-                              {item.colorCode ? `${item.colorCode} | ` : ""}
-                              {item.slot.occupancy.remaining_player_capacity ?? 0} spaces left
-                            </p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusClass(item.slot.display_status)}`}>
-                            {statusLabel(item.slot.display_status)}
-                          </span>
-                        </div>
-
-                        <div className="space-y-3">
-                          {reservedBlock ? (
-                            <div className="rounded-2xl bg-surface-container-high px-4 py-3 text-sm text-slate-500">Reserved: {detail(item.slot)}</div>
-                          ) : item.slot.bookings.length > 0 ? (
-                            <div className="space-y-2">
-                              {item.slot.bookings.map((booking) => (
-                                <button
-                                  aria-label={`Open booking ${booking.id}`}
-                                  className={`flex w-full items-start justify-between gap-3 rounded-2xl bg-white px-4 py-4 text-left shadow-sm transition-colors hover:bg-slate-50 ${movingBookingId === booking.id ? "opacity-60" : ""}`}
-                                  draggable
-                                  key={booking.id}
-                                  onClick={() => open(item)}
-                                  onDragEnd={endDrag}
-                                  onDragStart={(event) => startDrag(event, booking.id, item)}
-                                  type="button"
-                                >
-                                  <div className="min-w-0 space-y-2">
-                                    <p className="truncate text-sm font-bold text-on-surface">
-                                      {booking.participants.map((participant: BookingParticipantSummary) => participant.display_name).join(", ") || `${booking.party_size} players`}
-                                    </p>
-                                    <div className="flex flex-wrap gap-2">
-                                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${paymentClass(booking.payment_status)}`}>
-                                        {paymentLabel(booking.payment_status)}
-                                      </span>
-                                      <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
-                                        {booking.fee_label ?? "Rate pending"}
-                                      </span>
-                                      {booking.cart_flag ? <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">Cart</span> : null}
-                                      {booking.caddie_flag ? <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">Caddie</span> : null}
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-col items-end gap-2">
-                                    <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${statusClass(item.slot.display_status)}`}>
-                                      {statusLabel(item.slot.display_status)}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-                                      <MaterialSymbol className="text-sm" icon="drag_indicator" />
-                                      Move
-                                    </span>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl bg-surface-container-high px-4 py-4 text-sm text-slate-500">Open for booking.</div>
-                          )}
-
-                          {activeDropKey === targetKey ? (
-                            <div className="rounded-2xl bg-primary-container/60 px-4 py-3 text-sm font-medium text-on-primary-container">Drop booking to move here.</div>
-                          ) : null}
-                        </div>
-
-                        <div className="flex flex-col items-end justify-between gap-4">
-                          <div className="rounded-2xl bg-white px-4 py-3 text-right shadow-sm">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Availability</p>
-                            <p className="mt-1 text-sm font-semibold text-on-surface">{item.slot.occupancy.remaining_player_capacity ?? 0} spaces</p>
-                            <p className="mt-1 text-xs text-slate-500">{detail(item.slot)}</p>
-                          </div>
-                          {canManage(item.slot) || canCreate(item.slot) ? (
+            {!teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 ? (
+              <>
+                <section
+                  className="sticky top-20 z-20 rounded-[28px] border border-slate-200/70 bg-white/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80"
+                  data-testid="tee-sheet-toolbar"
+                >
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="relative flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
+                            <MaterialSymbol className="text-sm text-on-surface-variant" icon="calendar_month" />
+                            <span className="font-medium">{dateLabel(selectedDate)}</span>
+                            <MaterialSymbol className="text-sm text-on-surface-variant" icon="expand_more" />
+                            <input
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                              onChange={(event) => setSelectedDate(event.target.value)}
+                              type="date"
+                              value={selectedDate}
+                            />
+                          </label>
+                          <div className="flex gap-1">
                             <button
-                              aria-label={`${canManage(item.slot) ? "Manage bookings" : "Create booking"} for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
-                              className="rounded-2xl bg-primary px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white transition-colors hover:bg-primary-dim"
-                              onClick={() => open(item)}
+                              aria-label="Previous day"
+                              className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                              onClick={() => setSelectedDate((current) => addDays(current, -1))}
                               type="button"
                             >
-                              {canManage(item.slot) ? "Manage Booking" : "Create Booking"}
+                              <MaterialSymbol icon="chevron_left" />
                             </button>
-                          ) : (
-                            <div className="rounded-2xl bg-surface-container-high px-4 py-3 text-xs font-semibold text-slate-400">Read only</div>
-                          )}
+                            <button
+                              aria-label="Today"
+                              className="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container"
+                              onClick={() => setSelectedDate(todayValue())}
+                              type="button"
+                            >
+                              Today
+                            </button>
+                            <button
+                              aria-label="Next day"
+                              className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                              onClick={() => setSelectedDate((current) => addDays(current, 1))}
+                              type="button"
+                            >
+                              <MaterialSymbol icon="chevron_right" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl bg-surface-container-low px-4 py-3">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Sheet Scope</p>
+                          <p className="text-sm font-semibold text-on-surface">
+                            Showing {visibleSlotCount} of {slots.length} lane slots
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : null}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <label className="space-y-1">
+                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Search Sheet</span>
+                          <span className="relative flex items-center">
+                            <MaterialSymbol className="pointer-events-none absolute left-3 text-sm text-slate-400" icon="search" />
+                            <input
+                              className="w-full rounded-2xl bg-surface-container-low px-10 py-2.5 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72"
+                              onChange={(event) => setSearchTerm(event.target.value)}
+                              placeholder="Search players, lane, or time"
+                              type="search"
+                              value={searchTerm}
+                            />
+                          </span>
+                        </label>
+                        <label className="space-y-1">
+                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To Time</span>
+                          <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
+                            <MaterialSymbol className="text-sm text-on-surface-variant" icon="schedule" />
+                            <select
+                              className="border-none bg-transparent pr-5 text-sm font-medium focus:ring-0"
+                              defaultValue=""
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                if (!value) return;
+                                document.getElementById(`bucket-${value}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              }}
+                            >
+                              <option value="">Select time</option>
+                              {jumpTimes.map((value) => (
+                                <option key={value} value={value}>
+                                  {value}
+                                </option>
+                              ))}
+                            </select>
+                          </span>
+                        </label>
+                      </div>
+                    </div>
 
-        {configuredForSheet ? (
-          <div className="flex items-center justify-between rounded-2xl bg-surface-container-low px-6 py-4">
-            <span className="text-xs font-medium text-slate-500">Showing {slots.length} of {slots.length} lane slots</span>
-            <div className="flex gap-2">
-              <button className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-slate-50" onClick={() => setSelectedDate((current) => addDays(current, -1))} type="button">
-                Previous
-              </button>
-              <button className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-slate-50" onClick={() => setSelectedDate((current) => addDays(current, 1))} type="button">
-                Next
-              </button>
-            </div>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Operational Filters</p>
+                      <div className="flex flex-wrap gap-2">
+                        {VIEW_FILTERS.map((filter) => (
+                          <button
+                            className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                              viewFilter === filter.value
+                                ? "bg-primary text-white"
+                                : "bg-surface-container-low text-on-surface hover:bg-surface-container"
+                            }`}
+                            key={filter.value}
+                            onClick={() => setViewFilter(filter.value)}
+                            type="button"
+                          >
+                            {filter.label}
+                          </button>
+                        ))}
+                        <button
+                          className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                            showControlledRows
+                              ? "bg-surface-container-low text-on-surface hover:bg-surface-container"
+                              : "bg-secondary-container text-on-secondary-container"
+                          }`}
+                          onClick={() => setShowControlledRows((current) => !current)}
+                          type="button"
+                        >
+                          {showControlledRows ? "Hide Controlled Slots" : "Show Controlled Slots"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-[28px] bg-surface-container-lowest shadow-sm">
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[1120px] px-4 py-3">
+                      <table className="w-full min-w-[1120px] table-fixed border-separate [border-spacing:0_6px]">
+                        <colgroup>
+                          <col className="w-[104px]" />
+                          <col className="w-[108px]" />
+                          <col className="w-[18.5%]" />
+                          <col className="w-[18.5%]" />
+                          <col className="w-[18.5%]" />
+                          <col className="w-[18.5%]" />
+                          <col className="w-[148px]" />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Time</th>
+                            <th className="px-3 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Tee</th>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 1</th>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 2</th>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 3</th>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 4</th>
+                            <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredBuckets.map((bucket) =>
+                            bucket.slots.map((item, index) => {
+                              const targetKey = dropKey(item);
+                              const allowedDrop = dropAllowed(item);
+                              const isMultiLane = bucket.slots.length > 1;
+                              const displaySlot = isMultiLane
+                                ? {
+                                    ...item.slot,
+                                    bookings: item.slot.bookings.filter((b) =>
+                                      item.startLane === "hole_10" ? b.start_lane === "hole_10" : b.start_lane !== "hole_10",
+                                    ),
+                                  }
+                                : item.slot;
+                              const reservedBlock = (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") && displaySlot.bookings.length === 0;
+                              const cells = slotPlayerCells(displaySlot);
+                              return (
+                                <tr
+                                  aria-label={`${item.laneLabel} lane row ${bucket.localTime.slice(0, 5)}`}
+                                  className="group"
+                                  data-testid={`lane-row-${item.rowKey}`}
+                                  key={targetKey}
+                                  onDragEnter={() => {
+                                    if (allowedDrop) setActiveDropKey(targetKey);
+                                  }}
+                                  onDragLeave={() => {
+                                    if (activeDropKey === targetKey) setActiveDropKey(null);
+                                  }}
+                                  onDragOver={(event) => {
+                                    if (allowedDrop) {
+                                      event.preventDefault();
+                                      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                                      setActiveDropKey(targetKey);
+                                    }
+                                  }}
+                                  onDrop={(event) => {
+                                    event.preventDefault();
+                                    if (allowedDrop && dragged) moveMutation.mutate({ bookingId: dragged.bookingId, target: item });
+                                  }}
+                                >
+                                  {index === 0 ? (
+                                    <td className="w-[96px] px-2 align-top" rowSpan={bucket.slots.length}>
+                                      <div className="scroll-mt-44 rounded-[18px] bg-surface-container px-3 py-2 shadow-sm" id={`bucket-${bucket.localTime.slice(0, 5)}`}>
+                                        <p className="font-headline text-lg font-extrabold text-on-surface">{bucket.localTime.slice(0, 5)}</p>
+                                        {(() => {
+                                          const total = bucket.slots.reduce((sum, slot) => sum + slotPlayerCount(slot.slot), 0);
+                                          return total > 0 ? (
+                                            <p className="mt-0.5 text-[10px] text-slate-400">{total} booked</p>
+                                          ) : null;
+                                        })()}
+                                        {bucket.slots.some((s) => canCreate(s.slot)) ? (
+                                          <button
+                                            aria-label={`Create new booking at ${bucket.localTime.slice(0, 5)}`}
+                                            className="mt-1.5 w-full rounded-lg bg-primary px-2 py-1 text-[9px] font-bold uppercase tracking-[0.10em] text-white transition-colors hover:bg-primary-dim"
+                                            onClick={() => {
+                                              const available = bucket.slots.find((s) => canCreate(s.slot));
+                                              if (available) openCreate(available);
+                                            }}
+                                            type="button"
+                                          >
+                                            + New
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    </td>
+                                  ) : null}
+
+                                  <td className={`w-[80px] px-3 align-middle transition-colors ${activeDropKey === targetKey ? "bg-primary-container/10" : ""}`}>
+                                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface">{item.laneLabel}</p>
+                                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${statusClass(item.slot.display_status)}`}>
+                                      {statusLabel(item.slot.display_status)}
+                                    </span>
+                                  </td>
+
+                                  {reservedBlock ? (
+                                    <td className="px-2 align-top" colSpan={4}>
+                                      <div className={`flex min-h-[3.5rem] items-center justify-between rounded-[16px] px-3 py-2 ${slotSummaryClass(item.slot)}`}>
+                                        <div className="min-w-0">
+                                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                            {item.slot.display_status === "blocked" ? "Blocked Slot" : "Reserved Slot"}
+                                          </p>
+                                          <p className="truncate text-xs font-semibold">{detail(item.slot)}</p>
+                                        </div>
+                                        {activeDropKey === targetKey ? <span className="text-xs font-semibold text-primary">Drop here</span> : null}
+                                      </div>
+                                    </td>
+                                  ) : (
+                                    cells.map((cell) => (
+                                      <td className="px-2 align-top" key={cell.kind === "occupied" ? `${cell.booking.id}-${cell.column}-${cell.participant.display_name}` : `${targetKey}-empty-${cell.column}`}>
+                                        {cell.kind === "occupied" ? (
+                                          <button
+                                            aria-label={cell.primaryHandle ? `Open booking ${cell.booking.id}` : `Open participant ${cell.participant.display_name}`}
+                                            className={`${bookingChipClass(cell.booking, cell.primaryHandle)} ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}
+                                            draggable={cell.primaryHandle}
+                                            onClick={() => openManage(item)}
+                                            onDragEnd={cell.primaryHandle ? endDrag : undefined}
+                                            onDragStart={cell.primaryHandle ? (event) => startDrag(event, cell.booking.id, item) : undefined}
+                                            type="button"
+                                          >
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">P{cell.column}</span>
+                                              {cell.primaryHandle ? (
+                                                <div className="flex items-center gap-1">
+                                                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${bookingStatusClass(cell.booking.status)}`}>
+                                                    {bookingStatusLabel(cell.booking.status)}
+                                                  </span>
+                                                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${paymentClass(cell.booking.payment_status)}`}>
+                                                    {paymentLabel(cell.booking.payment_status)}
+                                                  </span>
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                            <p className="truncate text-xs font-bold text-on-surface leading-none">{cell.participant.display_name}</p>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            aria-label={`Create booking for ${item.laneLabel} ${bucket.localTime.slice(0, 5)} player slot ${cell.column}`}
+                                            className={`flex min-h-[3.5rem] w-full items-center gap-2 rounded-[16px] border border-dashed px-3 py-2 text-left transition-colors ${
+                                              canCreate(displaySlot)
+                                                ? "border-outline-variant/40 bg-white hover:border-primary/40 hover:bg-primary-container/10"
+                                                : "border-outline-variant/20 bg-surface-container-low text-slate-400"
+                                            }`}
+                                            disabled={!canCreate(displaySlot)}
+                                            onClick={() => openCreate(item)}
+                                            type="button"
+                                          >
+                                            <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">P{cell.column}</span>
+                                            <span className="truncate text-xs font-bold text-on-surface">{canCreate(displaySlot) ? "Open" : "Unavailable"}</span>
+                                          </button>
+                                        )}
+                                      </td>
+                                    ))
+                                  )}
+
+                                  <td className="w-[140px] px-2 align-top">
+                                    <div className="flex min-h-[3.5rem] items-center gap-1.5 rounded-[16px] bg-surface-container-low px-2 shadow-sm">
+                                      {canManage(displaySlot) ? (
+                                        <button
+                                          aria-label={`Manage bookings for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
+                                          className="flex-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface transition-colors hover:bg-slate-50"
+                                          onClick={() => openManage(item)}
+                                          type="button"
+                                        >
+                                          Details
+                                        </button>
+                                      ) : null}
+                                      {canManage(displaySlot) && canCreate(displaySlot) ? (
+                                        <button
+                                          aria-label={`Add booking for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
+                                          className="flex-1 rounded-lg bg-primary-container/60 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-on-primary-container transition-colors hover:bg-primary-container"
+                                          onClick={() => openCreate(item)}
+                                          type="button"
+                                        >
+                                          Add
+                                        </button>
+                                      ) : null}
+                                      {!canManage(displaySlot) && !canCreate(displaySlot) ? (
+                                        <div className="flex-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                          Read Only
+                                        </div>
+                                      ) : null}
+                                      {!canManage(displaySlot) && canCreate(displaySlot) ? (
+                                        <div className="flex-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                          Open
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }),
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </section>
+              </>
+            ) : null}
           </div>
         ) : null}
       </AdminWorkspace>
 
-      {selectedSlot
-        ? canManage(selectedSlot.slot)
-          ? (
+      {selectedSlot && drawerMode === "manage"
+        ? (
             <BookingManagementDrawer
               colorCode={selectedSlot.colorCode}
               directory={directory}
@@ -980,7 +1446,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
               teeLabel={selectedSlot.rowLabel}
             />
           )
-          : (
+        : selectedSlot && drawerMode === "create"
+          ? (
             <BookingCreateDrawer
               colorCode={selectedSlot.colorCode}
               creating={createMutation.isPending}
