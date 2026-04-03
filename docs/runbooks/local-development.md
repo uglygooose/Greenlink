@@ -70,19 +70,22 @@ npm.cmd run test
 
 - Auth foundation and refresh-token rotation
 - Session bootstrap and tenancy resolution
-- Router-owned persistent admin and superadmin shells
+- Router-owned persistent admin and superadmin shells (all /admin/* including POS inside AdminLayout)
 - Golf operations backend plus admin tee-sheet lifecycle UI
 - People and membership foundations
-- Finance accounts, journal, backend summaries, canonical export batches, and accounting profile mapping
-- Orders, order finance posting, settlement recording, and POS foundation
+- Finance accounts, journal, backend summaries with pre-computed pct fields, canonical export batches, and accounting profile mapping
+- Orders, order finance posting, settlement recording, and POS terminal (inside AdminLayout)
 - Communications CRUD plus player published-post feed
-- Superadmin club onboarding foundation with backend-owned progression
+- Superadmin club onboarding with backend-owned progression
+- Superadmin overview page (fleet KPIs, readiness bars, needs-attention list)
+- Club lifecycle management: pause, reactivate, and delete from superadmin
 
 ## Current major gaps
 
 - Full tee-sheet booking creation and editing UX
 - Player booking and profile flows
-- Full rules/modules onboarding configuration
+- Full rules/modules onboarding configuration surfaces
+- Superadmin invitation/provisioning workflow
 - External accounting-system integration or validation
 - Reconciliation engine
 - Inventory accounting

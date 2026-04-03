@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-03 11:23 SAST
+Last updated: 2026-04-03 18:30 SAST
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -12,41 +12,54 @@ Phase 1 - Platform, Auth, Identity
 Phase 2 - Core Club Operations
 - TS-1 Tee sheet read model and booking lifecycle: COMPLETED
 - TS-2 Admin tee-sheet operational surface: PARTIAL
-  - Live: read model, lifecycle actions, persistent admin shell
+  - Live: read model, lifecycle actions, persistent admin shell, tee sheet inside router-owned layout
   - Not built: booking creation/editing UX
 - Orders queue and finance posting: COMPLETED
 - POS terminal foundation: COMPLETED
+  - POS now inside router-owned AdminLayout — no standalone nav chrome
 - Communications news-post CRUD and player feed: COMPLETED
 
 Phase 3 - Finance
 - FIN-1 Accounts, journal, ledger, and backend summaries: COMPLETED
 - FIN-2 Canonical export batches: COMPLETED
 - FIN-3 Accounting export profile mapping: COMPLETED
-- FIN-4 Admin finance frontend boundary correction: RECENTLY FIXED
-  - Admin finance KPIs now use backend summaries only
-  - Dashboard, finance, reports, members, and halfway no longer compute finance KPIs in React
-  - Unsupported finance visuals were removed instead of recreated client-side
+- FIN-4 Admin finance frontend boundary: COMPLETED
+  - All five admin pages (dashboard, finance, reports, members, halfway) use backend summaries only
+  - Backend computes revenue_share_pct, volume_share_pct, and account health pct fields
+  - AdminReportsPage chart bars driven entirely by backend-provided pct fields — zero client-side finance math
 - FIN-5 External accounting sync / validation / reconciliation: NOT BUILT
 
 Phase 4 - Superadmin
-- SA-1 Superadmin route group and shell: COMPLETED
+- SA-1 Superadmin route group and persistent shell: COMPLETED
 - SA-2 Club registry and club creation: COMPLETED
 - SA-3 Onboarding workspace: PARTIAL
   - Live: Basic Info, Finance, Rules, Modules workspace
   - Live: backend-owned onboarding progression
   - Not built: full Rules and Modules configuration
-- SA-4 Invitation / provisioning workflow: NOT BUILT
+- SA-4 Superadmin Overview page: COMPLETED
+  - Fleet KPIs (total / live / onboarding / paused)
+  - Finance-readiness and team-assignment progress bars
+  - Needs-attention action list (onboarding clubs missing finance or team)
+  - All clubs table — derived from existing club list endpoint, no new backend
+- SA-5 Club lifecycle management: COMPLETED
+  - Pause (PATCH /clubs/{id}/status) — toggles active, any club
+  - Reactivate — same endpoint, reverses pause
+  - Delete (DELETE /clubs/{id}) — hard delete, blocked for live clubs (409)
+  - Frontend: pause/resume pill + delete button with confirmation modal in club detail header
+- SA-6 Invitation / provisioning workflow: NOT BUILT
 
 Phase 5 - Player
 - PL-1 Player home and ordering: PARTIAL
   - Live: home, order, news feed
-  - Recently fixed: no fake upcoming bookings in player home
+  - No fake upcoming bookings — honest empty state
 - PL-2 Player booking flow: NOT BUILT
 - PL-3 Player profile flow: NOT BUILT
 
-Cross-cutting corrections completed in this session
-- Persistent admin shell: RECENTLY FIXED
-- Persistent superadmin shell: RECENTLY FIXED
-- Superadmin onboarding progression ownership: RECENTLY FIXED
-- Player home booking truth cleanup: RECENTLY FIXED
-- Repo authority/status documentation cleanup: RECENTLY FIXED
+Cross-cutting corrections completed
+- Persistent admin shell (all /admin/* including POS now inside AdminLayout): COMPLETED
+- Persistent superadmin shell: COMPLETED
+- Superadmin onboarding progression ownership (backend-owned): COMPLETED
+- Player home booking truth cleanup: COMPLETED
+- Finance chart math moved to backend (pct fields on summary items): COMPLETED
+- Repo authority/status documentation: COMPLETED
+- Superadmin dead nav items replaced with live pages: COMPLETED

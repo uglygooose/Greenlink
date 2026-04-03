@@ -1,6 +1,6 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-03 11:23 SAST
+Last updated: 2026-04-03 18:30 SAST
 
 ## Canonical Role
 
@@ -49,17 +49,16 @@ The canonical authority set is:
 ### FIN - Finance
 - Partial
 - FinanceAccount, append-only FinanceTransaction, journal, ledger, revenue summary, outstanding summary, and transaction-volume summary are built.
+- Revenue summary items now carry `revenue_share_pct`; transaction-volume items carry `volume_share_pct`; outstanding summary carries `accounts_in_arrears_pct`, `accounts_in_credit_pct`, `accounts_settled_pct` — all computed backend-side.
 - Canonical export batches and mapped accounting export profiles are built.
 - No external accounting sync, reconciliation engine, or package-specific validation layer exists.
-- Recently fixed:
-  - admin and finance KPI surfaces no longer compute finance totals in React
-  - `admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, and `admin-halfway` now display backend summary values only for finance KPIs
-  - unsupported finance visuals were removed instead of recreated in React
+- Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`) use backend summary endpoints only. No finance math in React.
+- `AdminReportsPage` chart bar widths driven entirely by backend-provided pct fields.
 
 ### Orders and POS
 - Partial
 - Player ordering, admin order queue, explicit charge posting, explicit settlement recording, and POS terminal are live.
-- POS terminal is nested inside the router-owned AdminLayout and renders no standalone navigation chrome of its own.
+- POS terminal (`/admin/pos-terminal`) is nested inside the router-owned `AdminLayout` alongside all other `/admin/*` routes. It renders no standalone navigation chrome.
 
 ### Communications
 - Partial
@@ -69,14 +68,14 @@ The canonical authority set is:
 
 ### SA - Superadmin
 - Partial
-- Distinct superadmin route group and shell exist.
-- Club registry and club creation exist.
-- Onboarding workspace exists for Basic Info, Finance, Rules, and Modules.
-- Rules and Modules remain readiness scaffolds, not full configuration surfaces.
-- Recently fixed:
-  - onboarding progression is backend-owned
-  - frontend no longer sets arbitrary current, next, or previous steps
-  - backend validates transitions and returns the resulting onboarding state
+- Distinct superadmin route group and persistent shell exist.
+- Onboarding progression is backend-owned. Frontend sends step intent only; backend validates transitions.
+- Club registry, club creation, and onboarding workspace (Basic Info, Finance, Rules, Modules) are live.
+- Rules and Modules steps are readiness scaffolds, not full configuration surfaces.
+- Superadmin nav has two live routes: Overview (`/superadmin/overview`) and Clubs (`/superadmin/clubs`).
+- Overview page: fleet KPIs, finance-readiness and team-assignment progress bars, needs-attention list, clubs table — all derived from the club list endpoint.
+- Club management: superadmin can pause (`PATCH /clubs/{id}/status`), reactivate, or permanently delete (`DELETE /clubs/{id}`) any non-live club. Delete is blocked for live clubs with a 409.
+- Default superadmin redirect is `/superadmin/overview`.
 
 ### Player
 - Partial
@@ -101,6 +100,7 @@ The canonical authority set is:
 - `/admin/pos-terminal`
 
 ### Superadmin
+- `/superadmin/overview`
 - `/superadmin/clubs`
 
 ### Player
@@ -125,22 +125,25 @@ Not built:
 
 - Tee-sheet booking creation and editing UX is not built.
 - Golf settings remains visually older than the normalized admin workspaces.
-- Rules and Modules onboarding steps are not complete configuration UIs.
+- Rules and Modules onboarding steps are not complete configuration surfaces.
 - No player booking read model exists yet.
 - No external accounting sync or reconciliation engine exists.
+- Superadmin invitation/provisioning workflow is not built.
+- Player profile route is not built.
 
 ## Known Risks
 
-- Login still hard-navigates superadmin users to `/admin/select-club` before route protection corrects them to `/superadmin/clubs`.
+- Login still hard-navigates superadmin users to `/admin/select-club` before route protection corrects them to `/superadmin/overview`.
 - Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`.
-- Some reporting views still compose non-finance operational charts in the frontend from backend records because no dedicated reporting slice exists yet.
+- Some non-finance reporting visuals (order status breakdown, member breakdown) still compose charts in the frontend from backend records; a dedicated reporting aggregation slice does not exist yet.
 
 ## Validation State
 
-Latest correction-pass validation:
-- `frontend`: `npm.cmd run typecheck`
+Latest validation:
+- `frontend`: `npm.cmd run typecheck` — passes clean
 - `frontend`: targeted Vitest suites for shell persistence, finance pages, player home, and superadmin onboarding
-- `backend`: `py -m uv run pytest backend/tests/test_superadmin_onboarding_foundation.py -q`
+- `backend`: `py -m uv run pytest -q` — full suite
+- `backend`: `py -m uv run ruff check .` — passes (pre-existing E501 violations in superadmin service are not introduced by this session)
 
 ## Final Rule
 
