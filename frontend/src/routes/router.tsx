@@ -19,6 +19,7 @@ import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
 import { SuperadminClubsPage } from "../pages/superadmin-clubs-page";
+import { SuperadminOverviewPage } from "../pages/superadmin-overview-page";
 import { SuperadminLayout } from "./superadmin-layout";
 import { useSession } from "../session/session-context";
 
@@ -72,9 +73,12 @@ const router = createBrowserRouter([
     children: [
       {
         element: <SuperadminLayout />,
-        children: [{ path: "clubs", element: <SuperadminClubsPage /> }],
+        children: [
+          { path: "overview", element: <SuperadminOverviewPage /> },
+          { path: "clubs", element: <SuperadminClubsPage /> },
+        ],
       },
-      { path: "*", element: <Navigate to="/superadmin/clubs" replace /> },
+      { path: "*", element: <Navigate to="/superadmin/overview" replace /> },
     ],
   },
   {

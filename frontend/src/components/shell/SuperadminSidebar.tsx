@@ -4,10 +4,8 @@ import { MaterialSymbol } from "../benchmark/material-symbol";
 import { useSession } from "../../session/session-context";
 
 const NAV_ITEMS = [
-  { label: "Clubs", icon: "business", href: "/superadmin/clubs", active: true },
-  { label: "System Health", icon: "monitor_heart", href: "/superadmin/clubs", active: false },
-  { label: "Billing", icon: "payments", href: "/superadmin/clubs", active: false },
-  { label: "Global Settings", icon: "settings_applications", href: "/superadmin/clubs", active: false },
+  { label: "Overview", icon: "dashboard",  href: "/superadmin/overview" },
+  { label: "Clubs",    icon: "business",   href: "/superadmin/clubs" },
 ];
 
 function SignOutButton(): JSX.Element {
@@ -41,13 +39,13 @@ export default function SuperadminSidebar(): JSX.Element {
           <NavLink
             key={item.label}
             className={({ isActive }) =>
-              isActive && item.active
+              isActive
                 ? "flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-primary shadow-sm"
                 : "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 transition-colors hover:bg-white/70 hover:text-on-surface"
             }
             to={item.href}
           >
-            <MaterialSymbol filled={item.active} icon={item.icon} />
+            <MaterialSymbol icon={item.icon} />
             <span>{item.label}</span>
           </NavLink>
         ))}
