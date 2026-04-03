@@ -7,7 +7,7 @@ import {
   useFinanceOutstandingSummaryQuery,
   useFinanceRevenueSummaryQuery,
 } from "../features/finance/hooks";
-import { useCoursesQuery } from "../features/golf-settings/hooks";
+import { useCoursesQuery, useTeesQuery } from "../features/golf-settings/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { useSession } from "../session/session-context";
@@ -59,7 +59,9 @@ export function AdminDashboardPage(): JSX.Element {
   const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
   const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
+  const teesQuery = useTeesQuery({ accessToken, selectedClubId });
   const firstCourseId = coursesQuery.data?.[0]?.id ?? null;
+  const firstTeeId = (teesQuery.data ?? []).find((tee) => tee.course_id === firstCourseId && tee.active)?.id ?? null;
 
   const teeSheetQuery = useTeeSheetDayQuery({
     accessToken,
@@ -67,6 +69,7 @@ export function AdminDashboardPage(): JSX.Element {
     courseId: firstCourseId,
     date: todayIso(),
     membershipType: "member",
+    teeId: firstTeeId,
   });
 
   const outstandingSummary = outstandingSummaryQuery.data;
@@ -118,7 +121,7 @@ export function AdminDashboardPage(): JSX.Element {
               <MaterialSymbol className="text-primary" icon="golf_course" />
             </div>
             <div className="flex items-baseline gap-2">
-              {teeSheetQuery.isLoading || coursesQuery.isLoading ? (
+              {teeSheetQuery.isLoading || coursesQuery.isLoading || teesQuery.isLoading ? (
                 <span className="font-headline text-3xl font-extrabold text-slate-300">--</span>
               ) : occupancyPct !== null ? (
                 <>

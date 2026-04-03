@@ -5,8 +5,8 @@ import type { BookingRuleAppliesTo } from "../../types/operations";
 import type { TeeSheetDayResponse } from "../../types/tee-sheet";
 
 export const teeSheetKeys = {
-  day: (clubId: string, courseId: string, day: string, membershipType: BookingRuleAppliesTo) =>
-    ["tee-sheet", clubId, courseId, day, membershipType] as const,
+  day: (clubId: string, courseId: string, day: string, membershipType: BookingRuleAppliesTo, teeId?: string | null) =>
+    ["tee-sheet", clubId, courseId, day, membershipType, teeId ?? "all-tees"] as const,
 };
 
 interface TeeSheetQueryOptions {
@@ -15,14 +15,16 @@ interface TeeSheetQueryOptions {
   courseId: string | null;
   date: string;
   membershipType: BookingRuleAppliesTo;
+  teeId?: string | null;
 }
 
 function isReady(
   accessToken: string | null,
   selectedClubId: string | null,
   courseId: string | null,
+  teeId?: string | null,
 ): accessToken is string {
-  return Boolean(accessToken && selectedClubId && courseId);
+  return Boolean(accessToken && selectedClubId && courseId && teeId);
 }
 
 export function useTeeSheetDayQuery({
@@ -31,15 +33,16 @@ export function useTeeSheetDayQuery({
   courseId,
   date,
   membershipType,
+  teeId,
 }: TeeSheetQueryOptions) {
   return useQuery<TeeSheetDayResponse>({
-    queryKey: teeSheetKeys.day(selectedClubId ?? "none", courseId ?? "none", date, membershipType),
+    queryKey: teeSheetKeys.day(selectedClubId ?? "none", courseId ?? "none", date, membershipType, teeId),
     queryFn: () =>
       fetchTeeSheetDay(
-        { courseId: courseId as string, date, membershipType },
+        { courseId: courseId as string, date, membershipType, teeId },
         { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
       ),
-    enabled: isReady(accessToken, selectedClubId, courseId),
+    enabled: isReady(accessToken, selectedClubId, courseId, teeId),
   });
 }
 

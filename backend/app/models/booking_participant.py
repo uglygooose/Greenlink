@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import BookingParticipantType
+from app.models.enum_utils import enum_values
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -23,7 +24,7 @@ class BookingParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("club_memberships.id", ondelete="SET NULL")
     )
     participant_type: Mapped[BookingParticipantType] = mapped_column(
-        Enum(BookingParticipantType),
+        Enum(BookingParticipantType, values_callable=enum_values),
         nullable=False,
     )
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)

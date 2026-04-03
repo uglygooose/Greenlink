@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.types import UTCDateTime
 from app.models.enums import BookingPaymentStatus, BookingSource, BookingStatus, StartLane
+from app.models.enum_utils import enum_values
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -28,12 +29,18 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tees.id", ondelete="CASCADE"))
-    start_lane: Mapped[StartLane | None] = mapped_column(Enum(StartLane), nullable=True)
+    start_lane: Mapped[StartLane | None] = mapped_column(
+        Enum(StartLane, values_callable=enum_values),
+        nullable=True,
+    )
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     slot_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), nullable=False)
+    status: Mapped[BookingStatus] = mapped_column(
+        Enum(BookingStatus, values_callable=enum_values),
+        nullable=False,
+    )
     source: Mapped[BookingSource] = mapped_column(
-        Enum(BookingSource),
+        Enum(BookingSource, values_callable=enum_values),
         nullable=False,
         default=BookingSource.ADMIN,
     )
@@ -46,7 +53,8 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     caddie_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     fee_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
     payment_status: Mapped[BookingPaymentStatus | None] = mapped_column(
-        Enum(BookingPaymentStatus), nullable=True
+        Enum(BookingPaymentStatus, values_callable=enum_values),
+        nullable=True,
     )
 
     participants = relationship(

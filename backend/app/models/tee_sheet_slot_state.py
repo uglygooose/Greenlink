@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import StartLane
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -30,7 +31,10 @@ class TeeSheetSlotState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tees.id", ondelete="CASCADE"))
-    start_lane: Mapped[StartLane | None] = mapped_column(Enum(StartLane), nullable=True)
+    start_lane: Mapped[StartLane | None] = mapped_column(
+        Enum(StartLane, values_callable=enum_values),
+        nullable=True,
+    )
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     player_capacity: Mapped[int | None] = mapped_column(Integer)
     occupied_player_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

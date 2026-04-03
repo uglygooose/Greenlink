@@ -1,4 +1,10 @@
 import { apiBaseUrl } from "../lib/env";
+import {
+  emitSessionExpired,
+  getAccessToken,
+  getSelectedClubId,
+  setAccessToken,
+} from "../auth/token-storage";
 
 export class ApiError extends Error {
   status: number;
@@ -12,6 +18,10 @@ export class ApiError extends Error {
 interface RequestOptions extends RequestInit {
   accessToken?: string | null;
   selectedClubId?: string | null;
+}
+
+interface TokenResponseBody {
+  access_token: string;
 }
 
 type ErrorBody = {
@@ -47,15 +57,42 @@ function extractErrorMessage(body: ErrorBody | null): string {
   return "Request failed";
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const response = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        setAccessToken(null);
+        emitSessionExpired();
+        return null;
+      }
+      const body = (await response.json()) as TokenResponseBody;
+      setAccessToken(body.access_token);
+      return body.access_token;
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}, allowRefresh = true): Promise<T> {
+  const token = getAccessToken() ?? options.accessToken ?? null;
+  const selectedClubId = options.selectedClubId ?? getSelectedClubId();
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
 
-  if (options.accessToken) {
-    headers.set("Authorization", `Bearer ${options.accessToken}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
-  if (options.selectedClubId) {
-    headers.set("X-Club-Id", options.selectedClubId);
+  if (selectedClubId) {
+    headers.set("X-Club-Id", selectedClubId);
   }
 
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -65,6 +102,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   });
 
   if (!response.ok) {
+    if (response.status === 401 && allowRefresh && path !== "/api/auth/login" && path !== "/api/auth/logout" && path !== "/api/auth/refresh") {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        return apiRequest<T>(path, { ...options, accessToken: refreshedToken, selectedClubId }, false);
+      }
+      throw new ApiError(401, "Session expired. Please sign in again.");
+    }
     const body = (await response.json().catch(() => null)) as ErrorBody | null;
     throw new ApiError(response.status, extractErrorMessage(body));
   }

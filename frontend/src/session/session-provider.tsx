@@ -4,6 +4,8 @@ import * as authApi from "../api/auth";
 import { ApiError } from "../api/client";
 import { fetchBootstrap } from "../api/session";
 import {
+  AUTH_TOKEN_CHANGED_EVENT,
+  SESSION_EXPIRED_EVENT,
   getAccessToken,
   getSelectedClubId,
   setAccessToken as persistAccessToken,
@@ -51,6 +53,32 @@ export function SessionProvider({ children }: Props): JSX.Element {
       }
     })();
   }, [accessToken]);
+
+  useEffect(() => {
+    function handleTokenChanged(): void {
+      const nextToken = getAccessToken();
+      setAccessTokenState(nextToken);
+      if (!nextToken) {
+        setBootstrap(null);
+        setLoading(false);
+        setInitialized(true);
+      }
+    }
+
+    function handleSessionExpired(): void {
+      setAccessTokenState(null);
+      setBootstrap(null);
+      setLoading(false);
+      setInitialized(true);
+    }
+
+    window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, handleTokenChanged);
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => {
+      window.removeEventListener(AUTH_TOKEN_CHANGED_EVENT, handleTokenChanged);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, []);
 
   async function login(email: string, password: string): Promise<TokenResponse> {
     const result = await authApi.login({ email, password });
