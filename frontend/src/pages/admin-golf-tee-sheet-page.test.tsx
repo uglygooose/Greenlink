@@ -9,13 +9,14 @@ import {
   moveBooking,
   updateBooking,
 } from "../api/operations";
-import { AdminGolfTeeSheetPage } from "./admin-golf-tee-sheet-page";
+import { AdminGolfTeeSheetPage, nearestBucketTime } from "./admin-golf-tee-sheet-page";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
 const mockUseTeesQuery = vi.fn();
 const mockUseTeeSheetDayQuery = vi.fn();
 const mockUseClubDirectoryQuery = vi.fn();
+const scrollIntoViewMock = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -136,6 +137,120 @@ const teeSheetPayload = {
             },
           ],
         },
+        {
+          slot_datetime: "2026-03-30T04:10:00Z",
+          local_time: "06:10:00",
+          display_status: "reserved" as const,
+          state_flags: { event_controlled: true },
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 4,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 1,
+            remaining_player_capacity: 0,
+          },
+          party_summary: {
+            member_count: 4,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 4,
+            has_activity: true,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "blocked",
+            blocker_count: 1,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [
+            {
+              id: "booking-2",
+              status: "reserved" as const,
+              party_size: 4,
+              slot_datetime: "2026-03-30T04:10:00Z",
+              start_lane: "hole_1" as const,
+              fee_label: "Golf Day Allocation",
+              payment_status: "paid" as const,
+              cart_flag: true,
+              caddie_flag: false,
+              participants: [
+                { display_name: "Event One", participant_type: "member" as const, is_primary: true },
+                { display_name: "Event Two", participant_type: "member" as const, is_primary: false },
+                { display_name: "Event Three", participant_type: "member" as const, is_primary: false },
+                { display_name: "Event Four", participant_type: "member" as const, is_primary: false },
+              ],
+            },
+          ],
+        },
+        {
+          slot_datetime: "2026-03-30T04:20:00Z",
+          local_time: "06:20:00",
+          display_status: "blocked" as const,
+          state_flags: { manually_blocked: true },
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 0,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 0,
+            remaining_player_capacity: 0,
+          },
+          party_summary: {
+            member_count: 0,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 0,
+            has_activity: false,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "blocked",
+            blocker_count: 1,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [{ code: "manual_block", reason: "Closed for maintenance", details: {} }],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [],
+        },
+        {
+          slot_datetime: "2026-03-30T04:30:00Z",
+          local_time: "06:30:00",
+          display_status: "available" as const,
+          state_flags: {},
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 0,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 0,
+            remaining_player_capacity: 4,
+          },
+          party_summary: {
+            member_count: 0,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 0,
+            has_activity: false,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "allowed",
+            blocker_count: 0,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [],
+        },
       ],
     },
     {
@@ -177,6 +292,102 @@ const teeSheetPayload = {
           warnings: [],
           bookings: [],
         },
+        {
+          slot_datetime: "2026-03-30T04:10:00Z",
+          local_time: "06:10:00",
+          display_status: "available" as const,
+          state_flags: {},
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 0,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 0,
+            remaining_player_capacity: 4,
+          },
+          party_summary: {
+            member_count: 0,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 0,
+            has_activity: false,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "allowed",
+            blocker_count: 0,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [],
+        },
+        {
+          slot_datetime: "2026-03-30T04:20:00Z",
+          local_time: "06:20:00",
+          display_status: "available" as const,
+          state_flags: {},
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 0,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 0,
+            remaining_player_capacity: 4,
+          },
+          party_summary: {
+            member_count: 0,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 0,
+            has_activity: false,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "allowed",
+            blocker_count: 0,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [],
+        },
+        {
+          slot_datetime: "2026-03-30T04:30:00Z",
+          local_time: "06:30:00",
+          display_status: "available" as const,
+          state_flags: {},
+          occupancy: {
+            player_capacity: 4,
+            occupied_player_count: 0,
+            reserved_player_count: 0,
+            confirmed_booking_count: 0,
+            reserved_booking_count: 0,
+            remaining_player_capacity: 4,
+          },
+          party_summary: {
+            member_count: 0,
+            guest_count: 0,
+            staff_count: 0,
+            total_players: 0,
+            has_activity: false,
+          },
+          policy_summary: {
+            applies_to: "member" as const,
+            availability_status: "allowed",
+            blocker_count: 0,
+            unresolved_count: 0,
+            warning_count: 0,
+          },
+          blockers: [],
+          unresolved_checks: [],
+          warnings: [],
+          bookings: [],
+        },
       ],
     },
   ],
@@ -185,6 +396,11 @@ const teeSheetPayload = {
 describe("AdminGolfTeeSheetPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewMock,
+      writable: true,
+    });
     mockUseSession.mockReturnValue({
       accessToken: "token",
       bootstrap: {
@@ -239,8 +455,8 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getAllByText("Player 2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Player 3").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Player 4").length).toBeGreaterThan(0);
-    expect(screen.getByText("1st Tee")).toBeInTheDocument();
-    expect(screen.getByText("10th Tee")).toBeInTheDocument();
+    expect(screen.getAllByText("1st Tee").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10th Tee").length).toBeGreaterThan(0);
     expect(screen.getAllByText("06:00").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /open booking booking-1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open participant guest one/i })).toBeInTheDocument();
@@ -261,7 +477,43 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getByRole("button", { name: "Previous day" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next day" })).toBeInTheDocument();
-    expect(screen.getByText("Showing 2 of 2 lane slots")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Slots" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Golf Day" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Closed / Holds" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hide Controlled Slots/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+  });
+
+  test("filters the sheet to open sellable slots", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Slots" }));
+
+    expect(screen.getByLabelText(/10th tee lane row 06:20/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/1st tee lane row 06:30/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/1st tee lane row 06:10/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/1st tee lane row 06:20/i)).not.toBeInTheDocument();
+  });
+
+  test("filters the sheet to golf day allocations", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Golf Day" }));
+
+    expect(screen.getByLabelText(/1st tee lane row 06:10/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/10th tee lane row 06:10/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/1st tee lane row 06:20/i)).not.toBeInTheDocument();
+  });
+
+  test("filters the sheet to closed or held lanes", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Closed / Holds" }));
+
+    expect(screen.getByLabelText(/1st tee lane row 06:10/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/1st tee lane row 06:20/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/10th tee lane row 06:20/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/1st tee lane row 06:30/i)).not.toBeInTheDocument();
   });
 
   test("opens the create drawer for remaining player capacity on a partially filled slot", async () => {
@@ -338,6 +590,21 @@ describe("AdminGolfTeeSheetPage", () => {
       renderPage();
       // dateLabel formats with en-US locale; in UTC test env "2026-04-04T00:00:00" = April 4
       expect(screen.getAllByText("April 4, 2026").length).toBeGreaterThan(0);
+    });
+
+    test("picks the tee time nearest the current clock time", () => {
+      vi.setSystemTime(new Date("2026-04-04T12:07:00.000Z"));
+
+      expect(
+        nearestBucketTime(
+          [
+            { localTime: "06:00:00" },
+            { localTime: "12:00:00" },
+            { localTime: "15:00:00" },
+          ],
+          "UTC",
+        ),
+      ).toBe("12:00");
     });
 
     test("next day button advances the selected date by one day", () => {

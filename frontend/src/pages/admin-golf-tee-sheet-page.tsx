@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -44,7 +44,7 @@ type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
 type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
 type TeeSheetBookingView = TeeSheetSlotView["bookings"][number];
-type ViewFilter = "all" | "blocked" | "checked_in" | "issues" | "unpaid";
+type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid";
 type LaneSlot = {
   colorCode: string | null;
   laneLabel: string;
@@ -93,9 +93,9 @@ const COPY: Record<Action, { already: string; blocked: string; success: string }
 const VIEW_FILTERS: Array<{ label: string; value: ViewFilter }> = [
   { label: "All", value: "all" },
   { label: "Unpaid", value: "unpaid" },
-  { label: "Checked In", value: "checked_in" },
-  { label: "Blocked", value: "blocked" },
-  { label: "Issues", value: "issues" },
+  { label: "Open Slots", value: "open" },
+  { label: "Golf Day", value: "golf_day" },
+  { label: "Closed / Holds", value: "closed" },
 ];
 
 function localDateString(date: Date): string {
@@ -110,6 +110,54 @@ function addDays(value: string, amount: number): string {
   const date = new Date(`${value}T00:00:00`);
   date.setDate(date.getDate() + amount);
   return localDateString(date);
+}
+
+function timeKey(value: string): string {
+  return value.slice(0, 5);
+}
+
+function clockMinutes(value: string): number {
+  const [hoursText = "0", minutesText = "0"] = value.split(":");
+  return Number.parseInt(hoursText, 10) * 60 + Number.parseInt(minutesText, 10);
+}
+
+function nowTimeKey(timezone?: string | null): string {
+  if (timezone) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const hours = parts.find((part) => part.type === "hour")?.value ?? "00";
+    const minutes = parts.find((part) => part.type === "minute")?.value ?? "00";
+    return `${hours}:${minutes}`;
+  }
+
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+export function nearestBucketTime(
+  buckets: Array<{ localTime: string }>,
+  timezone?: string | null,
+): string | null {
+  if (buckets.length === 0) return null;
+
+  const targetMinutes = clockMinutes(nowTimeKey(timezone));
+  let nearest = timeKey(buckets[0].localTime);
+  let nearestDistance = Math.abs(clockMinutes(nearest) - targetMinutes);
+
+  for (const bucket of buckets.slice(1)) {
+    const candidate = timeKey(bucket.localTime);
+    const candidateDistance = Math.abs(clockMinutes(candidate) - targetMinutes);
+    if (candidateDistance < nearestDistance) {
+      nearest = candidate;
+      nearestDistance = candidateDistance;
+    }
+  }
+
+  return nearest;
 }
 
 function laneLabel(value: StartLane | null): string {
@@ -280,8 +328,21 @@ function slotSummaryClass(slot: TeeSheetSlotView): string {
   return "bg-surface-container-low text-on-surface";
 }
 
-function slotHasIssue(slot: TeeSheetSlotView): boolean {
-  return slot.display_status === "warning" || slot.display_status === "indeterminate";
+function slotHasGolfDayControl(slot: TeeSheetSlotView): boolean {
+  return Boolean(slot.state_flags.event_controlled || slot.state_flags.competition_controlled);
+}
+
+function slotHasClosure(slot: TeeSheetSlotView): boolean {
+  return Boolean(slot.display_status === "blocked" || slot.state_flags.manually_blocked || slot.state_flags.externally_unavailable);
+}
+
+function slotIsOpen(slot: TeeSheetSlotView): boolean {
+  return (
+    slot.display_status === "available" &&
+    (slot.occupancy.remaining_player_capacity ?? slotCapacity(slot)) > 0 &&
+    !slotHasGolfDayControl(slot) &&
+    !slotHasClosure(slot)
+  );
 }
 
 function slotMatchesSearch(slot: LaneSlot, search: string): boolean {
@@ -299,12 +360,12 @@ function slotMatchesFilter(slot: TeeSheetSlotView, filter: ViewFilter): boolean 
   switch (filter) {
     case "unpaid":
       return slot.bookings.some((booking) => booking.payment_status === "pending");
-    case "checked_in":
-      return slot.bookings.some((booking) => booking.status === "checked_in");
-    case "blocked":
-      return slot.display_status === "blocked";
-    case "issues":
-      return slotHasIssue(slot) || slot.bookings.some((booking) => booking.payment_status === "pending");
+    case "open":
+      return slotIsOpen(slot);
+    case "golf_day":
+      return slotHasGolfDayControl(slot);
+    case "closed":
+      return slotHasClosure(slot) || slotHasGolfDayControl(slot);
     default:
       return true;
   }
@@ -497,10 +558,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [showControlledRows, setShowControlledRows] = useState(true);
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<DraftParticipant[]>([]);
+  const pendingAutoScrollDateRef = useRef<string | null>(selectedDate);
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const sessionReady = initialized && !loading && Boolean(accessToken && bootstrap && selectedClubId);
@@ -532,6 +593,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       setTeeId(selectedTeeId);
     }
   }, [selectedTeeId, teeId]);
+
+  useEffect(() => {
+    pendingAutoScrollDateRef.current = selectedDate;
+  }, [selectedDate]);
 
   const teeSheetQuery = useTeeSheetDayQuery({
     accessToken: guardedAccessToken,
@@ -583,13 +648,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       buckets
         .map((bucket) => ({
           ...bucket,
-          slots: bucket.slots.filter((slot) => {
-            const visibleByState = showControlledRows || (slot.slot.display_status !== "blocked" && slot.slot.display_status !== "reserved");
-            return visibleByState && slotMatchesSearch(slot, searchTerm) && slotMatchesFilter(slot.slot, viewFilter);
-          }),
+          slots: bucket.slots.filter((slot) => slotMatchesSearch(slot, searchTerm) && slotMatchesFilter(slot.slot, viewFilter)),
         }))
         .filter((bucket) => bucket.slots.length > 0),
-    [buckets, searchTerm, showControlledRows, viewFilter],
+    [buckets, searchTerm, viewFilter],
   );
 
   const statusCounts = useMemo(
@@ -932,13 +994,25 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       ? "Session expired. Redirecting to login."
       : teeSheetQuery.error?.message ?? null;
   const jumpTimes = useMemo(
-    () => Array.from(new Set(buckets.map((bucket) => bucket.localTime.slice(0, 5)))),
+    () => Array.from(new Set(buckets.map((bucket) => timeKey(bucket.localTime)))),
     [buckets],
   );
   const showLiveEmptyState = configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length === 0;
   const showFilteredEmptyState =
     configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 && filteredBuckets.length === 0;
   const visibleSlotCount = filteredBuckets.reduce((sum, bucket) => sum + bucket.slots.length, 0);
+
+  useEffect(() => {
+    if (pendingAutoScrollDateRef.current !== selectedDate) return;
+    if (teeSheetQuery.isLoading || teeSheetQuery.error || filteredBuckets.length === 0) return;
+
+    const targetTime = nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null);
+    if (!targetTime) return;
+
+    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    pendingAutoScrollDateRef.current = null;
+  }, [filteredBuckets, selectedDate, teeSheetQuery.data?.timezone, teeSheetQuery.error, teeSheetQuery.isLoading]);
+
   return (
     <>
       <AdminWorkspace
@@ -1169,17 +1243,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             {filter.label}
                           </button>
                         ))}
-                        <button
-                          className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
-                            showControlledRows
-                              ? "bg-surface-container-low text-on-surface hover:bg-surface-container"
-                              : "bg-secondary-container text-on-secondary-container"
-                          }`}
-                          onClick={() => setShowControlledRows((current) => !current)}
-                          type="button"
-                        >
-                          {showControlledRows ? "Hide Controlled Slots" : "Show Controlled Slots"}
-                        </button>
                       </div>
                     </div>
                   </div>
