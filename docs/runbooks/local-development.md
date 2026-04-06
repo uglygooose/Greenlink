@@ -73,6 +73,7 @@ npm.cmd run test
 - Session bootstrap and tenancy resolution
 - Router-owned persistent admin and superadmin shells (all `/admin/*` including POS inside AdminLayout)
 - Golf operations backend plus admin tee-sheet lifecycle UI
+- Player member booking creation from `/player/book` using the live tee-sheet read model
 - People and membership foundations
 - Finance accounts, journal, backend summaries with pre-computed pct fields, canonical export batches, and accounting profile mapping
 - Orders, order finance posting, settlement recording, and POS terminal (inside AdminLayout)
@@ -85,7 +86,7 @@ npm.cmd run test
 ## Current major gaps
 
 - Full tee-sheet booking creation and editing UX
-- Player booking and profile flows
+- Player booking history/read model and profile flow
 - Full rules/modules onboarding configuration surfaces
 - Superadmin invitation/provisioning workflow
 - External accounting-system integration or validation

@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-03 18:45 SAST
+Last updated: 2026-04-06 11:20 SAST
 
 ## Canonical Snapshot Role
 
@@ -49,9 +49,10 @@ This file is the canonical current snapshot of actual repo state.
 ## Player Status
 
 - Status: Partial
-- Live: player home, player ordering, club updates news feed
+- Live: player home, member booking flow, player ordering, club updates news feed
+- Live: player booking uses the tee-sheet read model and member-portal booking creation endpoint
 - No fake upcoming bookings; honest empty state until a backend member-booking read model exists
-- Not built: booking read model, booking flow, profile flow
+- Not built: booking history/read model, profile flow
 
 ## Known Constraints
 

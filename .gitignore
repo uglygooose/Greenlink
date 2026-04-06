@@ -20,6 +20,11 @@ backend/pytest-cache-files-*/
 backend/.env
 frontend/.env
 
+# Local runtime artifacts and transient agent/dev files.
+.logs/
+.tmp_local/
+*.log
+
 # Legacy SQLite local artifacts from the scaffold period. PostgreSQL is the canonical dev database.
 alembic.sqlite
 test.db

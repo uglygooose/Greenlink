@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-03 18:45 SAST
+Last updated: 2026-04-06 11:20 SAST
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -57,7 +57,10 @@ Phase 5 - Player
 - PL-1 Player home and ordering: PARTIAL
   - Live: home, order, news feed
   - No fake upcoming bookings; honest empty state
-- PL-2 Player booking flow: NOT BUILT
+- PL-2 Player booking flow: PARTIAL
+  - Live: member portal booking entry point from player home
+  - Live: `/player/book` tee-sheet availability browsing and booking creation via `source="member_portal"`
+  - Not built: player booking history / member-booking read model
 - PL-3 Player profile flow: NOT BUILT
 
 Cross-cutting corrections completed

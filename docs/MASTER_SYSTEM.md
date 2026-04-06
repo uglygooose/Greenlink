@@ -1,6 +1,6 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-03 18:45 SAST
+Last updated: 2026-04-06 11:20 SAST
 
 ## Canonical Role
 
@@ -85,8 +85,9 @@ The canonical authority set is:
 
 ### Player
 - Partial
-- Player home and player ordering are live.
-- Player booking flow is not built.
+- Player home, player ordering, and member booking creation are live.
+- Player booking flow uses the live tee-sheet read model plus `POST /api/golf/bookings` with `source="member_portal"`.
+- No player booking history or member-booking read model exists yet.
 - Player profile route is not built.
 - Recently fixed: player home no longer shows fake upcoming bookings; it now shows an honest empty state until a backend member-booking read model exists.
 
@@ -111,10 +112,10 @@ The canonical authority set is:
 
 ### Player
 - `/player/home`
+- `/player/book`
 - `/player/order`
 
 Not built:
-- `/player/book`
 - `/player/profile`
 
 ## Layout and UI Authority
@@ -132,7 +133,7 @@ Not built:
 - Tee-sheet booking creation and editing UX is not built.
 - Golf settings remains visually older than the normalized admin workspaces.
 - Rules and Modules onboarding steps are not complete configuration surfaces.
-- No player booking read model exists yet.
+- No player booking history or member-booking read model exists yet.
 - No external accounting sync or reconciliation engine exists.
 - Superadmin invitation/provisioning workflow is not built.
 - Player profile route is not built.
