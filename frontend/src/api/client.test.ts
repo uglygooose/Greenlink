@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiRequest } from "./client";
+import { apiRequest, resetApiBaseUrlForTests } from "./client";
 import { getAccessToken, SESSION_EXPIRED_EVENT, setAccessToken } from "../auth/token-storage";
 
 function jsonResponse(status: number, body: unknown) {
@@ -14,6 +14,7 @@ function jsonResponse(status: number, body: unknown) {
 describe("apiRequest", () => {
   beforeEach(() => {
     localStorage.clear();
+    resetApiBaseUrlForTests();
   });
 
   afterEach(() => {
@@ -68,5 +69,32 @@ describe("apiRequest", () => {
     expect(getAccessToken()).toBeNull();
     expect(expired).toHaveBeenCalledTimes(1);
     window.removeEventListener(SESSION_EXPIRED_EVENT, expired);
+  });
+
+  it("falls back between local backend ports when the configured dev port is unavailable", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: "again" }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiRequest<{ ok: boolean }>("/api/session/bootstrap", { method: "GET" })).resolves.toEqual({
+      ok: true,
+    });
+    await expect(apiRequest<{ ok: string }>("/api/session/bootstrap", { method: "GET" })).resolves.toEqual({
+      ok: "again",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const secondUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    const thirdUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
+
+    expect(firstUrl.port).not.toBe(secondUrl.port);
+    expect([firstUrl.port, secondUrl.port].sort()).toEqual(["8000", "8001"]);
+    expect(thirdUrl.port).toBe(secondUrl.port);
   });
 });

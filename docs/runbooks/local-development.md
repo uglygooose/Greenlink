@@ -24,10 +24,15 @@ cd backend
 copy .env.example .env
 py -m uv sync --extra dev
 py -m uv run alembic upgrade head
-py -m uv run uvicorn app.main:app --reload
+py -m uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 GreenLink local/dev is PostgreSQL-first. Alembic and the backend runtime should use the PostgreSQL DSN from `backend/.env`, and SQLite is not a supported runtime or migration target for this rebuild.
+
+Default local ports:
+- Backend API: `http://127.0.0.1:8000`
+- Frontend Vite app: `http://127.0.0.1:5173`
+- Frontend local-dev API resolution now auto-recovers between loopback ports `8000` and `8001` if a stale local override is present, but `8000` remains the canonical backend port.
 
 ## Backend validation
 

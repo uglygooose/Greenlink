@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-06 11:20 SAST
+Last updated: 2026-04-06 10:46 SAST
 
 ## Canonical Snapshot Role
 
@@ -63,6 +63,7 @@ This file is the canonical current snapshot of actual repo state.
 - Orders remain distinct from payments.
 - Admin and superadmin shells must remain router-owned persistent layouts.
 - Benchmark UI references remain the visual authority.
+- Canonical local backend port is `127.0.0.1:8000`; the frontend client now auto-recovers between loopback ports `8000` and `8001` during local development.
 
 ## Known Risks
 
@@ -72,6 +73,7 @@ This file is the canonical current snapshot of actual repo state.
 ## Latest Validation
 
 - `frontend`: `npm.cmd run typecheck` - clean
+- `frontend`: `npm.cmd run test -- src/api/client.test.ts` - clean
 - `frontend`: targeted Vitest suites for persistent shells, route protection, finance pages, player home, and superadmin onboarding
 - `backend`: `py -m uv run pytest -q` - full suite
 - `backend`: `py -m uv run ruff check .` - passes (pre-existing E501 in superadmin service)

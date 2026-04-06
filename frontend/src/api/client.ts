@@ -1,4 +1,4 @@
-import { apiBaseUrl } from "../lib/env";
+import { apiBaseUrl, appEnv } from "../lib/env";
 import {
   emitSessionExpired,
   getAccessToken,
@@ -34,6 +34,8 @@ type ErrorBody = {
       }>;
 };
 
+let resolvedApiBaseUrl = apiBaseUrl;
+
 function extractErrorMessage(body: ErrorBody | null): string {
   if (!body) {
     return "Request failed";
@@ -57,12 +59,63 @@ function extractErrorMessage(body: ErrorBody | null): string {
   return "Request failed";
 }
 
+function buildLocalApiBaseCandidates(baseUrl: string): string[] {
+  const candidates = [baseUrl];
+
+  if (appEnv !== "development" || typeof window === "undefined") {
+    return candidates;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    if (!["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+      return candidates;
+    }
+
+    for (const port of ["8000", "8001"]) {
+      if (parsed.port === port) {
+        continue;
+      }
+      const fallback = new URL(parsed.toString());
+      fallback.port = port;
+      candidates.push(fallback.toString().replace(/\/$/, ""));
+    }
+  } catch {
+    return candidates;
+  }
+
+  return candidates;
+}
+
+async function fetchWithApiBaseFallback(path: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown = null;
+
+  for (const baseUrl of buildLocalApiBaseCandidates(resolvedApiBaseUrl)) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      resolvedApiBaseUrl = baseUrl;
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof TypeError)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new TypeError("Failed to fetch");
+}
+
+export function resetApiBaseUrlForTests(): void {
+  resolvedApiBaseUrl = apiBaseUrl;
+}
+
 let refreshInFlight: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
-      const response = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+      const response = await fetchWithApiBaseFallback("/api/auth/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -95,7 +148,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}, 
     headers.set("X-Club-Id", selectedClubId);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetchWithApiBaseFallback(path, {
     ...options,
     headers,
     credentials: "include"

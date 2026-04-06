@@ -18,6 +18,12 @@ GreenLink is a club-scoped golf operations platform built with a FastAPI backend
 - Core backend contracts: `docs/contracts/`
 - Architectural decision records: `docs/decisions/`
 
+## Local defaults
+
+- Frontend dev server: `http://127.0.0.1:5173`
+- Backend API: `http://127.0.0.1:8000`
+- Local frontend API calls now auto-recover between loopback ports `8000` and `8001`, but `8000` is the canonical backend port for this repo.
+
 ## Design references
 
 Keep these in-repo for future page work:
