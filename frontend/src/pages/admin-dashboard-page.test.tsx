@@ -6,33 +6,21 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AdminDashboardPage } from "./admin-dashboard-page";
 
 const mockUseSession = vi.fn();
-const mockUseFinanceJournalQuery = vi.fn();
+const mockUseAdminDashboardSummaryQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
-const mockUseCoursesQuery = vi.fn();
-const mockUseClubDirectoryQuery = vi.fn();
-const mockUseTeeSheetDayQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
 }));
 
+vi.mock("../features/admin-dashboard/hooks", () => ({
+  useAdminDashboardSummaryQuery: () => mockUseAdminDashboardSummaryQuery(),
+}));
+
 vi.mock("../features/finance/hooks", () => ({
-  useFinanceJournalQuery: () => mockUseFinanceJournalQuery(),
   useFinanceOutstandingSummaryQuery: () => mockUseFinanceOutstandingSummaryQuery(),
   useFinanceRevenueSummaryQuery: () => mockUseFinanceRevenueSummaryQuery(),
-}));
-
-vi.mock("../features/golf-settings/hooks", () => ({
-  useCoursesQuery: () => mockUseCoursesQuery(),
-}));
-
-vi.mock("../features/people/hooks", () => ({
-  useClubDirectoryQuery: () => mockUseClubDirectoryQuery(),
-}));
-
-vi.mock("../features/tee-sheet/hooks", () => ({
-  useTeeSheetDayQuery: () => mockUseTeeSheetDayQuery(),
 }));
 
 function renderPage(): void {
@@ -70,21 +58,30 @@ describe("AdminDashboardPage", () => {
         },
       },
     });
-    mockUseFinanceJournalQuery.mockReturnValue({
+
+    mockUseAdminDashboardSummaryQuery.mockReturnValue({
       data: {
-        entries: [
+        member_count: 42,
+        tee_occupancy: {
+          booked_slots: 8,
+          total_slots: 72,
+          occupancy_pct: 11,
+        },
+        tee_warnings: [],
+        recent_activity: [
           {
             id: "txn-1",
-            source: "manual",
+            source: "pos",
             type: "charge",
-            amount: "-25.00",
-            description: "Manual charge",
+            amount: "25.00",
+            description: "POS charge",
             created_at: "2026-04-01T09:00:00Z",
           },
         ],
       },
       isLoading: false,
     });
+
     mockUseFinanceOutstandingSummaryQuery.mockReturnValue({
       data: {
         total_accounts: 9,
@@ -98,6 +95,7 @@ describe("AdminDashboardPage", () => {
       },
       isLoading: false,
     });
+
     mockUseFinanceRevenueSummaryQuery.mockReturnValue({
       data: {
         timezone: "Africa/Johannesburg",
@@ -132,28 +130,6 @@ describe("AdminDashboardPage", () => {
       },
       isLoading: false,
     });
-    mockUseCoursesQuery.mockReturnValue({
-      data: [{ id: "course-1", name: "North" }],
-      isLoading: false,
-    });
-    mockUseClubDirectoryQuery.mockReturnValue({
-      data: [{ id: "member-1" }, { id: "member-2" }],
-      isLoading: false,
-    });
-    mockUseTeeSheetDayQuery.mockReturnValue({
-      data: {
-        warnings: [],
-        rows: [
-          {
-            slots: [
-              { bookings: [{ status: "reserved" }], local_time: "08:00:00" },
-              { bookings: [], local_time: "08:10:00" },
-            ],
-          },
-        ],
-      },
-      isLoading: false,
-    });
   });
 
   test("renders finance KPI values from summary payloads instead of raw account or journal aggregation", () => {
@@ -165,5 +141,27 @@ describe("AdminDashboardPage", () => {
     expect(normalizedText).toContain("R32100");
     expect(screen.getByText(/items awaiting settlement totaling/i)).toBeInTheDocument();
     expect(screen.queryByText("GL-001")).not.toBeInTheDocument();
+  });
+
+  test("renders member count and tee occupancy from backend summary", () => {
+    renderPage();
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("11%")).toBeInTheDocument();
+    expect(screen.getByText("8/72 slots")).toBeInTheDocument();
+  });
+
+  test("renders recent activity from backend summary", () => {
+    renderPage();
+    expect(screen.getByText("POS charge")).toBeInTheDocument();
+    const normalizedText = (document.body.textContent ?? "").replace(/[^\dA-Za-z]/g, "");
+    expect(normalizedText).toContain("R2500");
+  });
+
+  test("shows loading state while summary is loading", () => {
+    mockUseAdminDashboardSummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
+    renderPage();
+    // At least one loading skeleton should be present
+    const skeletons = document.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBeGreaterThan(0);
   });
 });

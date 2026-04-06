@@ -33,6 +33,9 @@ from app.schemas.finance import (
     FinanceExportBatchDownloadResult,
     FinanceExportBatchListResponse,
     FinanceExportBatchPreviewRow,
+    FinanceExportBatchRegenerateResult,
+    FinanceExportBatchReconciliationResponse,
+    FinanceExportBatchReconciliationSampleRow,
     FinanceExportBatchSummaryResponse,
     FinanceExportBatchVoidResult,
 )
@@ -183,6 +186,45 @@ class FinanceExportBatchService:
             content=self._to_csv(rows),
         )
 
+    def get_batch_reconciliation(
+        self,
+        *,
+        club_id: uuid.UUID,
+        batch_id: uuid.UUID,
+    ) -> FinanceExportBatchReconciliationResponse:
+        batch = self.get_batch(club_id=club_id, batch_id=batch_id)
+        persisted_rows = [FinanceExportBatchPreviewRow.model_validate(row) for row in batch.payload_json]
+        selected_transactions, _ = self._select_transactions(
+            club_id=club_id,
+            date_from=batch.date_from,
+            date_to=batch.date_to,
+        )
+        current_rows = self._build_rows(selected_transactions)
+        persisted_by_id = {row.transaction_id: row for row in persisted_rows}
+        current_by_id = {row.transaction_id: row for row in current_rows}
+        missing_ids = [tx_id for tx_id in persisted_by_id if tx_id not in current_by_id]
+        new_ids = [tx_id for tx_id in current_by_id if tx_id not in persisted_by_id]
+        current_content_hash = self._content_hash(current_rows)
+
+        return FinanceExportBatchReconciliationResponse(
+            batch_id=batch.id,
+            batch_status=batch.status,
+            reconciled_at=utc_now(),
+            matches_live_state=batch.content_hash == current_content_hash,
+            persisted_content_hash=batch.content_hash,
+            current_content_hash=current_content_hash,
+            persisted_transaction_count=len(persisted_rows),
+            current_transaction_count=len(current_rows),
+            missing_transaction_count=len(missing_ids),
+            new_transaction_count=len(new_ids),
+            missing_transactions=[
+                self._to_reconciliation_sample(persisted_by_id[tx_id]) for tx_id in missing_ids[:5]
+            ],
+            new_transactions=[
+                self._to_reconciliation_sample(current_by_id[tx_id]) for tx_id in new_ids[:5]
+            ],
+        )
+
     def void_batch(
         self,
         *,
@@ -211,6 +253,67 @@ class FinanceExportBatchService:
         return FinanceExportBatchVoidResult(
             void_applied=False,
             batch=self._to_detail(batch),
+        )
+
+    def regenerate_batch(
+        self,
+        *,
+        club_id: uuid.UUID,
+        batch_id: uuid.UUID,
+        regenerated_by_person_id: uuid.UUID,
+    ) -> FinanceExportBatchRegenerateResult:
+        batch = self.get_batch(club_id=club_id, batch_id=batch_id)
+        if batch.status == FinanceExportBatchStatus.VOID:
+            raise AppError(
+                code="finance_export_batch_void",
+                message="Voided finance export batches cannot be regenerated",
+                status_code=409,
+            )
+
+        previous_status = batch.status.value
+        metadata = dict(batch.metadata_json or {})
+        metadata["void_event"] = {
+            "voided_at": utc_now().isoformat(),
+            "previous_status": previous_status,
+        }
+        metadata["superseded_event"] = {
+            "superseded_by_regeneration": True,
+            "superseded_by_person_id": str(regenerated_by_person_id),
+        }
+        batch.metadata_json = metadata
+        batch.status = FinanceExportBatchStatus.VOID
+        self.db.add(batch)
+        self.db.commit()
+
+        result = self.generate_or_get_existing(
+            club_id=club_id,
+            created_by_person_id=regenerated_by_person_id,
+            payload=FinanceExportBatchCreateRequest(
+                export_profile=batch.export_profile,
+                date_from=batch.date_from,
+                date_to=batch.date_to,
+            ),
+        )
+        regenerated_batch = self.get_batch(club_id=club_id, batch_id=result.batch.id)
+        metadata["superseded_event"] = {
+            "superseded_by_regeneration": True,
+            "superseded_by_person_id": str(regenerated_by_person_id),
+            "replacement_batch_id": str(regenerated_batch.id),
+        }
+        batch.metadata_json = metadata
+        self.db.add(batch)
+        regenerated_metadata = dict(regenerated_batch.metadata_json or {})
+        regenerated_metadata["regenerated_event"] = {
+            "regenerated_from_batch_id": str(batch.id),
+            "regenerated_by_person_id": str(regenerated_by_person_id),
+        }
+        regenerated_batch.metadata_json = regenerated_metadata
+        self.db.add(regenerated_batch)
+        self.db.commit()
+
+        return FinanceExportBatchRegenerateResult(
+            superseded_batch_id=batch.id,
+            batch=self._to_detail(self.get_batch(club_id=club_id, batch_id=regenerated_batch.id)),
         )
 
     def _load_active_batch(
@@ -377,3 +480,17 @@ class FinanceExportBatchService:
 
     def _decimal_string(self, value: Decimal) -> str:
         return f"{value.quantize(Decimal('0.01'))}"
+
+    def _to_reconciliation_sample(
+        self,
+        row: FinanceExportBatchPreviewRow,
+    ) -> FinanceExportBatchReconciliationSampleRow:
+        return FinanceExportBatchReconciliationSampleRow(
+            transaction_id=row.transaction_id,
+            entry_date=row.entry_date,
+            account_customer_code=row.account_customer_code,
+            description=row.description,
+            amount=row.amount,
+            source=row.source,
+            transaction_type=row.transaction_type,
+        )

@@ -13,10 +13,12 @@ const mockUseFinanceRevenueSummaryQuery = vi.fn();
 const mockUseFinanceTransactionVolumeSummaryQuery = vi.fn();
 const mockUseFinanceExportBatchesQuery = vi.fn();
 const mockUseFinanceExportBatchDetailQuery = vi.fn();
+const mockUseFinanceExportBatchReconciliationQuery = vi.fn();
 const mockUseAccountingExportProfilesQuery = vi.fn();
 const mockUseAccountingMappedExportPreviewQuery = vi.fn();
 const mockUseCreateFinanceExportBatchMutation = vi.fn();
 const mockUseVoidFinanceExportBatchMutation = vi.fn();
+const mockUseRegenerateFinanceExportBatchMutation = vi.fn();
 const mockUseCreateAccountingExportProfileMutation = vi.fn();
 const mockUseUpdateAccountingExportProfileMutation = vi.fn();
 const mockDownloadFinanceExportBatch = vi.fn();
@@ -34,10 +36,12 @@ vi.mock("../features/finance/hooks", () => ({
   useFinanceTransactionVolumeSummaryQuery: (args: unknown) => mockUseFinanceTransactionVolumeSummaryQuery(args),
   useFinanceExportBatchesQuery: (args: unknown) => mockUseFinanceExportBatchesQuery(args),
   useFinanceExportBatchDetailQuery: (args: unknown) => mockUseFinanceExportBatchDetailQuery(args),
+  useFinanceExportBatchReconciliationQuery: (args: unknown) => mockUseFinanceExportBatchReconciliationQuery(args),
   useAccountingExportProfilesQuery: (args: unknown) => mockUseAccountingExportProfilesQuery(args),
   useAccountingMappedExportPreviewQuery: (args: unknown) => mockUseAccountingMappedExportPreviewQuery(args),
   useCreateFinanceExportBatchMutation: () => mockUseCreateFinanceExportBatchMutation(),
   useVoidFinanceExportBatchMutation: () => mockUseVoidFinanceExportBatchMutation(),
+  useRegenerateFinanceExportBatchMutation: () => mockUseRegenerateFinanceExportBatchMutation(),
   useCreateAccountingExportProfileMutation: () => mockUseCreateAccountingExportProfileMutation(),
   useUpdateAccountingExportProfileMutation: () => mockUseUpdateAccountingExportProfileMutation(),
   downloadFinanceExportBatch: (args: unknown) => mockDownloadFinanceExportBatch(args),
@@ -268,6 +272,29 @@ describe("AdminFinancePage", () => {
       data: batchId ? buildBatchDetail() : undefined,
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
+    }));
+
+    mockUseFinanceExportBatchReconciliationQuery.mockImplementation(({ batchId }: { batchId: string | null }) => ({
+      data: batchId
+        ? {
+            batch_id: "batch-1",
+            batch_status: "generated",
+            reconciled_at: "2026-04-02T10:20:00Z",
+            matches_live_state: true,
+            persisted_content_hash: "hash-123",
+            current_content_hash: "hash-123",
+            persisted_transaction_count: 2,
+            current_transaction_count: 2,
+            missing_transaction_count: 0,
+            new_transaction_count: 0,
+            missing_transactions: [],
+            new_transactions: [],
+          }
+        : undefined,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
     }));
 
     mockUseAccountingExportProfilesQuery.mockReturnValue({
@@ -289,6 +316,11 @@ describe("AdminFinancePage", () => {
 
     mockUseVoidFinanceExportBatchMutation.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({ void_applied: true, batch: { ...buildBatchDetail(), status: "void" } }),
+      isPending: false,
+    });
+
+    mockUseRegenerateFinanceExportBatchMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ superseded_batch_id: "batch-1", batch: buildBatchDetail() }),
       isPending: false,
     });
 
@@ -348,7 +380,7 @@ describe("AdminFinancePage", () => {
     expect(await screen.findByRole("heading", { name: "Mapped Export Preview", level: 3 })).toBeInTheDocument();
     expect(screen.getAllByDisplayValue("Generic Journal Ops")).toHaveLength(2);
     expect(screen.getByText("greenlink-generic_journal_mapped-generic_journal_ops-2026-04-01-to-2026-04-02.csv")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /download mapped csv/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export mapped csv/i })).toBeInTheDocument();
   });
 
   test("surfaces mapped export validation errors and blocks download until resolved", async () => {

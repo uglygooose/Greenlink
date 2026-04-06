@@ -7,6 +7,9 @@ import type {
   SuperadminClubAssignmentInput,
   SuperadminClubCreateInput,
   SuperadminClubAssignmentResponse,
+  SuperadminClubInvitationCreateInput,
+  SuperadminClubInvitationListResponse,
+  SuperadminClubInvitationResponse,
   SuperadminClubListResponse,
   SuperadminClubOnboardingDetail,
   SuperadminClubOnboardingUpdateInput,
@@ -24,6 +27,7 @@ interface SuperadminOptions {
 export const superadminKeys = {
   clubs: ["superadmin", "clubs"] as const,
   onboarding: (clubId: string) => ["superadmin", "clubs", clubId, "onboarding"] as const,
+  invitations: (clubId: string) => ["superadmin", "clubs", clubId, "invitations"] as const,
   assignmentCandidates: (clubId: string, query: string) =>
     ["superadmin", "clubs", clubId, "assignment-candidates", query] as const,
 };
@@ -49,6 +53,18 @@ export function useSuperadminClubOnboardingQuery({ accessToken, clubId }: Onboar
     queryKey: superadminKeys.onboarding(clubId ?? "none"),
     queryFn: () =>
       apiRequest<SuperadminClubOnboardingDetail>(`/api/superadmin/clubs/${clubId}/onboarding`, {
+        method: "GET",
+        accessToken: accessToken as string,
+      }),
+    enabled: isReady(accessToken) && Boolean(clubId),
+  });
+}
+
+export function useSuperadminClubInvitationsQuery({ accessToken, clubId }: OnboardingOptions) {
+  return useQuery<SuperadminClubInvitationListResponse>({
+    queryKey: superadminKeys.invitations(clubId ?? "none"),
+    queryFn: () =>
+      apiRequest<SuperadminClubInvitationListResponse>(`/api/superadmin/clubs/${clubId}/invitations`, {
         method: "GET",
         accessToken: accessToken as string,
       }),
@@ -183,6 +199,25 @@ export function useAssignSuperadminClubUserMutation() {
       await queryClient.invalidateQueries({
         queryKey: superadminKeys.assignmentCandidates(variables.clubId, ""),
       });
+    },
+  });
+}
+
+export function useCreateSuperadminClubInvitationMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: ({ clubId, payload }: { clubId: string; payload: SuperadminClubInvitationCreateInput }) =>
+      apiRequest<SuperadminClubInvitationResponse>(`/api/superadmin/clubs/${clubId}/invitations`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.invitations(variables.clubId) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.onboarding(variables.clubId) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
     },
   });
 }

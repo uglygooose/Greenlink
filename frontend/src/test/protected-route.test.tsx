@@ -17,6 +17,8 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
           <Route path="/select-club" element={<div>Select Club</div>} />
           <Route path="/admin" element={<ProtectedRoute shell="admin" />}>
             <Route index element={<div>Admin Shell</div>} />
+            <Route path="dashboard" element={<div>Admin Dashboard</div>} />
+            <Route path="finance" element={<div>Admin Finance</div>} />
           </Route>
           <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
             <Route index element={<div>Superadmin Shell</div>} />
@@ -64,6 +66,10 @@ const sessionValue: SessionContextValue = {
   login: async () => {
     throw new Error("not implemented");
   },
+  acceptInvitation: async () => {
+    throw new Error("not implemented");
+  },
+  activateInvitation: async () => undefined,
   logout: async () => undefined,
   refresh: async () => {
     throw new Error("not implemented");
@@ -125,4 +131,29 @@ test("allows a superadmin with a selected club into admin routes", async () => {
     ["/admin"],
   );
   expect(await screen.findByText("Admin Shell")).toBeInTheDocument();
+});
+
+test("redirects blocked admin routes to the backend landing path when menu items exclude the domain", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        landing_path: "/admin/dashboard",
+        menu_items: [
+          {
+            key: "dashboard",
+            label: "Dashboard",
+            path: "/admin/dashboard",
+            shell: "admin",
+            domain: "dashboard",
+            module_key: null,
+          },
+        ],
+      },
+    },
+    ["/admin/finance"],
+  );
+
+  expect(await screen.findByText("Admin Dashboard")).toBeInTheDocument();
 });

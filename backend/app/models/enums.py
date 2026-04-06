@@ -21,6 +21,13 @@ class ClubMembershipStatus(StrEnum):
     INACTIVE = "inactive"
 
 
+class ClubInvitationStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+
+
 class ClubOnboardingState(StrEnum):
     ONBOARDING_STARTED = "onboarding_started"
     DATA_PENDING = "data_pending"

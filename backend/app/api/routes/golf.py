@@ -47,6 +47,7 @@ from app.schemas.bookings import (
     BookingMoveResult,
     BookingNoShowRequest,
     BookingNoShowResult,
+    PlayerBookingReadModelResponse,
 )
 from app.schemas.operations import (
     CourseCreateRequest,
@@ -62,6 +63,7 @@ from app.services.booking_move_service import BookingMoveService
 from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
 from app.services.booking_update_service import BookingUpdateService
+from app.services.player_booking_read_model_service import PlayerBookingReadModelService
 from app.services.tee_sheet_service import TeeSheetService
 
 router = APIRouter()
@@ -233,6 +235,31 @@ def get_tee_sheet_day(
             membership_type=normalized_membership_type,
             reference_datetime=reference_datetime,
         )
+    )
+
+
+@router.get("/bookings/player", response_model=PlayerBookingReadModelResponse)
+def get_player_bookings(
+    reference_datetime: datetime | None = Query(default=None),
+    upcoming_limit: int = Query(default=5, ge=1, le=20),
+    history_limit: int = Query(default=10, ge=1, le=50),
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlayerBookingReadModelResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    if not _is_member_context(context):
+        raise AuthorizationError("Player booking read model requires a member club context")
+    if current_user.person_id is None:
+        raise NotFoundError("Person not found")
+    assert context.selected_club is not None
+    service = PlayerBookingReadModelService(db)
+    return service.load_for_person(
+        club=context.selected_club,
+        person_id=current_user.person_id,
+        reference_datetime=reference_datetime,
+        upcoming_limit=upcoming_limit,
+        history_limit=history_limit,
     )
 
 

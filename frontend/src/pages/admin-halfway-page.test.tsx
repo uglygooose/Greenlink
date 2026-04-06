@@ -6,33 +6,27 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AdminHalfwayPage } from "./admin-halfway-page";
 
 const mockUseSession = vi.fn();
-const mockUseFinanceJournalQuery = vi.fn();
+const mockUseHalfwaySummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
 const mockUseFinanceTransactionVolumeSummaryQuery = vi.fn();
-const mockUseOrdersQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
 }));
 
+vi.mock("../features/admin-dashboard/halfway-hooks", () => ({
+  useHalfwaySummaryQuery: () => mockUseHalfwaySummaryQuery(),
+}));
+
 vi.mock("../features/finance/hooks", () => ({
-  useFinanceJournalQuery: () => mockUseFinanceJournalQuery(),
   useFinanceRevenueSummaryQuery: () => mockUseFinanceRevenueSummaryQuery(),
   useFinanceTransactionVolumeSummaryQuery: () => mockUseFinanceTransactionVolumeSummaryQuery(),
 }));
 
-vi.mock("../features/orders/hooks", () => ({
-  useOrdersQuery: (args: { status: string | null }) => mockUseOrdersQuery(args),
-}));
-
 function renderPage(): void {
   const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-
   render(
     <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }} initialEntries={["/admin/halfway"]}>
       <QueryClientProvider client={queryClient}>
@@ -48,26 +42,42 @@ describe("AdminHalfwayPage", () => {
 
     mockUseSession.mockReturnValue({
       accessToken: "token",
-      bootstrap: {
-        selected_club_id: "club-1",
-        user: { display_name: "Club Admin" },
-      },
+      bootstrap: { selected_club_id: "club-1", user: { display_name: "Club Admin" } },
     });
 
-    mockUseFinanceJournalQuery.mockReturnValue({
+    mockUseHalfwaySummaryQuery.mockReturnValue({
       data: {
-        entries: [
+        orders_today_count: 5,
+        active_queue_count: 2,
+        queue_orders: [
+          {
+            id: "order-1",
+            club_id: "club-1",
+            person_id: "person-1",
+            person: { id: "person-1", full_name: "Avery Green" },
+            booking_id: null,
+            finance_charge_transaction_id: null,
+            finance_charge_posted: false,
+            finance_payment_transaction_id: null,
+            finance_payment_posted: false,
+            finance_tender_record_id: null,
+            tender_recorded: false,
+            payment_tender_type: null,
+            source: "admin",
+            status: "placed",
+            created_at: new Date().toISOString(),
+            item_count: 2,
+            item_summary: "2x Coffee",
+          },
+        ],
+        recent_transactions: [
           {
             id: "txn-1",
-            club_id: "club-1",
-            account_id: "account-1",
-            amount: "-20.00",
-            type: "charge",
             source: "pos",
-            reference_id: null,
+            type: "charge",
+            amount: "20.00",
             description: "Coffee",
             created_at: new Date().toISOString(),
-            account_customer_code: null,
           },
         ],
       },
@@ -95,53 +105,32 @@ describe("AdminHalfwayPage", () => {
       },
       isLoading: false,
     });
-
-    mockUseOrdersQuery.mockImplementation(({ status }: { status: string | null }) => {
-      if (status === null) {
-        return {
-          data: [
-            {
-              id: "order-1",
-              created_at: new Date().toISOString(),
-              status: "placed",
-              person: { full_name: "Avery Green" },
-              item_summary: "2x Coffee",
-            },
-          ],
-          isLoading: false,
-        };
-      }
-
-      if (status === "placed") {
-        return {
-          data: [
-            {
-              id: "order-1",
-              created_at: new Date().toISOString(),
-              status: "placed",
-              person: { full_name: "Avery Green" },
-              item_summary: "2x Coffee",
-            },
-          ],
-          isLoading: false,
-        };
-      }
-
-      return {
-        data: [],
-        isLoading: false,
-      };
-    });
   });
 
-  test("renders finance KPIs from summary endpoints and removes unsupported local finance visuals", () => {
+  test("renders KPI values from backend summary", () => {
     renderPage();
-    const normalizedText = (document.body.textContent ?? "").replace(/[^\dA-Za-z]/g, "");
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("14")).toBeInTheDocument();
+  });
 
-    expect(normalizedText).toContain("R32100backendsummary");
-    expect(normalizedText).toContain("14backendsummary");
-    expect(screen.queryByText("Avg Spend")).not.toBeInTheDocument();
-    expect(screen.queryByText("Payment Split")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Revenue .* Last 8 Hours/i)).not.toBeInTheDocument();
+  test("renders queue orders from backend summary", () => {
+    renderPage();
+    expect(screen.getByText("Avery Green")).toBeInTheDocument();
+    expect(screen.getByText("2x Coffee")).toBeInTheDocument();
+    expect(screen.getAllByText("placed").length).toBeGreaterThan(0);
+  });
+
+  test("renders recent transactions from backend summary", () => {
+    renderPage();
+    expect(screen.getByText("Coffee")).toBeInTheDocument();
+    const normalizedText = (document.body.textContent ?? "").replace(/[^\dA-Za-z]/g, "");
+    expect(normalizedText).toContain("R2000");
+  });
+
+  test("shows loading state while summary is loading", () => {
+    mockUseHalfwaySummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
+    renderPage();
+    expect(screen.getAllByText(/Loading/i).length).toBeGreaterThan(0);
   });
 });

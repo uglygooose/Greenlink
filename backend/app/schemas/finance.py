@@ -206,6 +206,51 @@ class FinanceExportBatchCreateRequest(BaseModel):
         return self
 
 
+class FinanceExportBatchSelectionWindowResponse(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+class FinanceExportBatchVoidEventResponse(BaseModel):
+    voided_at: str
+    previous_status: str
+
+
+class FinanceExportBatchSupersededEventResponse(BaseModel):
+    superseded_by_regeneration: bool = False
+    superseded_by_person_id: str | None = None
+    replacement_batch_id: str | None = None
+
+
+class FinanceExportBatchRegeneratedEventResponse(BaseModel):
+    regenerated_from_batch_id: str
+    regenerated_by_person_id: str
+
+
+class FinanceExportBatchExportEventResponse(BaseModel):
+    exported_at: str
+    exported_by_person_id: str
+    accounting_profile_id: str
+    accounting_profile_code: str
+    accounting_profile_name: str
+    target_system: str
+    mapped_file_name: str
+    mapped_content_hash: str
+    mapped_row_count: int
+    output_mode: str | None = None
+
+
+class FinanceExportBatchMetadataResponse(BaseModel):
+    selection_timezone: str | None = None
+    selection_window: FinanceExportBatchSelectionWindowResponse | None = None
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    transaction_type_counts: dict[str, int] = Field(default_factory=dict)
+    void_event: FinanceExportBatchVoidEventResponse | None = None
+    superseded_event: FinanceExportBatchSupersededEventResponse | None = None
+    regenerated_event: FinanceExportBatchRegeneratedEventResponse | None = None
+    export_events: list[FinanceExportBatchExportEventResponse] = Field(default_factory=list)
+
+
 class FinanceExportBatchSummaryResponse(BaseModel):
     id: uuid.UUID
     club_id: uuid.UUID
@@ -220,7 +265,7 @@ class FinanceExportBatchSummaryResponse(BaseModel):
     transaction_count: int
     total_debits: Decimal
     total_credits: Decimal
-    metadata_json: dict[str, object]
+    metadata_json: FinanceExportBatchMetadataResponse
 
 
 class FinanceExportBatchDetailResponse(FinanceExportBatchSummaryResponse):
@@ -242,9 +287,39 @@ class FinanceExportBatchVoidResult(BaseModel):
     batch: FinanceExportBatchDetailResponse
 
 
+class FinanceExportBatchRegenerateResult(BaseModel):
+    superseded_batch_id: uuid.UUID
+    batch: FinanceExportBatchDetailResponse
+
+
 class FinanceExportBatchDownloadResult(BaseModel):
     file_name: str
     content: str
+
+
+class FinanceExportBatchReconciliationSampleRow(BaseModel):
+    transaction_id: str
+    entry_date: str
+    account_customer_code: str | None
+    description: str
+    amount: str
+    source: str
+    transaction_type: str
+
+
+class FinanceExportBatchReconciliationResponse(BaseModel):
+    batch_id: uuid.UUID
+    batch_status: FinanceExportBatchStatus
+    reconciled_at: datetime
+    matches_live_state: bool
+    persisted_content_hash: str
+    current_content_hash: str
+    persisted_transaction_count: int
+    current_transaction_count: int
+    missing_transaction_count: int
+    new_transaction_count: int
+    missing_transactions: list[FinanceExportBatchReconciliationSampleRow]
+    new_transactions: list[FinanceExportBatchReconciliationSampleRow]
 
 
 class AccountingExportProfileTransactionMapping(BaseModel):

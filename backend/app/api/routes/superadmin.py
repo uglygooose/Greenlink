@@ -12,6 +12,9 @@ from app.schemas.superadmin import (
     SuperadminClubAssignmentResponse,
     SuperadminClubAssignmentUpsertRequest,
     SuperadminClubCreateRequest,
+    SuperadminClubInvitationCreateRequest,
+    SuperadminClubInvitationListResponse,
+    SuperadminClubInvitationResponse,
     SuperadminClubListResponse,
     SuperadminClubOnboardingDetailResponse,
     SuperadminClubOnboardingUpdateRequest,
@@ -133,6 +136,38 @@ def assign_superadmin_club_user(
     db: Session = Depends(get_db),
 ) -> SuperadminClubAssignmentResponse:
     return SuperadminOnboardingService(db).assign_user_to_club(
+        club_id=club_id,
+        payload=payload,
+        actor_user_id=current_user.id,
+        correlation_id=_correlation_id(request),
+    )
+
+
+@router.get(
+    "/clubs/{club_id}/invitations",
+    response_model=SuperadminClubInvitationListResponse,
+)
+def list_superadmin_club_invitations(
+    club_id: uuid.UUID,
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminClubInvitationListResponse:
+    return SuperadminOnboardingService(db).list_invitations(club_id=club_id)
+
+
+@router.post(
+    "/clubs/{club_id}/invitations",
+    response_model=SuperadminClubInvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_superadmin_club_invitation(
+    club_id: uuid.UUID,
+    payload: SuperadminClubInvitationCreateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminClubInvitationResponse:
+    return SuperadminOnboardingService(db).create_invitation(
         club_id=club_id,
         payload=payload,
         actor_user_id=current_user.id,

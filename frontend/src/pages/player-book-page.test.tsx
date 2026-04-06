@@ -11,6 +11,7 @@ const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
 const mockUseTeeSheetDayQuery = vi.fn();
 const mockUsePublishedNewsFeedQuery = vi.fn();
+const mockUsePlayerBookingReadModelQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -30,6 +31,10 @@ vi.mock("../features/tee-sheet/hooks", () => ({
 
 vi.mock("../features/comms/hooks", () => ({
   usePublishedNewsFeedQuery: () => mockUsePublishedNewsFeedQuery(),
+}));
+
+vi.mock("../features/bookings/hooks", () => ({
+  usePlayerBookingReadModelQuery: () => mockUsePlayerBookingReadModelQuery(),
 }));
 
 vi.mock("../api/operations", () => ({
@@ -165,12 +170,20 @@ describe("Player booking flow", () => {
       isLoading: false,
       error: null,
     });
+
+    mockUsePlayerBookingReadModelQuery.mockReturnValue({
+      data: { upcoming: [], history: [] },
+      isLoading: false,
+      error: null,
+    });
   });
 
   test("adds a clear player-home entry point into the booking flow", () => {
     render(
       <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <PlayerShellPage />
+        <QueryClientProvider client={buildQueryClient()}>
+          <PlayerShellPage />
+        </QueryClientProvider>
       </MemoryRouter>,
     );
 

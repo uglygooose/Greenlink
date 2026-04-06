@@ -5,6 +5,7 @@ import type {
   BookingCreateInput,
   BookingCreateResult,
   BookingCompleteResult,
+  PlayerBookingReadModelResponse,
   BookingUpdateInput,
   BookingUpdateResult,
   BookingMoveInput,
@@ -24,6 +25,7 @@ import type {
   OrderStatus,
   OrderSummary,
 } from "../types/orders";
+import type { SelfProfileResponse, SelfProfileUpdateInput } from "../types/profile";
 import type {
   BookingRuleSet,
   BookingRuleSetInput,
@@ -41,6 +43,12 @@ import type { TeeSheetDayResponse } from "../types/tee-sheet";
 interface AuthenticatedOptions {
   accessToken: string;
   selectedClubId: string;
+}
+
+interface PlayerBookingReadModelParams {
+  referenceDatetime?: string | null;
+  upcomingLimit?: number;
+  historyLimit?: number;
 }
 
 export function fetchClubConfig({ accessToken, selectedClubId }: AuthenticatedOptions): Promise<ClubConfig> {
@@ -194,6 +202,30 @@ export function fetchTeeSheetDay(
     searchParams.set("reference_datetime", params.referenceDatetime);
   }
   return apiRequest<TeeSheetDayResponse>(`/api/golf/tee-sheet/day?${searchParams.toString()}`, {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+export function fetchPlayerBookingReadModel(
+  params: PlayerBookingReadModelParams,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<PlayerBookingReadModelResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.referenceDatetime) {
+    searchParams.set("reference_datetime", params.referenceDatetime);
+  }
+  if (params.upcomingLimit != null) {
+    searchParams.set("upcoming_limit", String(params.upcomingLimit));
+  }
+  if (params.historyLimit != null) {
+    searchParams.set("history_limit", String(params.historyLimit));
+  }
+  const path = searchParams.size
+    ? `/api/golf/bookings/player?${searchParams.toString()}`
+    : "/api/golf/bookings/player";
+  return apiRequest<PlayerBookingReadModelResponse>(path, {
     method: "GET",
     accessToken,
     selectedClubId,
@@ -366,6 +398,26 @@ export function markOrderCollected(
     accessToken,
     selectedClubId,
     body: JSON.stringify({}),
+  });
+}
+
+export function fetchSelfProfile({ accessToken, selectedClubId }: AuthenticatedOptions): Promise<SelfProfileResponse> {
+  return apiRequest<SelfProfileResponse>("/api/people/me/profile", {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+export function updateSelfProfile(
+  payload: SelfProfileUpdateInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<SelfProfileResponse> {
+  return apiRequest<SelfProfileResponse>("/api/people/me/profile", {
+    method: "PATCH",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
   });
 }
 

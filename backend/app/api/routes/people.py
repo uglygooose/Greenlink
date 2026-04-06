@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_db
-from app.core.exceptions import AuthorizationError
+from app.core.exceptions import AuthorizationError, NotFoundError
 from app.models import ClubMembershipRole, User, UserType
 from app.schemas.people import (
     AccountCustomerCreateRequest,
@@ -21,6 +21,8 @@ from app.schemas.people import (
     PersonIntegrityResponse,
     PersonResponse,
     PersonSearchResponse,
+    SelfProfileResponse,
+    SelfProfileUpdateRequest,
     PersonUpdateRequest,
 )
 from app.services.bulk_intake_service import BulkIntakeService
@@ -240,6 +242,64 @@ def process_bulk_intake(
         payload,
         actor_user_id=current_user.id,
         correlation_id=_correlation_id(request),
+    )
+
+
+@router.get("/me/profile", response_model=SelfProfileResponse)
+def get_self_profile(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SelfProfileResponse:
+    if current_user.person_id is None:
+        raise NotFoundError("Profile not found")
+    context = None
+    club_name: str | None = None
+    club_id: uuid.UUID | None = None
+    if current_user.user_type != UserType.SUPERADMIN:
+        context = _resolve_context(db, current_user, raw_selected_club_id, require_selected=True)
+        assert context.selected_club is not None
+        club_id = context.selected_club.id
+        club_name = context.selected_club.name
+    service = PeopleService(db)
+    person = service.ensure_person_access(person_id=current_user.person_id, club_id=club_id, user=current_user)
+    return service.to_self_profile_response(
+        person=person,
+        account_email=current_user.email,
+        club_name=club_name,
+    )
+
+
+@router.patch("/me/profile", response_model=SelfProfileResponse)
+def update_self_profile(
+    payload: SelfProfileUpdateRequest,
+    request: Request,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SelfProfileResponse:
+    if current_user.person_id is None:
+        raise NotFoundError("Profile not found")
+    context = None
+    club_name: str | None = None
+    club_id: uuid.UUID | None = None
+    if current_user.user_type != UserType.SUPERADMIN:
+        context = _resolve_context(db, current_user, raw_selected_club_id, require_selected=True)
+        assert context.selected_club is not None
+        club_id = context.selected_club.id
+        club_name = context.selected_club.name
+    service = PeopleService(db)
+    person = service.update_self_profile(
+        user=current_user,
+        club_id=club_id,
+        payload=payload,
+        actor_user_id=current_user.id,
+        correlation_id=_correlation_id(request),
+    )
+    return service.to_self_profile_response(
+        person=person,
+        account_email=current_user.email,
+        club_name=club_name,
     )
 
 

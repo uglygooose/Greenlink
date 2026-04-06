@@ -2,50 +2,36 @@ import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
+import { useHalfwaySummaryQuery } from "../features/admin-dashboard/halfway-hooks";
 import {
-  useFinanceJournalQuery,
   useFinanceRevenueSummaryQuery,
   useFinanceTransactionVolumeSummaryQuery,
 } from "../features/finance/hooks";
-import { useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
-import type { FinanceJournalEntry } from "../types/finance";
+import type { DashboardActivityItem } from "../types/admin-dashboard";
 import type { OrderSummary } from "../types/orders";
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount);
-  const abs = Math.abs(n).toFixed(2);
-  return n < 0 ? `-R${abs}` : `R${abs}`;
+  return `R${Math.abs(n).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
 }
 
-function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
-
 function statusColor(status: OrderSummary["status"]): string {
   switch (status) {
-    case "placed":
-      return "bg-amber-100 text-amber-800";
-    case "preparing":
-      return "bg-blue-100 text-blue-800";
-    case "ready":
-      return "bg-emerald-100 text-emerald-800";
-    case "collected":
-      return "bg-slate-100 text-slate-500";
-    case "cancelled":
-      return "bg-red-100 text-red-600";
-    default:
-      return "bg-slate-100 text-slate-500";
+    case "placed":    return "bg-amber-100 text-amber-800";
+    case "preparing": return "bg-blue-100 text-blue-800";
+    case "ready":     return "bg-emerald-100 text-emerald-800";
+    case "collected": return "bg-slate-100 text-slate-500";
+    case "cancelled": return "bg-red-100 text-red-600";
+    default:          return "bg-slate-100 text-slate-500";
   }
 }
 
-function tenderIcon(entry: FinanceJournalEntry): string {
+function transactionIcon(entry: DashboardActivityItem): string {
   if (entry.source === "pos") return "point_of_sale";
   if (entry.source === "order") return "restaurant";
   return "receipt";
@@ -55,27 +41,13 @@ export function AdminHalfwayPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
 
-  const journalQuery = useFinanceJournalQuery({ accessToken, selectedClubId });
+  const summaryQuery = useHalfwaySummaryQuery({ accessToken, selectedClubId });
   const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
   const transactionVolumeSummaryQuery = useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId });
-  const allOrdersQuery = useOrdersQuery({ accessToken, selectedClubId, status: null });
-  const activeOrdersQuery = useOrdersQuery({ accessToken, selectedClubId, status: "placed" });
-  const preparingQuery = useOrdersQuery({ accessToken, selectedClubId, status: "preparing" });
-  const readyQuery = useOrdersQuery({ accessToken, selectedClubId, status: "ready" });
 
-  const allOrders = allOrdersQuery.data ?? [];
-  const todayOrders = allOrders.filter((order) => isToday(order.created_at));
-
-  const queueOrders: OrderSummary[] = [
-    ...(activeOrdersQuery.data ?? []),
-    ...(preparingQuery.data ?? []),
-    ...(readyQuery.data ?? []),
-  ].sort((a, b) => a.created_at.localeCompare(b.created_at));
-
-  const recentEntries = [...(journalQuery.data?.entries ?? [])]
-    .filter((entry) => (entry.source === "pos" || entry.source === "order") && isToday(entry.created_at))
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .slice(0, 10);
+  const summary = summaryQuery.data;
+  const queueOrders = summary?.queue_orders ?? [];
+  const recentTransactions = summary?.recent_transactions ?? [];
 
   return (
     <AdminWorkspace
@@ -95,7 +67,7 @@ export function AdminHalfwayPage(): JSX.Element {
                   <span className="font-headline text-3xl font-extrabold text-on-surface">
                     {formatAmount(revenueSummaryQuery.data?.day.operational_revenue ?? "0.00")}
                   </span>
-                  <span className="text-xs font-medium text-primary">backend summary</span>
+                  <span className="text-xs font-medium text-primary">today</span>
                 </>
               )}
             </div>
@@ -114,7 +86,7 @@ export function AdminHalfwayPage(): JSX.Element {
                   <span className="font-headline text-3xl font-extrabold text-on-surface">
                     {transactionVolumeSummaryQuery.data?.day.total_transaction_count ?? 0}
                   </span>
-                  <span className="text-xs font-medium text-emerald-600">backend summary</span>
+                  <span className="text-xs font-medium text-emerald-600">today</span>
                 </>
               )}
             </div>
@@ -126,11 +98,13 @@ export function AdminHalfwayPage(): JSX.Element {
               <MaterialSymbol className="text-amber-500" icon="pending_actions" />
             </div>
             <div className="flex items-baseline gap-2">
-              {activeOrdersQuery.isLoading ? (
+              {summaryQuery.isLoading ? (
                 <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
               ) : (
                 <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{queueOrders.length}</span>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">
+                    {summary?.active_queue_count ?? 0}
+                  </span>
                   <span className="text-xs font-medium text-amber-600">in progress</span>
                 </>
               )}
@@ -143,11 +117,13 @@ export function AdminHalfwayPage(): JSX.Element {
               <MaterialSymbol className="text-secondary" icon="receipt_long" />
             </div>
             <div className="flex items-baseline gap-2">
-              {allOrdersQuery.isLoading ? (
+              {summaryQuery.isLoading ? (
                 <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
               ) : (
                 <>
-                  <span className="font-headline text-3xl font-extrabold text-on-surface">{todayOrders.length}</span>
+                  <span className="font-headline text-3xl font-extrabold text-on-surface">
+                    {summary?.orders_today_count ?? 0}
+                  </span>
                   <span className="text-xs font-medium text-secondary">placed</span>
                 </>
               )}
@@ -170,14 +146,16 @@ export function AdminHalfwayPage(): JSX.Element {
             </NavLink>
           </div>
           <div className="divide-y divide-slate-50">
-            {activeOrdersQuery.isLoading && <p className="px-6 py-4 text-sm text-slate-400">Loading orders...</p>}
-            {!activeOrdersQuery.isLoading && queueOrders.length === 0 && (
+            {summaryQuery.isLoading && (
+              <p className="px-6 py-4 text-sm text-slate-400">Loading orders...</p>
+            )}
+            {!summaryQuery.isLoading && queueOrders.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <MaterialSymbol className="text-3xl text-slate-200" icon="check_circle" />
                 <p className="text-sm text-slate-400">Queue is clear</p>
               </div>
             )}
-            {queueOrders.slice(0, 6).map((order) => (
+            {queueOrders.map((order) => (
               <div className="flex items-center justify-between px-6 py-3" key={order.id}>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold text-on-surface">{order.person.full_name}</span>
@@ -206,18 +184,20 @@ export function AdminHalfwayPage(): JSX.Element {
             </NavLink>
           </div>
           <div className="divide-y divide-slate-50">
-            {journalQuery.isLoading && <p className="px-6 py-4 text-sm text-slate-400">Loading transactions...</p>}
-            {!journalQuery.isLoading && recentEntries.length === 0 && (
+            {summaryQuery.isLoading && (
+              <p className="px-6 py-4 text-sm text-slate-400">Loading transactions...</p>
+            )}
+            {!summaryQuery.isLoading && recentTransactions.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <MaterialSymbol className="text-3xl text-slate-200" icon="receipt_long" />
                 <p className="text-sm text-slate-400">No transactions yet today</p>
               </div>
             )}
-            {recentEntries.map((entry) => (
+            {recentTransactions.map((entry) => (
               <div className="flex items-center justify-between px-6 py-3" key={entry.id}>
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-primary">
-                    <MaterialSymbol className="text-sm" icon={tenderIcon(entry)} />
+                    <MaterialSymbol className="text-sm" icon={transactionIcon(entry)} />
                   </div>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium text-on-surface">{entry.description}</span>

@@ -18,6 +18,8 @@ import type {
   FinanceExportBatchCreateResult,
   FinanceExportBatchDetail,
   FinanceExportBatchListResponse,
+  FinanceExportBatchRegenerateResult,
+  FinanceExportBatchReconciliation,
   FinanceExportBatchVoidResult,
   FinanceTransactionVolumeSummary,
 } from "../../types/finance";
@@ -42,6 +44,8 @@ export const financeKeys = {
   accountingProfiles: (clubId: string) => ["finance", clubId, "accounting-profiles"] as const,
   exportBatchDetail: (clubId: string, batchId: string) =>
     ["finance", clubId, "export-batch-detail", batchId] as const,
+  exportBatchReconciliation: (clubId: string, batchId: string) =>
+    ["finance", clubId, "export-batch-reconciliation", batchId] as const,
   mappedExportPreview: (clubId: string, batchId: string, profileId: string) =>
     ["finance", clubId, "mapped-export-preview", batchId, profileId] as const,
 };
@@ -167,6 +171,23 @@ export function useFinanceExportBatchDetailQuery({
     queryKey: financeKeys.exportBatchDetail(selectedClubId ?? "none", batchId ?? "none"),
     queryFn: () =>
       apiRequest<FinanceExportBatchDetail>(`/api/finance/export-batches/${batchId}`, {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId) && Boolean(batchId),
+  });
+}
+
+export function useFinanceExportBatchReconciliationQuery({
+  accessToken,
+  selectedClubId,
+  batchId,
+}: ExportBatchDetailOptions) {
+  return useQuery<FinanceExportBatchReconciliation>({
+    queryKey: financeKeys.exportBatchReconciliation(selectedClubId ?? "none", batchId ?? "none"),
+    queryFn: () =>
+      apiRequest<FinanceExportBatchReconciliation>(`/api/finance/export-batches/${batchId}/reconciliation`, {
         method: "GET",
         accessToken: accessToken as string,
         selectedClubId: selectedClubId as string,
@@ -312,6 +333,34 @@ export function useVoidFinanceExportBatchMutation() {
   });
 }
 
+export function useRegenerateFinanceExportBatchMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (batchId: string) =>
+      apiRequest<FinanceExportBatchRegenerateResult>(`/api/finance/export-batches/${batchId}/regenerate`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async (result) => {
+      if (!selectedClubId) {
+        return;
+      }
+      await queryClient.invalidateQueries({
+        queryKey: financeKeys.exportBatches(selectedClubId),
+      });
+      queryClient.setQueryData(
+        financeKeys.exportBatchDetail(selectedClubId, result.batch.id),
+        result.batch,
+      );
+    },
+  });
+}
+
 interface DownloadMappedFinanceExportOptions {
   accessToken: string;
   selectedClubId: string;
@@ -371,9 +420,9 @@ export async function downloadMappedFinanceExport({
   profileId,
 }: DownloadMappedFinanceExportOptions): Promise<string> {
   const response = await fetch(
-    `${apiBaseUrl}/api/finance/export-batches/${batchId}/mapped-export/download?profile_id=${profileId}`,
+    `${apiBaseUrl}/api/finance/export-batches/${batchId}/mapped-export/export?profile_id=${profileId}`,
     {
-      method: "GET",
+      method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "X-Club-Id": selectedClubId,

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.domain.people.normalization import build_full_name, normalize_email, split_display_name
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
@@ -28,6 +28,7 @@ from app.schemas.platform import (
     PlatformBootstrapResponse,
 )
 from app.services.auth_service import AuthService
+from app.services.module_catalog import SUPPORTED_MODULE_KEYS
 
 
 class PlatformService:
@@ -205,7 +206,15 @@ class PlatformService:
         existing = self.db.scalars(select(ClubModule).where(ClubModule.club_id == club_id)).all()
         for module in existing:
             self.db.delete(module)
-        for key in sorted(set(module_keys)):
+        normalized = sorted({item.strip() for item in module_keys if item and item.strip()})
+        invalid = [key for key in normalized if key not in SUPPORTED_MODULE_KEYS]
+        if invalid:
+            raise AppError(
+                code="club_module_invalid",
+                message=f"Unsupported module key(s): {', '.join(invalid)}",
+                status_code=400,
+            )
+        for key in normalized:
             self.db.add(ClubModule(club_id=club_id, module_key=key, enabled=True))
 
     def _get_or_create_platform_state(self) -> PlatformState:

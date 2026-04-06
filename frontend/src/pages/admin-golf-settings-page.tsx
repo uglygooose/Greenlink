@@ -18,6 +18,7 @@ import {
   useRuleSetsQuery,
   useTeesQuery,
 } from "../features/golf-settings/hooks";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useSession } from "../session/session-context";
 import type {
   BookingRuleAppliesTo,
@@ -632,11 +633,16 @@ export function AdminGolfSettingsPage(): JSX.Element {
 
   if (!selectedClubId) {
     return (
-      <section className="admin-card">
-        <p className="eyebrow">Golf Settings</p>
-        <h1>Club context required</h1>
-        <p className="muted">Select an active club before loading operational rules.</p>
-      </section>
+      <AdminWorkspace
+        title="Golf Settings"
+        description="Operational rules remain club-scoped and require an active club selection."
+      >
+        <section className="admin-card">
+          <p className="eyebrow">Golf Settings</p>
+          <h2>Club context required</h2>
+          <p className="muted">Select an active club before loading operational rules.</p>
+        </section>
+      </AdminWorkspace>
     );
   }
 
@@ -660,16 +666,38 @@ export function AdminGolfSettingsPage(): JSX.Element {
   }
 
   return (
-    <div className="admin-content-stack">
-      <section className="admin-card">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Operational Rules Foundation</p>
-            <h1>Golf settings</h1>
+    <AdminWorkspace
+      title="Golf Settings"
+      description="Club-scoped configuration, course setup, booking rules, and pricing matrices."
+      kpis={
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Courses</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+              {coursesQuery.data?.length ?? 0}
+            </p>
           </div>
-          <p className="muted">All records are club-scoped and tied to the selected club context.</p>
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Tees</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+              {teesQuery.data?.length ?? 0}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Rulesets</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+              {ruleSetsQuery.data?.length ?? 0}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Matrices</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+              {pricingQuery.data?.length ?? 0}
+            </p>
+          </div>
         </div>
-      </section>
+      }
+    >
 
       <section className="admin-card">
         <div className="section-heading">
@@ -952,7 +980,7 @@ export function AdminGolfSettingsPage(): JSX.Element {
         </div>
         {errors.pricingUpdate ? <p className="error-text">{errors.pricingUpdate}</p> : null}
       </section>
-    </div>
+    </AdminWorkspace>
   );
 }
 

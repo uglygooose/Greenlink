@@ -1,10 +1,11 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-06 11:20 SAST
+Last updated: 2026-04-06 22:40 SAST
 
 ## Canonical Role
 
 This file is the canonical current system definition.
+It reflects the locked completed baseline and is not used as a running work log.
 
 The canonical authority set is:
 - `docs/MASTER_SYSTEM.md`
@@ -43,7 +44,7 @@ The canonical authority set is:
 - Tee sheet read model exists.
 - Booking lifecycle and admin lifecycle actions are live.
 - Admin tee-sheet route is live.
-- Booking creation/editing UX is not built.
+- Booking creation, editing, and move UX are live.
 - Recently fixed: admin tee-sheet now runs inside the router-owned persistent admin shell.
 
 ### FIN - Finance
@@ -51,13 +52,20 @@ The canonical authority set is:
 - FinanceAccount, append-only FinanceTransaction, journal, ledger, revenue summary, outstanding summary, and transaction-volume summary are built.
 - Revenue summary items now carry `revenue_share_pct`; transaction-volume items carry `volume_share_pct`; outstanding summary carries `accounts_in_arrears_pct`, `accounts_in_credit_pct`, and `accounts_settled_pct`, all computed backend-side.
 - Canonical export batches and mapped accounting export profiles are built.
-- No external accounting sync, reconciliation engine, or package-specific validation layer exists.
+- Mapped export execution is backend-owned and tracked on canonical batches.
+- Package-specific validation is live for `generic_journal`, `pastel_like`, and `sage_like`.
+- Batch reconciliation is live and compares persisted canonical payloads against current live finance state.
+- Drift blocks mapped export until reconciliation is resolved.
+- Reconciliation-driven regeneration creates fresh canonical batches with typed supersede/regeneration lineage.
 - Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`) use backend summary endpoints only. No finance math in React.
 - `AdminReportsPage` chart bar widths are driven entirely by backend-provided pct fields.
+- No direct third-party push/pull accounting integration exists beyond tracked export handoff.
 
 ### Orders and POS
 - Partial
 - Player ordering, admin order queue, explicit charge posting, explicit settlement recording, and POS terminal are live.
+- `AdminOrderQueuePage` now uses the normalized `AdminWorkspace` shell/content pattern.
+- `AdminGolfSettingsPage` and `AdminPosTerminalPage` now use the normalized `AdminWorkspace` shell/content pattern.
 - POS terminal (`/admin/pos-terminal`) is nested inside the router-owned `AdminLayout` alongside all other `/admin/*` routes. It renders no standalone navigation chrome.
 
 ### Communications
@@ -71,7 +79,8 @@ The canonical authority set is:
 - Distinct superadmin route group and persistent shell exist.
 - Onboarding progression is backend-owned. Frontend sends step intent only; backend validates transitions.
 - Club registry, club creation, and onboarding workspace (Basic Info, Finance, Rules, Modules) are live.
-- Rules and Modules steps are readiness scaffolds, not full configuration surfaces.
+- Rules step reads real club-scoped rule sets and pricing matrices, including active counts and per-record summaries.
+- Modules step reads the canonical backend module catalog and persists validated club module configuration.
 - Superadmin nav has two live routes: Overview (`/superadmin/overview`) and Clubs (`/superadmin/clubs`).
 - Overview page: fleet KPIs, finance-readiness and team-assignment progress bars, needs-attention list, and clubs table, all derived from the club list endpoint.
 - Overview action items and club rows route into the targeted club detail using the clubs page with a `clubId` query parameter.
@@ -87,9 +96,9 @@ The canonical authority set is:
 - Partial
 - Player home, player ordering, and member booking creation are live.
 - Player booking flow uses the live tee-sheet read model plus `POST /api/golf/bookings` with `source="member_portal"`.
-- No player booking history or member-booking read model exists yet.
-- Player profile route is not built.
-- Recently fixed: player home no longer shows fake upcoming bookings; it now shows an honest empty state until a backend member-booking read model exists.
+- Backend player booking read model exists and the player home upcoming/history surfaces consume it directly.
+- Player profile route exists at `/player/profile` and consumes a dedicated backend self-profile contract.
+- Recently fixed: player home no longer shows fake upcoming bookings; it now renders backend booking truth when present and truthful empty states when none exist.
 
 ## Current Route Surface
 
@@ -114,8 +123,6 @@ The canonical authority set is:
 - `/player/home`
 - `/player/book`
 - `/player/order`
-
-Not built:
 - `/player/profile`
 
 ## Layout and UI Authority
@@ -130,13 +137,9 @@ Not built:
 
 ## Known Gaps
 
-- Tee-sheet booking creation and editing UX is not built.
-- Golf settings remains visually older than the normalized admin workspaces.
-- Rules and Modules onboarding steps are not complete configuration surfaces.
-- No player booking history or member-booking read model exists yet.
-- No external accounting sync or reconciliation engine exists.
-- Superadmin invitation/provisioning workflow is not built.
-- Player profile route is not built.
+- Superadmin does not author golf rules or pricing directly; canonical authoring remains in admin golf settings.
+- No direct third-party push/pull accounting sync exists beyond tracked export handoff.
+- Dashboard aggregation beyond existing finance summaries is not yet centralized in backend read models.
 
 ## Known Risks
 
@@ -147,9 +150,23 @@ Not built:
 
 Latest validation:
 - `frontend`: `npm.cmd run typecheck` - passes clean
-- `frontend`: targeted Vitest suites for shell persistence, route protection, finance pages, player home, and superadmin onboarding
-- `backend`: `py -m uv run pytest -q` - full suite
-- `backend`: `py -m uv run ruff check .` - passes (pre-existing E501 violations in superadmin service are not introduced by this session)
+- `frontend`: `npm.cmd run test` - passes
+- `backend`: `py -m uv run pytest -vv -s` - passes (`154 passed` in about `10m30s`)
+- `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - passes
+- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - passes
+- `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - passes
+- `frontend`: targeted Vitest `src/pages/player-profile-page.test.tsx` - passes
+- `frontend`: targeted Vitest `src/pages/invitation-accept-page.test.tsx` - passes
+- `frontend`: targeted Vitest `src/session/session-provider.test.tsx` - passes
+- `backend`: targeted pytest `backend/tests/test_superadmin_onboarding_foundation.py` - passes
+- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` - passes
+- `backend`: targeted pytest `backend/tests/test_player_booking_read_model.py` - passes
+- `backend`: targeted pytest `backend/tests/test_player_profile.py` - passes
+- `backend`: targeted pytest `backend/tests/test_superadmin_invitations.py` - passes
+- `backend`: targeted pytest `backend/tests/test_invitation_acceptance.py` - passes
+- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` for additive `menu_items` contract - passes
+- `backend`: targeted pytest `backend/tests/test_targets.py` - passes
+- `backend`: `py -m uv run pytest -q` - passes
 
 ## Final Rule
 

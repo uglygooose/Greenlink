@@ -23,6 +23,8 @@ from app.schemas.people import (
     ClubMembershipUpdateRequest,
     ClubPersonResponse,
     PersonCreateRequest,
+    SelfProfileResponse,
+    SelfProfileUpdateRequest,
     PersonResponse,
     PersonUpdateRequest,
 )
@@ -97,6 +99,9 @@ class PeopleService:
         if payload.profile_metadata is not None:
             person.profile_metadata = dict(payload.profile_metadata)
         person.full_name = build_full_name(person.first_name, person.last_name)
+        if person.user is not None:
+            person.user.display_name = person.full_name
+            self.db.add(person.user)
         self.db.add(person)
         self.publisher.publish(
             event_type="person.updated",
@@ -109,6 +114,30 @@ class PeopleService:
         self.db.commit()
         self.db.refresh(person)
         return person
+
+    def update_self_profile(
+        self,
+        *,
+        user: User,
+        club_id: uuid.UUID | None,
+        payload: SelfProfileUpdateRequest,
+        actor_user_id: uuid.UUID | None = None,
+        correlation_id: str | None = None,
+    ) -> Person:
+        if user.person_id is None:
+            raise NotFoundError("Profile not found")
+        person = self.ensure_person_access(person_id=user.person_id, club_id=club_id, user=user)
+        return self.update_person(
+            person,
+            PersonUpdateRequest(
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                email=payload.contact_email,
+                phone=payload.phone,
+            ),
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
+        )
 
     def get_person(self, person_id: uuid.UUID) -> Person:
         person = self.db.scalar(self._base_person_query().where(Person.id == person_id))
@@ -387,6 +416,24 @@ class PeopleService:
             linked_user_id=person.user.id if person.user is not None else None,
             created_at=person.created_at,
             updated_at=person.updated_at,
+        )
+
+    def to_self_profile_response(
+        self,
+        *,
+        person: Person,
+        account_email: str,
+        club_name: str | None,
+    ) -> SelfProfileResponse:
+        return SelfProfileResponse(
+            person_id=person.id,
+            first_name=person.first_name,
+            last_name=person.last_name,
+            full_name=person.full_name,
+            contact_email=person.email,
+            account_email=account_email,
+            phone=person.phone,
+            club_name=club_name,
         )
 
     def to_membership_response(self, membership: ClubMembership) -> ClubMembershipResponse:

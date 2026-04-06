@@ -8,6 +8,7 @@ import {
   markOrderReady,
   postOrderCharge,
 } from "../api/operations";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { OrderManagementDrawer } from "../features/orders/order-management-drawer";
 import { useOrderDetailQuery, useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
@@ -252,213 +253,234 @@ export function AdminOrderQueuePage(): JSX.Element {
           : postChargeMutation.isPending
             ? postChargeMutation.variables ?? null
           : null;
+  const orders = ordersQuery.data ?? [];
+  const collectedCount = orders.filter((order) => order.status === "collected").length;
 
   return (
     <>
-      <div className="p-6">
-          <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-            <div>
-              <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">Order Queue</h1>
-              <p className="text-sm text-on-surface-variant">
-                {selectedFilter === "open"
-                  ? "Defaulting to active operational work for staff handling."
-                  : "Collected orders with charge-posting visibility."}
-              </p>
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-2xl bg-surface-container-highest p-1">
-              <button
-                className={queueFilterButtonClassName(selectedFilter === "open")}
-                onClick={() => {
-                  setSelectedFilter("open");
-                  setSelectedOrderId(null);
-                  setDrawerFeedbackMessage(null);
-                  setDrawerFeedbackTone(null);
-                }}
-                type="button"
-              >
-                Open Orders
-              </button>
-              <button
-                className={queueFilterButtonClassName(selectedFilter === "collected")}
-                onClick={() => {
-                  setSelectedFilter("collected");
-                  setSelectedOrderId(null);
-                  setDrawerFeedbackMessage(null);
-                  setDrawerFeedbackTone(null);
-                }}
-                type="button"
-              >
-                Collected Orders
-              </button>
-            </div>
-          </div>
-
-          {operationNotice ? (
-            <div
-              className={
-                operationNotice.tone === "success"
-                  ? "mb-4 rounded-2xl bg-primary-container/50 px-4 py-3 text-sm font-medium text-on-primary-container"
-                  : "mb-4 rounded-2xl bg-secondary-container px-4 py-3 text-sm font-medium text-on-secondary-container"
-              }
+      <AdminWorkspace
+        title="Order Queue"
+        description={
+          selectedFilter === "open"
+            ? "Defaulting to active operational work for staff handling."
+            : "Collected orders with charge-posting visibility."
+        }
+        actions={
+          <div className="inline-flex items-center gap-1 rounded-2xl bg-surface-container-highest p-1">
+            <button
+              className={queueFilterButtonClassName(selectedFilter === "open")}
+              onClick={() => {
+                setSelectedFilter("open");
+                setSelectedOrderId(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+              }}
+              type="button"
             >
-              {operationNotice.message}
-            </div>
-          ) : null}
-
-          {selectedFilter === "open" ? (
-            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              Open Orders
+            </button>
+            <button
+              className={queueFilterButtonClassName(selectedFilter === "collected")}
+              onClick={() => {
+                setSelectedFilter("collected");
+                setSelectedOrderId(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+              }}
+              type="button"
+            >
+              Collected Orders
+            </button>
+          </div>
+        }
+        kpis={
+          selectedFilter === "open" ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-2xl bg-surface-container-low p-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Placed</p>
                 <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
-                  {statusCount(ordersQuery.data ?? [], "placed")}
+                  {statusCount(orders, "placed")}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-container-low p-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Preparing</p>
                 <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
-                  {statusCount(ordersQuery.data ?? [], "preparing")}
+                  {statusCount(orders, "preparing")}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-container-low p-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Ready</p>
                 <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
-                  {statusCount(ordersQuery.data ?? [], "ready")}
+                  {statusCount(orders, "ready")}
                 </p>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-2xl bg-surface-container-low p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Collected</p>
+                <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{collectedCount}</p>
+              </div>
+              <div className="rounded-2xl bg-surface-container-low p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Posted Charges</p>
+                <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+                  {orders.filter((order) => order.status === "collected" && order.finance_charge_posted).length}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface-container-low p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Pending Charges</p>
+                <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+                  {orders.filter((order) => order.status === "collected" && !order.finance_charge_posted).length}
+                </p>
+              </div>
+            </div>
+          )
+        }
+      >
 
-          <div className="overflow-hidden rounded-2xl bg-surface-container-lowest shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low text-left">
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Order
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Created
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Customer
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Context
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Summary
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant"></th>
+        {operationNotice ? (
+          <div
+            className={
+              operationNotice.tone === "success"
+                ? "rounded-2xl bg-primary-container/50 px-4 py-3 text-sm font-medium text-on-primary-container"
+                : "rounded-2xl bg-secondary-container px-4 py-3 text-sm font-medium text-on-secondary-container"
+            }
+          >
+            {operationNotice.message}
+          </div>
+        ) : null}
+
+        <div className="overflow-hidden rounded-2xl bg-surface-container-lowest shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-surface-container-low text-left">
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Order
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Created
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Customer
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Context
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Summary
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Status
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ordersQuery.isLoading ? (
+                  <tr>
+                    <td className="px-6 py-4 text-sm text-slate-500" colSpan={7}>
+                      Loading orders...
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {ordersQuery.isLoading ? (
-                    <tr>
-                      <td className="px-6 py-4 text-sm text-slate-500" colSpan={7}>
-                        Loading orders...
-                      </td>
-                    </tr>
-                  ) : null}
-                  {ordersQuery.error ? (
-                    <tr>
-                      <td className="px-6 py-4 text-sm text-error" colSpan={7}>
-                        {ordersQuery.error.message}
-                      </td>
-                    </tr>
-                  ) : null}
-                  {visibleOrders.map((order) => (
-                    <tr
-                      className="cursor-pointer transition-colors hover:bg-surface-container-low"
-                      key={order.id}
-                      onClick={() => {
+                ) : null}
+                {ordersQuery.error ? (
+                  <tr>
+                    <td className="px-6 py-4 text-sm text-error" colSpan={7}>
+                      {ordersQuery.error.message}
+                    </td>
+                  </tr>
+                ) : null}
+                {visibleOrders.map((order) => (
+                  <tr
+                    className="cursor-pointer transition-colors hover:bg-surface-container-low"
+                    key={order.id}
+                    onClick={() => {
+                      setOperationNotice(null);
+                      setDrawerFeedbackMessage(null);
+                      setDrawerFeedbackTone(null);
+                      setSelectedOrderId(order.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
                         setOperationNotice(null);
                         setDrawerFeedbackMessage(null);
                         setDrawerFeedbackTone(null);
                         setSelectedOrderId(order.id);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <span className="text-sm font-bold text-on-surface">{formatOrderLabel(order.id)}</span>
+                        <p className="text-[11px] text-slate-500">{order.id}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-on-surface-variant">
+                      {formatCreatedAt(order.created_at)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <span className="text-sm font-medium text-on-surface">{order.person.full_name}</span>
+                        <p className="text-[11px] text-slate-500">{order.person.id}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-on-surface-variant">
+                      {order.booking_id ? `Booking ${order.booking_id.slice(0, 8)}` : "Clubhouse"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <span className="text-sm font-medium text-on-surface">{order.item_summary}</span>
+                        <p className="text-[11px] text-slate-500">{order.item_count} items</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusClassName(order.status)}`}
+                        >
+                          {statusLabel(order.status)}
+                        </span>
+                        {selectedFilter === "collected" ? (
+                          <p className={`text-[11px] font-medium ${chargeStatusClassName(order.finance_charge_posted)}`}>
+                            {order.finance_charge_posted ? "Posted" : "Not Posted"}
+                          </p>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        aria-label={`Open order ${order.id}`}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-[10px] font-bold uppercase tracking-tight text-white transition-colors hover:bg-primary-dim"
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setOperationNotice(null);
                           setDrawerFeedbackMessage(null);
                           setDrawerFeedbackTone(null);
                           setSelectedOrderId(order.id);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <span className="text-sm font-bold text-on-surface">{formatOrderLabel(order.id)}</span>
-                          <p className="text-[11px] text-slate-500">{order.id}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-on-surface-variant">
-                        {formatCreatedAt(order.created_at)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <span className="text-sm font-medium text-on-surface">{order.person.full_name}</span>
-                          <p className="text-[11px] text-slate-500">{order.person.id}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-on-surface-variant">
-                        {order.booking_id ? `Booking ${order.booking_id.slice(0, 8)}` : "Clubhouse"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <span className="text-sm font-medium text-on-surface">{order.item_summary}</span>
-                          <p className="text-[11px] text-slate-500">{order.item_count} items</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusClassName(order.status)}`}
-                          >
-                            {statusLabel(order.status)}
-                          </span>
-                          {selectedFilter === "collected" ? (
-                            <p className={`text-[11px] font-medium ${chargeStatusClassName(order.finance_charge_posted)}`}>
-                              {order.finance_charge_posted ? "Posted" : "Not Posted"}
-                            </p>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          aria-label={`Open order ${order.id}`}
-                          className="rounded-lg bg-primary px-3 py-1.5 text-[10px] font-bold uppercase tracking-tight text-white transition-colors hover:bg-primary-dim"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setOperationNotice(null);
-                            setDrawerFeedbackMessage(null);
-                            setDrawerFeedbackTone(null);
-                            setSelectedOrderId(order.id);
-                          }}
-                          type="button"
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!ordersQuery.isLoading && !ordersQuery.error && visibleOrders.length === 0 ? (
-                    <tr>
-                      <td className="px-6 py-4 text-sm text-slate-500" colSpan={7}>
-                        No orders matched the current filter.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                        }}
+                        type="button"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!ordersQuery.isLoading && !ordersQuery.error && visibleOrders.length === 0 ? (
+                  <tr>
+                    <td className="px-6 py-4 text-sm text-slate-500" colSpan={7}>
+                      No orders matched the current filter.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
           </div>
         </div>
+      </AdminWorkspace>
 
       {selectedOrderId ? (
         orderDetailQuery.isLoading || !orderDetailQuery.data ? (

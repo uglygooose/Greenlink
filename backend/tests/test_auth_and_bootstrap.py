@@ -10,6 +10,7 @@ from app.models import (
     ClubMembership,
     ClubMembershipRole,
     ClubMembershipStatus,
+    ClubModule,
     Person,
     PlatformState,
     User,
@@ -72,6 +73,14 @@ def _assign_membership(
     return membership
 
 
+def _set_modules(db: Session, *, club: Club, module_keys: list[str]) -> None:
+    for module in db.query(ClubModule).filter_by(club_id=club.id).all():
+        db.delete(module)
+    for key in module_keys:
+        db.add(ClubModule(club_id=club.id, module_key=key, enabled=True))
+    db.commit()
+
+
 def _login(client: TestClient, email: str) -> dict[str, object]:
     response = client.post("/api/auth/login", json={"email": email, "password": "password123"})
     assert response.status_code == 200
@@ -94,7 +103,7 @@ def test_platform_bootstrap_locks_after_first_success(
                 "slug": "green-hills",
                 "timezone": "Africa/Johannesburg",
             },
-            "initial_club_modules": ["member_portal"],
+            "initial_club_modules": ["golf"],
         },
     )
     assert response.status_code == 201
@@ -114,6 +123,33 @@ def test_platform_bootstrap_locks_after_first_success(
     state = db_session.get(PlatformState, 1)
     assert state is not None
     assert state.is_initialized is True
+
+
+def test_platform_bootstrap_rejects_invalid_initial_module_keys(
+    client: TestClient, db_session: Session
+) -> None:
+    response = client.post(
+        "/api/platform/bootstrap",
+        json={
+            "superadmin": {
+                "email": "root@example.com",
+                "password": "password123",
+                "display_name": "Root",
+            },
+            "initial_club": {
+                "name": "Green Hills",
+                "slug": "green-hills",
+                "timezone": "Africa/Johannesburg",
+            },
+            "initial_club_modules": ["golf", "member_portal"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "club_module_invalid"
+    state = db_session.get(PlatformState, 1)
+    assert state is not None
+    assert state.is_initialized is False
 
 
 def test_login_refresh_and_logout_flow(client: TestClient, db_session: Session) -> None:
@@ -157,6 +193,56 @@ def test_bootstrap_autoselects_single_active_membership(
     assert payload["selected_club_id"] == str(club.id)
     assert payload["landing_path"] == "/admin/dashboard"
     assert payload["club_selection_required"] is False
+
+
+def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
+    client: TestClient, db_session: Session
+) -> None:
+    user = _create_user(db_session, email="menu-admin@example.com")
+    club = _create_club(db_session, name="Menu Club", slug="menu-club")
+    _assign_membership(
+        db_session, user=user, club=club, role=ClubMembershipRole.CLUB_ADMIN, is_primary=True
+    )
+    _set_modules(db_session, club=club, module_keys=["golf", "finance"])
+
+    login = _login(client, "menu-admin@example.com")
+    response = client.get(
+        "/api/session/bootstrap", headers={"Authorization": f"Bearer {login['access_token']}"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    menu_keys = [item["key"] for item in payload["menu_items"]]
+    assert menu_keys == [
+        "dashboard",
+        "golf_tee_sheet",
+        "golf_settings",
+        "members",
+        "targets",
+        "finance",
+        "reports",
+    ]
+
+
+def test_bootstrap_returns_backend_menu_contract_for_player_shell(
+    client: TestClient, db_session: Session
+) -> None:
+    user = _create_user(db_session, email="menu-player@example.com")
+    club = _create_club(db_session, name="Player Club", slug="player-club")
+    _assign_membership(
+        db_session, user=user, club=club, role=ClubMembershipRole.MEMBER, is_primary=True
+    )
+    _set_modules(db_session, club=club, module_keys=["golf"])
+
+    login = _login(client, "menu-player@example.com")
+    response = client.get(
+        "/api/session/bootstrap", headers={"Authorization": f"Bearer {login['access_token']}"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["role_shell"] == "player"
+    assert [item["key"] for item in payload["menu_items"]] == ["home", "book", "profile"]
 
 
 def test_bootstrap_requires_selection_for_multiple_active_memberships(
@@ -229,6 +315,7 @@ def test_superadmin_can_preview_without_default_club(
     assert response.json()["landing_path"] == "/superadmin/clubs"
     assert response.json()["role_shell"] == "superadmin"
     assert response.json()["available_clubs"][0]["club_id"] == str(club.id)
+    assert [item["key"] for item in response.json()["menu_items"]] == ["overview", "clubs"]
 
     selected = client.get(
         f"/api/session/bootstrap?selected_club_id={club.id}",

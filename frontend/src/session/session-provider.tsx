@@ -106,6 +106,22 @@ export function SessionProvider({ children }: Props): JSX.Element {
     return result;
   }
 
+  async function acceptInvitation(token: string, password: string, displayName: string): Promise<TokenResponse> {
+    const result = await authApi.acceptInvitation({
+      token,
+      password,
+      display_name: displayName,
+    });
+    setAccessToken(result.access_token);
+    await loadBootstrap(getSelectedClubId(), result.access_token);
+    return result;
+  }
+
+  async function activateInvitation(token: string): Promise<void> {
+    await authApi.activateInvitation({ token });
+    await loadBootstrap(getSelectedClubId());
+  }
+
   async function logout(): Promise<void> {
     try {
       await authApi.logout(accessToken);
@@ -177,6 +193,8 @@ export function SessionProvider({ children }: Props): JSX.Element {
     loading,
     initialized,
     login,
+    acceptInvitation,
+    activateInvitation,
     logout,
     refresh,
     reloadBootstrap: loadBootstrap,

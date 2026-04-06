@@ -1,0 +1,151 @@
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, test, vi } from "vitest";
+
+import { SessionContext, type SessionContextValue } from "../../session/session-context";
+import type { SessionBootstrap } from "../../types/session";
+import AdminSidebar from "./AdminSidebar";
+
+const baseBootstrap: SessionBootstrap = {
+  user: {
+    id: "user-1",
+    email: "admin@example.com",
+    display_name: "Admin User",
+    user_type: "user",
+  },
+  available_clubs: [],
+  selected_club_id: "club-1",
+  selected_club: {
+    id: "club-1",
+    name: "Club One",
+    slug: "club-one",
+    location: "Durban",
+    timezone: "Africa/Johannesburg",
+    branding: { logo_object_key: null, name: "Club One" },
+  },
+  club_selection_required: false,
+  role_shell: "admin",
+  default_workspace: "dashboard",
+  landing_path: "/admin/dashboard",
+  module_flags: { golf: true, finance: true, pos: true, communications: true },
+  permissions: [],
+  feature_flags: {},
+};
+
+function renderSidebar(bootstrap: SessionBootstrap): void {
+  const sessionValue: SessionContextValue = {
+    accessToken: "token",
+    bootstrap,
+    loading: false,
+    initialized: true,
+    login: async () => {
+      throw new Error("not implemented");
+    },
+    acceptInvitation: async () => {
+      throw new Error("not implemented");
+    },
+    activateInvitation: async () => undefined,
+    logout: async () => undefined,
+    refresh: async () => {
+      throw new Error("not implemented");
+    },
+    reloadBootstrap: async () => bootstrap,
+    setSelectedClub: async () => undefined,
+  };
+
+  render(
+    <SessionContext.Provider value={sessionValue}>
+      <MemoryRouter>
+        <AdminSidebar />
+      </MemoryRouter>
+    </SessionContext.Provider>,
+  );
+}
+
+describe("AdminSidebar", () => {
+  test("falls back to the static admin menu when backend menu items are absent", () => {
+    renderSidebar(baseBootstrap);
+
+    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /finance/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /book golf/i })).toBeInTheDocument();
+  });
+
+  test("uses backend menu items to hide disabled admin domains during rollout", () => {
+    renderSidebar({
+      ...baseBootstrap,
+      menu_items: [
+        {
+          key: "dashboard",
+          label: "Dashboard",
+          path: "/admin/dashboard",
+          shell: "admin",
+          domain: "dashboard",
+          module_key: null,
+        },
+        {
+          key: "members",
+          label: "Members",
+          path: "/admin/members",
+          shell: "admin",
+          domain: "members",
+          module_key: null,
+        },
+        {
+          key: "reports",
+          label: "Reports",
+          path: "/admin/reports",
+          shell: "admin",
+          domain: "reports",
+          module_key: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /reports/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /finance/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /book golf/i })).not.toBeInTheDocument();
+  });
+
+  test("renders backend-defined admin domains that were not present in the old static menu", () => {
+    renderSidebar({
+      ...baseBootstrap,
+      menu_items: [
+        {
+          key: "dashboard",
+          label: "Dashboard",
+          path: "/admin/dashboard",
+          shell: "admin",
+          domain: "dashboard",
+          module_key: null,
+        },
+        {
+          key: "orders",
+          label: "Orders",
+          path: "/admin/orders",
+          shell: "admin",
+          domain: "orders",
+          module_key: "pos",
+        },
+        {
+          key: "pos_terminal",
+          label: "POS Terminal",
+          path: "/admin/pos-terminal",
+          shell: "admin",
+          domain: "pos",
+          module_key: "pos",
+        },
+      ],
+    });
+
+    expect(screen.getByRole("link", { name: /orders/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /pro shop/i })).not.toBeInTheDocument();
+  });
+});

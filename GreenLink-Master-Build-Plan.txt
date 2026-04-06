@@ -1,8 +1,9 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-06 11:20 SAST
+Last updated: 2026-04-06 (end of Phase 9)
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
+- This file now records the locked completed build baseline rather than active in-flight work.
 
 Phase 1 - Platform, Auth, Identity
 - Platform/auth/bootstrap/tenancy: COMPLETED
@@ -11,9 +12,9 @@ Phase 1 - Platform, Auth, Identity
 
 Phase 2 - Core Club Operations
 - TS-1 Tee sheet read model and booking lifecycle: COMPLETED
-- TS-2 Admin tee-sheet operational surface: PARTIAL
+- TS-2 Admin tee-sheet operational surface: COMPLETED
   - Live: read model, lifecycle actions, persistent admin shell, tee sheet inside router-owned layout
-  - Not built: booking creation/editing UX
+  - Live: booking creation, editing, and move UX
 - Orders queue and finance posting: COMPLETED
 - POS terminal foundation: COMPLETED
   - POS now inside router-owned AdminLayout; no standalone nav chrome
@@ -27,7 +28,12 @@ Phase 3 - Finance
   - All five admin pages (dashboard, finance, reports, members, halfway) use backend summaries only
   - Backend computes `revenue_share_pct`, `volume_share_pct`, and account health pct fields
   - `AdminReportsPage` chart bars are driven entirely by backend-provided pct fields; zero client-side finance math
-- FIN-5 External accounting sync / validation / reconciliation: NOT BUILT
+- FIN-5 External accounting sync / validation / reconciliation: COMPLETED
+  - Live: mapped export execution is backend-owned and tracked on canonical batches
+  - Live: package-specific validation for `generic_journal`, `pastel_like`, and `sage_like`
+  - Live: batch reconciliation endpoint compares persisted canonical payloads against live finance state
+  - Live: drift blocks mapped export until reconciliation is resolved
+  - Live: reconciliation-driven regeneration creates fresh canonical batches with typed supersede/regeneration lineage
 
 Phase 4 - Superadmin
 - SA-1 Superadmin route group and persistent shell: COMPLETED
@@ -35,33 +41,43 @@ Phase 4 - Superadmin
 - SA-3 Onboarding workspace: PARTIAL
   - Live: Basic Info, Finance, Rules, Modules workspace
   - Live: backend-owned onboarding progression
-  - Not built: full Rules and Modules configuration
+  - Live: Rules step reads real club-scoped rule sets and pricing matrices
+  - Live: Modules step reads the canonical module catalog and validated club module config
+  - Not built: superadmin-side authoring remains limited; canonical authoring stays in admin golf settings and club module config
 - SA-4 Superadmin Overview page: COMPLETED
-  - Fleet KPIs (total / live / onboarding / paused)
-  - Finance-readiness and team-assignment progress bars
-  - Needs-attention action list links into the targeted club in the registry
-  - All clubs table is derived from the existing club list endpoint; rows link into targeted club detail
 - SA-5 Club lifecycle management: COMPLETED
-  - Pause (PATCH `/clubs/{id}/status`) toggles active on any club
-  - Reactivate uses the same endpoint and reverses pause
-  - Delete (DELETE `/clubs/{id}`) hard deletes and is blocked for live clubs (409)
-  - Frontend: pause/resume pill plus delete button with confirmation modal in club detail header
 - SA-6 Superadmin to admin workspace handoff: COMPLETED
-  - Finance step opens `/admin/finance` for the selected club
-  - Rules step opens `/admin/golf/settings` for the selected club
-  - Modules step previews `/admin/dashboard` for the selected club
-  - `ProtectedRoute` allows superadmin entry into club-scoped admin routes when a selected club exists
-- SA-7 Invitation / provisioning workflow: NOT BUILT
+- SA-7 Invitation / provisioning workflow: COMPLETED
 
 Phase 5 - Player
 - PL-1 Player home and ordering: PARTIAL
   - Live: home, order, news feed
-  - No fake upcoming bookings; honest empty state
-- PL-2 Player booking flow: PARTIAL
-  - Live: member portal booking entry point from player home
-  - Live: `/player/book` tee-sheet availability browsing and booking creation via `source="member_portal"`
-  - Not built: player booking history / member-booking read model
-- PL-3 Player profile flow: NOT BUILT
+  - Live: player home upcoming bookings and recent history render the backend player-booking read model
+- PL-2 Player booking flow: COMPLETED
+- PL-3 Player profile flow: COMPLETED
+
+Phase 6 - Dashboard Foundation (isolated): COMPLETED
+- Live: GET /api/admin/dashboard/summary - member_count, tee_occupancy, tee_warnings, recent_activity
+- Live: GET /api/admin/halfway/summary - orders_today_count, active_queue_count, queue_orders, recent_transactions
+- Live: GET /api/admin/reports/summary - member_breakdown (role counts, pcts, no_account_count, new_member_count), order_status_breakdown, course_count
+- All three backend aggregation endpoints registered in api/router.py
+
+Phase 7 - Dashboard UI (final layer): COMPLETED
+- AdminDashboardPage: 3 queries (dashboard summary, finance outstanding, finance revenue); no React math
+- AdminHalfwayPage: 3 queries (halfway summary, finance revenue, finance transaction volume); no React math
+- AdminReportsPage: 4 queries (reports summary, finance revenue, finance outstanding, finance transaction volume); no React math
+- AdminMembersPage: no_account_count + new_member_count from reports summary; no client-side date math or cross-query counting
+- No React math or cross-query KPI stitching remains in any admin page
+
+Phase 8 - Finance Extensions: COMPLETED
+- FIN-5 external sync + reconciliation on top of canonical export batches
+
+Phase 9 - System Cleanup: COMPLETED
+- Normalize older admin pages to workspace shell/content pattern
+- Live: `admin-order-queue-page` normalized to `AdminWorkspace` shell/content pattern
+- Live: `admin-golf-settings-page` normalized to `AdminWorkspace` shell/content pattern
+- Live: `admin-pos-terminal-page` normalized to `AdminWorkspace` shell/content pattern
+- Full test gate: npm run typecheck, full Vitest suite, py -m uv run pytest -q
 
 Cross-cutting corrections completed
 - Persistent admin shell (all `/admin/*` including POS now inside AdminLayout): COMPLETED
@@ -72,3 +88,4 @@ Cross-cutting corrections completed
 - Repo authority/status documentation: COMPLETED
 - Superadmin dead nav items replaced with live pages: COMPLETED
 - Superadmin route handoff into GreenLink admin workspaces: COMPLETED
+- Dashboard client-side stitching moved to backend aggregation: COMPLETED

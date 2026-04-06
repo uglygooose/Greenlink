@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
+import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCreatePosTransactionMutation, usePosProductsQuery } from "../features/pos/hooks";
 import { useSession } from "../session/session-context";
 import type { CartItem, TenderType } from "../types/pos";
@@ -27,6 +28,7 @@ export function AdminPosTerminalPage(): JSX.Element {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const categories = ["all", ...Array.from(new Set(products.map((p) => p.category ?? "Other")))];
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const filteredProducts =
     activeCategory === "all"
@@ -123,9 +125,48 @@ export function AdminPosTerminalPage(): JSX.Element {
     }
   }
 
+  if (!selectedClubId) {
+    return (
+      <AdminWorkspace
+        title="POS Terminal"
+        description="Quick-sale checkout requires an active club selection."
+      >
+        <section className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">POS Terminal</p>
+          <h2 className="mt-2 font-headline text-2xl font-bold text-on-surface">Club context required</h2>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Select an active club before loading products and checkout controls.
+          </p>
+        </section>
+      </AdminWorkspace>
+    );
+  }
+
   return (
-    <div className="flex h-full overflow-hidden text-on-surface">
-      <div className="flex-1 overflow-y-auto bg-background p-8">
+    <AdminWorkspace
+      title="POS Terminal"
+      description="Quick-sale checkout with backend-owned transaction posting."
+      kpis={
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Products</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{products.length}</p>
+          </div>
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Cart Items</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">{totalItems}</p>
+          </div>
+          <div className="rounded-2xl bg-surface-container-low p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Cart Total</p>
+            <p className="mt-2 font-headline text-3xl font-extrabold text-on-surface">
+              {formatPrice(subtotal.toFixed(2))}
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <div className="flex min-h-[640px] overflow-hidden rounded-3xl border border-slate-200 bg-background text-on-surface shadow-sm">
+        <div className="flex-1 overflow-y-auto bg-background p-8">
               <div className="mb-6 flex items-center justify-between">
                 <h1 className="font-headline text-2xl font-bold text-on-surface">Quick Sale</h1>
                 <div className="flex gap-2">
@@ -298,6 +339,7 @@ export function AdminPosTerminalPage(): JSX.Element {
                 </button>
               </div>
             </aside>
-    </div>
+      </div>
+    </AdminWorkspace>
   );
 }

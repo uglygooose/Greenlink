@@ -7,15 +7,18 @@ import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
 import { AdminProShopPage } from "../pages/admin-pro-shop-page";
 import { AdminReportsPage } from "../pages/admin-reports-page";
+import { AdminTargetsPage } from "../pages/admin-targets-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
 import { AdminGolfTeeSheetPage } from "../pages/admin-golf-tee-sheet-page";
 import { AdminOrderQueuePage } from "../pages/admin-order-queue-page";
 import { AdminPosTerminalPage } from "../pages/admin-pos-terminal-page";
+import { InvitationAcceptPage } from "../pages/invitation-accept-page";
 import { LoginPage } from "../pages/login-page";
 import { PlayerBookPage } from "../pages/player-book-page";
 import { PlayerOrderPage } from "../pages/player-order-page";
+import { PlayerProfilePage } from "../pages/player-profile-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
 import { SuperadminClubsPage } from "../pages/superadmin-clubs-page";
@@ -38,6 +41,7 @@ function RootRedirect(): JSX.Element {
 const router = createBrowserRouter([
   { path: "/", element: <RootRedirect /> },
   { path: "/login", element: <LoginPage /> },
+  { path: "/accept-invitation", element: <InvitationAcceptPage /> },
   {
     path: "/select-club",
     element: <ProtectedRoute />,
@@ -56,6 +60,7 @@ const router = createBrowserRouter([
           { path: "golf/settings", element: <AdminGolfSettingsPage /> },
           { path: "orders", element: <AdminOrderQueuePage /> },
           { path: "members", element: <AdminMembersPage /> },
+          { path: "targets", element: <AdminTargetsPage /> },
           { path: "finance", element: <AdminFinancePage /> },
           { path: "communications", element: <AdminCommunicationsPage /> },
           { path: "halfway", element: <AdminHalfwayPage /> },
@@ -88,6 +93,7 @@ const router = createBrowserRouter([
       { path: "home", element: <PlayerShellPage /> },
       { path: "book", element: <PlayerBookPage /> },
       { path: "order", element: <PlayerOrderPage /> },
+      { path: "profile", element: <PlayerProfilePage /> },
       { path: "*", element: <Navigate to="/player/home" replace /> },
     ],
   },

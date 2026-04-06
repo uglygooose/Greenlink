@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import (
+    ClubInvitationStatus,
     ClubMembershipRole,
     ClubMembershipStatus,
     ClubOnboardingState,
@@ -69,13 +70,41 @@ class SuperadminFinanceSetupSummary(BaseModel):
 
 class SuperadminRulesSetupSummary(BaseModel):
     rule_set_count: int
+    active_rule_set_count: int
     pricing_matrix_count: int
+    active_pricing_matrix_count: int
     setup_complete: bool
+    rule_sets: list["SuperadminRuleSetSummary"]
+    pricing_matrices: list["SuperadminPricingMatrixSummary"]
+
+
+class SuperadminRuleSetSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    applies_to: str
+    priority: int
+    active: bool
+    rule_count: int
+
+
+class SuperadminPricingMatrixSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    active: bool
+    rule_count: int
+
+
+class SuperadminModuleCatalogItem(BaseModel):
+    key: str
+    label: str
+    description: str
 
 
 class SuperadminModuleSetupSummary(BaseModel):
     enabled_module_keys: list[str]
+    enabled_module_count: int
     setup_complete: bool
+    available_modules: list[SuperadminModuleCatalogItem]
 
 
 class SuperadminAssignedUserSummary(BaseModel):
@@ -139,3 +168,28 @@ class SuperadminClubAssignmentResponse(BaseModel):
     role: ClubMembershipRole
     status: ClubMembershipStatus
     is_primary: bool
+
+
+class SuperadminClubInvitationCreateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    role: ClubMembershipRole
+
+
+class SuperadminClubInvitationResponse(BaseModel):
+    invitation_id: uuid.UUID
+    club_id: uuid.UUID
+    person_id: uuid.UUID
+    membership_id: uuid.UUID
+    linked_user_id: uuid.UUID | None
+    email: str
+    role: ClubMembershipRole
+    status: ClubInvitationStatus
+    membership_status: ClubMembershipStatus
+    expires_at: datetime
+    created_at: datetime
+    accept_token: str | None = None
+
+
+class SuperadminClubInvitationListResponse(BaseModel):
+    items: list[SuperadminClubInvitationResponse]
+    total_count: int

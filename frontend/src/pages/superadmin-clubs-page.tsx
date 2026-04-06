@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import { usePricingMatricesQuery, useRuleSetsQuery } from "../features/golf-settings/hooks";
 import type { SuperadminLayoutContext } from "../routes/superadmin-layout";
 import {
   useAssignSuperadminClubUserMutation,
+  useCreateSuperadminClubInvitationMutation,
   useCreateSuperadminClubMutation,
   useDeleteSuperadminClubMutation,
   useSuperadminAssignmentCandidatesQuery,
   useSuperadminClubOnboardingQuery,
+  useSuperadminClubInvitationsQuery,
   useSuperadminClubsQuery,
   useUpdateSuperadminClubOnboardingMutation,
   useUpdateSuperadminClubStatusMutation,
@@ -19,6 +20,8 @@ import type {
   ClubOnboardingStep,
   ClubRegistryStatus,
   SuperadminOnboardingAction,
+  SuperadminClubInvitationCreateInput,
+  SuperadminClubInvitationResponse,
   SuperadminClubCreateInput,
   SuperadminClubSummary,
 } from "../types/superadmin";
@@ -26,13 +29,19 @@ import type {
 type NoticeTone = "success" | "error" | "info";
 
 const STEP_ORDER: ClubOnboardingStep[] = ["basic_info", "finance", "rules", "modules"];
-const MODULE_CATALOG = ["communications", "finance", "golf", "pos"] as const;
 
 function emptyClubForm(): SuperadminClubCreateInput {
   return {
     name: "",
     location: "",
     timezone: "Africa/Johannesburg",
+  };
+}
+
+function emptyInvitationForm(): SuperadminClubInvitationCreateInput {
+  return {
+    email: "",
+    role: "club_admin",
   };
 }
 
@@ -92,6 +101,16 @@ function currentStepDescription(step: ClubOnboardingStep): { title: string; body
   };
 }
 
+function roleLabel(role: string): string {
+  if (role === "club_admin") return "Club Admin";
+  if (role === "club_staff") return "Staff";
+  return role.replace(/_/g, " ");
+}
+
+function invitationStatusLabel(status: "pending" | "accepted" | "revoked" | "expired"): string {
+  return status.replace(/_/g, " ");
+}
+
 function hasStatus(error: unknown, status: number): boolean {
   return typeof error === "object" && error !== null && "status" in error && error.status === status;
 }
@@ -109,12 +128,13 @@ export function SuperadminClubsPage(): JSX.Element {
   const [financeProfileId, setFinanceProfileId] = useState<string | null>(null);
   const [enabledModuleKeys, setEnabledModuleKeys] = useState<string[]>([]);
   const [assignmentQuery, setAssignmentQuery] = useState("");
+  const [inviteForm, setInviteForm] = useState<SuperadminClubInvitationCreateInput>(emptyInvitationForm);
+  const [latestInvitation, setLatestInvitation] = useState<SuperadminClubInvitationResponse | null>(null);
   const [notice, setNotice] = useState<{ tone: NoticeTone; message: string } | null>(null);
 
   const clubsQuery = useSuperadminClubsQuery({ accessToken });
   const onboardingQuery = useSuperadminClubOnboardingQuery({ accessToken, clubId: selectedClubId });
-  const ruleSetsQuery = useRuleSetsQuery({ accessToken, selectedClubId });
-  const pricingMatricesQuery = usePricingMatricesQuery({ accessToken, selectedClubId });
+  const invitationsQuery = useSuperadminClubInvitationsQuery({ accessToken, clubId: selectedClubId });
   const assignmentCandidatesQuery = useSuperadminAssignmentCandidatesQuery({
     accessToken,
     clubId: selectedClubId,
@@ -125,6 +145,7 @@ export function SuperadminClubsPage(): JSX.Element {
   const updateClubStatusMutation = useUpdateSuperadminClubStatusMutation();
   const deleteClubMutation = useDeleteSuperadminClubMutation();
   const assignClubUserMutation = useAssignSuperadminClubUserMutation();
+  const createInvitationMutation = useCreateSuperadminClubInvitationMutation();
 
   const clubs = clubsQuery.data?.items ?? [];
   const filteredClubs = useMemo(() => {
@@ -168,6 +189,11 @@ export function SuperadminClubsPage(): JSX.Element {
     setFinanceProfileId(onboardingQuery.data.finance.selected_accounting_profile_id);
     setEnabledModuleKeys(onboardingQuery.data.modules.enabled_module_keys);
   }, [onboardingQuery.data]);
+
+  useEffect(() => {
+    setInviteForm(emptyInvitationForm());
+    setLatestInvitation(null);
+  }, [selectedClubId]);
 
   const currentStep = onboardingQuery.data?.club.onboarding_current_step ?? "basic_info";
   const currentStepIndex = STEP_ORDER.indexOf(currentStep);
@@ -334,14 +360,38 @@ export function SuperadminClubsPage(): JSX.Element {
     }
   }
 
+  async function handleCreateInvitation(): Promise<void> {
+    if (!selectedClubId) return;
+    setNotice(null);
+    try {
+      const invitation = await createInvitationMutation.mutateAsync({
+        clubId: selectedClubId,
+        payload: {
+          email: inviteForm.email.trim(),
+          role: inviteForm.role,
+        },
+      });
+      setLatestInvitation(invitation);
+      setInviteForm((current) => ({ ...current, email: "" }));
+      setNotice({
+        tone: "success",
+        message: invitation.linked_user_id
+          ? `${roleLabel(invitation.role)} invitation created for an existing user.`
+          : `${roleLabel(invitation.role)} invitation created.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Failed to create invitation.",
+      });
+    }
+  }
+
   function toggleModule(moduleKey: string): void {
     setEnabledModuleKeys((current) =>
       current.includes(moduleKey) ? current.filter((item) => item !== moduleKey) : [...current, moduleKey].sort(),
     );
   }
-
-  const activeRuleSets = (ruleSetsQuery.data ?? []).filter((item) => item.active);
-  const activePricingMatrices = (pricingMatricesQuery.data ?? []).filter((item) => item.active);
 
   function renderStepBody(): JSX.Element | null {
     if (!onboardingQuery.data) return null;
@@ -480,14 +530,16 @@ export function SuperadminClubsPage(): JSX.Element {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl bg-surface-container-low px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Rule Sets</p>
-              <p className="mt-3 text-2xl font-extrabold text-on-surface">{ruleSetsQuery.data?.length ?? 0}</p>
-              <p className="mt-2 text-sm text-slate-500">{activeRuleSets.length} active rule sets ready for evaluation.</p>
+              <p className="mt-3 text-2xl font-extrabold text-on-surface">{onboardingQuery.data.rules.rule_set_count}</p>
+              <p className="mt-2 text-sm text-slate-500">
+                {onboardingQuery.data.rules.active_rule_set_count} active rule sets ready for evaluation.
+              </p>
             </div>
             <div className="rounded-2xl bg-surface-container-low px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Pricing Matrices</p>
-              <p className="mt-3 text-2xl font-extrabold text-on-surface">{pricingMatricesQuery.data?.length ?? 0}</p>
+              <p className="mt-3 text-2xl font-extrabold text-on-surface">{onboardingQuery.data.rules.pricing_matrix_count}</p>
               <p className="mt-2 text-sm text-slate-500">
-                {activePricingMatrices.length} active pricing matrices available for rollout.
+                {onboardingQuery.data.rules.active_pricing_matrix_count} active pricing matrices available for rollout.
               </p>
             </div>
           </div>
@@ -495,15 +547,14 @@ export function SuperadminClubsPage(): JSX.Element {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Rule Set Detail</p>
-                {ruleSetsQuery.isLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
               </div>
-              {(ruleSetsQuery.data ?? []).map((ruleSet) => (
+              {onboardingQuery.data.rules.rule_sets.map((ruleSet) => (
                 <div key={ruleSet.id} className="rounded-2xl bg-surface-container-low px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-on-surface">{ruleSet.name}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
-                        {ruleSet.applies_to} · priority {ruleSet.priority}
+                        {ruleSet.applies_to} - priority {ruleSet.priority}
                       </p>
                     </div>
                     <span
@@ -516,10 +567,10 @@ export function SuperadminClubsPage(): JSX.Element {
                       {ruleSet.active ? "Active" : "Inactive"}
                     </span>
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-slate-500">{ruleSet.rules.length} rules in this set.</p>
+                  <p className="mt-3 text-xs leading-5 text-slate-500">{ruleSet.rule_count} rules in this set.</p>
                 </div>
               ))}
-              {!ruleSetsQuery.isLoading && (ruleSetsQuery.data?.length ?? 0) === 0 ? (
+              {onboardingQuery.data.rules.rule_sets.length === 0 ? (
                 <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500">
                   No booking rule sets exist for this club yet.
                 </div>
@@ -528,15 +579,14 @@ export function SuperadminClubsPage(): JSX.Element {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Pricing Detail</p>
-                {pricingMatricesQuery.isLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
               </div>
-              {(pricingMatricesQuery.data ?? []).map((matrix) => (
+              {onboardingQuery.data.rules.pricing_matrices.map((matrix) => (
                 <div key={matrix.id} className="rounded-2xl bg-surface-container-low px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-on-surface">{matrix.name}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
-                        {matrix.rules.length} pricing rules
+                        {matrix.rule_count} pricing rules
                       </p>
                     </div>
                     <span
@@ -551,7 +601,7 @@ export function SuperadminClubsPage(): JSX.Element {
                   </div>
                 </div>
               ))}
-              {!pricingMatricesQuery.isLoading && (pricingMatricesQuery.data?.length ?? 0) === 0 ? (
+              {onboardingQuery.data.rules.pricing_matrices.length === 0 ? (
                 <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500">
                   No pricing matrices exist for this club yet.
                 </div>
@@ -584,27 +634,27 @@ export function SuperadminClubsPage(): JSX.Element {
       <div className="space-y-4">
         <div className="rounded-2xl bg-surface-container-low px-5 py-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Enabled Modules</p>
-          <p className="mt-3 text-2xl font-extrabold text-on-surface">{enabledModuleKeys.length}</p>
+          <p className="mt-3 text-2xl font-extrabold text-on-surface">
+            {onboardingQuery.data.modules.enabled_module_count}
+          </p>
           <p className="mt-2 text-sm text-slate-500">These modules are what the club admin and staff shell will expose at go-live.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {MODULE_CATALOG.map((moduleKey) => {
-            const enabled = enabledModuleKeys.includes(moduleKey);
+          {onboardingQuery.data.modules.available_modules.map((module) => {
+            const enabled = enabledModuleKeys.includes(module.key);
             return (
               <button
-                key={moduleKey}
+                key={module.key}
                 className={`rounded-2xl px-5 py-4 text-left ${
                   enabled ? "bg-primary-container/45" : "bg-surface-container-low"
                 }`}
-                onClick={() => toggleModule(moduleKey)}
+                onClick={() => toggleModule(module.key)}
                 type="button"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold capitalize text-on-surface">{moduleKey.replace(/_/g, " ")}</p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {enabled ? "Enabled for club rollout." : "Disabled for now."}
-                    </p>
+                    <p className="text-sm font-semibold text-on-surface">{module.label}</p>
+                    <p className="mt-2 text-xs text-slate-500">{module.description}</p>
                   </div>
                   <span
                     className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
@@ -620,6 +670,11 @@ export function SuperadminClubsPage(): JSX.Element {
             );
           })}
         </div>
+        {onboardingQuery.data.modules.available_modules.length === 0 ? (
+          <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-slate-500">
+            No modules are registered in the catalog yet.
+          </div>
+        ) : null}
         <div className="rounded-2xl bg-surface-container-low px-5 py-4 text-sm leading-6 text-slate-500">
           Module changes persist back into the real club module records that session bootstrap uses for club
           environments.
@@ -871,6 +926,101 @@ export function SuperadminClubsPage(): JSX.Element {
                       </div>
 
                       <div className="mt-4 space-y-3">
+                        <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Invitations</p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Provision club admins and staff before they sign in.
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-surface-container px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+                              {invitationsQuery.data?.total_count ?? 0}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                              Invite Email
+                              <input
+                                aria-label="Invite email"
+                                className="rounded-2xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:bg-surface"
+                                onChange={(event) =>
+                                  setInviteForm((current) => ({ ...current, email: event.target.value }))
+                                }
+                                placeholder="name@club.com"
+                                type="email"
+                                value={inviteForm.email}
+                              />
+                            </label>
+                            <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                              Invite Role
+                              <select
+                                aria-label="Invite role"
+                                className="rounded-2xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:bg-surface"
+                                onChange={(event) =>
+                                  setInviteForm((current) => ({
+                                    ...current,
+                                    role: event.target.value as "club_admin" | "club_staff",
+                                  }))
+                                }
+                                value={inviteForm.role}
+                              >
+                                <option value="club_admin">Club Admin</option>
+                                <option value="club_staff">Staff</option>
+                              </select>
+                            </label>
+                            <button
+                              className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim disabled:opacity-50"
+                              disabled={createInvitationMutation.isPending || inviteForm.email.trim().length === 0}
+                              onClick={() => {
+                                void handleCreateInvitation();
+                              }}
+                              type="button"
+                            >
+                              {createInvitationMutation.isPending ? "Creating invitation..." : "Create Invitation"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {latestInvitation?.accept_token ? (
+                          <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Latest Accept Token</p>
+                            <p className="mt-2 text-sm font-semibold text-on-surface">{latestInvitation.email}</p>
+                            <p className="mt-2 break-all rounded-2xl bg-surface-container-low px-3 py-3 font-mono text-xs text-on-surface">
+                              {latestInvitation.accept_token}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <div className="space-y-2">
+                          {invitationsQuery.data?.items.map((invitation) => (
+                            <div key={invitation.invitation_id} className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-on-surface">{invitation.email}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {roleLabel(invitation.role)} · {invitation.linked_user_id ? "Existing user" : "New user"}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-surface-container px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+                                  {invitationStatusLabel(invitation.status)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                          {invitationsQuery.isLoading ? (
+                            <div className="rounded-2xl bg-white px-4 py-4 text-sm text-slate-500 shadow-sm">
+                              Loading invitations...
+                            </div>
+                          ) : null}
+                          {!invitationsQuery.isLoading && (invitationsQuery.data?.items.length ?? 0) === 0 ? (
+                            <div className="rounded-2xl bg-white px-4 py-4 text-sm text-slate-500 shadow-sm">
+                              No invitations have been created for this club yet.
+                            </div>
+                          ) : null}
+                        </div>
+
                         <input
                           className="w-full rounded-2xl bg-white px-4 py-3 text-sm text-on-surface outline-none shadow-sm"
                           onChange={(event) => setAssignmentQuery(event.target.value)}
@@ -925,7 +1075,7 @@ export function SuperadminClubsPage(): JSX.Element {
                                   <p className="mt-1 text-xs text-slate-500">{assignment.email}</p>
                                 </div>
                                 <span className="rounded-full bg-surface-container px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
-                                  {assignment.role === "club_admin" ? "Club Admin" : "Staff"}
+                                  {roleLabel(assignment.role)}
                                 </span>
                               </div>
                             </div>

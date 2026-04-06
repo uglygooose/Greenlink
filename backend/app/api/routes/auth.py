@@ -11,7 +11,14 @@ from app.auth.dependencies import (
     require_refresh_session,
 )
 from app.models import AuthSession, User
-from app.schemas.auth import LoginRequest, TokenResponse, UserIdentity
+from app.schemas.auth import (
+    InvitationAcceptRequest,
+    InvitationActivateRequest,
+    InvitationActivateResponse,
+    LoginRequest,
+    TokenResponse,
+    UserIdentity,
+)
 from app.services.auth_service import build_auth_service
 
 router = APIRouter()
@@ -39,6 +46,28 @@ def refresh(
     token_response, refresh_token = service.refresh(refresh_session)
     service.set_refresh_cookie(response, refresh_token)
     return token_response
+
+
+@router.post("/invitations/accept", response_model=TokenResponse)
+def accept_invitation(
+    payload: InvitationAcceptRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    service = build_auth_service(db)
+    token_response, refresh_token = service.accept_invitation(payload)
+    service.set_refresh_cookie(response, refresh_token)
+    return token_response
+
+
+@router.post("/invitations/activate", response_model=InvitationActivateResponse)
+def activate_invitation(
+    payload: InvitationActivateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> InvitationActivateResponse:
+    service = build_auth_service(db)
+    return service.activate_invitation(payload, current_user=current_user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

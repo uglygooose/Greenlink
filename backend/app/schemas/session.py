@@ -36,6 +36,15 @@ class SessionUserSummary(BaseModel):
     user_type: UserType
 
 
+class SessionMenuItem(BaseModel):
+    key: str
+    label: str
+    path: str
+    shell: Literal["admin", "player", "superadmin"]
+    domain: str
+    module_key: str | None
+
+
 class SessionBootstrapResponse(BaseModel):
     user: SessionUserSummary
     available_clubs: list[AvailableClubSummary]
@@ -46,5 +55,6 @@ class SessionBootstrapResponse(BaseModel):
     default_workspace: str | None
     landing_path: str
     module_flags: dict[str, bool]
+    menu_items: list[SessionMenuItem]
     permissions: list[str]
     feature_flags: dict[str, bool]

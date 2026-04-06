@@ -4,9 +4,9 @@ import { MaterialSymbol } from "../benchmark/material-symbol";
 import { useSession } from "../../session/session-context";
 
 const NAV_ITEMS = [
-  { label: "Overview", icon: "dashboard",  href: "/superadmin/overview" },
-  { label: "Clubs",    icon: "business",   href: "/superadmin/clubs" },
-];
+  { key: "overview", label: "Overview", icon: "dashboard", href: "/superadmin/overview" },
+  { key: "clubs", label: "Clubs", icon: "business", href: "/superadmin/clubs" },
+] as const;
 
 function SignOutButton(): JSX.Element {
   const { logout } = useSession();
@@ -25,6 +25,10 @@ function SignOutButton(): JSX.Element {
 }
 
 export default function SuperadminSidebar(): JSX.Element {
+  const { bootstrap } = useSession();
+  const menuKeys = new Set((bootstrap?.menu_items ?? []).map((item) => item.key));
+  const navItems = menuKeys.size > 0 ? NAV_ITEMS.filter((item) => menuKeys.has(item.key)) : NAV_ITEMS;
+
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-screen w-72 flex-col bg-surface-container-low px-5 py-6 text-on-surface">
       <div className="space-y-1 px-2">
@@ -35,7 +39,7 @@ export default function SuperadminSidebar(): JSX.Element {
       </div>
 
       <nav className="mt-8 space-y-1">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.label}
             className={({ isActive }) =>

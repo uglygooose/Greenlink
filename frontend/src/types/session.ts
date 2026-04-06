@@ -2,6 +2,7 @@ export type UserType = "superadmin" | "user";
 export type MembershipRole = "club_admin" | "club_staff" | "member";
 export type MembershipStatus = "active" | "invited" | "suspended" | "inactive";
 export type RoleShell = "admin" | "player" | "superadmin" | null;
+export type SessionMenuShell = "admin" | "player" | "superadmin";
 
 export interface SessionUser {
   id: string;
@@ -32,6 +33,15 @@ export interface SelectedClub {
   };
 }
 
+export interface SessionMenuItem {
+  key: string;
+  label: string;
+  path: string;
+  shell: SessionMenuShell;
+  domain: string;
+  module_key: string | null;
+}
+
 export interface SessionBootstrap {
   user: SessionUser;
   available_clubs: AvailableClub[];
@@ -42,6 +52,7 @@ export interface SessionBootstrap {
   default_workspace: string | null;
   landing_path: string;
   module_flags: Record<string, boolean>;
+  menu_items?: SessionMenuItem[];
   permissions: string[];
   feature_flags: Record<string, boolean>;
 }

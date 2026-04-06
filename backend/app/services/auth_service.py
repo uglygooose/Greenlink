@@ -9,16 +9,28 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.core.datetime import utc_now
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AppError, AuthenticationError, NotFoundError
 from app.core.security import (
     create_access_token,
+    hash_one_time_token,
     create_refresh_token,
     hash_password,
     hash_refresh_token,
     verify_password,
 )
-from app.models import AuthSession, ClubMembership, Person, User
-from app.schemas.auth import LoginRequest, TokenResponse, UserIdentity
+from app.domain.people.normalization import build_full_name, split_display_name
+from app.models import (
+    AuthSession,
+    ClubInvitation,
+    ClubInvitationStatus,
+    ClubMembership,
+    ClubMembershipStatus,
+    Person,
+    User,
+    UserType,
+)
+from app.schemas.auth import InvitationAcceptRequest, LoginRequest, TokenResponse, UserIdentity
+from app.schemas.auth import InvitationActivateRequest, InvitationActivateResponse
 
 REFRESH_COOKIE_NAME = "greenlink_refresh_token"
 
@@ -124,6 +136,130 @@ class AuthService:
         self.db.add(user)
         self.db.flush()
         return user
+
+    def accept_invitation(self, payload: InvitationAcceptRequest) -> tuple[TokenResponse, str]:
+        invitation = self.db.scalar(
+            select(ClubInvitation).where(
+                ClubInvitation.token_hash == hash_one_time_token(payload.token),
+                ClubInvitation.status == ClubInvitationStatus.PENDING,
+            )
+        )
+        if invitation is None:
+            raise AuthenticationError("Invitation is not valid")
+        if invitation.expires_at <= utc_now():
+            invitation.status = ClubInvitationStatus.EXPIRED
+            self.db.add(invitation)
+            self.db.commit()
+            raise AuthenticationError("Invitation is no longer valid")
+        if invitation.linked_user_id is not None:
+            raise AppError(
+                code="invitation_existing_user_login_required",
+                message="This invitation belongs to an existing user. Sign in first to complete access activation.",
+                status_code=400,
+            )
+        if self.db.scalar(select(User.id).where(User.email == invitation.normalized_email)) is not None:
+            raise AppError(
+                code="invitation_existing_user_login_required",
+                message="This invitation email is already linked to a user. Sign in first to complete access activation.",
+                status_code=400,
+            )
+
+        person = self.db.get(Person, invitation.person_id)
+        membership = self.db.get(ClubMembership, invitation.membership_id)
+        if person is None or membership is None:
+            raise NotFoundError("Invitation provisioning target not found")
+
+        first_name, last_name = split_display_name(payload.display_name, fallback_email=invitation.email)
+        person.first_name = first_name
+        person.last_name = last_name
+        person.full_name = build_full_name(first_name, last_name)
+        person.email = invitation.normalized_email
+        person.normalized_email = invitation.normalized_email
+        self.db.add(person)
+
+        user = self.create_user(
+            email=invitation.email,
+            password=payload.password,
+            display_name=person.full_name,
+            user_type=UserType.USER,
+            person_id=person.id,
+        )
+        membership.status = ClubMembershipStatus.ACTIVE
+        if not any(
+            existing.status == ClubMembershipStatus.ACTIVE and existing.is_primary
+            for existing in person.memberships
+            if existing.id != membership.id
+        ):
+            membership.is_primary = True
+        self.db.add(membership)
+
+        invitation.status = ClubInvitationStatus.ACCEPTED
+        invitation.accepted_at = utc_now()
+        invitation.accepted_by_user_id = user.id
+        invitation.linked_user_id = user.id
+        self.db.add(invitation)
+        self.db.commit()
+        self.db.refresh(user)
+        return self._issue_tokens(user)[:2]
+
+    def activate_invitation(
+        self,
+        payload: InvitationActivateRequest,
+        *,
+        current_user: User,
+    ) -> InvitationActivateResponse:
+        invitation = self.db.scalar(
+            select(ClubInvitation).where(
+                ClubInvitation.token_hash == hash_one_time_token(payload.token),
+                ClubInvitation.status == ClubInvitationStatus.PENDING,
+            )
+        )
+        if invitation is None:
+            raise AuthenticationError("Invitation is not valid")
+        if invitation.expires_at <= utc_now():
+            invitation.status = ClubInvitationStatus.EXPIRED
+            self.db.add(invitation)
+            self.db.commit()
+            raise AuthenticationError("Invitation is no longer valid")
+        if invitation.linked_user_id is not None and invitation.linked_user_id != current_user.id:
+            raise AppError(
+                code="invitation_user_mismatch",
+                message="This invitation belongs to a different user.",
+                status_code=403,
+            )
+        if invitation.linked_user_id is None and current_user.email.lower() != invitation.normalized_email:
+            raise AppError(
+                code="invitation_user_mismatch",
+                message="This invitation belongs to a different user.",
+                status_code=403,
+            )
+
+        membership = self.db.get(ClubMembership, invitation.membership_id)
+        if membership is None:
+            raise NotFoundError("Invitation provisioning target not found")
+
+        membership.status = ClubMembershipStatus.ACTIVE
+        if not any(
+            existing.status == ClubMembershipStatus.ACTIVE and existing.is_primary
+            for existing in current_user.person.memberships
+            if existing.id != membership.id
+        ):
+            membership.is_primary = True
+        self.db.add(membership)
+
+        invitation.status = ClubInvitationStatus.ACCEPTED
+        invitation.accepted_at = utc_now()
+        invitation.accepted_by_user_id = current_user.id
+        invitation.linked_user_id = current_user.id
+        self.db.add(invitation)
+        self.db.commit()
+        return InvitationActivateResponse(
+            invitation_id=invitation.id,
+            club_id=invitation.club_id,
+            membership_id=invitation.membership_id,
+            status=invitation.status,
+            membership_status=membership.status,
+        )
 
     def _issue_tokens(
         self,

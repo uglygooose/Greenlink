@@ -29,6 +29,8 @@ from app.schemas.finance import (
     FinanceExportBatchCreateResult,
     FinanceExportBatchDetailResponse,
     FinanceExportBatchListResponse,
+    FinanceExportBatchRegenerateResult,
+    FinanceExportBatchReconciliationResponse,
     FinanceOutstandingSummaryResponse,
     FinanceRevenueSummaryResponse,
     FinanceTransactionCreateRequest,
@@ -192,6 +194,20 @@ def get_finance_export_batch(
     return service.get_batch_detail(club_id=context.selected_club.id, batch_id=batch_id)
 
 
+@router.get("/export-batches/{batch_id}/reconciliation", response_model=FinanceExportBatchReconciliationResponse)
+def get_finance_export_batch_reconciliation(
+    batch_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceExportBatchReconciliationResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    service = FinanceExportBatchService(db)
+    return service.get_batch_reconciliation(club_id=context.selected_club.id, batch_id=batch_id)
+
+
 @router.get("/export-batches/{batch_id}/download")
 def download_finance_export_batch(
     batch_id: uuid.UUID,
@@ -306,6 +322,33 @@ def download_mapped_finance_export(
     )
 
 
+@router.post("/export-batches/{batch_id}/mapped-export/export")
+def export_mapped_finance_batch(
+    batch_id: uuid.UUID,
+    profile_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> Response:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    if current_user.person_id is None:
+        raise AuthorizationError("Mapped finance export requires a resolved person context")
+    service = AccountingProfileMappingService(db)
+    result = service.export_mapped_batch(
+        club_id=context.selected_club.id,
+        batch_id=batch_id,
+        profile_id=profile_id,
+        exported_by_person_id=current_user.person_id,
+    )
+    return Response(
+        content=result.content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{result.file_name}"'},
+    )
+
+
 @router.post("/export-batches/{batch_id}/void", response_model=FinanceExportBatchVoidResult)
 def void_finance_export_batch(
     batch_id: uuid.UUID,
@@ -318,3 +361,23 @@ def void_finance_export_batch(
     assert context.selected_club is not None
     service = FinanceExportBatchService(db)
     return service.void_batch(club_id=context.selected_club.id, batch_id=batch_id)
+
+
+@router.post("/export-batches/{batch_id}/regenerate", response_model=FinanceExportBatchRegenerateResult)
+def regenerate_finance_export_batch(
+    batch_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceExportBatchRegenerateResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    if current_user.person_id is None:
+        raise AuthorizationError("Finance export regeneration requires a resolved person context")
+    service = FinanceExportBatchService(db)
+    return service.regenerate_batch(
+        club_id=context.selected_club.id,
+        batch_id=batch_id,
+        regenerated_by_person_id=current_user.person_id,
+    )

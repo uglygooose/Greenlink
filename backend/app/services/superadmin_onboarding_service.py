@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.operations_support import build_default_operating_hours
+from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
+from app.core.security import create_one_time_token, hash_one_time_token
+from app.domain.people.normalization import build_full_name, normalize_email
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountingExportProfile,
     BookingRuleSet,
     Club,
     ClubConfig,
+    ClubInvitation,
+    ClubInvitationStatus,
     ClubMembership,
     ClubMembershipRole,
     ClubMembershipStatus,
@@ -34,15 +40,22 @@ from app.schemas.superadmin import (
     SuperadminClubAssignmentResponse,
     SuperadminClubAssignmentUpsertRequest,
     SuperadminClubCreateRequest,
+    SuperadminClubInvitationCreateRequest,
+    SuperadminClubInvitationListResponse,
+    SuperadminClubInvitationResponse,
     SuperadminClubListResponse,
     SuperadminClubOnboardingDetailResponse,
     SuperadminClubOnboardingUpdateRequest,
     SuperadminClubSummary,
     SuperadminFinanceProfileSummary,
     SuperadminFinanceSetupSummary,
+    SuperadminModuleCatalogItem,
     SuperadminModuleSetupSummary,
+    SuperadminPricingMatrixSummary,
+    SuperadminRuleSetSummary,
     SuperadminRulesSetupSummary,
 )
+from app.services.module_catalog import MODULE_CATALOG, SUPPORTED_MODULE_KEYS
 
 STEP_ORDER = [
     ClubOnboardingStep.BASIC_INFO,
@@ -119,19 +132,50 @@ class SuperadminOnboardingService:
             (profile for profile in finance_profiles if profile.id == config.preferred_accounting_profile_id),
             None,
         )
-        rules_count = self._count_rule_sets(club_id)
-        pricing_count = self._count_pricing_matrices(club_id)
+        rule_sets = self._rule_sets(club_id)
+        pricing_matrices = self._pricing_matrices(club_id)
         enabled_modules = self._enabled_module_keys(club_id)
         assignments = self._assignments(club_id)
         finance_summary = self._finance_summary(finance_profiles, selected_finance_profile)
         rules_summary = SuperadminRulesSetupSummary(
-            rule_set_count=rules_count,
-            pricing_matrix_count=pricing_count,
-            setup_complete=rules_count > 0 and pricing_count > 0,
+            rule_set_count=len(rule_sets),
+            active_rule_set_count=len([ruleset for ruleset in rule_sets if ruleset.active]),
+            pricing_matrix_count=len(pricing_matrices),
+            active_pricing_matrix_count=len([matrix for matrix in pricing_matrices if matrix.active]),
+            setup_complete=len(rule_sets) > 0 and len(pricing_matrices) > 0,
+            rule_sets=[
+                SuperadminRuleSetSummary(
+                    id=ruleset.id,
+                    name=ruleset.name,
+                    applies_to=ruleset.applies_to.value,
+                    priority=ruleset.priority,
+                    active=ruleset.active,
+                    rule_count=len(ruleset.rules),
+                )
+                for ruleset in rule_sets
+            ],
+            pricing_matrices=[
+                SuperadminPricingMatrixSummary(
+                    id=matrix.id,
+                    name=matrix.name,
+                    active=matrix.active,
+                    rule_count=len(matrix.rules),
+                )
+                for matrix in pricing_matrices
+            ],
         )
         modules_summary = SuperadminModuleSetupSummary(
             enabled_module_keys=enabled_modules,
+            enabled_module_count=len(enabled_modules),
             setup_complete=len(enabled_modules) > 0,
+            available_modules=[
+                SuperadminModuleCatalogItem(
+                    key=item.key,
+                    label=item.label,
+                    description=item.description,
+                )
+                for item in MODULE_CATALOG
+            ],
         )
         steps = self._build_steps(
             current_step=ClubOnboardingStep(club.onboarding_current_step),
@@ -387,6 +431,123 @@ class SuperadminOnboardingService:
             is_primary=membership.is_primary,
         )
 
+    def list_invitations(self, *, club_id: uuid.UUID) -> SuperadminClubInvitationListResponse:
+        self._get_club(club_id)
+        invitations = list(
+            self.db.scalars(
+                select(ClubInvitation)
+                .where(ClubInvitation.club_id == club_id)
+                .order_by(ClubInvitation.created_at.desc())
+            ).all()
+        )
+        return SuperadminClubInvitationListResponse(
+            items=[self._invitation_response(invitation) for invitation in invitations],
+            total_count=len(invitations),
+        )
+
+    def create_invitation(
+        self,
+        *,
+        club_id: uuid.UUID,
+        payload: SuperadminClubInvitationCreateRequest,
+        actor_user_id: uuid.UUID,
+        correlation_id: str | None = None,
+    ) -> SuperadminClubInvitationResponse:
+        if payload.role not in {ClubMembershipRole.CLUB_ADMIN, ClubMembershipRole.CLUB_STAFF}:
+            raise AppError(
+                code="superadmin_invitation_role_invalid",
+                message="Only club_admin and club_staff roles may be invited in onboarding",
+                status_code=400,
+            )
+
+        club = self._get_club(club_id)
+        normalized_email = normalize_email(payload.email)
+        if not normalized_email:
+            raise AppError(
+                code="superadmin_invitation_email_invalid",
+                message="Invitation email is required",
+                status_code=400,
+            )
+
+        linked_user = self.db.scalar(
+            select(User).options(selectinload(User.person)).where(User.email == normalized_email)
+        )
+        person = self._resolve_invited_person(normalized_email=normalized_email, linked_user=linked_user)
+        membership = self.db.scalar(
+            select(ClubMembership).where(
+                ClubMembership.club_id == club.id,
+                ClubMembership.person_id == person.id,
+            )
+        )
+
+        if membership is not None and membership.status == ClubMembershipStatus.ACTIVE:
+            raise AppError(
+                code="superadmin_invitation_membership_active",
+                message="This person already has active club access",
+                status_code=409,
+            )
+
+        if membership is None:
+            membership = ClubMembership(
+                club_id=club.id,
+                person_id=person.id,
+                role=payload.role,
+                status=ClubMembershipStatus.INVITED,
+                is_primary=False,
+            )
+            self.db.add(membership)
+            self.db.flush()
+        else:
+            membership.role = payload.role
+            membership.status = ClubMembershipStatus.INVITED
+            self.db.add(membership)
+
+        for invitation in self.db.scalars(
+            select(ClubInvitation).where(
+                ClubInvitation.club_id == club.id,
+                ClubInvitation.normalized_email == normalized_email,
+                ClubInvitation.status == ClubInvitationStatus.PENDING,
+            )
+        ).all():
+            invitation.status = ClubInvitationStatus.REVOKED
+            self.db.add(invitation)
+
+        accept_token = create_one_time_token()
+        invitation = ClubInvitation(
+            club_id=club.id,
+            person_id=person.id,
+            membership_id=membership.id,
+            linked_user_id=linked_user.id if linked_user is not None else None,
+            invited_by_user_id=actor_user_id,
+            accepted_by_user_id=None,
+            email=normalized_email,
+            normalized_email=normalized_email,
+            role=payload.role,
+            status=ClubInvitationStatus.PENDING,
+            token_hash=hash_one_time_token(accept_token),
+            expires_at=utc_now() + timedelta(days=7),
+            accepted_at=None,
+        )
+        self.db.add(invitation)
+        self.publisher.publish(
+            event_type="club_invitation.created",
+            aggregate_type="club_invitation",
+            aggregate_id=str(invitation.id),
+            payload={
+                "club_id": str(club.id),
+                "membership_id": str(membership.id),
+                "email": normalized_email,
+                "role": payload.role.value,
+                "linked_user_id": str(linked_user.id) if linked_user is not None else None,
+            },
+            correlation_id=correlation_id,
+            club_id=club.id,
+            actor_user_id=actor_user_id,
+        )
+        self.db.commit()
+        self.db.refresh(invitation)
+        return self._invitation_response(invitation, accept_token=accept_token)
+
     def _club_summary(
         self,
         club: Club,
@@ -534,8 +695,39 @@ class SuperadminOnboardingService:
         existing = self.db.scalars(select(ClubModule).where(ClubModule.club_id == club_id)).all()
         for module in existing:
             self.db.delete(module)
-        for key in sorted({item.strip() for item in module_keys if item and item.strip()}):
+        for key in self._normalize_module_keys(module_keys):
             self.db.add(ClubModule(club_id=club_id, module_key=key, enabled=True))
+
+    def _rule_sets(self, club_id: uuid.UUID) -> list[BookingRuleSet]:
+        return list(
+            self.db.scalars(
+                select(BookingRuleSet)
+                .options(selectinload(BookingRuleSet.rules))
+                .where(BookingRuleSet.club_id == club_id)
+                .order_by(BookingRuleSet.priority.desc(), BookingRuleSet.name.asc())
+            ).all()
+        )
+
+    def _pricing_matrices(self, club_id: uuid.UUID) -> list[PricingMatrix]:
+        return list(
+            self.db.scalars(
+                select(PricingMatrix)
+                .options(selectinload(PricingMatrix.rules))
+                .where(PricingMatrix.club_id == club_id)
+                .order_by(PricingMatrix.name.asc())
+            ).all()
+        )
+
+    def _normalize_module_keys(self, module_keys: list[str]) -> list[str]:
+        normalized = sorted({item.strip() for item in module_keys if item and item.strip()})
+        invalid = [key for key in normalized if key not in SUPPORTED_MODULE_KEYS]
+        if invalid:
+            raise AppError(
+                code="club_module_invalid",
+                message=f"Unsupported module key(s): {', '.join(invalid)}",
+                status_code=400,
+            )
+        return normalized
 
     def _registry_status(self, club: Club) -> str:
         if not club.active:
@@ -659,3 +851,48 @@ class SuperadminOnboardingService:
             attempt = f"{root}-{suffix}"
             suffix += 1
         return attempt
+
+    def _resolve_invited_person(self, *, normalized_email: str, linked_user: User | None) -> Person:
+        if linked_user is not None and linked_user.person is not None:
+            return linked_user.person
+        person = self.db.scalar(
+            select(Person).options(selectinload(Person.user)).where(Person.normalized_email == normalized_email)
+        )
+        if person is not None:
+            return person
+        local_part = normalized_email.split("@")[0]
+        first_name = local_part.replace(".", " ").replace("_", " ").strip().title() or "Invited"
+        person = Person(
+            first_name=first_name,
+            last_name="User",
+            full_name=build_full_name(first_name, "User"),
+            email=normalized_email,
+            normalized_email=normalized_email,
+            profile_metadata={},
+        )
+        self.db.add(person)
+        self.db.flush()
+        return person
+
+    def _invitation_response(
+        self,
+        invitation: ClubInvitation,
+        *,
+        accept_token: str | None = None,
+    ) -> SuperadminClubInvitationResponse:
+        membership = self.db.get(ClubMembership, invitation.membership_id)
+        assert membership is not None
+        return SuperadminClubInvitationResponse(
+            invitation_id=invitation.id,
+            club_id=invitation.club_id,
+            person_id=invitation.person_id,
+            membership_id=invitation.membership_id,
+            linked_user_id=invitation.linked_user_id,
+            email=invitation.email,
+            role=invitation.role,
+            status=invitation.status,
+            membership_status=membership.status,
+            expires_at=invitation.expires_at,
+            created_at=invitation.created_at,
+            accept_token=accept_token,
+        )

@@ -11,6 +11,7 @@ import type { OrderCreateResult, OrderMenuItem } from "../types/orders";
 const mockUseSession = vi.fn();
 const mockUseOrderMenuQuery = vi.fn();
 const mockUsePublishedNewsFeedQuery = vi.fn();
+const mockUsePlayerBookingReadModelQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -22,6 +23,10 @@ vi.mock("../features/orders/hooks", () => ({
 
 vi.mock("../features/comms/hooks", () => ({
   usePublishedNewsFeedQuery: () => mockUsePublishedNewsFeedQuery(),
+}));
+
+vi.mock("../features/bookings/hooks", () => ({
+  usePlayerBookingReadModelQuery: () => mockUsePlayerBookingReadModelQuery(),
 }));
 
 vi.mock("../api/operations", () => ({
@@ -147,12 +152,20 @@ describe("Player ordering flow", () => {
       isLoading: false,
       error: null,
     });
+
+    mockUsePlayerBookingReadModelQuery.mockReturnValue({
+      data: { upcoming: [], history: [] },
+      isLoading: false,
+      error: null,
+    });
   });
 
   test("adds a clear player-home entry point into the order flow", () => {
     render(
       <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <PlayerShellPage />
+        <QueryClientProvider client={buildQueryClient()}>
+          <PlayerShellPage />
+        </QueryClientProvider>
       </MemoryRouter>,
     );
 

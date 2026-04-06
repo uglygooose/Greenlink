@@ -6,15 +6,17 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AdminReportsPage } from "./admin-reports-page";
 
 const mockUseSession = vi.fn();
+const mockUseReportsSummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceTransactionVolumeSummaryQuery = vi.fn();
-const mockUseCoursesQuery = vi.fn();
-const mockUseClubDirectoryQuery = vi.fn();
-const mockUseOrdersQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
+}));
+
+vi.mock("../features/admin-dashboard/reports-hooks", () => ({
+  useReportsSummaryQuery: () => mockUseReportsSummaryQuery(),
 }));
 
 vi.mock("../features/finance/hooks", () => ({
@@ -23,24 +25,9 @@ vi.mock("../features/finance/hooks", () => ({
   useFinanceTransactionVolumeSummaryQuery: () => mockUseFinanceTransactionVolumeSummaryQuery(),
 }));
 
-vi.mock("../features/golf-settings/hooks", () => ({
-  useCoursesQuery: () => mockUseCoursesQuery(),
-}));
-
-vi.mock("../features/people/hooks", () => ({
-  useClubDirectoryQuery: () => mockUseClubDirectoryQuery(),
-}));
-
-vi.mock("../features/orders/hooks", () => ({
-  useOrdersQuery: () => mockUseOrdersQuery(),
-}));
-
 function renderPage(): void {
   const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }} initialEntries={["/admin/reports"]}>
@@ -57,10 +44,31 @@ describe("AdminReportsPage", () => {
 
     mockUseSession.mockReturnValue({
       accessToken: "token",
-      bootstrap: {
-        selected_club_id: "club-1",
-        user: { display_name: "Club Admin" },
+      bootstrap: { selected_club_id: "club-1", user: { display_name: "Club Admin" } },
+    });
+
+    mockUseReportsSummaryQuery.mockReturnValue({
+      data: {
+        member_breakdown: {
+          total: 3,
+          admin_count: 1,
+          staff_count: 1,
+          member_count: 1,
+          admin_pct: 33,
+          staff_pct: 33,
+          member_pct: 34,
+        },
+        order_status_breakdown: {
+          total: 2,
+          collected_count: 1,
+          by_status: [
+            { status: "placed", count: 1, pct: 50 },
+            { status: "collected", count: 1, pct: 50 },
+          ],
+        },
+        course_count: 1,
       },
+      isLoading: false,
     });
 
     mockUseFinanceRevenueSummaryQuery.mockReturnValue({
@@ -77,8 +85,8 @@ describe("AdminReportsPage", () => {
           operational_revenue: "1900.00",
           charge_count: 12,
           by_source: [
-            { source: "pos", total_revenue: "1700.00", charge_count: 7 },
-            { source: "order", total_revenue: "800.00", charge_count: 5 },
+            { source: "pos", total_revenue: "1700.00", charge_count: 7, revenue_share_pct: 68 },
+            { source: "order", total_revenue: "800.00", charge_count: 5, revenue_share_pct: 32 },
           ],
         },
       },
@@ -91,6 +99,9 @@ describe("AdminReportsPage", () => {
         accounts_in_arrears: 2,
         accounts_in_credit: 3,
         accounts_settled: 3,
+        accounts_in_arrears_pct: "25",
+        accounts_in_credit_pct: "37.5",
+        accounts_settled_pct: "37.5",
         total_outstanding_amount: "410.00",
         unpaid_order_postings_count: 2,
         unpaid_order_postings_amount: "150.00",
@@ -111,44 +122,41 @@ describe("AdminReportsPage", () => {
           date_to: "2026-04-30",
           total_transaction_count: 15,
           by_type: [
-            { type: "charge", transaction_count: 12, total_absolute_amount: "2500.00" },
-            { type: "payment", transaction_count: 3, total_absolute_amount: "900.00" },
+            { type: "charge", transaction_count: 12, total_absolute_amount: "2500.00", volume_share_pct: 80 },
+            { type: "payment", transaction_count: 3, total_absolute_amount: "900.00", volume_share_pct: 20 },
           ],
         },
       },
       isLoading: false,
     });
-
-    mockUseCoursesQuery.mockReturnValue({
-      data: [{ id: "course-1", name: "North" }],
-      isLoading: false,
-    });
-    mockUseClubDirectoryQuery.mockReturnValue({
-      data: [
-        { membership: { role: "MEMBER" } },
-        { membership: { role: "CLUB_STAFF" } },
-        { membership: { role: "CLUB_ADMIN" } },
-      ],
-      isLoading: false,
-    });
-    mockUseOrdersQuery.mockReturnValue({
-      data: [
-        { status: "placed" },
-        { status: "collected" },
-      ],
-      isLoading: false,
-    });
   });
 
-  test("renders report finance sections from summary payloads instead of raw journal or account math", () => {
+  test("renders finance KPIs from backend summaries", () => {
     renderPage();
     const normalizedText = (document.body.textContent ?? "").replace(/[^\dA-Za-z]/g, "");
-
     expect(normalizedText).toContain("R250000");
     expect(screen.getByText("12 charges")).toBeInTheDocument();
     expect(screen.getByText("POS")).toBeInTheDocument();
-    expect(normalizedText).toContain("R170000");
-    expect(screen.getByText("Finance Accounts")).toBeInTheDocument();
     expect(screen.getByText("2 in arrears")).toBeInTheDocument();
+  });
+
+  test("renders member breakdown from reports summary", () => {
+    renderPage();
+    expect(screen.getAllByText("Members").length).toBeGreaterThan(0);
+    expect(screen.getByText("Staff")).toBeInTheDocument();
+    expect(screen.getByText("Admins")).toBeInTheDocument();
+    expect(screen.getAllByText("3").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 courses")).toBeInTheDocument();
+  });
+
+  test("renders order totals from reports summary", () => {
+    renderPage();
+    expect(screen.getByText("1 collected")).toBeInTheDocument();
+  });
+
+  test("renders order status breakdown from reports summary", () => {
+    renderPage();
+    expect(screen.getByText("placed")).toBeInTheDocument();
+    expect(screen.getByText("collected")).toBeInTheDocument();
   });
 });

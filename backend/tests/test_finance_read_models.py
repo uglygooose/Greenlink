@@ -219,8 +219,18 @@ def test_finance_revenue_and_transaction_volume_summaries_are_derived_from_appen
     assert revenue["week"]["total_revenue"] == "130.00"
     assert revenue["week"]["operational_revenue"] == "130.00"
     assert revenue["week"]["by_source"] == [
-        {"source": "pos", "total_revenue": "100.00", "charge_count": 1},
-        {"source": "order", "total_revenue": "30.00", "charge_count": 1},
+        {
+            "source": "pos",
+            "total_revenue": "100.00",
+            "charge_count": 1,
+            "revenue_share_pct": "76.92",
+        },
+        {
+            "source": "order",
+            "total_revenue": "30.00",
+            "charge_count": 1,
+            "revenue_share_pct": "23.08",
+        },
     ]
     assert revenue["month"]["total_revenue"] == "130.00"
 
@@ -235,9 +245,24 @@ def test_finance_revenue_and_transaction_volume_summaries_are_derived_from_appen
     assert volume["week"]["total_transaction_count"] == 3
     assert volume["month"]["total_transaction_count"] == 4
     assert volume["month"]["by_type"] == [
-        {"type": "charge", "transaction_count": 2, "total_absolute_amount": "130.00"},
-        {"type": "adjustment", "transaction_count": 1, "total_absolute_amount": "5.00"},
-        {"type": "payment", "transaction_count": 1, "total_absolute_amount": "10.00"},
+        {
+            "type": "charge",
+            "transaction_count": 2,
+            "total_absolute_amount": "130.00",
+            "volume_share_pct": "89.66",
+        },
+        {
+            "type": "adjustment",
+            "transaction_count": 1,
+            "total_absolute_amount": "5.00",
+            "volume_share_pct": "3.45",
+        },
+        {
+            "type": "payment",
+            "transaction_count": 1,
+            "total_absolute_amount": "10.00",
+            "volume_share_pct": "6.90",
+        },
     ]
 
 

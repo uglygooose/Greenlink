@@ -10,6 +10,7 @@ const mockUseClubDirectoryQuery = vi.fn();
 const mockUseFinanceAccountsQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceAccountLedgerQuery = vi.fn();
+const mockUseReportsSummaryQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -23,6 +24,10 @@ vi.mock("../features/finance/hooks", () => ({
   useFinanceAccountsQuery: () => mockUseFinanceAccountsQuery(),
   useFinanceOutstandingSummaryQuery: () => mockUseFinanceOutstandingSummaryQuery(),
   useFinanceAccountLedgerQuery: () => mockUseFinanceAccountLedgerQuery(),
+}));
+
+vi.mock("../features/admin-dashboard/reports-hooks", () => ({
+  useReportsSummaryQuery: () => mockUseReportsSummaryQuery(),
 }));
 
 function renderPage(): void {
@@ -99,6 +104,25 @@ describe("AdminMembersPage", () => {
 
     mockUseFinanceAccountLedgerQuery.mockReturnValue({
       data: null,
+      isLoading: false,
+    });
+
+    mockUseReportsSummaryQuery.mockReturnValue({
+      data: {
+        member_breakdown: {
+          total: 2,
+          admin_count: 1,
+          staff_count: 0,
+          member_count: 1,
+          admin_pct: 50,
+          staff_pct: 0,
+          member_pct: 50,
+          no_account_count: 1,
+          new_member_count: 1,
+        },
+        order_status_breakdown: { total: 0, collected_count: 0, by_status: [] },
+        course_count: 0,
+      },
       isLoading: false,
     });
   });

@@ -128,6 +128,51 @@ export interface FinanceExportBatchPreviewRow {
   credit_amount: string;
 }
 
+export interface FinanceExportBatchSelectionWindow {
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface FinanceExportBatchVoidEvent {
+  voided_at: string;
+  previous_status: string;
+}
+
+export interface FinanceExportBatchSupersededEvent {
+  superseded_by_regeneration: boolean;
+  superseded_by_person_id?: string | null;
+  replacement_batch_id?: string | null;
+}
+
+export interface FinanceExportBatchRegeneratedEvent {
+  regenerated_from_batch_id: string;
+  regenerated_by_person_id: string;
+}
+
+export interface FinanceExportBatchExportEvent {
+  exported_at: string;
+  exported_by_person_id: string;
+  accounting_profile_id: string;
+  accounting_profile_code: string;
+  accounting_profile_name: string;
+  target_system: string;
+  mapped_file_name: string;
+  mapped_content_hash: string;
+  mapped_row_count: number;
+  output_mode?: string | null;
+}
+
+export interface FinanceExportBatchMetadata {
+  selection_timezone?: string;
+  selection_window?: FinanceExportBatchSelectionWindow;
+  source_counts?: Record<string, number>;
+  transaction_type_counts?: Record<string, number>;
+  void_event?: FinanceExportBatchVoidEvent;
+  superseded_event?: FinanceExportBatchSupersededEvent;
+  regenerated_event?: FinanceExportBatchRegeneratedEvent;
+  export_events?: FinanceExportBatchExportEvent[];
+}
+
 export interface FinanceExportBatchSummary {
   id: string;
   club_id: string;
@@ -142,15 +187,7 @@ export interface FinanceExportBatchSummary {
   transaction_count: number;
   total_debits: string;
   total_credits: string;
-  metadata_json: {
-    selection_timezone?: string;
-    selection_window?: {
-      date_from?: string;
-      date_to?: string;
-    };
-    source_counts?: Record<string, number>;
-    transaction_type_counts?: Record<string, number>;
-  };
+  metadata_json: FinanceExportBatchMetadata;
 }
 
 export interface FinanceExportBatchDetail extends FinanceExportBatchSummary {
@@ -176,6 +213,36 @@ export interface FinanceExportBatchListResponse {
 export interface FinanceExportBatchVoidResult {
   void_applied: boolean;
   batch: FinanceExportBatchDetail;
+}
+
+export interface FinanceExportBatchRegenerateResult {
+  superseded_batch_id: string;
+  batch: FinanceExportBatchDetail;
+}
+
+export interface FinanceExportBatchReconciliationSample {
+  transaction_id: string;
+  entry_date: string;
+  account_customer_code: string | null;
+  description: string;
+  amount: string;
+  source: string;
+  transaction_type: string;
+}
+
+export interface FinanceExportBatchReconciliation {
+  batch_id: string;
+  batch_status: FinanceExportBatchStatus;
+  reconciled_at: string;
+  matches_live_state: boolean;
+  persisted_content_hash: string;
+  current_content_hash: string;
+  persisted_transaction_count: number;
+  current_transaction_count: number;
+  missing_transaction_count: number;
+  new_transaction_count: number;
+  missing_transactions: FinanceExportBatchReconciliationSample[];
+  new_transactions: FinanceExportBatchReconciliationSample[];
 }
 
 export type FinanceTargetSystem = "generic_journal" | "pastel_like" | "sage_like";

@@ -6,9 +6,11 @@ from app.models.booking_rule import BookingRule
 from app.models.booking_rule_set import BookingRuleSet
 from app.models.club import Club
 from app.models.club_config import ClubConfig
+from app.models.club_invitation import ClubInvitation
 from app.models.club_membership import ClubMembership
 from app.models.club_module import ClubModule
 from app.models.club_setting import ClubSetting
+from app.models.club_target import ClubTarget
 from app.models.course import Course
 from app.models.domain_event_record import DomainEventRecord
 from app.models.enums import (
@@ -25,6 +27,7 @@ from app.models.enums import (
     ClubOnboardingStep,
     ClubMembershipRole,
     ClubMembershipStatus,
+    ClubInvitationStatus,
     FinanceAccountStatus,
     FinanceExportBatchStatus,
     FinanceExportProfile,
@@ -80,13 +83,16 @@ __all__ = [
     "BookingRuleType",
     "Club",
     "ClubConfig",
+    "ClubInvitation",
     "ClubOnboardingState",
     "ClubOnboardingStep",
+    "ClubInvitationStatus",
     "ClubMembership",
     "ClubMembershipRole",
     "ClubMembershipStatus",
     "ClubModule",
     "ClubSetting",
+    "ClubTarget",
     "Course",
     "DomainEventRecord",
     "FinanceAccount",

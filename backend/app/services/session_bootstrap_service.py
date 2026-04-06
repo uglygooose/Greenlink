@@ -10,9 +10,31 @@ from app.schemas.session import (
     AvailableClubSummary,
     SelectedClubSummary,
     SessionBootstrapResponse,
+    SessionMenuItem,
     SessionUserSummary,
 )
 from app.tenancy.service import TenancyContext, TenancyService
+
+MENU_ITEMS: tuple[dict[str, str | None], ...] = (
+    {"key": "overview", "label": "Overview", "path": "/superadmin/overview", "shell": "superadmin", "domain": "overview", "module_key": None},
+    {"key": "clubs", "label": "Clubs", "path": "/superadmin/clubs", "shell": "superadmin", "domain": "clubs", "module_key": None},
+    {"key": "dashboard", "label": "Dashboard", "path": "/admin/dashboard", "shell": "admin", "domain": "dashboard", "module_key": None},
+    {"key": "golf_tee_sheet", "label": "Tee Sheet", "path": "/admin/golf/tee-sheet", "shell": "admin", "domain": "golf", "module_key": "golf"},
+    {"key": "golf_settings", "label": "Golf Settings", "path": "/admin/golf/settings", "shell": "admin", "domain": "golf", "module_key": "golf"},
+    {"key": "orders", "label": "Orders", "path": "/admin/orders", "shell": "admin", "domain": "orders", "module_key": "pos"},
+    {"key": "members", "label": "Members", "path": "/admin/members", "shell": "admin", "domain": "members", "module_key": None},
+    {"key": "targets", "label": "Targets", "path": "/admin/targets", "shell": "admin", "domain": "targets", "module_key": None},
+    {"key": "finance", "label": "Finance", "path": "/admin/finance", "shell": "admin", "domain": "finance", "module_key": "finance"},
+    {"key": "communications", "label": "Communications", "path": "/admin/communications", "shell": "admin", "domain": "communications", "module_key": "communications"},
+    {"key": "halfway", "label": "Halfway", "path": "/admin/halfway", "shell": "admin", "domain": "halfway", "module_key": "pos"},
+    {"key": "pro_shop", "label": "Pro Shop", "path": "/admin/pro-shop", "shell": "admin", "domain": "pro_shop", "module_key": "pos"},
+    {"key": "reports", "label": "Reports", "path": "/admin/reports", "shell": "admin", "domain": "reports", "module_key": None},
+    {"key": "pos_terminal", "label": "POS Terminal", "path": "/admin/pos-terminal", "shell": "admin", "domain": "pos", "module_key": "pos"},
+    {"key": "home", "label": "Home", "path": "/player/home", "shell": "player", "domain": "home", "module_key": None},
+    {"key": "book", "label": "Book", "path": "/player/book", "shell": "player", "domain": "bookings", "module_key": "golf"},
+    {"key": "order", "label": "Order", "path": "/player/order", "shell": "player", "domain": "orders", "module_key": "pos"},
+    {"key": "profile", "label": "Profile", "path": "/player/profile", "shell": "player", "domain": "profile", "module_key": None},
+)
 
 
 class SessionBootstrapService:
@@ -68,6 +90,7 @@ class SessionBootstrapService:
             default_workspace=default_workspace,
             landing_path=landing_path,
             module_flags=module_flags,
+            menu_items=self._build_menu_items(role_shell=role_shell, module_flags=module_flags),
             permissions=self._build_permissions(context, hydrated_user.user_type),
             feature_flags={},
         )
@@ -177,3 +200,30 @@ class SessionBootstrapService:
         if role == ClubMembershipRole.CLUB_STAFF:
             return ["club:read", "workspace:staff", "people:read", "bulk_intake:preview"]
         return ["club:read", "workspace:member"]
+
+    def _build_menu_items(
+        self,
+        *,
+        role_shell: str | None,
+        module_flags: dict[str, bool],
+    ) -> list[SessionMenuItem]:
+        if role_shell is None:
+            return []
+        items: list[SessionMenuItem] = []
+        for item in MENU_ITEMS:
+            if item["shell"] != role_shell:
+                continue
+            module_key = item["module_key"]
+            if module_key is not None and not module_flags.get(module_key, False):
+                continue
+            items.append(
+                SessionMenuItem(
+                    key=item["key"],
+                    label=item["label"],
+                    path=item["path"],
+                    shell=item["shell"],
+                    domain=item["domain"],
+                    module_key=module_key,
+                )
+            )
+        return items

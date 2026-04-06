@@ -10,14 +10,14 @@ import { SuperadminClubsPage } from "./superadmin-clubs-page";
 const mockUseSession = vi.fn();
 const mockUseSuperadminClubsQuery = vi.fn();
 const mockUseSuperadminClubOnboardingQuery = vi.fn();
+const mockUseSuperadminClubInvitationsQuery = vi.fn();
 const mockUseSuperadminAssignmentCandidatesQuery = vi.fn();
 const mockUseCreateSuperadminClubMutation = vi.fn();
 const mockUseUpdateSuperadminClubOnboardingMutation = vi.fn();
 const mockUseUpdateSuperadminClubStatusMutation = vi.fn();
 const mockUseDeleteSuperadminClubMutation = vi.fn();
 const mockUseAssignSuperadminClubUserMutation = vi.fn();
-const mockUseRuleSetsQuery = vi.fn();
-const mockUsePricingMatricesQuery = vi.fn();
+const mockUseCreateSuperadminClubInvitationMutation = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -26,18 +26,16 @@ vi.mock("../session/session-context", () => ({
 vi.mock("../features/superadmin/hooks", () => ({
   useSuperadminClubsQuery: (args: unknown) => mockUseSuperadminClubsQuery(args),
   useSuperadminClubOnboardingQuery: (args: unknown) => mockUseSuperadminClubOnboardingQuery(args),
+  useSuperadminClubInvitationsQuery: (args: unknown) => mockUseSuperadminClubInvitationsQuery(args),
   useSuperadminAssignmentCandidatesQuery: (args: unknown) => mockUseSuperadminAssignmentCandidatesQuery(args),
   useCreateSuperadminClubMutation: () => mockUseCreateSuperadminClubMutation(),
   useUpdateSuperadminClubOnboardingMutation: () => mockUseUpdateSuperadminClubOnboardingMutation(),
   useUpdateSuperadminClubStatusMutation: () => mockUseUpdateSuperadminClubStatusMutation(),
   useDeleteSuperadminClubMutation: () => mockUseDeleteSuperadminClubMutation(),
   useAssignSuperadminClubUserMutation: () => mockUseAssignSuperadminClubUserMutation(),
+  useCreateSuperadminClubInvitationMutation: () => mockUseCreateSuperadminClubInvitationMutation(),
 }));
 
-vi.mock("../features/golf-settings/hooks", () => ({
-  useRuleSetsQuery: (args: unknown) => mockUseRuleSetsQuery(args),
-  usePricingMatricesQuery: (args: unknown) => mockUsePricingMatricesQuery(args),
-}));
 
 function buildQueryClient(): QueryClient {
   return new QueryClient({
@@ -106,11 +104,33 @@ function buildOnboardingDetail() {
     rules: {
       rule_set_count: 0,
       pricing_matrix_count: 0,
+      active_rule_set_count: 0,
+      active_pricing_matrix_count: 0,
       setup_complete: false,
+      rule_sets: [],
+      pricing_matrices: [],
     },
     modules: {
       enabled_module_keys: ["golf"],
+      enabled_module_count: 1,
       setup_complete: true,
+      available_modules: [
+        {
+          key: "communications",
+          label: "Communications",
+          description: "Messaging and alerts for club operations.",
+        },
+        {
+          key: "finance",
+          label: "Finance",
+          description: "Accounting exports and reconciliation workflows.",
+        },
+        {
+          key: "golf",
+          label: "Golf",
+          description: "Tee sheet booking and on-course rules.",
+        },
+      ],
     },
     assignments: [
       {
@@ -124,6 +144,23 @@ function buildOnboardingDetail() {
         is_primary: true,
       },
     ],
+  };
+}
+
+function buildInvitation() {
+  return {
+    invitation_id: "invite-1",
+    club_id: "club-1",
+    person_id: "person-4",
+    membership_id: "membership-4",
+    linked_user_id: null,
+    email: "invitee@example.com",
+    role: "club_admin" as const,
+    status: "pending" as const,
+    membership_status: "invited" as const,
+    expires_at: "2026-04-09T10:00:00Z",
+    created_at: "2026-04-06T10:00:00Z",
+    accept_token: null,
   };
 }
 
@@ -147,6 +184,14 @@ describe("SuperadminClubsPage", () => {
 
     mockUseSuperadminClubOnboardingQuery.mockReturnValue({
       data: buildOnboardingDetail(),
+    });
+
+    mockUseSuperadminClubInvitationsQuery.mockReturnValue({
+      data: {
+        items: [buildInvitation()],
+        total_count: 1,
+      },
+      isLoading: false,
     });
 
     mockUseSuperadminAssignmentCandidatesQuery.mockReturnValue({
@@ -182,15 +227,11 @@ describe("SuperadminClubsPage", () => {
       isPending: false,
     });
 
-    mockUseRuleSetsQuery.mockReturnValue({
-      data: [{ id: "rules-1", name: "Member Base", applies_to: "member", priority: 10, active: true, rules: [{}, {}] }],
-      isLoading: false,
+    mockUseCreateSuperadminClubInvitationMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ ...buildInvitation(), accept_token: "token-123" }),
+      isPending: false,
     });
 
-    mockUsePricingMatricesQuery.mockReturnValue({
-      data: [{ id: "pricing-1", name: "Standard", active: true, rules: [{}, {}] }],
-      isLoading: false,
-    });
   });
 
   test("renders the selected club onboarding workspace", async () => {
@@ -237,13 +278,38 @@ describe("SuperadminClubsPage", () => {
     });
   });
 
+  test("creates an invitation and renders the accept token returned by the backend", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      ...buildInvitation(),
+      email: "new.admin@example.com",
+      role: "club_admin",
+      accept_token: "token-123",
+    });
+    mockUseCreateSuperadminClubInvitationMutation.mockReturnValue({ mutateAsync, isPending: false });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/invite email/i), { target: { value: "new.admin@example.com" } });
+    fireEvent.change(screen.getByLabelText(/invite role/i), { target: { value: "club_admin" } });
+    fireEvent.click(screen.getByRole("button", { name: /create invitation/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        clubId: "club-1",
+        payload: { email: "new.admin@example.com", role: "club_admin" },
+      });
+      expect(screen.getByText("token-123")).toBeInTheDocument();
+    });
+  });
+
   test("persists module toggles through the onboarding update flow", async () => {
     const mutateAsync = vi.fn().mockResolvedValue({
       ...buildOnboardingDetail(),
       club: { ...buildClub(), onboarding_current_step: "modules" },
       modules: {
         enabled_module_keys: ["communications", "finance"],
+        enabled_module_count: 2,
         setup_complete: true,
+        available_modules: buildOnboardingDetail().modules.available_modules,
       },
     });
     mockUseUpdateSuperadminClubOnboardingMutation.mockReturnValue({ mutateAsync, isPending: false });

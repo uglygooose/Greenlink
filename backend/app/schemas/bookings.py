@@ -128,6 +128,30 @@ class BookingSummary(BaseModel):
     participants: list[BookingParticipantSummary] = Field(default_factory=list)
 
 
+class PlayerBookingReadModelItem(BaseModel):
+    id: uuid.UUID
+    status: BookingStatus
+    source: BookingSource
+    slot_datetime: datetime
+    local_date: str
+    local_time: str
+    course_name: str
+    tee_name: str | None = None
+    start_lane: StartLane | None = None
+    party_size: int
+    primary_participant_name: str | None = None
+    participant_names: list[str] = Field(default_factory=list)
+    fee_label: str | None = None
+    payment_status: BookingPaymentStatus | None = None
+
+
+class PlayerBookingReadModelResponse(BaseModel):
+    timezone: str
+    reference_datetime: datetime
+    upcoming: list[PlayerBookingReadModelItem] = Field(default_factory=list)
+    history: list[PlayerBookingReadModelItem] = Field(default_factory=list)
+
+
 class BookingCreateResult(BaseModel):
     decision: BookingCreateDecision
     booking: BookingSummary | None = None

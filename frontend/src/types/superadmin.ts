@@ -54,13 +54,41 @@ export interface SuperadminFinanceSetupSummary {
 
 export interface SuperadminRulesSetupSummary {
   rule_set_count: number;
+  active_rule_set_count: number;
   pricing_matrix_count: number;
+  active_pricing_matrix_count: number;
   setup_complete: boolean;
+  rule_sets: SuperadminRuleSetSummary[];
+  pricing_matrices: SuperadminPricingMatrixSummary[];
+}
+
+export interface SuperadminRuleSetSummary {
+  id: string;
+  name: string;
+  applies_to: string;
+  priority: number;
+  active: boolean;
+  rule_count: number;
+}
+
+export interface SuperadminPricingMatrixSummary {
+  id: string;
+  name: string;
+  active: boolean;
+  rule_count: number;
+}
+
+export interface SuperadminModuleCatalogItem {
+  key: string;
+  label: string;
+  description: string;
 }
 
 export interface SuperadminModuleSetupSummary {
   enabled_module_keys: string[];
+  enabled_module_count: number;
   setup_complete: boolean;
+  available_modules: SuperadminModuleCatalogItem[];
 }
 
 export interface SuperadminAssignedUserSummary {
@@ -131,4 +159,31 @@ export interface SuperadminClubAssignmentResponse {
   role: Extract<MembershipRole, "club_admin" | "club_staff">;
   status: MembershipStatus;
   is_primary: boolean;
+}
+
+export type SuperadminClubInvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+
+export interface SuperadminClubInvitationCreateInput {
+  email: string;
+  role: Extract<MembershipRole, "club_admin" | "club_staff">;
+}
+
+export interface SuperadminClubInvitationResponse {
+  invitation_id: string;
+  club_id: string;
+  person_id: string;
+  membership_id: string;
+  linked_user_id: string | null;
+  email: string;
+  role: Extract<MembershipRole, "club_admin" | "club_staff">;
+  status: SuperadminClubInvitationStatus;
+  membership_status: MembershipStatus;
+  expires_at: string;
+  created_at: string;
+  accept_token: string | null;
+}
+
+export interface SuperadminClubInvitationListResponse {
+  items: SuperadminClubInvitationResponse[];
+  total_count: number;
 }

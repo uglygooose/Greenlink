@@ -447,7 +447,7 @@ export function PlayerBookPage(): JSX.Element {
           { label: "Home", icon: "home", to: "/player/home" },
           { label: "Book", icon: "golf_course", to: "/player/book", isActive: true },
           { label: "Order", icon: "local_cafe", to: "/player/order" },
-          { label: "Profile", icon: "person" },
+          { label: "Profile", icon: "person", to: "/player/profile" },
         ]}
         labelClassName="font-label font-medium text-[10px]"
       />

@@ -8,6 +8,7 @@ import {
   useFinanceOutstandingSummaryQuery,
 } from "../features/finance/hooks";
 import { useClubDirectoryQuery } from "../features/people/hooks";
+import { useReportsSummaryQuery } from "../features/admin-dashboard/reports-hooks";
 import { useSession } from "../session/session-context";
 import type { FinanceAccountSummary } from "../types/finance";
 import type { ClubPersonEntry } from "../types/people";
@@ -149,6 +150,7 @@ export function AdminMembersPage(): JSX.Element {
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
   const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
   const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
+  const reportsSummaryQuery = useReportsSummaryQuery({ accessToken, selectedClubId });
 
   const members = directoryQuery.data ?? [];
   const accounts = accountsQuery.data ?? [];
@@ -181,12 +183,7 @@ export function AdminMembersPage(): JSX.Element {
       )
     : members;
 
-  const noAccountCount = members.filter((member) => !accountByPersonId.has(member.person.id)).length;
-  const newMemberCount = members.filter((member) => {
-    const joinedAt = new Date(member.membership.joined_at).getTime();
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    return joinedAt >= thirtyDaysAgo;
-  }).length;
+  const reports = reportsSummaryQuery.data;
   const pendingCount = 0;
 
   return (
@@ -254,13 +251,15 @@ export function AdminMembersPage(): JSX.Element {
                 <MaterialSymbol className="text-secondary" icon="person_add" />
               </div>
               <div className="flex items-baseline gap-2">
-                {directoryQuery.isLoading ? (
+                {reportsSummaryQuery.isLoading ? (
                   <span className="font-headline text-3xl font-extrabold text-slate-300">—</span>
                 ) : (
                   <>
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">{noAccountCount}</span>
+                    <span className="font-headline text-3xl font-extrabold text-on-surface">
+                      {reports?.member_breakdown.no_account_count ?? 0}
+                    </span>
                     <span className="text-xs font-medium text-secondary">
-                      {newMemberCount} new · {pendingCount} pending
+                      {reports?.member_breakdown.new_member_count ?? 0} new · {pendingCount} pending
                     </span>
                   </>
                 )}

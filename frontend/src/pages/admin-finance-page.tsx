@@ -11,11 +11,13 @@ import {
   useCreateFinanceExportBatchMutation,
   useFinanceAccountsQuery,
   useFinanceExportBatchDetailQuery,
+  useFinanceExportBatchReconciliationQuery,
   useFinanceExportBatchesQuery,
   useFinanceJournalQuery,
   useFinanceOutstandingSummaryQuery,
   useFinanceRevenueSummaryQuery,
   useFinanceTransactionVolumeSummaryQuery,
+  useRegenerateFinanceExportBatchMutation,
   useUpdateAccountingExportProfileMutation,
   useVoidFinanceExportBatchMutation,
 } from "../features/finance/hooks";
@@ -139,6 +141,19 @@ function mapTypeLabel(type: ProfileMappingType): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
+function latestExportEvent(batch: { metadata_json: { export_events?: { exported_at: string }[] } }) {
+  const events = batch.metadata_json.export_events ?? [];
+  return events.length > 0 ? events[events.length - 1] : null;
+}
+
+function isSupersededBatch(batch: { metadata_json: { superseded_event?: { superseded_by_regeneration: boolean } } }) {
+  return batch.metadata_json.superseded_event?.superseded_by_regeneration === true;
+}
+
+function isRegeneratedBatch(batch: { metadata_json: { regenerated_event?: { regenerated_from_batch_id: string } } }) {
+  return Boolean(batch.metadata_json.regenerated_event?.regenerated_from_batch_id);
+}
+
 export function AdminFinancePage(): JSX.Element {
   const { bootstrap, accessToken } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
@@ -160,6 +175,11 @@ export function AdminFinancePage(): JSX.Element {
   const transactionVolumeSummaryQuery = useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId });
   const exportBatchesQuery = useFinanceExportBatchesQuery({ accessToken, selectedClubId });
   const exportBatchDetailQuery = useFinanceExportBatchDetailQuery({ accessToken, selectedClubId, batchId: selectedBatchId });
+  const exportBatchReconciliationQuery = useFinanceExportBatchReconciliationQuery({
+    accessToken,
+    selectedClubId,
+    batchId: selectedBatchId,
+  });
   const accountingProfilesQuery = useAccountingExportProfilesQuery({ accessToken, selectedClubId });
   const mappedExportPreviewQuery = useAccountingMappedExportPreviewQuery({
     accessToken,
@@ -169,6 +189,7 @@ export function AdminFinancePage(): JSX.Element {
   });
   const createExportBatchMutation = useCreateFinanceExportBatchMutation();
   const voidExportBatchMutation = useVoidFinanceExportBatchMutation();
+  const regenerateExportBatchMutation = useRegenerateFinanceExportBatchMutation();
   const createAccountingProfileMutation = useCreateAccountingExportProfileMutation();
   const updateAccountingProfileMutation = useUpdateAccountingExportProfileMutation();
 
@@ -176,6 +197,7 @@ export function AdminFinancePage(): JSX.Element {
   const journal = journalQuery.data;
   const exportBatches = exportBatchesQuery.data?.batches ?? [];
   const selectedBatch = exportBatchDetailQuery.data;
+  const selectedBatchReconciliation = exportBatchReconciliationQuery.data;
   const accountingProfiles = accountingProfilesQuery.data?.profiles ?? [];
   const mappedPreview = mappedExportPreviewQuery.data;
   const outstandingSummary = outstandingSummaryQuery.data;
@@ -305,9 +327,10 @@ export function AdminFinancePage(): JSX.Element {
         batchId: selectedBatch.id,
         profileId: selectedAccountingProfileId,
       });
-      setNotice({ tone: "success", message: `${fileName} downloaded successfully.` });
+      await Promise.all([exportBatchesQuery.refetch(), exportBatchDetailQuery.refetch()]);
+      setNotice({ tone: "success", message: `${fileName} exported and downloaded successfully.` });
     } catch (error) {
-      setNotice({ tone: "error", message: errorMessage(error, "Failed to download mapped export.") });
+      setNotice({ tone: "error", message: errorMessage(error, "Failed to export mapped batch.") });
     } finally {
       setIsDownloadingMapped(false);
     }
@@ -326,6 +349,22 @@ export function AdminFinancePage(): JSX.Element {
       });
     } catch (error) {
       setNotice({ tone: "error", message: errorMessage(error, "Failed to void export batch.") });
+    }
+  }
+
+  async function handleRegenerateBatch(): Promise<void> {
+    if (!selectedBatch) return;
+    setNotice(null);
+    try {
+      const result = await regenerateExportBatchMutation.mutateAsync(selectedBatch.id);
+      setSelectedBatchId(result.batch.id);
+      await exportBatchesQuery.refetch();
+      setNotice({
+        tone: "success",
+        message: `Batch regenerated for ${batchRangeLabel(result.batch.date_from, result.batch.date_to)}.`,
+      });
+    } catch (error) {
+      setNotice({ tone: "error", message: errorMessage(error, "Failed to regenerate export batch.") });
     }
   }
 
@@ -520,6 +559,9 @@ export function AdminFinancePage(): JSX.Element {
                     <span>{batch.transaction_count} rows</span>
                     <span>Debits {formatCurrency(batch.total_debits, false)}</span>
                     <span>Credits {formatCurrency(batch.total_credits, false)}</span>
+                    {latestExportEvent(batch) ? <span>Last handoff {formatDateTime(latestExportEvent(batch)!.exported_at)}</span> : null}
+                    {isSupersededBatch(batch) ? <span>Superseded by regeneration</span> : null}
+                    {isRegeneratedBatch(batch) ? <span>Regenerated batch</span> : null}
                   </div>
                 </button>
               ))}
@@ -733,7 +775,129 @@ export function AdminFinancePage(): JSX.Element {
                       <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Generated By</dt><dd className="font-mono text-[12px] text-slate-700">{selectedBatch.created_by_person_id}</dd></div>
                       <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Transactions</dt><dd className="text-slate-700">{selectedBatch.transaction_count}</dd></div>
                       <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Hash</dt><dd className="truncate font-mono text-[12px] text-slate-700">{selectedBatch.content_hash}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Selection Timezone</dt><dd className="text-slate-700">{selectedBatch.metadata_json.selection_timezone ?? "-"}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">External Handoffs</dt><dd className="text-slate-700">{selectedBatch.metadata_json.export_events?.length ?? 0}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Superseded</dt><dd className="text-slate-700">{selectedBatch.metadata_json.superseded_event?.superseded_by_regeneration ? "Yes" : "No"}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Replacement Batch</dt><dd className="truncate font-mono text-[12px] text-slate-700">{selectedBatch.metadata_json.superseded_event?.replacement_batch_id ?? "-"}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Regenerated From</dt><dd className="truncate font-mono text-[12px] text-slate-700">{selectedBatch.metadata_json.regenerated_event?.regenerated_from_batch_id ?? "-"}</dd></div>
                     </dl>
+                  </div>
+
+                  {selectedBatch.metadata_json.regenerated_event ? (
+                    <div className="rounded-xl border border-primary/20 bg-primary-container/15 p-4 text-sm text-on-primary-container">
+                      <p className="font-bold">This batch was created by regeneration.</p>
+                      <p className="mt-1 text-xs text-on-primary-container/80">
+                        Replaced batch {selectedBatch.metadata_json.regenerated_event.regenerated_from_batch_id}.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {selectedBatch.metadata_json.export_events?.length ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">External Sync History</p>
+                        <h3 className="font-headline text-base font-bold text-slate-900">Recorded Handoffs</h3>
+                        <p className="text-sm text-slate-500">Each export event is persisted on the canonical batch.</p>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {selectedBatch.metadata_json.export_events.map((event) => (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4" key={`${event.mapped_content_hash}-${event.exported_at}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-sm font-bold text-slate-900">{event.accounting_profile_name}</p>
+                                <p className="text-xs text-slate-500">{event.accounting_profile_code} • {targetSystemLabel(event.target_system)}</p>
+                              </div>
+                              <span className="rounded-full bg-primary-container px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-on-primary-container">exported</span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                              <span>{formatDateTime(event.exported_at)}</span>
+                              <span>{event.mapped_row_count} rows</span>
+                              <span>{event.output_mode ?? "mapped export"}</span>
+                            </div>
+                            <div className="mt-3 rounded-lg bg-white px-3 py-2 text-[11px] text-slate-600">
+                              <div>{event.mapped_file_name}</div>
+                              <div className="truncate font-mono text-slate-500">{event.mapped_content_hash}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Reconciliation</p>
+                      <h3 className="font-headline text-base font-bold text-slate-900">Live Batch Check</h3>
+                      <p className="text-sm text-slate-500">Compare the persisted canonical payload against the current live transaction set for the same range.</p>
+                    </div>
+                    {exportBatchReconciliationQuery.isLoading ? (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">Running reconciliation...</div>
+                    ) : null}
+                    {exportBatchReconciliationQuery.isError ? (
+                      <div className="mt-4 rounded-xl border border-error/20 bg-error-container/40 p-4 text-sm text-on-error-container">Failed to reconcile batch.</div>
+                    ) : null}
+                    {selectedBatchReconciliation ? (
+                      <>
+                        <div className={`mt-4 rounded-xl border p-4 ${selectedBatchReconciliation.matches_live_state ? "border-secondary/20 bg-secondary-container/25" : "border-error/20 bg-error-container/40"}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className={`text-sm font-bold ${selectedBatchReconciliation.matches_live_state ? "text-on-secondary-container" : "text-on-error-container"}`}>
+                                {selectedBatchReconciliation.matches_live_state ? "Batch matches current live state" : "Batch has drifted from current live state"}
+                              </p>
+                              <p className={`mt-1 text-xs ${selectedBatchReconciliation.matches_live_state ? "text-on-secondary-container/80" : "text-on-error-container/80"}`}>
+                                Reconciled {formatDateTime(selectedBatchReconciliation.reconciled_at)}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${selectedBatchReconciliation.matches_live_state ? "bg-secondary-container text-on-secondary-container" : "bg-error-container text-on-error-container"}`}>
+                              {selectedBatchReconciliation.matches_live_state ? "in sync" : "drift"}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div><span className="text-slate-500">Persisted rows</span><div className="font-semibold text-slate-900">{selectedBatchReconciliation.persisted_transaction_count}</div></div>
+                            <div><span className="text-slate-500">Current rows</span><div className="font-semibold text-slate-900">{selectedBatchReconciliation.current_transaction_count}</div></div>
+                            <div><span className="text-slate-500">Missing now</span><div className="font-semibold text-slate-900">{selectedBatchReconciliation.missing_transaction_count}</div></div>
+                            <div><span className="text-slate-500">New now</span><div className="font-semibold text-slate-900">{selectedBatchReconciliation.new_transaction_count}</div></div>
+                          </div>
+                        </div>
+
+                        {!selectedBatchReconciliation.matches_live_state ? (
+                          <div className="mt-4 space-y-4">
+                            {selectedBatchReconciliation.missing_transactions.length > 0 ? (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Persisted But Missing Now</p>
+                                <div className="mt-3 space-y-2">
+                                  {selectedBatchReconciliation.missing_transactions.map((row) => (
+                                    <div className="rounded-lg bg-white px-3 py-2" key={`missing-${row.transaction_id}`}>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-900">{row.description}</span>
+                                        <span className="text-xs font-semibold text-slate-600">{formatCurrency(row.amount)}</span>
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-500">{formatDate(row.entry_date)} • {row.source} • {row.transaction_id}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                            {selectedBatchReconciliation.new_transactions.length > 0 ? (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">New In Live State</p>
+                                <div className="mt-3 space-y-2">
+                                  {selectedBatchReconciliation.new_transactions.map((row) => (
+                                    <div className="rounded-lg bg-white px-3 py-2" key={`new-${row.transaction_id}`}>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-900">{row.description}</span>
+                                        <span className="text-xs font-semibold text-slate-600">{formatCurrency(row.amount)}</span>
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-500">{formatDate(row.entry_date)} • {row.source} • {row.transaction_id}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
 
                   <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -785,6 +949,28 @@ export function AdminFinancePage(): JSX.Element {
                               </div>
                             </div>
                           ) : null}
+                          {selectedBatchReconciliation && !selectedBatchReconciliation.matches_live_state ? (
+                            <div className="rounded-xl border border-error/20 bg-error-container/40 p-4">
+                              <div className="flex items-start gap-3">
+                                <MaterialSymbol className="mt-0.5 text-base text-on-error-container" icon="sync_problem" />
+                                <div className="space-y-1">
+                                  <p className="text-sm font-bold text-on-error-container">Batch drift blocks export</p>
+                                  <p className="text-sm text-on-error-container">
+                                    The canonical batch no longer matches live finance state. Refresh reconciliation or regenerate the batch before exporting mapped output.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-error/20 bg-white px-4 py-3 text-sm font-bold text-error transition-colors hover:bg-error-container/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={regenerateExportBatchMutation.isPending}
+                                onClick={() => void handleRegenerateBatch()}
+                                type="button"
+                              >
+                                <MaterialSymbol className="text-base" icon={regenerateExportBatchMutation.isPending ? "hourglass_top" : "autorenew"} />
+                                {regenerateExportBatchMutation.isPending ? "Regenerating Batch..." : "Regenerate Batch"}
+                              </button>
+                            </div>
+                          ) : null}
                           <div className="rounded-xl border border-slate-200 bg-white">
                             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                               <h4 className="font-headline text-base font-bold text-slate-900">Mapped Rows</h4>
@@ -808,12 +994,16 @@ export function AdminFinancePage(): JSX.Element {
                               </table>
                             </div>
                           </div>
-                          <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary-container/20 px-4 py-3 text-sm font-bold text-primary transition-colors hover:bg-primary-container/30 disabled:cursor-not-allowed disabled:opacity-60" disabled={isDownloadingMapped || !mappedPreview.download_ready} onClick={() => void handleDownloadMappedExport()} type="button">
+                          <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary-container/20 px-4 py-3 text-sm font-bold text-primary transition-colors hover:bg-primary-container/30 disabled:cursor-not-allowed disabled:opacity-60" disabled={isDownloadingMapped || !mappedPreview.download_ready || exportBatchReconciliationQuery.isLoading || (selectedBatchReconciliation ? !selectedBatchReconciliation.matches_live_state : false)} onClick={() => void handleDownloadMappedExport()} type="button">
                             <MaterialSymbol className="text-base" icon={isDownloadingMapped ? "hourglass_top" : "download"} />
                             {isDownloadingMapped
-                              ? "Downloading Mapped CSV..."
+                              ? "Exporting Mapped CSV..."
+                              : exportBatchReconciliationQuery.isLoading
+                                ? "Checking Reconciliation..."
+                                : selectedBatchReconciliation && !selectedBatchReconciliation.matches_live_state
+                                  ? "Resolve Batch Drift"
                               : mappedPreview.download_ready
-                                ? "Download Mapped CSV"
+                                ? "Export Mapped CSV"
                                 : "Resolve Validation Errors"}
                           </button>
                         </>
@@ -842,7 +1032,26 @@ export function AdminFinancePage(): JSX.Element {
                     </div>
                   </div>
 
-                  {selectedBatch.status === "void" ? <div className="rounded-xl border border-error/20 bg-error-container/40 p-4 text-sm text-on-error-container">This batch has been voided. Generate the same range again to create a fresh export record.</div> : null}
+                  {selectedBatch.status === "void" ? (
+                    <div className="rounded-xl border border-error/20 bg-error-container/40 p-4 text-sm text-on-error-container">
+                      <p>This batch has been voided. Generate the same range again to create a fresh export record.</p>
+                      {selectedBatch.metadata_json.void_event ? (
+                        <p className="mt-2 text-xs text-on-error-container/80">
+                          Voided {formatDateTime(selectedBatch.metadata_json.void_event.voided_at)} from {selectedBatch.metadata_json.void_event.previous_status}.
+                        </p>
+                      ) : null}
+                      {selectedBatch.metadata_json.superseded_event?.superseded_by_regeneration ? (
+                        <p className="mt-2 text-xs text-on-error-container/80">
+                          This void was created by reconciliation-driven regeneration.
+                        </p>
+                      ) : null}
+                      {selectedBatch.metadata_json.superseded_event?.replacement_batch_id ? (
+                        <p className="mt-2 text-xs text-on-error-container/80">
+                          Replaced by batch {selectedBatch.metadata_json.superseded_event.replacement_batch_id}.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </>
               ) : null}
             </div>

@@ -168,3 +168,27 @@ export interface BookingMoveResult {
   booking: BookingSummary | null;
   failures: BookingMoveFailureDetail[];
 }
+
+export interface PlayerBookingReadModelItem {
+  id: string;
+  status: BookingStatus;
+  source: "admin" | "member_portal";
+  slot_datetime: string;
+  local_date: string;
+  local_time: string;
+  course_name: string;
+  tee_name?: string | null;
+  start_lane?: StartLane | null;
+  party_size: number;
+  primary_participant_name?: string | null;
+  participant_names: string[];
+  fee_label?: string | null;
+  payment_status?: BookingPaymentStatus | null;
+}
+
+export interface PlayerBookingReadModelResponse {
+  timezone: string;
+  reference_datetime: string;
+  upcoming: PlayerBookingReadModelItem[];
+  history: PlayerBookingReadModelItem[];
+}

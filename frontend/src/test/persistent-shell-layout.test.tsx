@@ -153,6 +153,10 @@ test("keeps the admin shell mounted while navigating between admin routes", asyn
     login: async () => {
       throw new Error("not implemented");
     },
+    acceptInvitation: async () => {
+      throw new Error("not implemented");
+    },
+    activateInvitation: async () => undefined,
     logout: async () => undefined,
     refresh: async () => {
       throw new Error("not implemented");
@@ -192,6 +196,10 @@ test("keeps the superadmin shell mounted while navigating between superadmin rou
     login: async () => {
       throw new Error("not implemented");
     },
+    acceptInvitation: async () => {
+      throw new Error("not implemented");
+    },
+    activateInvitation: async () => undefined,
     logout: async () => undefined,
     refresh: async () => {
       throw new Error("not implemented");

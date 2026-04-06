@@ -8,6 +8,8 @@ export interface SessionContextValue {
   loading: boolean;
   initialized: boolean;
   login: (email: string, password: string) => Promise<TokenResponse>;
+  acceptInvitation: (token: string, password: string, displayName: string) => Promise<TokenResponse>;
+  activateInvitation: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<TokenResponse>;
   reloadBootstrap: (selectedClubId?: string | null) => Promise<SessionBootstrap | null>;

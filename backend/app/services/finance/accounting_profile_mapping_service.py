@@ -19,6 +19,7 @@ from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
 from app.models import (
     AccountingExportProfile,
+    FinanceExportBatchStatus,
     FinanceExportProfile,
     FinanceTransactionSource,
     FinanceTransactionType,
@@ -38,6 +39,8 @@ from app.services.finance.export_batch_service import FinanceExportBatchService
 
 
 class AccountingProfileMappingService:
+    SUPPORTED_TARGET_SYSTEMS = {"generic_journal", "pastel_like", "sage_like"}
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.batch_service = FinanceExportBatchService(db)
@@ -62,11 +65,12 @@ class AccountingProfileMappingService:
         created_by_person_id: uuid.UUID,
         payload: AccountingExportProfileUpsertRequest,
     ) -> AccountingExportProfileResponse:
+        target_system = self._normalize_target_system(payload.target_system)
         profile = AccountingExportProfile(
             club_id=club_id,
             code=self._normalize_code(payload.code),
             name=payload.name.strip(),
-            target_system=payload.target_system.strip(),
+            target_system=target_system,
             is_active=payload.is_active,
             mapping_config_json=payload.mapping_config.model_dump(mode="json"),
             created_by_person_id=created_by_person_id,
@@ -94,7 +98,7 @@ class AccountingProfileMappingService:
         profile = self.get_profile(club_id=club_id, profile_id=profile_id)
         profile.code = self._normalize_code(payload.code)
         profile.name = payload.name.strip()
-        profile.target_system = payload.target_system.strip()
+        profile.target_system = self._normalize_target_system(payload.target_system)
         profile.is_active = payload.is_active
         profile.mapping_config_json = payload.mapping_config.model_dump(mode="json")
         self.db.add(profile)
@@ -139,9 +143,12 @@ class AccountingProfileMappingService:
 
         mapped_rows, validation_errors = self._build_validated_mapped_rows(batch=batch, profile=profile)
         generated_at = utc_now()
-        file_name = (
-            f"greenlink-generic_journal_mapped-{profile.code}-"
-            f"{batch.date_from.isoformat()}-to-{batch.date_to.isoformat()}.csv"
+        output_mode = self._output_mode(profile.target_system)
+        file_name = self._mapped_file_name(
+            target_system=profile.target_system,
+            profile_code=profile.code,
+            date_from=batch.date_from.isoformat(),
+            date_to=batch.date_to.isoformat(),
         )
         content_hash = self._content_hash(mapped_rows)
         return AccountingMappedExportPreviewResponse(
@@ -157,19 +164,10 @@ class AccountingProfileMappingService:
             row_count=len(mapped_rows),
             download_ready=len(validation_errors) == 0,
             metadata_json={
-                "output_mode": "generic_journal_mapped",
+                "output_mode": output_mode,
                 "source_batch_content_hash": batch.content_hash,
                 "source_batch_file_name": batch.file_name,
-                "column_order": [
-                    "date",
-                    "reference",
-                    "description",
-                    "debit_account_code",
-                    "credit_account_code",
-                    "amount",
-                    "customer_account_code",
-                    "source_type",
-                ],
+                "column_order": self._column_order(profile.target_system),
             },
             validation_errors=validation_errors,
             rows=mapped_rows,
@@ -189,6 +187,75 @@ class AccountingProfileMappingService:
                 message=self._validation_failure_message(preview.validation_errors),
                 status_code=422,
             )
+        return AccountingMappedExportDownloadResult(
+            file_name=preview.file_name,
+            content=self._to_csv(preview.rows),
+        )
+
+    def export_mapped_batch(
+        self,
+        *,
+        club_id: uuid.UUID,
+        batch_id: uuid.UUID,
+        profile_id: uuid.UUID,
+        exported_by_person_id: uuid.UUID,
+    ) -> AccountingMappedExportDownloadResult:
+        batch = self.batch_service.get_batch(club_id=club_id, batch_id=batch_id)
+        if batch.status == FinanceExportBatchStatus.VOID:
+            raise AppError(
+                code="finance_export_batch_void",
+                message="Voided finance export batches cannot be exported",
+                status_code=409,
+            )
+
+        profile = self.get_profile(club_id=club_id, profile_id=profile_id)
+        preview = self.build_mapped_export_preview(
+            club_id=club_id,
+            batch_id=batch_id,
+            profile_id=profile_id,
+        )
+        if preview.validation_errors:
+            raise AppError(
+                code="accounting_export_validation_failed",
+                message=self._validation_failure_message(preview.validation_errors),
+                status_code=422,
+            )
+        reconciliation = self.batch_service.get_batch_reconciliation(
+            club_id=club_id,
+            batch_id=batch_id,
+        )
+        if not reconciliation.matches_live_state:
+            raise AppError(
+                code="finance_export_batch_reconciliation_failed",
+                message=(
+                    "Batch reconciliation failed. Refresh or regenerate the canonical batch "
+                    "before exporting mapped output."
+                ),
+                status_code=409,
+            )
+
+        metadata = dict(batch.metadata_json or {})
+        export_events = list(metadata.get("export_events") or [])
+        export_events.append(
+            {
+                "exported_at": utc_now().isoformat(),
+                "exported_by_person_id": str(exported_by_person_id),
+                "accounting_profile_id": str(profile.id),
+                "accounting_profile_code": profile.code,
+                "accounting_profile_name": profile.name,
+                "target_system": profile.target_system,
+                "mapped_file_name": preview.file_name,
+                "mapped_content_hash": preview.content_hash,
+                "mapped_row_count": preview.row_count,
+                "output_mode": preview.metadata_json.get("output_mode"),
+            }
+        )
+        metadata["export_events"] = export_events
+        batch.metadata_json = metadata
+        batch.status = FinanceExportBatchStatus.EXPORTED
+        self.db.add(batch)
+        self.db.commit()
+
         return AccountingMappedExportDownloadResult(
             file_name=preview.file_name,
             content=self._to_csv(preview.rows),
@@ -228,6 +295,12 @@ class AccountingProfileMappingService:
 
         mapped_rows = self._map_rows(canonical_rows=canonical_rows, config=config)
         validation_errors.extend(self._validate_mapped_rows(mapped_rows=mapped_rows, config=config))
+        validation_errors.extend(
+            self._validate_target_system_rows(
+                target_system=profile.target_system,
+                mapped_rows=mapped_rows,
+            )
+        )
         return mapped_rows, validation_errors
 
     def _to_profile_response(self, profile: AccountingExportProfile) -> AccountingExportProfileResponse:
@@ -372,6 +445,82 @@ class AccountingProfileMappingService:
 
         return validation_errors
 
+    def _validate_target_system_rows(
+        self,
+        *,
+        target_system: str,
+        mapped_rows: list[AccountingMappedExportPreviewRow],
+    ) -> list[AccountingMappedExportValidationError]:
+        validation_errors: list[AccountingMappedExportValidationError] = []
+
+        if target_system == "pastel_like":
+            for row_index, row in enumerate(mapped_rows, start=1):
+                if len(row.reference) > 20:
+                    validation_errors.append(
+                        self._validation_error(
+                            code="accounting_export_pastel_reference_too_long",
+                            message=f"Mapped row {row_index} reference exceeds the Pastel-like 20 character limit",
+                            row_index=row_index,
+                            field="reference",
+                        )
+                    )
+                for field_name, value in (
+                    ("debit_account_code", row.debit_account_code),
+                    ("credit_account_code", row.credit_account_code),
+                    ("customer_account_code", row.customer_account_code),
+                ):
+                    if len(value) > 12:
+                        validation_errors.append(
+                            self._validation_error(
+                                code=f"accounting_export_pastel_{field_name}_too_long",
+                                message=(
+                                    f"Mapped row {row_index} {field_name.replace('_', ' ')} "
+                                    "exceeds the Pastel-like 12 character limit"
+                                ),
+                                row_index=row_index,
+                                field=field_name,
+                            )
+                        )
+
+        elif target_system == "sage_like":
+            for row_index, row in enumerate(mapped_rows, start=1):
+                if len(row.description) > 60:
+                    validation_errors.append(
+                        self._validation_error(
+                            code="accounting_export_sage_description_too_long",
+                            message=f"Mapped row {row_index} description exceeds the Sage-like 60 character limit",
+                            row_index=row_index,
+                            field="description",
+                        )
+                    )
+                if len(row.reference) > 30:
+                    validation_errors.append(
+                        self._validation_error(
+                            code="accounting_export_sage_reference_too_long",
+                            message=f"Mapped row {row_index} reference exceeds the Sage-like 30 character limit",
+                            row_index=row_index,
+                            field="reference",
+                        )
+                    )
+                for field_name, value in (
+                    ("debit_account_code", row.debit_account_code),
+                    ("credit_account_code", row.credit_account_code),
+                ):
+                    if value != value.upper():
+                        validation_errors.append(
+                            self._validation_error(
+                                code=f"accounting_export_sage_{field_name}_case_invalid",
+                                message=(
+                                    f"Mapped row {row_index} {field_name.replace('_', ' ')} "
+                                    "must be uppercase for Sage-like exports"
+                                ),
+                                row_index=row_index,
+                                field=field_name,
+                            )
+                        )
+
+        return validation_errors
+
     def _collect_model_validation_errors(
         self,
         exc: ValidationError,
@@ -469,6 +618,63 @@ class AccountingProfileMappingService:
                 status_code=400,
             )
         return collapsed
+
+    def _normalize_target_system(self, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in self.SUPPORTED_TARGET_SYSTEMS:
+            raise AppError(
+                code="accounting_export_target_system_invalid",
+                message="Target system must be one of generic_journal, pastel_like, or sage_like",
+                status_code=400,
+            )
+        return normalized
+
+    def _output_mode(self, target_system: str) -> str:
+        return f"{target_system}_mapped"
+
+    def _mapped_file_name(
+        self,
+        *,
+        target_system: str,
+        profile_code: str,
+        date_from: str,
+        date_to: str,
+    ) -> str:
+        return f"greenlink-{target_system}_mapped-{profile_code}-{date_from}-to-{date_to}.csv"
+
+    def _column_order(self, target_system: str) -> list[str]:
+        if target_system == "pastel_like":
+            return [
+                "date",
+                "reference",
+                "debit_account_code",
+                "credit_account_code",
+                "amount",
+                "customer_account_code",
+                "description",
+                "source_type",
+            ]
+        if target_system == "sage_like":
+            return [
+                "reference",
+                "date",
+                "description",
+                "debit_account_code",
+                "credit_account_code",
+                "customer_account_code",
+                "amount",
+                "source_type",
+            ]
+        return [
+            "date",
+            "reference",
+            "description",
+            "debit_account_code",
+            "credit_account_code",
+            "amount",
+            "customer_account_code",
+            "source_type",
+        ]
 
     def _decimal_string(self, value: Decimal) -> str:
         return f"{value.quantize(Decimal('0.01'))}"

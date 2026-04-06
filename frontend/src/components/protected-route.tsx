@@ -35,5 +35,18 @@ export function ProtectedRoute({ shell }: Props): JSX.Element {
     return <Navigate to={bootstrap.landing_path} replace />;
   }
 
+  if (shell && shell === bootstrap.role_shell) {
+    const menuItems = (bootstrap.menu_items ?? []).filter((item) => item.shell === shell);
+    const isShellRoot = location.pathname === `/${shell}`;
+    const routeAllowed =
+      isShellRoot ||
+      menuItems.length === 0 ||
+      menuItems.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
+
+    if (!routeAllowed) {
+      return <Navigate to={bootstrap.landing_path} replace />;
+    }
+  }
+
   return <Outlet />;
 }

@@ -4,7 +4,7 @@ from app.api.comms import routes as comms
 from app.api.finance import routes as finance
 from app.api.orders import routes as orders
 from app.api.pos import routes as pos
-from app.api.routes import auth, clubs, golf, health, people, platform, pricing, rules, session, superadmin
+from app.api.routes import admin_dashboard, auth, clubs, golf, halfway, health, people, platform, pricing, reports, rules, session, superadmin, targets
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -17,6 +17,10 @@ api_router.include_router(clubs.router, prefix="/api/clubs", tags=["clubs"])
 api_router.include_router(golf.router, prefix="/api/golf", tags=["golf"])
 api_router.include_router(rules.router, prefix="/api/rules", tags=["rules"])
 api_router.include_router(pricing.router, prefix="/api/pricing", tags=["pricing"])
+api_router.include_router(targets.router, prefix="/api/targets", tags=["targets"])
+api_router.include_router(admin_dashboard.router, prefix="/api/admin/dashboard", tags=["admin-dashboard"])
+api_router.include_router(halfway.router, prefix="/api/admin/halfway", tags=["halfway"])
+api_router.include_router(reports.router, prefix="/api/admin/reports", tags=["reports"])
 api_router.include_router(finance.router, prefix="/api/finance", tags=["finance"])
 api_router.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 api_router.include_router(pos.router, prefix="/api/pos", tags=["pos"])

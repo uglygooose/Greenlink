@@ -305,9 +305,10 @@ export function PlayerOrderPage(): JSX.Element {
         inactiveClassName="text-slate-500 active:bg-slate-100 scale-95"
         items={[
           { label: "Home", icon: "home", to: "/player/home" },
+          { label: "Book", icon: "golf_course", to: "/player/book" },
           { label: "Order", icon: "local_cafe", to: "/player/order", isActive: true },
           { label: "Club/News", icon: "article" },
-          { label: "Profile", icon: "person" },
+          { label: "Profile", icon: "person", to: "/player/profile" },
         ]}
         labelClassName="font-label font-medium text-[10px]"
       />

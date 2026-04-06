@@ -59,6 +59,24 @@ class PersonResponse(BaseModel):
     updated_at: datetime
 
 
+class SelfProfileResponse(BaseModel):
+    person_id: uuid.UUID
+    first_name: str
+    last_name: str
+    full_name: str
+    contact_email: str | None
+    account_email: str
+    phone: str | None
+    club_name: str | None = None
+
+
+class SelfProfileUpdateRequest(BaseModel):
+    first_name: str = Field(min_length=1, max_length=120)
+    last_name: str = Field(default="", max_length=120)
+    contact_email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=64)
+
+
 class PersonSearchResponse(BaseModel):
     items: list[PersonResponse]
     total: int

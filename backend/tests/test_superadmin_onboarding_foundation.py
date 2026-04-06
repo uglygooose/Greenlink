@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -7,6 +9,12 @@ from app.core.security import hash_password
 from app.domain.people.normalization import build_full_name, normalize_email
 from app.models import (
     AccountingExportProfile,
+    BookingRule,
+    BookingRuleAppliesTo,
+    BookingRuleConflictStrategy,
+    BookingRuleScopeType,
+    BookingRuleSet,
+    BookingRuleType,
     Club,
     ClubMembership,
     ClubMembershipRole,
@@ -15,9 +23,15 @@ from app.models import (
     ClubOnboardingState,
     ClubOnboardingStep,
     Person,
+    PricingDayType,
+    PricingMatrix,
+    PricingRule,
+    PricingRuleAppliesTo,
+    PricingTimeBand,
     User,
     UserType,
 )
+from app.services.module_catalog import MODULE_CATALOG
 
 
 def _create_user(db: Session, *, email: str, user_type: UserType = UserType.USER) -> User:
@@ -245,6 +259,100 @@ def test_superadmin_can_update_enabled_modules_through_onboarding(
         for module in db_session.query(ClubModule).filter(ClubModule.club_id == club.id).all()
     )
     assert module_keys == ["communications", "finance"]
+
+
+def test_superadmin_onboarding_detail_exposes_live_rules_and_module_catalog(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    club.onboarding_current_step = ClubOnboardingStep.RULES.value
+    db_session.add(club)
+
+    rule_set = BookingRuleSet(
+        club_id=club.id,
+        name="Member Base",
+        applies_to=BookingRuleAppliesTo.MEMBER,
+        scope_type=BookingRuleScopeType.CLUB,
+        scope_ref_id=None,
+        conflict_strategy=BookingRuleConflictStrategy.FIRST_MATCH,
+        priority=10,
+        active=True,
+    )
+    db_session.add(rule_set)
+    db_session.flush()
+    db_session.add(
+        BookingRule(
+            ruleset_id=rule_set.id,
+            type=BookingRuleType.ADVANCE_WINDOW,
+            evaluation_order=1,
+            config={"days": 14},
+            active=True,
+        )
+    )
+
+    matrix = PricingMatrix(club_id=club.id, name="Standard Member Pricing", active=True)
+    db_session.add(matrix)
+    db_session.flush()
+    db_session.add(
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            day_type=PricingDayType.WEEKDAY,
+            time_band=PricingTimeBand.MORNING,
+            time_band_ref=None,
+            price=Decimal("250.00"),
+            currency="ZAR",
+            active=True,
+        )
+    )
+    db_session.add(ClubModule(club_id=club.id, module_key="golf", enabled=True))
+    db_session.commit()
+    headers = _auth_headers(client, "root@example.com")
+
+    response = client.get(f"/api/superadmin/clubs/{club.id}/onboarding", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rules"]["rule_set_count"] == 1
+    assert payload["rules"]["active_rule_set_count"] == 1
+    assert payload["rules"]["pricing_matrix_count"] == 1
+    assert payload["rules"]["active_pricing_matrix_count"] == 1
+    assert payload["rules"]["setup_complete"] is True
+    assert payload["rules"]["rule_sets"][0]["name"] == "Member Base"
+    assert payload["rules"]["rule_sets"][0]["applies_to"] == "member"
+    assert payload["rules"]["rule_sets"][0]["rule_count"] == 1
+    assert payload["rules"]["pricing_matrices"][0]["name"] == "Standard Member Pricing"
+    assert payload["rules"]["pricing_matrices"][0]["rule_count"] == 1
+    assert payload["modules"]["enabled_module_count"] == 1
+    assert payload["modules"]["enabled_module_keys"] == ["golf"]
+    assert sorted(item["key"] for item in payload["modules"]["available_modules"]) == sorted(
+        item.key for item in MODULE_CATALOG
+    )
+
+
+def test_superadmin_onboarding_rejects_invalid_module_keys(
+    client: TestClient, db_session: Session
+) -> None:
+    _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
+    club = _create_club(db_session, name="Pine Valley", slug="pine-valley")
+    club.onboarding_current_step = ClubOnboardingStep.MODULES.value
+    db_session.add(club)
+    db_session.commit()
+    headers = _auth_headers(client, "root@example.com")
+
+    response = client.put(
+        f"/api/superadmin/clubs/{club.id}/onboarding",
+        headers=headers,
+        json={
+            "action": "save_draft",
+            "acted_step": "modules",
+            "enabled_module_keys": ["golf", "member_portal"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "club_module_invalid"
 
 
 def test_superadmin_routes_are_forbidden_to_club_admin(
