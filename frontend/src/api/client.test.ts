@@ -72,6 +72,8 @@ describe("apiRequest", () => {
   });
 
   it("falls back between local backend ports when the configured dev port is unavailable", async () => {
+    resetApiBaseUrlForTests("http://127.0.0.1:8001");
+
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))

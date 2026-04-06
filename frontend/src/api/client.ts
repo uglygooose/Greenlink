@@ -106,8 +106,8 @@ async function fetchWithApiBaseFallback(path: string, init: RequestInit): Promis
   throw lastError instanceof Error ? lastError : new TypeError("Failed to fetch");
 }
 
-export function resetApiBaseUrlForTests(): void {
-  resolvedApiBaseUrl = apiBaseUrl;
+export function resetApiBaseUrlForTests(nextBaseUrl?: string): void {
+  resolvedApiBaseUrl = nextBaseUrl ?? apiBaseUrl;
 }
 
 let refreshInFlight: Promise<string | null> | null = null;

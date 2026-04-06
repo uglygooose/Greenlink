@@ -64,6 +64,7 @@ This file is the canonical current snapshot of actual repo state.
 - Admin and superadmin shells must remain router-owned persistent layouts.
 - Benchmark UI references remain the visual authority.
 - Canonical local backend port is `127.0.0.1:8000`; the frontend client now auto-recovers between loopback ports `8000` and `8001` during local development.
+- Local frontend browser requests use the Vite dev proxy for loopback `/api/*` traffic, which removes browser CORS dependence from normal local development.
 
 ## Known Risks
 

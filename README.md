@@ -22,7 +22,8 @@ GreenLink is a club-scoped golf operations platform built with a FastAPI backend
 
 - Frontend dev server: `http://127.0.0.1:5173`
 - Backend API: `http://127.0.0.1:8000`
-- Local frontend API calls now auto-recover between loopback ports `8000` and `8001`, but `8000` is the canonical backend port for this repo.
+- Local frontend API calls use same-origin `/api/*` requests through the Vite dev proxy when the configured backend is loopback, which avoids browser CORS drift between local ports.
+- The frontend client still auto-recovers between loopback backend ports `8000` and `8001` if a direct local call is attempted, but `8000` remains the canonical backend port for this repo.
 
 ## Design references
 
