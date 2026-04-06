@@ -33,7 +33,7 @@ Default local ports:
 - Backend API: `http://127.0.0.1:8000`
 - Frontend Vite app: `http://127.0.0.1:5173`
 - Frontend local-dev browser requests use same-origin `/api/*` paths through the Vite dev proxy when the configured backend is loopback, avoiding browser CORS failures during local work.
-- The client still auto-recovers between loopback ports `8000` and `8001` if a direct local API call is attempted, but `8000` remains the canonical backend port.
+- The Vite dev proxy and frontend client both auto-recover between loopback ports `8000`, `8001`, and `8002` if a stale local port is configured, but `8000` remains the canonical backend port.
 
 ## Backend validation
 
