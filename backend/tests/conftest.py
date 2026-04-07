@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.dependencies import get_db
@@ -16,6 +17,27 @@ from app.main import app
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink_test"
 DEFAULT_TEST_ADMIN_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/postgres"
+TEST_DB_PREFLIGHT_CONNECT_TIMEOUT_SECONDS = 5
+
+
+def _build_unreachable_postgres_message(
+    *, test_database_url: str, admin_database_url: str, original_error: str
+) -> str:
+    return "\n".join(
+        [
+            "Backend tests require a reachable PostgreSQL server.",
+            f"Expected test DB URL (default): {DEFAULT_TEST_DATABASE_URL}",
+            f"Expected admin DB URL (default): {DEFAULT_TEST_ADMIN_DATABASE_URL}",
+            f"Resolved GREENLINK_TEST_DATABASE_URL: {test_database_url}",
+            f"Resolved GREENLINK_TEST_ADMIN_DATABASE_URL: {admin_database_url}",
+            "Start the local Postgres service with:",
+            "  docker compose up -d postgres",
+            "Or override these env vars:",
+            "  GREENLINK_TEST_DATABASE_URL",
+            "  GREENLINK_TEST_ADMIN_DATABASE_URL",
+            f"Original connection error: {original_error.splitlines()[0]}",
+        ]
+    )
 
 
 def _ensure_postgres_test_database() -> None:
@@ -25,15 +47,30 @@ def _ensure_postgres_test_database() -> None:
     if database_name is None or not re.fullmatch(r"[A-Za-z0-9_]+", database_name):
         raise RuntimeError("GREENLINK_TEST_DATABASE_URL must target a simple PostgreSQL database name")
 
-    admin_engine = create_engine(admin_database_url, future=True, isolation_level="AUTOCOMMIT")
+    admin_engine = create_engine(
+        admin_database_url,
+        future=True,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"connect_timeout": TEST_DB_PREFLIGHT_CONNECT_TIMEOUT_SECONDS},
+    )
     try:
-        with admin_engine.connect() as connection:
-            exists = connection.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :database_name"),
-                {"database_name": database_name},
-            ).scalar()
-            if not exists:
-                connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+        try:
+            with admin_engine.connect() as connection:
+                exists = connection.execute(
+                    text("SELECT 1 FROM pg_database WHERE datname = :database_name"),
+                    {"database_name": database_name},
+                ).scalar()
+                if not exists:
+                    connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+        except OperationalError as exc:
+            pytest.exit(
+                _build_unreachable_postgres_message(
+                    test_database_url=test_database_url,
+                    admin_database_url=admin_database_url,
+                    original_error=str(exc.orig),
+                ),
+                returncode=1,
+            )
     finally:
         admin_engine.dispose()
 

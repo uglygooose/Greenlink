@@ -12,6 +12,7 @@ from app.models import (
     ClubConfig,
     ClubMembership,
     ClubMembershipStatus,
+    ClubTarget,
     Course,
     FinanceTransaction,
     Tee,
@@ -20,9 +21,11 @@ from app.schemas.admin_dashboard import (
     AdminDashboardSummaryResponse,
     DashboardActivityItem,
     DashboardNotice,
+    DashboardTargetContext,
     DashboardTeeOccupancy,
 )
 from app.services.booking_state_service import LIVE_OCCUPANCY_STATUSES
+from app.services.targets_service import TARGET_DOMAIN_REGISTRY
 
 
 def _slot_time_count(
@@ -64,11 +67,13 @@ class AdminDashboardService:
         member_count = self._get_member_count(club_id)
         tee_occupancy, tee_warnings = self._get_tee_occupancy(club_id)
         recent_activity = self._get_recent_activity(club_id)
+        active_targets = self._get_active_targets(club_id)
         return AdminDashboardSummaryResponse(
             member_count=member_count,
             tee_occupancy=tee_occupancy,
             tee_warnings=tee_warnings,
             recent_activity=recent_activity,
+            active_targets=active_targets,
         )
 
     def _get_member_count(self, club_id: uuid.UUID) -> int:
@@ -189,3 +194,39 @@ class AdminDashboardService:
             )
             for tx in transactions
         ]
+
+    def _get_active_targets(self, club_id: uuid.UUID) -> list[DashboardTargetContext]:
+        """Return targets whose period spans today, for display alongside dashboard KPIs."""
+        today = datetime.now(UTC).date()
+        rows = list(
+            self.db.scalars(
+                select(ClubTarget).where(
+                    ClubTarget.club_id == club_id,
+                    ClubTarget.archived_at.is_(None),
+                    ClubTarget.period_start <= today,
+                    ClubTarget.period_end >= today,
+                )
+            ).all()
+        )
+        result: list[DashboardTargetContext] = []
+        for row in rows:
+            domain = next((d for d in TARGET_DOMAIN_REGISTRY if d.key == row.domain_key), None)
+            if domain is None:
+                continue
+            metric = next((m for m in domain.metrics if m.key == row.metric_key), None)
+            if metric is None:
+                continue
+            result.append(
+                DashboardTargetContext(
+                    domain_key=row.domain_key,
+                    domain_label=domain.label,
+                    metric_key=row.metric_key,
+                    metric_label=metric.label,
+                    period_key=row.period_key,
+                    period_start=row.period_start,
+                    period_end=row.period_end,
+                    target_value=float(row.target_value),
+                    unit=metric.unit,
+                )
+            )
+        return result

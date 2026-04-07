@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { SessionContext, type SessionContextValue } from "../../session/session-context";
 import type { SessionBootstrap } from "../../types/session";
@@ -66,10 +66,10 @@ describe("AdminSidebar", () => {
   test("falls back to the static admin menu when backend menu items are absent", () => {
     renderSidebar(baseBootstrap);
 
-    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /finance/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /book golf/i })).toBeInTheDocument();
   });
 
@@ -79,10 +79,18 @@ describe("AdminSidebar", () => {
       menu_items: [
         {
           key: "dashboard",
-          label: "Dashboard",
+          label: "Overview",
           path: "/admin/dashboard",
           shell: "admin",
-          domain: "dashboard",
+          domain: "overview",
+          module_key: null,
+        },
+        {
+          key: "people_dashboard",
+          label: "Dashboard",
+          path: "/admin/people/dashboard",
+          shell: "admin",
+          domain: "people",
           module_key: null,
         },
         {
@@ -93,23 +101,15 @@ describe("AdminSidebar", () => {
           domain: "members",
           module_key: null,
         },
-        {
-          key: "reports",
-          label: "Reports",
-          path: "/admin/reports",
-          shell: "admin",
-          domain: "reports",
-          module_key: null,
-        },
       ],
     });
 
-    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /reports/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Dashboard$/i })).toHaveLength(1);
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /finance/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /book golf/i })).not.toBeInTheDocument();
   });
 
@@ -119,18 +119,18 @@ describe("AdminSidebar", () => {
       menu_items: [
         {
           key: "dashboard",
-          label: "Dashboard",
+          label: "Overview",
           path: "/admin/dashboard",
           shell: "admin",
-          domain: "dashboard",
+          domain: "overview",
           module_key: null,
         },
         {
           key: "orders",
-          label: "Orders",
+          label: "Order Queue",
           path: "/admin/orders",
           shell: "admin",
-          domain: "orders",
+          domain: "operations",
           module_key: "pos",
         },
         {
@@ -138,13 +138,13 @@ describe("AdminSidebar", () => {
           label: "POS Terminal",
           path: "/admin/pos-terminal",
           shell: "admin",
-          domain: "pos",
+          domain: "operations",
           module_key: "pos",
         },
       ],
     });
 
-    expect(screen.getByRole("link", { name: /orders/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /pro shop/i })).not.toBeInTheDocument();
   });

@@ -10,7 +10,11 @@ type AdminRouteMeta = {
 const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: AdminRouteMeta }> = [
   {
     match: (pathname) => pathname === "/admin/dashboard",
-    meta: { title: "Dashboard", searchPlaceholder: "Search operations..." },
+    meta: { title: "Overview", searchPlaceholder: "Search actions..." },
+  },
+  {
+    match: (pathname) => pathname === "/admin/golf/dashboard",
+    meta: { title: "Golf Dashboard", searchPlaceholder: "Search golf operations..." },
   },
   {
     match: (pathname) => pathname === "/admin/golf/tee-sheet",
@@ -25,12 +29,20 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
     meta: { title: "Order Queue", searchPlaceholder: "Search orders..." },
   },
   {
+    match: (pathname) => pathname === "/admin/people/dashboard",
+    meta: { title: "People Dashboard", searchPlaceholder: "Search people insights..." },
+  },
+  {
     match: (pathname) => pathname === "/admin/members",
     meta: { title: "Members", searchPlaceholder: "Search members..." },
   },
   {
+    match: (pathname) => pathname === "/admin/finance/dashboard",
+    meta: { title: "Finance Dashboard", searchPlaceholder: "Search finance insights..." },
+  },
+  {
     match: (pathname) => pathname === "/admin/finance",
-    meta: { title: "Cashbook Flow", searchPlaceholder: "Search transactions..." },
+    meta: { title: "Close Day", searchPlaceholder: "Search close workflow..." },
   },
   {
     match: (pathname) => pathname === "/admin/communications",
@@ -51,6 +63,10 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   {
     match: (pathname) => pathname === "/admin/pos-terminal",
     meta: { title: "POS Terminal", searchPlaceholder: "Search products..." },
+  },
+  {
+    match: (pathname) => pathname === "/admin/settings/club",
+    meta: { title: "Club Settings", searchPlaceholder: "Search settings..." },
   },
 ];
 

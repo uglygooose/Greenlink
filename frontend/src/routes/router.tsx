@@ -3,9 +3,13 @@ import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom"
 import { ProtectedRoute } from "../components/protected-route";
 import { AdminLayout } from "./admin-layout";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
+import { AdminClubSettingsPage } from "../pages/admin-club-settings-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
+import { AdminFinanceDashboardPage } from "../pages/admin-finance-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
+import { AdminGolfDashboardPage } from "../pages/admin-golf-dashboard-page";
 import { AdminProShopPage } from "../pages/admin-pro-shop-page";
+import { AdminPeopleDashboardPage } from "../pages/admin-people-dashboard-page";
 import { AdminReportsPage } from "../pages/admin-reports-page";
 import { AdminTargetsPage } from "../pages/admin-targets-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
@@ -56,17 +60,21 @@ const router = createBrowserRouter([
         element: <AdminLayout />,
         children: [
           { path: "dashboard", element: <AdminDashboardPage /> },
+          { path: "golf/dashboard", element: <AdminGolfDashboardPage /> },
           { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
           { path: "golf/settings", element: <AdminGolfSettingsPage /> },
           { path: "orders", element: <AdminOrderQueuePage /> },
+          { path: "people/dashboard", element: <AdminPeopleDashboardPage /> },
           { path: "members", element: <AdminMembersPage /> },
           { path: "targets", element: <AdminTargetsPage /> },
+          { path: "finance/dashboard", element: <AdminFinanceDashboardPage /> },
           { path: "finance", element: <AdminFinancePage /> },
           { path: "communications", element: <AdminCommunicationsPage /> },
           { path: "halfway", element: <AdminHalfwayPage /> },
           { path: "pro-shop", element: <AdminProShopPage /> },
           { path: "reports", element: <AdminReportsPage /> },
           { path: "pos-terminal", element: <AdminPosTerminalPage /> },
+          { path: "settings/club", element: <AdminClubSettingsPage /> },
         ],
       },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },

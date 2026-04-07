@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import {
   cancelOrder,
@@ -9,6 +10,7 @@ import {
   postOrderCharge,
 } from "../api/operations";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
+import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { OrderManagementDrawer } from "../features/orders/order-management-drawer";
 import { useOrderDetailQuery, useOrdersQuery } from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
@@ -266,32 +268,48 @@ export function AdminOrderQueuePage(): JSX.Element {
             : "Collected orders with charge-posting visibility."
         }
         actions={
-          <div className="inline-flex items-center gap-1 rounded-2xl bg-surface-container-highest p-1">
-            <button
-              className={queueFilterButtonClassName(selectedFilter === "open")}
-              onClick={() => {
-                setSelectedFilter("open");
-                setSelectedOrderId(null);
-                setDrawerFeedbackMessage(null);
-                setDrawerFeedbackTone(null);
-              }}
-              type="button"
+          <>
+            <div className="inline-flex items-center gap-1 rounded-2xl bg-surface-container-highest p-1">
+              <button
+                className={queueFilterButtonClassName(selectedFilter === "open")}
+                onClick={() => {
+                  setSelectedFilter("open");
+                  setSelectedOrderId(null);
+                  setDrawerFeedbackMessage(null);
+                  setDrawerFeedbackTone(null);
+                }}
+                type="button"
+              >
+                Open Orders
+              </button>
+              <button
+                className={queueFilterButtonClassName(selectedFilter === "collected")}
+                onClick={() => {
+                  setSelectedFilter("collected");
+                  setSelectedOrderId(null);
+                  setDrawerFeedbackMessage(null);
+                  setDrawerFeedbackTone(null);
+                }}
+                type="button"
+              >
+                Collected Orders
+              </button>
+            </div>
+            <NavLink
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+              to="/admin/pos-terminal"
             >
-              Open Orders
-            </button>
-            <button
-              className={queueFilterButtonClassName(selectedFilter === "collected")}
-              onClick={() => {
-                setSelectedFilter("collected");
-                setSelectedOrderId(null);
-                setDrawerFeedbackMessage(null);
-                setDrawerFeedbackTone(null);
-              }}
-              type="button"
+              <MaterialSymbol icon="point_of_sale" />
+              POS Terminal
+            </NavLink>
+            <NavLink
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+              to="/admin/halfway"
             >
-              Collected Orders
-            </button>
-          </div>
+              <MaterialSymbol icon="storefront" />
+              Halfway
+            </NavLink>
+          </>
         }
         kpis={
           selectedFilter === "open" ? (

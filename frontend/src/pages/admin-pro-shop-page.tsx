@@ -140,6 +140,13 @@ export function AdminProShopPage(): JSX.Element {
             <MaterialSymbol filled icon="point_of_sale" />
             Open POS
           </NavLink>
+          <NavLink
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+            to="/admin/orders"
+          >
+            <MaterialSymbol icon="pending_actions" />
+            Order Queue
+          </NavLink>
         </div>
 
         {/* Product catalog */}

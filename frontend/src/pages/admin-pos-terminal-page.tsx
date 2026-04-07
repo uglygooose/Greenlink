@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
@@ -146,6 +147,24 @@ export function AdminPosTerminalPage(): JSX.Element {
     <AdminWorkspace
       title="POS Terminal"
       description="Quick-sale checkout with backend-owned transaction posting."
+      actions={
+        <>
+          <NavLink
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+            to="/admin/orders"
+          >
+            <MaterialSymbol icon="pending_actions" />
+            Order Queue
+          </NavLink>
+          <NavLink
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+            to="/admin/pro-shop"
+          >
+            <MaterialSymbol icon="store" />
+            Pro Shop
+          </NavLink>
+        </>
+      }
       kpis={
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-2xl bg-surface-container-low p-4">

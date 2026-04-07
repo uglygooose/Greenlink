@@ -215,12 +215,16 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
     menu_keys = [item["key"] for item in payload["menu_items"]]
     assert menu_keys == [
         "dashboard",
+        "golf_dashboard",
         "golf_tee_sheet",
         "golf_settings",
+        "people_dashboard",
         "members",
-        "targets",
+        "finance_dashboard",
         "finance",
         "reports",
+        "club_settings",
+        "targets",
     ]
 
 

@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-06 (end of Phase 9)
+Last updated: 2026-04-07 (end of Phase 10)
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -79,6 +79,17 @@ Phase 9 - System Cleanup: COMPLETED
 - Live: `admin-pos-terminal-page` normalized to `AdminWorkspace` shell/content pattern
 - Full test gate: npm run typecheck, full Vitest suite, py -m uv run pytest -q
 
+Phase 10 - Domain Dashboards and Admin Navigation: COMPLETED
+- Admin sidebar reorganized into named domain groups (Overview, Golf, People, Finance, Operations, Communications, Club Settings)
+- Backend `MENU_ITEMS` registry updated to match grouped domain structure; `pos` module relabeled "Commerce"
+- `AdminDashboardPage` enhanced: action alerts, quick actions, target hints, halfway and reports queries; no React math
+- `AdminGolfDashboardPage` (`/admin/golf/dashboard`): utilization, revenue posture, tee warnings, config readiness; all from backend read models
+- `AdminPeopleDashboardPage` (`/admin/people/dashboard`): member breakdown, account posture, directory size; all from backend read models
+- `AdminFinanceDashboardPage` (`/admin/finance/dashboard`): revenue, outstanding, transaction volume, export batch status; all from backend read models
+- `AdminClubSettingsPage` (`/admin/settings/club`): configuration hub linking to golf settings and module config without duplicating superadmin ownership
+- `GET /api/admin/dashboard/summary` now includes `active_targets` — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, returns typed `DashboardTargetContext` list; no React math
+- Full test gate: npm run typecheck clean, 96 Vitest tests passed, 154 pytest passed
+
 Cross-cutting corrections completed
 - Persistent admin shell (all `/admin/*` including POS now inside AdminLayout): COMPLETED
 - Persistent superadmin shell: COMPLETED
@@ -89,3 +100,4 @@ Cross-cutting corrections completed
 - Superadmin dead nav items replaced with live pages: COMPLETED
 - Superadmin route handoff into GreenLink admin workspaces: COMPLETED
 - Dashboard client-side stitching moved to backend aggregation: COMPLETED
+- Admin navigation grouped by domain; sidebar driven by backend menu_items registry: COMPLETED

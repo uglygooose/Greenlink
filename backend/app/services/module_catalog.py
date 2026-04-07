@@ -28,8 +28,8 @@ MODULE_CATALOG: tuple[ModuleCatalogItem, ...] = (
     ),
     ModuleCatalogItem(
         key="pos",
-        label="POS",
-        description="Point-of-sale and operational order handling.",
+        label="Commerce",
+        description="Orders, point-of-sale, halfway house, and pro shop operations.",
     ),
 )
 

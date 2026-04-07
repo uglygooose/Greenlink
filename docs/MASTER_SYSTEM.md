@@ -1,6 +1,6 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-06 22:40 SAST
+Last updated: 2026-04-07 (end of Phase 10)
 
 ## Canonical Role
 
@@ -43,9 +43,9 @@ The canonical authority set is:
 - Partial
 - Tee sheet read model exists.
 - Booking lifecycle and admin lifecycle actions are live.
-- Admin tee-sheet route is live.
+- Admin tee-sheet route is live inside the router-owned persistent admin shell.
 - Booking creation, editing, and move UX are live.
-- Recently fixed: admin tee-sheet now runs inside the router-owned persistent admin shell.
+- `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance
 - Partial
@@ -57,8 +57,9 @@ The canonical authority set is:
 - Batch reconciliation is live and compares persisted canonical payloads against current live finance state.
 - Drift blocks mapped export until reconciliation is resolved.
 - Reconciliation-driven regeneration creates fresh canonical batches with typed supersede/regeneration lineage.
-- Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`) use backend summary endpoints only. No finance math in React.
+- Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`, `admin-finance/dashboard`) use backend summary endpoints only. No finance math in React.
 - `AdminReportsPage` chart bar widths are driven entirely by backend-provided pct fields.
+- `AdminFinanceDashboardPage` at `/admin/finance/dashboard` is live: revenue, outstanding, transaction volume, and export batch status — all from backend read models.
 - No direct third-party push/pull accounting integration exists beyond tracked export handoff.
 
 ### Orders and POS
@@ -100,20 +101,32 @@ The canonical authority set is:
 - Player profile route exists at `/player/profile` and consumes a dedicated backend self-profile contract.
 - Recently fixed: player home no longer shows fake upcoming bookings; it now renders backend booking truth when present and truthful empty states when none exist.
 
+## Admin Navigation
+
+- `AdminSidebar` is grouped by domain section: Overview · Golf · People · Finance · Operations · Communications · Club Settings.
+- Group membership is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`. Ungrouped items render below without a label.
+- Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry. Frontend sidebar resolves against it.
+- `pos` module is now labeled "Commerce" in the module catalog.
+
 ## Current Route Surface
 
 ### Admin
-- `/admin/dashboard`
-- `/admin/golf/tee-sheet`
-- `/admin/golf/settings`
-- `/admin/orders`
-- `/admin/members`
-- `/admin/finance`
-- `/admin/communications`
-- `/admin/halfway`
-- `/admin/pro-shop`
-- `/admin/reports`
-- `/admin/pos-terminal`
+- `/admin/dashboard` — overview: action alerts, quick actions, targets, recent activity
+- `/admin/golf/dashboard` — golf domain dashboard (utilization, revenue, warnings, config readiness)
+- `/admin/golf/tee-sheet` — operational tee sheet (create/edit/move/cancel bookings)
+- `/admin/golf/settings` — golf settings (courses, tees, rule sets, pricing matrices)
+- `/admin/people/dashboard` — people domain dashboard (member breakdown, account posture)
+- `/admin/members` — member directory
+- `/admin/finance/dashboard` — finance domain dashboard (revenue, outstanding, volume, export batches)
+- `/admin/finance` — close-day workflow (export batches, reconciliation)
+- `/admin/reports` — reports and analytics
+- `/admin/halfway` — halfway house operations
+- `/admin/pro-shop` — pro shop
+- `/admin/pos-terminal` — POS terminal
+- `/admin/orders` — order queue
+- `/admin/settings/club` — club settings hub
+- `/admin/communications` — news posts and comms
+- `/admin/targets` — club targets
 
 ### Superadmin
 - `/superadmin/overview`
@@ -139,7 +152,7 @@ The canonical authority set is:
 
 - Superadmin does not author golf rules or pricing directly; canonical authoring remains in admin golf settings.
 - No direct third-party push/pull accounting sync exists beyond tracked export handoff.
-- Dashboard aggregation beyond existing finance summaries is not yet centralized in backend read models.
+- New domain dashboard pages (`AdminGolfDashboardPage`, `AdminPeopleDashboardPage`, `AdminFinanceDashboardPage`, `AdminClubSettingsPage`) have no Vitest coverage yet.
 
 ## Known Risks
 

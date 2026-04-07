@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
@@ -9,7 +10,6 @@ import {
   useAccountingMappedExportPreviewQuery,
   useCreateAccountingExportProfileMutation,
   useCreateFinanceExportBatchMutation,
-  useFinanceAccountsQuery,
   useFinanceExportBatchDetailQuery,
   useFinanceExportBatchReconciliationQuery,
   useFinanceExportBatchesQuery,
@@ -25,7 +25,6 @@ import { useSession } from "../session/session-context";
 import type {
   AccountingExportProfile,
   AccountingExportProfileInput,
-  AccountingExportProfileMappingConfig,
   FinanceExportBatchStatus,
   FinanceExportProfile,
   FinanceTargetSystem,
@@ -168,7 +167,6 @@ export function AdminFinancePage(): JSX.Element {
   const [isDownloadingMapped, setIsDownloadingMapped] = useState(false);
   const exportProfile: FinanceExportProfile = "journal_basic";
 
-  const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
   const journalQuery = useFinanceJournalQuery({ accessToken, selectedClubId });
   const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
   const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
@@ -193,7 +191,6 @@ export function AdminFinancePage(): JSX.Element {
   const createAccountingProfileMutation = useCreateAccountingExportProfileMutation();
   const updateAccountingProfileMutation = useUpdateAccountingExportProfileMutation();
 
-  const accounts = accountsQuery.data ?? [];
   const journal = journalQuery.data;
   const exportBatches = exportBatchesQuery.data?.batches ?? [];
   const selectedBatch = exportBatchDetailQuery.data;
@@ -371,8 +368,26 @@ export function AdminFinancePage(): JSX.Element {
   return (
     <>
       <AdminWorkspace
-        title="Cashbook Flow"
-        description="Journal visibility, account exposure, canonical export batching, and mapped accounting handoff."
+        title="Close Day"
+        description="Operational close workflow spanning golf review, commerce settlement checks, finance exports, and final reporting."
+        actions={
+          <>
+            <NavLink
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+              to="/admin/finance/dashboard"
+            >
+              <MaterialSymbol icon="dashboard" />
+              Finance Dashboard
+            </NavLink>
+            <NavLink
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+              to="/admin/reports"
+            >
+              <MaterialSymbol icon="analytics" />
+              Reports
+            </NavLink>
+          </>
+        }
         kpis={
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-error">
@@ -434,6 +449,27 @@ export function AdminFinancePage(): JSX.Element {
           </div>
         }
       >
+        <section className="rounded-xl border border-slate-200 bg-surface-container-low p-5">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-2xl bg-white p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">1. Golf Closure</p>
+              <p className="mt-2 text-sm text-slate-600">Review tee sheet posture and unresolved golf issues before finance handoff.</p>
+            </div>
+            <div className="rounded-2xl bg-white p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">2. Commerce Settlement</p>
+              <p className="mt-2 text-sm text-slate-600">Confirm order queue and POS settlement posture without merging operational and payment domains.</p>
+            </div>
+            <div className="rounded-2xl bg-white p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">3. Finance Posting / Export</p>
+              <p className="mt-2 text-sm text-slate-600">Generate canonical batches, reconcile live drift, and complete mapped export handoff.</p>
+            </div>
+            <div className="rounded-2xl bg-white p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">4. Final Summary</p>
+              <p className="mt-2 text-sm text-slate-600">Use reports as the final read surface until a persisted close snapshot exists in backend truth.</p>
+            </div>
+          </div>
+        </section>
+
         {notice ? (
           <section className={`rounded-xl border px-5 py-4 text-sm ${noticeClassName(notice.tone)}`}>
             <div className="flex items-start gap-3">

@@ -145,7 +145,7 @@ export function AdminMembersPage(): JSX.Element {
   const selectedClubId = bootstrap?.selected_club_id ?? null;
 
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const search = "";
 
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
   const accountsQuery = useFinanceAccountsQuery({ accessToken, selectedClubId });
@@ -184,7 +184,6 @@ export function AdminMembersPage(): JSX.Element {
     : members;
 
   const reports = reportsSummaryQuery.data;
-  const pendingCount = 0;
 
   return (
     <>
@@ -247,7 +246,7 @@ export function AdminMembersPage(): JSX.Element {
 
             <div className="rounded-xl bg-surface-container-lowest p-6 shadow-sm border-l-4 border-secondary">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">New / Pending / No Account</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">No Account / New Members</span>
                 <MaterialSymbol className="text-secondary" icon="person_add" />
               </div>
               <div className="flex items-baseline gap-2">
@@ -259,7 +258,7 @@ export function AdminMembersPage(): JSX.Element {
                       {reports?.member_breakdown.no_account_count ?? 0}
                     </span>
                     <span className="text-xs font-medium text-secondary">
-                      {reports?.member_breakdown.new_member_count ?? 0} new · {pendingCount} pending
+                      {reports?.member_breakdown.new_member_count ?? 0} new and awaiting account coverage
                     </span>
                   </>
                 )}

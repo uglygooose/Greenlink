@@ -46,6 +46,38 @@ py -m uv run ruff format --check .
 
 Backend tests also run against PostgreSQL. Keep the local Compose database running, or point `GREENLINK_TEST_DATABASE_URL` at a PostgreSQL test database.
 
+## Backend test database prerequisites
+
+Backend tests require a reachable PostgreSQL server.
+
+Default test connection values:
+- Host: `localhost`
+- Port: `5432`
+- Admin database: `postgres`
+- Test database: `greenlink_test`
+- Default credentials: `greenlink` / `greenlink`
+
+Runtime and test database configuration are distinct:
+- Runtime and Alembic use `GREENLINK_DATABASE_URL` from `backend/.env`
+- Test setup uses `GREENLINK_TEST_DATABASE_URL` and `GREENLINK_TEST_ADMIN_DATABASE_URL`
+- The auth/bootstrap test path does not depend on Alembic migrations; `backend/tests/conftest.py` creates tables with SQLAlchemy metadata via `Base.metadata.drop_all()` and `Base.metadata.create_all()`
+
+If you are using Docker for local development, start PostgreSQL before running pytest:
+
+```bash
+docker compose up -d postgres
+```
+
+Example targeted backend test command:
+
+```bash
+py -m uv run pytest -q backend/tests/test_auth_and_bootstrap.py
+```
+
+If you are not using Docker, point these env vars at a reachable PostgreSQL server before running tests:
+- `GREENLINK_TEST_DATABASE_URL`
+- `GREENLINK_TEST_ADMIN_DATABASE_URL`
+
 ## Frontend setup
 
 ```bash

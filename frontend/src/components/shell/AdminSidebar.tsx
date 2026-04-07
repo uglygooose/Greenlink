@@ -3,41 +3,119 @@ import { NavLink } from "react-router-dom";
 import { MaterialSymbol } from "../benchmark/material-symbol";
 import { useSession } from "../../session/session-context";
 
-const FALLBACK_NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/dashboard" },
+type NavItem = {
+  key: string;
+  label: string;
+  icon: string;
+  href: string;
+};
+
+type NavGroup = {
+  id: string;
+  label: string | null;
+  keys: string[];
+};
+
+const FALLBACK_NAV_ITEMS: NavItem[] = [
+  { key: "dashboard", label: "Overview", icon: "dashboard", href: "/admin/dashboard" },
+  { key: "golf_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/golf/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
+  { key: "golf_settings", label: "Settings", icon: "settings", href: "/admin/golf/settings" },
+  { key: "people_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/people/dashboard" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
-  { key: "finance", label: "Finance", icon: "payments", href: "/admin/finance" },
-  { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
-  { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
-  { key: "communications", label: "Comms", icon: "chat_bubble", href: "/admin/communications" },
+  { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
+  { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
   { key: "reports", label: "Reports", icon: "analytics", href: "/admin/reports" },
-] as const;
+  { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
+  { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
+  { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
+  { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
+  { key: "club_settings", label: "Club Settings", icon: "settings_applications", href: "/admin/settings/club" },
+  { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
+  { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
+];
 
 const BACKEND_ICON_BY_KEY: Record<string, string> = {
   dashboard: "dashboard",
+  golf_dashboard: "dashboard",
   golf_tee_sheet: "calendar_today",
+  golf_settings: "settings",
+  people_dashboard: "dashboard",
   members: "group",
-  targets: "flag",
+  finance_dashboard: "dashboard",
   finance: "payments",
-  orders: "receipt_long",
-  communications: "chat_bubble",
+  reports: "analytics",
   halfway: "storefront",
   pro_shop: "store",
-  reports: "analytics",
   pos_terminal: "point_of_sale",
+  communications: "chat_bubble",
+  club_settings: "settings_applications",
+  orders: "receipt_long",
+  targets: "flag",
 };
+
+const PRIMARY_NAV_GROUPS: NavGroup[] = [
+  { id: "overview", label: null, keys: ["dashboard"] },
+  { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet", "golf_settings"] },
+  { id: "people", label: "People", keys: ["people_dashboard", "members"] },
+  { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
+  { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal"] },
+  { id: "communications", label: null, keys: ["communications"] },
+  { id: "club-settings", label: null, keys: ["club_settings"] },
+];
+
+const SECONDARY_NAV_KEYS = ["orders", "targets"];
+
+function navLinkClass(isActive: boolean): string {
+  return isActive
+    ? "flex items-center gap-3 rounded-l-xl border-r-4 border-emerald-600 bg-emerald-50/50 px-4 py-3 text-sm font-semibold text-emerald-800 transition-all duration-200"
+    : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-600 transition-all duration-200 hover:bg-slate-100 hover:text-emerald-700";
+}
+
+function secondaryLinkClass(isActive: boolean): string {
+  return isActive
+    ? "flex items-center gap-3 rounded-xl bg-emerald-50/50 px-4 py-2.5 text-xs font-semibold text-emerald-800"
+    : "flex items-center gap-3 rounded-xl px-4 py-2.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-emerald-700";
+}
+
+function NavItemLink({ item }: { item: NavItem }): JSX.Element {
+  return (
+    <NavLink className={({ isActive }) => navLinkClass(isActive)} to={item.href}>
+      {({ isActive }) => (
+        <>
+          <MaterialSymbol filled={isActive} icon={item.icon} />
+          <span className="font-label font-medium">{item.label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+function SecondaryNavItemLink({ item }: { item: NavItem }): JSX.Element {
+  return (
+    <NavLink className={({ isActive }) => secondaryLinkClass(isActive)} to={item.href}>
+      {({ isActive }) => (
+        <>
+          <MaterialSymbol filled={isActive} className="text-[18px]" icon={item.icon} />
+          <span className="font-label font-medium">{item.label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
 
 function SignOutButton(): JSX.Element {
   const { logout } = useSession();
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:text-error hover:bg-slate-100 transition-all duration-200"
-      onClick={() => { void logout(); }}
+      className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-error"
+      onClick={() => {
+        void logout();
+      }}
     >
       <MaterialSymbol className="text-[20px]" icon="logout" />
-      <span className="text-xs font-medium">Sign Out</span>
+      <span className="font-medium">Sign Out</span>
     </button>
   );
 }
@@ -45,7 +123,7 @@ function SignOutButton(): JSX.Element {
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
   const backendNavItems = (bootstrap?.menu_items ?? [])
-    .filter((item) => item.shell === "admin" && item.key !== "golf_settings")
+    .filter((item) => item.shell === "admin")
     .map((item) => ({
       key: item.key,
       label: item.label,
@@ -56,68 +134,87 @@ export default function AdminSidebar(): JSX.Element {
   const usesBackendMenu = backendNavItems.length > 0;
   const navItems = usesBackendMenu ? backendNavItems : FALLBACK_NAV_ITEMS;
   const canOpenGolf = usesBackendMenu ? menuKeys.has("golf_tee_sheet") : true;
-  const canOpenSettings = usesBackendMenu ? menuKeys.has("golf_settings") : true;
+
+  const assignedKeys = new Set<string>();
+  const grouped = PRIMARY_NAV_GROUPS.map((group) => {
+    const items = group.keys
+      .map((key) => navItems.find((item) => item.key === key))
+      .filter((item): item is NavItem => item !== undefined);
+    items.forEach((item) => assignedKeys.add(item.key));
+    return { ...group, items };
+  }).filter((group) => group.items.length > 0);
+
+  const secondaryLinks = SECONDARY_NAV_KEYS
+    .map((key) => navItems.find((item) => item.key === key))
+    .filter((item): item is NavItem => item !== undefined);
+  secondaryLinks.forEach((item) => assignedKeys.add(item.key));
+
+  const ungrouped = navItems.filter((item) => !assignedKeys.has(item.key));
 
   return (
-    <aside className="fixed left-0 top-0 z-30 h-screen w-64 flex flex-col bg-slate-50 border-r border-slate-200/50 dark:bg-slate-950">
-      <div className="px-6 py-8">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+    <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-slate-200/50 bg-slate-50 dark:bg-slate-950">
+      <div className="flex-1 overflow-y-auto px-6 py-8">
+        <div className="mb-10 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white">
             <MaterialSymbol filled icon="forest" />
           </div>
           <div>
-            <h1 className="font-headline font-bold text-xl text-emerald-900 tracking-tight leading-none">GreenLink</h1>
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Golf Operations</span>
+            <h1 className="font-headline text-xl font-bold leading-none tracking-tight text-emerald-900">GreenLink</h1>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Club Operations</span>
           </div>
         </div>
-        <nav className="space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.href}
-              to={item.href}
-              className={({ isActive }) =>
-                isActive
-                  ? "flex items-center gap-3 px-4 py-3 rounded-l-xl text-sm text-emerald-800 font-semibold bg-emerald-50/50 border-r-4 border-emerald-600 transition-all duration-200"
-                  : "flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-slate-600 hover:text-emerald-700 hover:bg-slate-100 transition-all duration-200"
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <MaterialSymbol filled={isActive} icon={item.icon} />
-                  <span className="font-label font-medium">{item.label}</span>
-                </>
-              )}
-            </NavLink>
+
+        <nav className="space-y-0.5">
+          {grouped.map((group, index) => (
+            <div className={index > 0 ? "pt-4" : undefined} key={group.id}>
+              {group.label ? (
+                <p className="mb-1 px-4 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                  {group.label}
+                </p>
+              ) : null}
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavItemLink item={item} key={item.key} />
+                ))}
+              </div>
+            </div>
           ))}
+
+          {ungrouped.length > 0 ? (
+            <div className="pt-4">
+              <div className="space-y-0.5">
+                {ungrouped.map((item) => (
+                  <NavItemLink item={item} key={item.key} />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </nav>
       </div>
 
-      <div className="mt-auto px-6 py-8 space-y-4">
+      <div className="space-y-4 border-t border-slate-200 px-6 py-6 dark:border-slate-800">
         {canOpenGolf ? (
           <NavLink
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
             to="/admin/golf/tee-sheet"
-            className="w-full bg-primary text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary-dim transition-colors shadow-sm"
           >
-            <MaterialSymbol filled icon="add_circle" className="text-sm" />
+            <MaterialSymbol filled className="text-sm" icon="add_circle" />
             <span>Book Golf</span>
           </NavLink>
         ) : null}
-        <div className="border-t border-slate-200 pt-4 space-y-1 dark:border-slate-800">
-          {canOpenSettings ? (
-            <NavLink
-              to="/admin/golf/settings"
-              className={({ isActive }) =>
-                isActive
-                  ? "flex items-center gap-3 px-4 py-3 rounded-l-xl text-xs text-emerald-800 font-semibold bg-emerald-50/50 border-r-4 border-emerald-600 transition-all duration-200"
-                  : "flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:text-emerald-700 hover:bg-slate-100 transition-all duration-200"
-              }
-            >
-              <MaterialSymbol className="text-[20px]" icon="settings" />
-              <span className="text-xs font-medium">Settings</span>
-            </NavLink>
-          ) : null}
-          <SignOutButton />
-        </div>
+
+        {secondaryLinks.length > 0 ? (
+          <div className="space-y-1">
+            <p className="px-4 text-[9px] font-bold uppercase tracking-widest text-slate-400">Direct Access</p>
+            <div className="space-y-0.5">
+              {secondaryLinks.map((item) => (
+                <SecondaryNavItemLink item={item} key={item.key} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <SignOutButton />
       </div>
     </aside>
   );

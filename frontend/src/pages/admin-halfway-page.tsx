@@ -132,6 +132,24 @@ export function AdminHalfwayPage(): JSX.Element {
         </div>
       }
       title="Halfway House"
+      actions={
+        <>
+          <NavLink
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
+            to="/admin/orders"
+          >
+            <MaterialSymbol filled icon="pending_actions" />
+            Order Queue
+          </NavLink>
+          <NavLink
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
+            to="/admin/pos-terminal"
+          >
+            <MaterialSymbol icon="point_of_sale" />
+            POS Terminal
+          </NavLink>
+        </>
+      }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest shadow-sm">
@@ -225,6 +243,13 @@ export function AdminHalfwayPage(): JSX.Element {
         >
           <MaterialSymbol icon="pending_actions" />
           Order Queue
+        </NavLink>
+        <NavLink
+          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-surface-container-lowest px-5 py-3 font-bold text-on-surface shadow-sm transition-colors hover:bg-slate-50"
+          to="/admin/pro-shop"
+        >
+          <MaterialSymbol icon="store" />
+          Pro Shop
         </NavLink>
       </div>
     </AdminWorkspace>

@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-06 (end of Phase 9)
+Last updated: 2026-04-07 (end of Phase 10)
 
 ## Canonical Snapshot Role
 
@@ -20,6 +20,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Status: Partial
 - Live: tee-sheet read model, booking lifecycle, admin tee-sheet route inside router-owned persistent admin shell
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
+- Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 
 ## FIN Status
 
@@ -67,16 +68,48 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 ## Dashboard Status
 
-- Status: Complete (Phase 6 + Phase 7 done)
-- Live: `GET /api/admin/dashboard/summary` - member_count, tee_occupancy, tee_warnings, recent_activity
+- Status: Extended (Phase 6 + Phase 7 + Phase 10 done)
+- Live: `GET /api/admin/dashboard/summary` - member_count, tee_occupancy, tee_warnings, recent_activity, active_targets
 - Live: `GET /api/admin/halfway/summary` - orders_today_count, active_queue_count, queue_orders, recent_transactions
 - Live: `GET /api/admin/reports/summary` - member_breakdown (with role counts, pcts, no_account_count, new_member_count), order_status_breakdown, course_count
-- Live: `AdminDashboardPage` - 3 queries (dashboard summary, finance outstanding, finance revenue); no React math
+- Live: `AdminDashboardPage` - enhanced with action alerts, quick actions, target hints, halfway and reports queries; no React math
+- Live: `AdminGolfDashboardPage` (`/admin/golf/dashboard`) - golf utilization, revenue posture, tee warnings, config readiness; all from backend read models
+- Live: `AdminPeopleDashboardPage` (`/admin/people/dashboard`) - member breakdown, outstanding account posture, directory size; all from backend read models
+- Live: `AdminFinanceDashboardPage` (`/admin/finance/dashboard`) - revenue, outstanding, transaction volume, export batch status; all from backend read models
+- Live: `AdminClubSettingsPage` (`/admin/settings/club`) - configuration hub linking to golf settings and module config; does not duplicate superadmin ownership
 - Live: `AdminHalfwayPage` - 3 queries (halfway summary, finance revenue, finance transaction volume); no React math
 - Live: `AdminReportsPage` - 4 queries (reports summary, finance revenue, finance outstanding, finance transaction volume); no React math
 - Live: `AdminMembersPage` - no_account_count and new_member_count come from reports summary; no client-side date math or cross-query counting
+- Live: `active_targets` field on dashboard summary — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, and returns typed `DashboardTargetContext` items; no React math
 - Tee operational warnings (`no_courses_configured`, `tee_sheet_closed_today`) are backend-emitted
 - No React math or cross-query KPI stitching remains in any admin dashboard page
+
+## Admin Navigation
+
+- Live: `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · Communications · Club Settings
+- Live: Group structure is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`; ungrouped items are rendered below without a label
+- Live: Secondary links (direct access) pinned to sidebar footer for quick reach
+- Live: backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry; sidebar resolves against it
+- Live: `pos` module relabeled "Commerce" in module catalog
+
+## Admin Routes
+
+- `/admin/dashboard` — overview with action alerts, quick actions, targets, recent activity
+- `/admin/golf/dashboard` — golf domain: utilization, revenue, warnings, config readiness
+- `/admin/golf/tee-sheet` — operational tee sheet: create/edit/move/cancel bookings
+- `/admin/golf/settings` — golf settings: courses, tees, rule sets, pricing matrices
+- `/admin/people/dashboard` — people domain: member breakdown, account posture, directory
+- `/admin/members` — member directory and account management
+- `/admin/finance/dashboard` — finance domain: revenue, outstanding, transaction volume, export batches
+- `/admin/finance` — close-day: export batch workflow and reconciliation
+- `/admin/reports` — reports and analytics summaries
+- `/admin/halfway` — halfway house operations
+- `/admin/pro-shop` — pro shop
+- `/admin/pos-terminal` — POS terminal
+- `/admin/orders` — order queue
+- `/admin/settings/club` — club settings hub
+- `/admin/communications` — communications and news posts
+- `/admin/targets` — club targets
 
 ## Known Constraints
 
@@ -92,15 +125,23 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 ## Known Risks
 
-- No new Phase 9 cleanup risk remains; remaining risks are domain-level gaps, not workspace normalization drift.
+- No new Phase 10 risk remains; remaining risks are domain-level gaps, not navigation or workspace normalization drift.
+- Backend test suite must run in file-declaration order (`-p no:randomly`) to avoid a pre-existing DB-state ordering issue with stale PostgreSQL ENUMs between test files. Not caused by Phase 10 changes.
+
+## Known Gaps
+
+- New domain dashboard pages (`AdminGolfDashboardPage`, `AdminPeopleDashboardPage`, `AdminFinanceDashboardPage`, `AdminClubSettingsPage`) have no Vitest coverage yet.
+- `active_targets` is tested implicitly via the dashboard summary endpoint; no isolated unit test for `_get_active_targets()` with live `ClubTarget` fixture rows.
 
 ## Latest Validation
 
 - `frontend`: `npm.cmd run typecheck` - clean
-- `frontend`: `npm.cmd run test` - clean
-- `backend`: `py -m uv run pytest -vv -s` - clean (`154 passed`, about 10m30s)
+- `frontend`: `npm.cmd run test` - clean (`96 passed`, 22 test files)
+- `backend`: `py -m uv run pytest -p no:randomly` - clean (`154 passed`, about 8m05s)
+- `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx` - clean (`18 passed`)
+- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean (`5 passed`)
+- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`3 passed`)
 - `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - clean
-- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-profile-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/invitation-accept-page.test.tsx` - clean
@@ -111,6 +152,4 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - `backend`: targeted pytest `backend/tests/test_player_profile.py` - clean
 - `backend`: targeted pytest `backend/tests/test_superadmin_invitations.py` - clean
 - `backend`: targeted pytest `backend/tests/test_invitation_acceptance.py` - clean
-- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` for additive `menu_items` contract - clean
 - `backend`: targeted pytest `backend/tests/test_targets.py` - clean
-- `backend`: `py -m uv run pytest -q` - clean

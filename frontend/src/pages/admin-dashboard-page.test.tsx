@@ -9,6 +9,8 @@ const mockUseSession = vi.fn();
 const mockUseAdminDashboardSummaryQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
+const mockUseHalfwaySummaryQuery = vi.fn();
+const mockUseReportsSummaryQuery = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -16,6 +18,14 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/admin-dashboard/hooks", () => ({
   useAdminDashboardSummaryQuery: () => mockUseAdminDashboardSummaryQuery(),
+}));
+
+vi.mock("../features/admin-dashboard/halfway-hooks", () => ({
+  useHalfwaySummaryQuery: () => mockUseHalfwaySummaryQuery(),
+}));
+
+vi.mock("../features/admin-dashboard/reports-hooks", () => ({
+  useReportsSummaryQuery: () => mockUseReportsSummaryQuery(),
 }));
 
 vi.mock("../features/finance/hooks", () => ({
@@ -48,6 +58,7 @@ describe("AdminDashboardPage", () => {
       bootstrap: {
         selected_club_id: "club-1",
         user: { display_name: "Club Admin" },
+        module_flags: { communications: true },
         selected_club: {
           id: "club-1",
           name: "Club One",
@@ -78,6 +89,7 @@ describe("AdminDashboardPage", () => {
             created_at: "2026-04-01T09:00:00Z",
           },
         ],
+        active_targets: [],
       },
       isLoading: false,
     });
@@ -130,6 +142,35 @@ describe("AdminDashboardPage", () => {
       },
       isLoading: false,
     });
+
+    mockUseHalfwaySummaryQuery.mockReturnValue({
+      data: {
+        orders_today_count: 5,
+        active_queue_count: 2,
+        queue_orders: [],
+        recent_transactions: [],
+      },
+      isLoading: false,
+    });
+
+    mockUseReportsSummaryQuery.mockReturnValue({
+      data: {
+        member_breakdown: {
+          total: 42,
+          admin_count: 2,
+          staff_count: 4,
+          member_count: 36,
+          admin_pct: 5,
+          staff_pct: 10,
+          member_pct: 85,
+          no_account_count: 3,
+          new_member_count: 2,
+        },
+        order_status_breakdown: { total: 0, collected_count: 0, by_status: [] },
+        course_count: 2,
+      },
+      isLoading: false,
+    });
   });
 
   test("renders finance KPI values from summary payloads instead of raw account or journal aggregation", () => {
@@ -139,8 +180,16 @@ describe("AdminDashboardPage", () => {
     expect(normalizedText).toContain("R99900");
     expect(screen.getByText("4 accounts")).toBeInTheDocument();
     expect(normalizedText).toContain("R32100");
-    expect(screen.getByText(/items awaiting settlement totaling/i)).toBeInTheDocument();
+    expect(screen.getByText(/postings are awaiting settlement/i)).toBeInTheDocument();
     expect(screen.queryByText("GL-001")).not.toBeInTheDocument();
+  });
+
+  test("turns live issues into action cards", () => {
+    renderPage();
+    expect(screen.getByText("Accounts in arrears")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review members/i })).toBeInTheDocument();
+    expect(screen.getByText("Commerce queue pressure")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /open order queue/i }).length).toBeGreaterThan(0);
   });
 
   test("renders member count and tee occupancy from backend summary", () => {
@@ -159,6 +208,8 @@ describe("AdminDashboardPage", () => {
 
   test("shows loading state while summary is loading", () => {
     mockUseAdminDashboardSummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
+    mockUseHalfwaySummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
+    mockUseReportsSummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
     renderPage();
     // At least one loading skeleton should be present
     const skeletons = document.querySelectorAll(".animate-pulse");

@@ -18,9 +18,22 @@ export interface DashboardNotice {
   message: string;
 }
 
+export interface DashboardTargetContext {
+  domain_key: string;
+  domain_label: string;
+  metric_key: string;
+  metric_label: string;
+  period_key: string;
+  period_start: string;
+  period_end: string;
+  target_value: number;
+  unit: string;
+}
+
 export interface AdminDashboardSummary {
   member_count: number;
   tee_occupancy: DashboardTeeOccupancy;
   tee_warnings: DashboardNotice[];
   recent_activity: DashboardActivityItem[];
+  active_targets: DashboardTargetContext[];
 }
