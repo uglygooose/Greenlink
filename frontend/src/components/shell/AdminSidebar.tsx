@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../benchmark/material-symbol";
@@ -120,6 +121,42 @@ function SignOutButton(): JSX.Element {
   );
 }
 
+function CollapsibleGroup({
+  label,
+  items,
+  open,
+  onToggle,
+}: {
+  label: string;
+  items: NavItem[];
+  open: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-xl px-4 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+      >
+        <span>{label}</span>
+        <MaterialSymbol
+          className={`text-[14px] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          icon="expand_more"
+        />
+      </button>
+      {open ? (
+        <div className="mt-0.5 space-y-0.5">
+          {items.map((item) => (
+            <NavItemLink item={item} key={item.key} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
   const backendNavItems = (bootstrap?.menu_items ?? [])
@@ -151,6 +188,19 @@ export default function AdminSidebar(): JSX.Element {
 
   const ungrouped = navItems.filter((item) => !assignedKeys.has(item.key));
 
+  // All labeled groups open by default
+  const labeledGroupIds = grouped.filter((g) => g.label !== null).map((g) => g.id);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(labeledGroupIds));
+
+  function toggleGroup(id: string): void {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-slate-200/50 bg-slate-50 dark:bg-slate-950">
       <div className="flex-1 overflow-y-auto px-6 py-8">
@@ -166,22 +216,26 @@ export default function AdminSidebar(): JSX.Element {
 
         <nav className="space-y-0.5">
           {grouped.map((group, index) => (
-            <div className={index > 0 ? "pt-4" : undefined} key={group.id}>
+            <div className={index > 0 ? "pt-3" : undefined} key={group.id}>
               {group.label ? (
-                <p className="mb-1 px-4 text-[9px] font-bold uppercase tracking-widest text-slate-400">
-                  {group.label}
-                </p>
-              ) : null}
-              <div className="space-y-0.5">
-                {group.items.map((item) => (
-                  <NavItemLink item={item} key={item.key} />
-                ))}
-              </div>
+                <CollapsibleGroup
+                  label={group.label}
+                  items={group.items}
+                  open={openGroups.has(group.id)}
+                  onToggle={() => toggleGroup(group.id)}
+                />
+              ) : (
+                <div className="space-y-0.5">
+                  {group.items.map((item) => (
+                    <NavItemLink item={item} key={item.key} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
           {ungrouped.length > 0 ? (
-            <div className="pt-4">
+            <div className="pt-3">
               <div className="space-y-0.5">
                 {ungrouped.map((item) => (
                   <NavItemLink item={item} key={item.key} />
