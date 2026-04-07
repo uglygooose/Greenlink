@@ -66,9 +66,8 @@ describe("AdminSidebar", () => {
   test("falls back to the static admin menu when backend menu items are absent", () => {
     renderSidebar(baseBootstrap);
 
-    // Unlabeled items (Overview, Communications, Club Settings) always visible
+    // Only Overview is always visible (unlabeled group)
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
 
     // Labeled groups start collapsed — expand Golf to find its links
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
@@ -79,6 +78,11 @@ describe("AdminSidebar", () => {
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
+
+    // Expand My Club to find Club Settings
+    expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
+    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
   });
 
   test("uses backend menu items to hide disabled admin domains during rollout", () => {

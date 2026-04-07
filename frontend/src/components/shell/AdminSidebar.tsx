@@ -21,7 +21,6 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Overview", icon: "dashboard", href: "/admin/dashboard" },
   { key: "golf_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/golf/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
-  { key: "golf_settings", label: "Settings", icon: "settings", href: "/admin/golf/settings" },
   { key: "people_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/people/dashboard" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
   { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
@@ -30,9 +29,9 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
   { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
   { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
+  { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
   { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
   { key: "club_settings", label: "Club Settings", icon: "settings_applications", href: "/admin/settings/club" },
-  { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
   { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
 ];
 
@@ -60,12 +59,11 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet"] },
   { id: "people", label: "People", keys: ["people_dashboard", "members"] },
   { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
-  { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal"] },
-  { id: "communications", label: null, keys: ["communications"] },
-  { id: "club-settings", label: null, keys: ["club_settings"] },
+  { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
+  { id: "my_club", label: "My Club", keys: ["communications", "club_settings", "targets"] },
 ];
 
-const SECONDARY_NAV_KEYS = ["orders"];
+const SECONDARY_NAV_KEYS: string[] = [];
 
 function navLinkClass(isActive: boolean): string {
   return isActive
@@ -73,11 +71,6 @@ function navLinkClass(isActive: boolean): string {
     : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-600 transition-all duration-200 hover:bg-slate-100 hover:text-emerald-700";
 }
 
-function secondaryLinkClass(isActive: boolean): string {
-  return isActive
-    ? "flex items-center gap-3 rounded-xl bg-emerald-50/50 px-4 py-2.5 text-xs font-semibold text-emerald-800"
-    : "flex items-center gap-3 rounded-xl px-4 py-2.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-emerald-700";
-}
 
 function NavItemLink({ item }: { item: NavItem }): JSX.Element {
   return (
@@ -92,18 +85,6 @@ function NavItemLink({ item }: { item: NavItem }): JSX.Element {
   );
 }
 
-function SecondaryNavItemLink({ item }: { item: NavItem }): JSX.Element {
-  return (
-    <NavLink className={({ isActive }) => secondaryLinkClass(isActive)} to={item.href}>
-      {({ isActive }) => (
-        <>
-          <MaterialSymbol filled={isActive} className="text-[18px]" icon={item.icon} />
-          <span className="font-label font-medium">{item.label}</span>
-        </>
-      )}
-    </NavLink>
-  );
-}
 
 function SignOutButton(): JSX.Element {
   const { logout } = useSession();
@@ -181,11 +162,6 @@ export default function AdminSidebar(): JSX.Element {
     return { ...group, items };
   }).filter((group) => group.items.length > 0);
 
-  const secondaryLinks = SECONDARY_NAV_KEYS
-    .map((key) => navItems.find((item) => item.key === key))
-    .filter((item): item is NavItem => item !== undefined);
-  secondaryLinks.forEach((item) => assignedKeys.add(item.key));
-
   const ungrouped = navItems.filter((item) => !assignedKeys.has(item.key));
 
   // All labeled groups collapsed by default
@@ -245,18 +221,7 @@ export default function AdminSidebar(): JSX.Element {
         </nav>
       </div>
 
-      <div className="space-y-4 border-t border-slate-200 px-6 py-6 dark:border-slate-800">
-        {secondaryLinks.length > 0 ? (
-          <div className="space-y-1">
-            <p className="px-4 text-[9px] font-bold uppercase tracking-widest text-slate-400">Direct Access</p>
-            <div className="space-y-0.5">
-              {secondaryLinks.map((item) => (
-                <SecondaryNavItemLink item={item} key={item.key} />
-              ))}
-            </div>
-          </div>
-        ) : null}
-
+      <div className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
         <SignOutButton />
       </div>
     </aside>
