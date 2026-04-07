@@ -3,6 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../api/client";
 import { useSession } from "../../session/session-context";
 import type {
+  BlastCreateInput,
+  BlastListResponse,
+  BlastSendResponse,
+  CommunicationBlast,
   NewsPost,
   NewsPostCreateInput,
   NewsPostListResponse,
@@ -14,6 +18,7 @@ export const commsKeys = {
   posts: (clubId: string, status?: NewsPostStatus | null) =>
     ["comms", clubId, "posts", status ?? "all"] as const,
   feed: (clubId: string) => ["comms", clubId, "feed"] as const,
+  blasts: (clubId: string) => ["comms", clubId, "blasts"] as const,
 };
 
 function isReady(accessToken: string | null, selectedClubId: string | null): boolean {
@@ -111,6 +116,63 @@ export function useDeleteNewsPostMutation() {
     onSuccess: async () => {
       if (!selectedClubId) return;
       await queryClient.invalidateQueries({ queryKey: ["comms", selectedClubId] });
+    },
+  });
+}
+
+// ── Blast hooks ───────────────────────────────────────────────────────────────
+
+export function useBlastsQuery({
+  accessToken,
+  selectedClubId,
+}: Omit<CommsQueryOptions, "status">) {
+  return useQuery<BlastListResponse>({
+    queryKey: commsKeys.blasts(selectedClubId ?? "none"),
+    queryFn: () =>
+      apiRequest<BlastListResponse>("/api/comms/blasts", {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useCreateBlastMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: BlastCreateInput) =>
+      apiRequest<CommunicationBlast>("/api/comms/blasts", {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async () => {
+      if (!selectedClubId) return;
+      await queryClient.invalidateQueries({ queryKey: commsKeys.blasts(selectedClubId) });
+    },
+  });
+}
+
+export function useSendBlastMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (blastId: string) =>
+      apiRequest<BlastSendResponse>(`/api/comms/blasts/${blastId}/send`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      if (!selectedClubId) return;
+      await queryClient.invalidateQueries({ queryKey: commsKeys.blasts(selectedClubId) });
     },
   });
 }

@@ -11,6 +11,9 @@ const mockUsePublishedNewsFeedQuery = vi.fn();
 const mockUseCreateNewsPostMutation = vi.fn();
 const mockUseUpdateNewsPostMutation = vi.fn();
 const mockUseDeleteNewsPostMutation = vi.fn();
+const mockUseBlastsQuery = vi.fn();
+const mockUseCreateBlastMutation = vi.fn();
+const mockUseSendBlastMutation = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -22,6 +25,9 @@ vi.mock("../features/comms/hooks", () => ({
   useCreateNewsPostMutation: () => mockUseCreateNewsPostMutation(),
   useUpdateNewsPostMutation: () => mockUseUpdateNewsPostMutation(),
   useDeleteNewsPostMutation: () => mockUseDeleteNewsPostMutation(),
+  useBlastsQuery: () => mockUseBlastsQuery(),
+  useCreateBlastMutation: () => mockUseCreateBlastMutation(),
+  useSendBlastMutation: () => mockUseSendBlastMutation(),
 }));
 
 function renderPage(): void {
@@ -102,6 +108,18 @@ describe("AdminCommunicationsPage", () => {
     });
     mockUseDeleteNewsPostMutation.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    });
+    mockUseBlastsQuery.mockReturnValue({
+      data: { blasts: [], total_count: 0 },
+      isLoading: false,
+    });
+    mockUseCreateBlastMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ id: "blast-1" }),
+      isPending: false,
+    });
+    mockUseSendBlastMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ id: "blast-1", status: "sent", recipient_count: 5, delivery_note: "ok" }),
       isPending: false,
     });
   });

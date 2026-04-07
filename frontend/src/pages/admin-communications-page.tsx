@@ -3,14 +3,24 @@ import { useState } from "react";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
+  useBlastsQuery,
+  useCreateBlastMutation,
   useCreateNewsPostMutation,
   useDeleteNewsPostMutation,
   useNewsPostsQuery,
   usePublishedNewsFeedQuery,
+  useSendBlastMutation,
   useUpdateNewsPostMutation,
 } from "../features/comms/hooks";
 import { useSession } from "../session/session-context";
-import type { NewsPost, NewsPostStatus, NewsPostVisibility } from "../types/comms";
+import type {
+  BlastChannel,
+  BlastTargetSegment,
+  CommunicationBlast,
+  NewsPost,
+  NewsPostStatus,
+  NewsPostVisibility,
+} from "../types/comms";
 import type { MembershipRole, SessionBootstrap } from "../types/session";
 
 type Tab = "all" | "published" | "draft";
@@ -312,6 +322,218 @@ function PostCard({ canManage, onNotice, post }: PostCardProps): JSX.Element {
   );
 }
 
+// ── Blast helpers ─────────────────────────────────────────────────────────────
+
+function segmentLabel(segment: BlastTargetSegment): string {
+  switch (segment) {
+    case "all":
+      return "Everyone";
+    case "members":
+      return "Members";
+    case "staff":
+      return "Staff";
+    case "admin":
+      return "Admins";
+  }
+}
+
+function channelLabel(channel: BlastChannel): string {
+  return channel === "email" ? "Email" : "In-App";
+}
+
+interface BlastComposerModalProps {
+  onClose: () => void;
+  onSent: (message: string) => void;
+}
+
+function BlastComposerModal({ onClose, onSent }: BlastComposerModalProps): JSX.Element {
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [segment, setSegment] = useState<BlastTargetSegment>("all");
+  const [channel, setChannel] = useState<BlastChannel>("in_app");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const createBlast = useCreateBlastMutation();
+  const sendBlast = useSendBlastMutation();
+  const busy = createBlast.isPending || sendBlast.isPending;
+
+  async function handleSend(): Promise<void> {
+    if (!subject.trim() || !body.trim()) return;
+    setSubmitError(null);
+    try {
+      const blast = await createBlast.mutateAsync({
+        subject: subject.trim(),
+        body: body.trim(),
+        target_segment: segment,
+        channel,
+      });
+      await sendBlast.mutateAsync(blast.id);
+      onSent(`Broadcast sent to ${segmentLabel(segment).toLowerCase()} via ${channelLabel(channel)}.`);
+      onClose();
+    } catch (error) {
+      setSubmitError(asMessage(error));
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <h3 className="font-headline text-base font-extrabold text-slate-900">New Broadcast</h3>
+          <button className="rounded-full p-2 text-slate-400 hover:bg-slate-100" onClick={onClose} type="button">
+            <MaterialSymbol icon="close" />
+          </button>
+        </div>
+        <div className="space-y-4 p-6">
+          <input
+            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder="Subject..."
+            type="text"
+            value={subject}
+          />
+          <textarea
+            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Write your broadcast message..."
+            rows={5}
+            value={body}
+          />
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <span>Send to</span>
+              <select
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                onChange={(event) => setSegment(event.target.value as BlastTargetSegment)}
+                value={segment}
+              >
+                <option value="all">Everyone</option>
+                <option value="members">Members</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admins</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <span>Channel</span>
+              <select
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                onChange={(event) => setChannel(event.target.value as BlastChannel)}
+                value={channel}
+              >
+                <option value="in_app">In-App</option>
+                <option value="email">Email</option>
+              </select>
+            </label>
+          </div>
+          <div className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-medium text-amber-700">
+            This broadcast will be sent immediately to all {segmentLabel(segment).toLowerCase()} with active membership.
+          </div>
+        </div>
+        {submitError ? (
+          <div className="px-6 pb-2">
+            <div className={noticeClassName("error")}>{submitError}</div>
+          </div>
+        ) : null}
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <button
+            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-bold text-white hover:bg-primary-dim disabled:opacity-50"
+            disabled={busy || !subject.trim() || !body.trim()}
+            onClick={() => {
+              void handleSend();
+            }}
+            type="button"
+          >
+            {busy ? "Sending..." : "Send Broadcast"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface BlastCardProps {
+  blast: CommunicationBlast;
+  canManage: boolean;
+  onNotice: (notice: { message: string; tone: NoticeTone } | null) => void;
+}
+
+function BlastCard({ blast, canManage, onNotice }: BlastCardProps): JSX.Element {
+  const sendBlast = useSendBlastMutation();
+
+  async function handleResend(): Promise<void> {
+    onNotice(null);
+    try {
+      const result = await sendBlast.mutateAsync(blast.id);
+      onNotice({ tone: "success", message: `Resent to ${result.recipient_count} recipient(s).` });
+    } catch (error) {
+      onNotice({ tone: "error", message: asMessage(error) });
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest p-5 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+              blast.status === "sent"
+                ? "bg-emerald-100 text-emerald-700"
+                : blast.status === "failed"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {blast.status}
+          </span>
+          <span className="text-[10px] font-medium text-slate-400">
+            {channelLabel(blast.channel)} · {segmentLabel(blast.target_segment)}
+          </span>
+          {blast.recipient_count !== null ? (
+            <span className="text-[10px] font-medium text-slate-500">
+              {blast.recipient_count} recipient{blast.recipient_count !== 1 ? "s" : ""}
+            </span>
+          ) : null}
+        </div>
+        <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(blast.created_at)}</span>
+      </div>
+
+      <h4 className="mb-1.5 font-headline text-sm font-extrabold text-on-surface">{blast.subject}</h4>
+      <p className="line-clamp-2 text-sm leading-relaxed text-slate-600">{blast.body}</p>
+
+      {blast.delivery_note ? (
+        <p className="mt-2 text-xs text-slate-400">{blast.delivery_note}</p>
+      ) : null}
+
+      {blast.created_by ? (
+        <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          By {blast.created_by.full_name}
+        </p>
+      ) : null}
+
+      {canManage && blast.status === "draft" ? (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <button
+            className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-primary-dim disabled:opacity-50"
+            disabled={sendBlast.isPending}
+            onClick={() => {
+              void handleResend();
+            }}
+            type="button"
+          >
+            {sendBlast.isPending ? "Sending..." : "Send Now"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminCommunicationsPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
@@ -319,12 +541,14 @@ export function AdminCommunicationsPage(): JSX.Element {
   const canManagePosts = bootstrap?.user.user_type === "superadmin" || role === "club_admin";
   const [tab, setTab] = useState<Tab>("all");
   const [composing, setComposing] = useState(false);
+  const [composingBlast, setComposingBlast] = useState(false);
   const [notice, setNotice] = useState<{ message: string; tone: NoticeTone } | null>(null);
 
   const statusFilter: NewsPostStatus | undefined =
     tab === "all" ? undefined : tab === "published" ? "published" : "draft";
   const postsQuery = useNewsPostsQuery({ accessToken, selectedClubId, status: statusFilter });
   const publishedFeedQuery = usePublishedNewsFeedQuery({ accessToken, selectedClubId });
+  const blastsQuery = useBlastsQuery({ accessToken, selectedClubId });
 
   const posts = postsQuery.data?.posts ?? [];
   const total = postsQuery.data?.total_count ?? 0;
@@ -332,6 +556,7 @@ export function AdminCommunicationsPage(): JSX.Element {
   const draftCount = posts.filter((post) => post.status === "draft").length;
   const pinnedCount = posts.filter((post) => post.pinned).length;
   const publishedFeed = publishedFeedQuery.data?.posts ?? [];
+  const blasts = blastsQuery.data?.blasts ?? [];
 
   return (
     <>
@@ -339,6 +564,12 @@ export function AdminCommunicationsPage(): JSX.Element {
         <ComposeModal
           onClose={() => setComposing(false)}
           onPublished={(message) => setNotice({ tone: "success", message })}
+        />
+      ) : null}
+      {composingBlast ? (
+        <BlastComposerModal
+          onClose={() => setComposingBlast(false)}
+          onSent={(message) => setNotice({ tone: "success", message })}
         />
       ) : null}
 
@@ -558,6 +789,56 @@ export function AdminCommunicationsPage(): JSX.Element {
             </div>
           </>
         ) : null}
+
+        {/* ── Broadcast Blasts ─────────────────────────────────────────────── */}
+        <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-headline text-base font-extrabold text-on-surface">Broadcast Messages</h3>
+              <p className="text-sm text-slate-500">
+                Send direct broadcasts to all members, staff, or specific segments.
+              </p>
+            </div>
+            {canManagePosts ? (
+              <button
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
+                onClick={() => setComposingBlast(true)}
+                type="button"
+              >
+                <MaterialSymbol icon="campaign" />
+                New Broadcast
+              </button>
+            ) : null}
+          </div>
+
+          {blastsQuery.isLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map((value) => (
+                <div className="h-24 animate-pulse rounded-xl bg-slate-100" key={value} />
+              ))}
+            </div>
+          ) : blasts.length === 0 ? (
+            <div className="rounded-xl bg-surface-container-low px-6 py-8 text-center">
+              <MaterialSymbol className="mb-3 text-4xl text-slate-300" icon="campaign" />
+              <p className="text-sm font-medium text-slate-400">No broadcasts sent yet.</p>
+              {canManagePosts ? (
+                <button
+                  className="mt-4 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
+                  onClick={() => setComposingBlast(true)}
+                  type="button"
+                >
+                  Send First Broadcast
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {blasts.map((blast) => (
+                <BlastCard blast={blast} canManage={canManagePosts} key={blast.id} onNotice={setNotice} />
+              ))}
+            </div>
+          )}
+        </div>
       </AdminWorkspace>
     </>
   );
