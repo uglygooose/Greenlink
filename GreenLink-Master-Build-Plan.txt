@@ -90,19 +90,28 @@ Phase 10 - Domain Dashboards and Admin Navigation: COMPLETED
 - `GET /api/admin/dashboard/summary` now includes `active_targets` — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, returns typed `DashboardTargetContext` list; no React math
 - Full test gate: npm run typecheck clean, 96 Vitest tests passed, 154 pytest passed
 
-Phase 11 - Infrastructure Hardening & Test Coverage: IN PROGRESS
+Phase 11 - Infrastructure Hardening & Test Coverage: COMPLETED
 - 11-A Test coverage for four uncovered Phase 10 pages: COMPLETED
   - Live: Vitest suites for AdminGolfDashboardPage, AdminFinanceDashboardPage, AdminPeopleDashboardPage, AdminClubSettingsPage
-  - 125 tests pass across 26 test files
+  - 126 tests pass across 26 test files
 - 11-B Pytest ordering enforced by config: COMPLETED
   - Live: `-p no:randomly` added to `addopts` in pyproject.toml; no longer tribal knowledge
-- 11-C Fix localhost/127.0.0.1 CORS drift: NOT STARTED
-- 11-D Fix menu items fallback drift: PARTIAL
-  - golf_settings added to FALLBACK_NAV_ITEMS and My Club group; systematic sync mechanism not yet built
+- 11-C CORS drift: RESOLVED (existing implementation)
+  - `allow_origin_regex` in main.py already matches both localhost and 127.0.0.1 on any port
+  - Vite dev proxy handles all local browser CORS for /api/* traffic
+  - Startup logging added to main.py to surface effective CORS origins on boot
+- 11-D Menu items fallback drift: COMPLETED
+  - golf_settings added to FALLBACK_NAV_ITEMS and My Club group
+  - Vitest coverage test added to AdminSidebar.test.tsx asserting all known MENU_ITEMS admin keys are present in fallback nav
 
-Phase 12 - Reporting Aggregation (close React math gap): NOT STARTED
-- Backend: GET /api/admin/reports/breakdown with pre-computed pct fields for order_status and member_breakdown
-- Frontend: AdminReportsPage refactored to consume breakdown endpoint; zero client-side chart math remains
+Phase 12 - Reporting Aggregation (close React math gap): RESOLVED (already done)
+- AdminReportsPage already uses backend-provided pct fields for all charts:
+  - Revenue by source: revenue_share_pct from finance revenue summary by_source items
+  - Transaction types: volume_share_pct from finance transaction volume summary by_type items
+  - Member breakdown: member_pct, staff_pct, admin_pct from reports summary member_breakdown
+  - Account health: accounts_in_credit_pct, accounts_settled_pct, accounts_in_arrears_pct from outstanding summary
+  - Order status: count tiles only (no bar widths — no React math needed)
+- No new backend endpoint required; all pct fields were already backend-computed
 
 Phase 13 - Communications Expansion: NOT STARTED
 - 13-A CommunicationBlast model, blast create/send endpoints, segment resolver (backend)

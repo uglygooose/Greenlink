@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,6 +15,9 @@ from app.schemas.shared import ErrorResponse
 
 configure_logging()
 settings = get_settings()
+_log = logging.getLogger(__name__)
+_log.info("CORS explicit origins: %s", settings.allowed_origins)
+_log.info("CORS regex: https?://(localhost|127.0.0.1)(:\\d+)?$ (always active)")
 
 app = FastAPI(title=settings.project_name)
 app.add_middleware(CorrelationIdMiddleware)

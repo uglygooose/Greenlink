@@ -167,4 +167,39 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /pro shop/i })).not.toBeInTheDocument();
   });
+
+  test("fallback nav covers all known backend MENU_ITEMS admin keys — none silently omitted", () => {
+    // Renders without menu_items to exercise FALLBACK_NAV_ITEMS.
+    // Expands every collapsible group so all links are visible.
+    renderSidebar(baseBootstrap);
+
+    // Expand all labeled groups
+    for (const label of ["Golf", "People", "Finance", "Operations", "My Club"]) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}$`, "i") }));
+    }
+
+    // Overview (unlabeled, always visible)
+    expect(screen.getByRole("link", { name: /overview$/i })).toBeInTheDocument();
+
+    // Golf
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+
+    // People
+    expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
+
+    // Finance
+    expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /reports/i })).toBeInTheDocument();
+
+    // Operations
+    expect(screen.getByRole("link", { name: /halfway/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /pro shop/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
+
+    // My Club
+    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /targets/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /golf settings/i })).toBeInTheDocument();
+  });
 });

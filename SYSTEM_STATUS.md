@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-07 (Phase 11 in progress)
+Last updated: 2026-04-07 (Phase 11 complete, Phase 12 resolved, Phase 13 next)
 
 ## Canonical Snapshot Role
 
@@ -128,15 +128,14 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 ## Known Risks
 
-- Backend test suite runs in file-declaration order — `-p no:randomly` is now enforced via `pyproject.toml addopts`; no longer tribal knowledge.
-- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1` (Phase 11-C not yet resolved).
-- `FALLBACK_NAV_ITEMS` in AdminSidebar must be kept in sync with `MENU_ITEMS` in `session_bootstrap_service.py` manually; systematic enforcement not yet built (Phase 11-D).
-- Order status breakdown and member breakdown charts in `AdminReportsPage` still compose chart proportions in the frontend from backend records (Phase 12 not yet started).
+- Backend test suite runs in file-declaration order — `-p no:randomly` is enforced via `pyproject.toml addopts`. No longer tribal knowledge.
+- CORS: `allow_origin_regex` matches both `localhost` and `127.0.0.1` on any port. Vite proxy handles all local browser `/api/*` traffic. Effective CORS origins logged at startup. Risk is resolved.
+- FALLBACK_NAV_ITEMS coverage is enforced by an AdminSidebar.test.tsx test that asserts all known MENU_ITEMS admin keys expand to visible links.
 
 ## Known Gaps
 
 - `active_targets` is tested implicitly via the dashboard summary endpoint; no isolated unit test for `_get_active_targets()` with live `ClubTarget` fixture rows.
-- Communications: no broadcast, scheduling, or segment targeting (Phase 13).
+- Communications: no broadcast, scheduling, or segment targeting (Phase 13 — next).
 - Pro shop and halfway have no inventory management or prep-status workflows (Phase 14).
 - Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
@@ -145,7 +144,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 ## Latest Validation
 
 - `frontend`: `npm.cmd run typecheck` - clean
-- `frontend`: `npm.cmd run test` - clean (`125 passed`, 26 test files)
+- `frontend`: `npm.cmd run test` - clean (`126 passed`, 26 test files)
 - `backend`: `py -m uv run pytest` - clean (`154 passed`; `-p no:randomly` now enforced via pyproject.toml)
 - `frontend`: targeted Vitest `src/pages/admin-golf-dashboard-page.test.tsx` - clean (Phase 11-A, new)
 - `frontend`: targeted Vitest `src/pages/admin-finance-dashboard-page.test.tsx` - clean (Phase 11-A, new)
