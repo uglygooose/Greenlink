@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-07 (Phase 11 complete, Phase 12 resolved, Phase 13 next)
+Last updated: 2026-04-08 (Phase 13 complete, Phase 14 next)
 
 ## Canonical Snapshot Role
 
@@ -135,7 +135,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 ## Known Gaps
 
 - `active_targets` is tested implicitly via the dashboard summary endpoint; no isolated unit test for `_get_active_targets()` with live `ClubTarget` fixture rows.
-- Communications: no broadcast, scheduling, or segment targeting (Phase 13 — next).
+- Communications: broadcast blasts (create/send/history) are live. Scheduling and in-app push surface remain future evolution.
 - Pro shop and halfway have no inventory management or prep-status workflows (Phase 14).
 - Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
@@ -145,7 +145,8 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 - `frontend`: `npm.cmd run typecheck` - clean
 - `frontend`: `npm.cmd run test` - clean (`126 passed`, 26 test files)
-- `backend`: `py -m uv run pytest` - clean (`154 passed`; `-p no:randomly` now enforced via pyproject.toml)
+- `backend`: `py -m uv run pytest` - clean (`161 passed`; conftest enum cleanup fix resolves pre-existing startlane duplicate-type drift)
+- `backend`: Phase 13 blast endpoints tested (7 new tests: create, list, send, RBAC, 404, tenant isolation)
 - `frontend`: targeted Vitest `src/pages/admin-golf-dashboard-page.test.tsx` - clean (Phase 11-A, new)
 - `frontend`: targeted Vitest `src/pages/admin-finance-dashboard-page.test.tsx` - clean (Phase 11-A, new)
 - `frontend`: targeted Vitest `src/pages/admin-people-dashboard-page.test.tsx` - clean (Phase 11-A, new)

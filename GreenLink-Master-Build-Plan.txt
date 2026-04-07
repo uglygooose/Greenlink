@@ -113,10 +113,19 @@ Phase 12 - Reporting Aggregation (close React math gap): RESOLVED (already done)
   - Order status: count tiles only (no bar widths — no React math needed)
 - No new backend endpoint required; all pct fields were already backend-computed
 
-Phase 13 - Communications Expansion: NOT STARTED
-- 13-A CommunicationBlast model, blast create/send endpoints, segment resolver (backend)
-- 13-B Admin frontend: blast composer, scheduled queue, sent history
-- 13-C Email delivery via transactional provider (env-configured)
+Phase 13 - Communications Expansion: COMPLETED
+- 13-A CommunicationBlast model, blast create/send endpoints, segment resolver (backend): COMPLETED
+  - Alembic migration 202604070001 with explicit CREATE TYPE SQL
+  - BlastService: list, create, send with tracked-handoff delivery (logged when no SMTP configured)
+  - 3 endpoints: GET/POST /comms/blasts, POST /comms/blasts/{id}/send
+  - 7 pytest tests: create, list, send, RBAC, 404, tenant isolation
+  - conftest enum cleanup fix (resolves pre-existing startlane duplicate-type drift; 161 backend tests pass)
+- 13-B Admin frontend: blast composer and sent history on AdminCommunicationsPage: COMPLETED
+  - BlastComposerModal with segment/channel selector and send-on-create flow
+  - BlastCard history with status badge, recipient count, delivery note
+  - Broadcast section added below news post rail
+  - 126 frontend Vitest tests pass
+- 13-C Email delivery: tracked handoff only (logs recipients when no SMTP configured; SMTP path stubbed via smtplib if comms_smtp_host is set)
 
 Phase 14 - Pro Shop & Halfway Depth: NOT STARTED
 - 14-A Pro shop: ProShopItem model, CRUD endpoints, POS integration, AdminProShopPage
