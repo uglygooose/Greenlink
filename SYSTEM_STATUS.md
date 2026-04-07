@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-07 (end of Phase 10)
+Last updated: 2026-04-07 (Phase 11 in progress)
 
 ## Canonical Snapshot Role
 
@@ -86,11 +86,14 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 ## Admin Navigation
 
-- Live: `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · Communications · Club Settings
+- Live: `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
+- Live: My Club group contains: Communications · Club Settings · Targets · Golf Settings
+- Live: Groups are collapsible; all start collapsed; labeled groups show nothing when closed
 - Live: Group structure is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`; ungrouped items are rendered below without a label
-- Live: Secondary links (direct access) pinned to sidebar footer for quick reach
 - Live: backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry; sidebar resolves against it
 - Live: `pos` module relabeled "Commerce" in module catalog
+- Live: `AdminGolfSettingsPage` redesigned — all old CSS class patterns replaced with `AdminWorkspace` + Tailwind utility classes; all mutation logic unchanged
+- Live: `AdminClubSettingsPage` rebuilt — shows live ClubConfig data, course/tee/ruleset/pricing counts, active target count, active export profile name
 
 ## Admin Routes
 
@@ -125,22 +128,32 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 ## Known Risks
 
-- No new Phase 10 risk remains; remaining risks are domain-level gaps, not navigation or workspace normalization drift.
-- Backend test suite must run in file-declaration order (`-p no:randomly`) to avoid a pre-existing DB-state ordering issue with stale PostgreSQL ENUMs between test files. Not caused by Phase 10 changes.
+- Backend test suite runs in file-declaration order — `-p no:randomly` is now enforced via `pyproject.toml addopts`; no longer tribal knowledge.
+- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1` (Phase 11-C not yet resolved).
+- `FALLBACK_NAV_ITEMS` in AdminSidebar must be kept in sync with `MENU_ITEMS` in `session_bootstrap_service.py` manually; systematic enforcement not yet built (Phase 11-D).
+- Order status breakdown and member breakdown charts in `AdminReportsPage` still compose chart proportions in the frontend from backend records (Phase 12 not yet started).
 
 ## Known Gaps
 
-- New domain dashboard pages (`AdminGolfDashboardPage`, `AdminPeopleDashboardPage`, `AdminFinanceDashboardPage`, `AdminClubSettingsPage`) have no Vitest coverage yet.
 - `active_targets` is tested implicitly via the dashboard summary endpoint; no isolated unit test for `_get_active_targets()` with live `ClubTarget` fixture rows.
+- Communications: no broadcast, scheduling, or segment targeting (Phase 13).
+- Pro shop and halfway have no inventory management or prep-status workflows (Phase 14).
+- Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
+- Superadmin cannot author golf rules or pricing directly (Phase 16).
+- No third-party accounting sync beyond tracked handoff (Phase 17).
 
 ## Latest Validation
 
 - `frontend`: `npm.cmd run typecheck` - clean
-- `frontend`: `npm.cmd run test` - clean (`96 passed`, 22 test files)
-- `backend`: `py -m uv run pytest -p no:randomly` - clean (`154 passed`, about 8m05s)
+- `frontend`: `npm.cmd run test` - clean (`125 passed`, 26 test files)
+- `backend`: `py -m uv run pytest` - clean (`154 passed`; `-p no:randomly` now enforced via pyproject.toml)
+- `frontend`: targeted Vitest `src/pages/admin-golf-dashboard-page.test.tsx` - clean (Phase 11-A, new)
+- `frontend`: targeted Vitest `src/pages/admin-finance-dashboard-page.test.tsx` - clean (Phase 11-A, new)
+- `frontend`: targeted Vitest `src/pages/admin-people-dashboard-page.test.tsx` - clean (Phase 11-A, new)
+- `frontend`: targeted Vitest `src/pages/admin-club-settings-page.test.tsx` - clean (Phase 11-A, new)
+- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`3 passed`)
 - `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx` - clean (`18 passed`)
 - `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean (`5 passed`)
-- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`3 passed`)
 - `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-profile-page.test.tsx` - clean

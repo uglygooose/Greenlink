@@ -148,16 +148,34 @@ The canonical authority set is:
   - `frontend/src/ui-benchmarks/`
   - `frontend/src/design-system/greenlink-design-system.md`
 
+## Forward Plan
+
+Phases 11–17 are planned and partially in progress. See `GreenLink-Master-Build-Plan.txt` for full slice detail.
+
+| Phase | Focus | Status |
+|---|---|---|
+| 11 | Infrastructure hardening and test coverage | In progress |
+| 12 | Reporting aggregation — close last React math gap | Not started |
+| 13 | Communications expansion (blasts, scheduling, segments) | Not started |
+| 14 | Pro shop inventory and halfway kanban depth | Not started |
+| 15 | Player module completion (cancellation, waitlist, handicap) | Not started |
+| 16 | SA-3 superadmin authoring completion | Not started |
+| 17 | Third-party accounting sync adapters | Not started |
+
 ## Known Gaps
 
-- Superadmin does not author golf rules or pricing directly; canonical authoring remains in admin golf settings.
-- No direct third-party push/pull accounting sync exists beyond tracked export handoff.
-- New domain dashboard pages (`AdminGolfDashboardPage`, `AdminPeopleDashboardPage`, `AdminFinanceDashboardPage`, `AdminClubSettingsPage`) have no Vitest coverage yet.
+- Superadmin does not author golf rules or pricing directly; canonical authoring remains in admin golf settings (Phase 16).
+- No direct third-party push/pull accounting sync exists beyond tracked export handoff (Phase 17).
+- Order status breakdown and member breakdown charts in `AdminReportsPage` still compose chart widths in the frontend from backend records. A dedicated reporting aggregation endpoint is needed (Phase 12).
+- Communications is thin: admin news-post CRUD and player read feed exist but no broadcast, scheduling, or segment targeting (Phase 13).
+- Pro shop and halfway house are operational shells without inventory management or prep-status workflows (Phase 14).
+- Player module has no booking cancellation enforcement, no waitlist, and no handicap tracking (Phase 15).
 
 ## Known Risks
 
-- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1`.
-- Some non-finance reporting visuals (order status breakdown, member breakdown) still compose charts in the frontend from backend records; a dedicated reporting aggregation slice does not exist yet.
+- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1` (Phase 11-C).
+- Some non-finance reporting visuals still compose charts in the frontend from backend records; eliminated in Phase 12.
+- `FALLBACK_NAV_ITEMS` in AdminSidebar must be kept in sync with `MENU_ITEMS` in `session_bootstrap_service.py` manually; systematic enforcement not yet built (Phase 11-D).
 
 ## Validation State
 

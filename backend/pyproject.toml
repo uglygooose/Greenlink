@@ -27,7 +27,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q -p no:cacheprovider"
+addopts = "-q -p no:cacheprovider -p no:randomly"
 testpaths = ["tests"]
 cache_dir = ".pytest_cache_local"
 

@@ -90,6 +90,42 @@ Phase 10 - Domain Dashboards and Admin Navigation: COMPLETED
 - `GET /api/admin/dashboard/summary` now includes `active_targets` — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, returns typed `DashboardTargetContext` list; no React math
 - Full test gate: npm run typecheck clean, 96 Vitest tests passed, 154 pytest passed
 
+Phase 11 - Infrastructure Hardening & Test Coverage: IN PROGRESS
+- 11-A Test coverage for four uncovered Phase 10 pages: COMPLETED
+  - Live: Vitest suites for AdminGolfDashboardPage, AdminFinanceDashboardPage, AdminPeopleDashboardPage, AdminClubSettingsPage
+  - 125 tests pass across 26 test files
+- 11-B Pytest ordering enforced by config: COMPLETED
+  - Live: `-p no:randomly` added to `addopts` in pyproject.toml; no longer tribal knowledge
+- 11-C Fix localhost/127.0.0.1 CORS drift: NOT STARTED
+- 11-D Fix menu items fallback drift: PARTIAL
+  - golf_settings added to FALLBACK_NAV_ITEMS and My Club group; systematic sync mechanism not yet built
+
+Phase 12 - Reporting Aggregation (close React math gap): NOT STARTED
+- Backend: GET /api/admin/reports/breakdown with pre-computed pct fields for order_status and member_breakdown
+- Frontend: AdminReportsPage refactored to consume breakdown endpoint; zero client-side chart math remains
+
+Phase 13 - Communications Expansion: NOT STARTED
+- 13-A CommunicationBlast model, blast create/send endpoints, segment resolver (backend)
+- 13-B Admin frontend: blast composer, scheduled queue, sent history
+- 13-C Email delivery via transactional provider (env-configured)
+
+Phase 14 - Pro Shop & Halfway Depth: NOT STARTED
+- 14-A Pro shop: ProShopItem model, CRUD endpoints, POS integration, AdminProShopPage
+- 14-B Halfway: prep_status transitions on HalfwayOrder, AdminHalfwayPage kanban queue with React Query polling
+
+Phase 15 - Player Module Completion: NOT STARTED
+- 15-A Booking cancellation with policy enforcement (backend policy check)
+- 15-B Waitlist: TeeSheetWaitlist model, join/promote endpoints, player home surface, admin tee sheet slot indicator
+- 15-C Handicap reference: MemberHandicap model, manual set/update, admin and player profile display
+
+Phase 16 - SA-3 Completion (Superadmin Authoring): NOT STARTED
+- Inline rule set and pricing matrix authoring in onboarding Rules step
+- Reuses existing RuleSetEditor and PricingMatrixEditor components from golf settings page
+
+Phase 17 - Third-Party Accounting Sync: NOT STARTED
+- AccountingSyncAdapter protocol with PastelAdapter, SageAdapter, GenericJournalAdapter implementations
+- POST /api/admin/finance/batches/{id}/sync; sync status badge on batch rows
+
 Cross-cutting corrections completed
 - Persistent admin shell (all `/admin/*` including POS now inside AdminLayout): COMPLETED
 - Persistent superadmin shell: COMPLETED

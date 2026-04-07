@@ -33,6 +33,7 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
   { key: "club_settings", label: "Club Settings", icon: "settings_applications", href: "/admin/settings/club" },
   { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
+  { key: "golf_settings", label: "Golf Settings", icon: "settings", href: "/admin/golf/settings" },
 ];
 
 const BACKEND_ICON_BY_KEY: Record<string, string> = {
@@ -60,7 +61,7 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "people", label: "People", keys: ["people_dashboard", "members"] },
   { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
-  { id: "my_club", label: "My Club", keys: ["communications", "club_settings", "targets"] },
+  { id: "my_club", label: "My Club", keys: ["communications", "club_settings", "targets", "golf_settings"] },
 ];
 
 const SECONDARY_NAV_KEYS: string[] = [];
