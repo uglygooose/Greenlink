@@ -102,6 +102,33 @@ interface RecordPaymentVariables {
   tenderType: OrderSettlementRequestInput["tender_type"];
 }
 
+function makeOrderStatusMutation(endpoint: string) {
+  return function useOrderStatusMutation() {
+    const queryClient = useQueryClient();
+    const { accessToken, bootstrap } = useSession();
+    const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+    return useMutation({
+      mutationFn: (orderId: string) =>
+        apiRequest<{ order_id: string; status: OrderStatus }>(`/api/orders/${orderId}/${endpoint}`, {
+          method: "POST",
+          accessToken: accessToken as string,
+          selectedClubId: selectedClubId as string,
+        }),
+      onSuccess: async () => {
+        if (!selectedClubId) return;
+        await queryClient.invalidateQueries({ queryKey: ["orders", selectedClubId] });
+        await queryClient.invalidateQueries({ queryKey: ["halfway", selectedClubId] });
+      },
+    });
+  };
+}
+
+export const useMarkOrderPreparingMutation = makeOrderStatusMutation("preparing");
+export const useMarkOrderReadyMutation = makeOrderStatusMutation("ready");
+export const useMarkOrderCollectedMutation = makeOrderStatusMutation("collected");
+export const useCancelOrderMutation = makeOrderStatusMutation("cancel");
+
 export function useRecordPaymentMutation() {
   const queryClient = useQueryClient();
   const { accessToken, bootstrap } = useSession();

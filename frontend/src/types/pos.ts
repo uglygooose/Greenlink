@@ -52,6 +52,21 @@ export interface PosTransactionResult {
   failures: string[];
 }
 
+export interface PosProductCreateInput {
+  name: string;
+  price: string;
+  category?: string | null;
+  description?: string | null;
+}
+
+export interface PosProductUpdateInput {
+  name?: string | null;
+  price?: string | null;
+  category?: string | null;
+  description?: string | null;
+  active?: boolean | null;
+}
+
 export interface CartItem {
   product_id: string | null;
   item_name: string;

@@ -7,6 +7,12 @@ import {
   useFinanceRevenueSummaryQuery,
   useFinanceTransactionVolumeSummaryQuery,
 } from "../features/finance/hooks";
+import {
+  useCancelOrderMutation,
+  useMarkOrderCollectedMutation,
+  useMarkOrderPreparingMutation,
+  useMarkOrderReadyMutation,
+} from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
 import type { DashboardActivityItem } from "../types/admin-dashboard";
 import type { OrderSummary } from "../types/orders";
@@ -37,6 +43,67 @@ function transactionIcon(entry: DashboardActivityItem): string {
   return "receipt";
 }
 
+interface OrderKanbanCardProps {
+  order: OrderSummary;
+  onUpdate: () => void;
+}
+
+function OrderKanbanCard({ order, onUpdate }: OrderKanbanCardProps): JSX.Element {
+  const markPreparing = useMarkOrderPreparingMutation();
+  const markReady = useMarkOrderReadyMutation();
+  const markCollected = useMarkOrderCollectedMutation();
+  const cancelOrder = useCancelOrderMutation();
+  const busy = markPreparing.isPending || markReady.isPending || markCollected.isPending || cancelOrder.isPending;
+
+  async function advance(): Promise<void> {
+    if (order.status === "placed") await markPreparing.mutateAsync(order.id);
+    else if (order.status === "preparing") await markReady.mutateAsync(order.id);
+    else if (order.status === "ready") await markCollected.mutateAsync(order.id);
+    onUpdate();
+  }
+
+  async function cancel(): Promise<void> {
+    if (!confirm(`Cancel order for ${order.person.full_name}?`)) return;
+    await cancelOrder.mutateAsync(order.id);
+    onUpdate();
+  }
+
+  const advanceLabel =
+    order.status === "placed" ? "Start Prep" :
+    order.status === "preparing" ? "Mark Ready" :
+    order.status === "ready" ? "Collected" : null;
+
+  return (
+    <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <span className="text-sm font-bold text-on-surface">{order.person.full_name}</span>
+        <span className="text-[10px] text-slate-400">{formatTime(order.created_at)}</span>
+      </div>
+      <p className="mb-3 text-xs text-slate-500 line-clamp-2">{order.item_summary}</p>
+      <div className="flex gap-1.5">
+        {advanceLabel ? (
+          <button
+            className="flex-1 rounded-lg bg-primary px-2 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-primary-dim disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void advance()}
+            type="button"
+          >
+            {busy ? "..." : advanceLabel}
+          </button>
+        ) : null}
+        <button
+          className="rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => void cancel()}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminHalfwayPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
@@ -48,6 +115,14 @@ export function AdminHalfwayPage(): JSX.Element {
   const summary = summaryQuery.data;
   const queueOrders = summary?.queue_orders ?? [];
   const recentTransactions = summary?.recent_transactions ?? [];
+
+  const placed = queueOrders.filter((o) => o.status === "placed");
+  const preparing = queueOrders.filter((o) => o.status === "preparing");
+  const ready = queueOrders.filter((o) => o.status === "ready");
+
+  function onOrderUpdate(): void {
+    summaryQuery.refetch();
+  }
 
   return (
     <AdminWorkspace
@@ -151,46 +226,65 @@ export function AdminHalfwayPage(): JSX.Element {
         </>
       }
     >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      {/* Kanban queue */}
+      <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
             <h3 className="text-sm font-bold text-on-surface">Active Order Queue</h3>
-            <NavLink
-              className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-primary-dim"
-              to="/admin/orders"
-            >
-              <MaterialSymbol className="text-sm" icon="open_in_new" />
-              Manage
-            </NavLink>
+            <p className="text-xs text-slate-400">Auto-refreshes every 30s · advance orders through stages</p>
           </div>
-          <div className="divide-y divide-slate-50">
-            {summaryQuery.isLoading && (
-              <p className="px-6 py-4 text-sm text-slate-400">Loading orders...</p>
-            )}
-            {!summaryQuery.isLoading && queueOrders.length === 0 && (
-              <div className="flex flex-col items-center gap-2 py-10 text-center">
-                <MaterialSymbol className="text-3xl text-slate-200" icon="check_circle" />
-                <p className="text-sm text-slate-400">Queue is clear</p>
-              </div>
-            )}
-            {queueOrders.map((order) => (
-              <div className="flex items-center justify-between px-6 py-3" key={order.id}>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-semibold text-on-surface">{order.person.full_name}</span>
-                  <span className="text-xs text-slate-400">{order.item_summary}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400">{formatTime(order.created_at)}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusColor(order.status)}`}>
-                    {order.status}
+          <NavLink
+            className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-primary-dim"
+            to="/admin/orders"
+          >
+            <MaterialSymbol className="text-sm" icon="open_in_new" />
+            Full Queue
+          </NavLink>
+        </div>
+
+        {summaryQuery.isLoading ? (
+          <div className="grid grid-cols-3 gap-4 p-4">
+            {[1, 2, 3].map((v) => (
+              <div className="h-24 animate-pulse rounded-xl bg-slate-100" key={v} />
+            ))}
+          </div>
+        ) : queueOrders.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-10 text-center">
+            <MaterialSymbol className="text-3xl text-slate-200" icon="check_circle" />
+            <p className="text-sm text-slate-400">Queue is clear</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-3">
+            {(
+              [
+                { label: "Placed", orders: placed, color: "border-amber-400" },
+                { label: "Preparing", orders: preparing, color: "border-blue-400" },
+                { label: "Ready", orders: ready, color: "border-emerald-400" },
+              ] as const
+            ).map(({ color, label, orders: col }) => (
+              <div className={`rounded-xl border-t-4 bg-slate-50 p-3 ${color}`} key={label}>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm">
+                    {col.length}
                   </span>
                 </div>
+                {col.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-slate-300">—</p>
+                ) : (
+                  <div className="space-y-2">
+                    {col.map((order) => (
+                      <OrderKanbanCard key={order.id} onUpdate={onOrderUpdate} order={order} />
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest shadow-sm">
+      <div className="rounded-2xl border border-slate-100 bg-surface-container-lowest shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
             <h3 className="text-sm font-bold text-on-surface">Recent Transactions</h3>
             <NavLink
@@ -227,7 +321,6 @@ export function AdminHalfwayPage(): JSX.Element {
             ))}
           </div>
         </div>
-      </div>
 
       <div className="flex flex-wrap gap-3">
         <NavLink

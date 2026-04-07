@@ -18,8 +18,11 @@ from app.models.enums import TenderType
 from app.models.pos_transaction import PosTransaction, PosTransactionItem
 from app.models.product import Product
 from app.schemas.finance import FinanceTransactionCreateRequest
+from app.core.exceptions import NotFoundError
 from app.schemas.pos import (
+    PosProductCreateRequest,
     PosProductResponse,
+    PosProductUpdateRequest,
     PosTransactionCreateRequest,
     PosTransactionDetail,
     PosTransactionItemDetail,
@@ -49,6 +52,51 @@ class PosService:
             ).all()
         )
         return [PosProductResponse.model_validate(p) for p in products]
+
+    def create_product(
+        self,
+        *,
+        club_id: uuid.UUID,
+        payload: PosProductCreateRequest,
+    ) -> PosProductResponse:
+        product = Product(
+            club_id=club_id,
+            name=payload.name.strip(),
+            price=payload.price,
+            category=payload.category,
+            description=payload.description,
+            active=True,
+        )
+        self.db.add(product)
+        self.db.flush()
+        self.db.refresh(product)
+        return PosProductResponse.model_validate(product)
+
+    def update_product(
+        self,
+        *,
+        club_id: uuid.UUID,
+        product_id: uuid.UUID,
+        payload: PosProductUpdateRequest,
+    ) -> PosProductResponse:
+        product = self.db.scalar(
+            select(Product).where(Product.id == product_id, Product.club_id == club_id)
+        )
+        if product is None:
+            raise NotFoundError("Product not found")
+        if payload.name is not None:
+            product.name = payload.name.strip()
+        if payload.price is not None:
+            product.price = payload.price
+        if payload.category is not None:
+            product.category = payload.category
+        if payload.description is not None:
+            product.description = payload.description
+        if payload.active is not None:
+            product.active = payload.active
+        self.db.flush()
+        self.db.refresh(product)
+        return PosProductResponse.model_validate(product)
 
     def create_transaction(
         self,

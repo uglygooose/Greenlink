@@ -4,6 +4,8 @@ import { apiRequest } from "../../api/client";
 import { useSession } from "../../session/session-context";
 import type {
   PosProduct,
+  PosProductCreateInput,
+  PosProductUpdateInput,
   PosTransactionCreateInput,
   PosTransactionResult,
 } from "../../types/pos";
@@ -38,6 +40,46 @@ export function usePosProductsQuery({
         selectedClubId: selectedClubId as string,
       }),
     enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useCreateProductMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: PosProductCreateInput) =>
+      apiRequest<PosProduct>("/api/pos/products", {
+        method: "POST",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      if (!selectedClubId) return;
+      queryClient.invalidateQueries({ queryKey: ["pos", selectedClubId] });
+    },
+  });
+}
+
+export function useUpdateProductMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: ({ productId, payload }: { productId: string; payload: PosProductUpdateInput }) =>
+      apiRequest<PosProduct>(`/api/pos/products/${productId}`, {
+        method: "PATCH",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      if (!selectedClubId) return;
+      queryClient.invalidateQueries({ queryKey: ["pos", selectedClubId] });
+    },
   });
 }
 

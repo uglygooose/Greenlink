@@ -22,6 +22,45 @@ class PosProductResponse(BaseModel):
     active: bool
 
 
+class PosProductCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    price: Decimal
+    category: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, value: Decimal) -> Decimal:
+        if value < 0:
+            raise ValueError("price must be non-negative")
+        return value
+
+
+class PosProductUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    price: Decimal | None = None
+    category: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and value < 0:
+            raise ValueError("price must be non-negative")
+        return value
+
+
 class PosTransactionItemInput(BaseModel):
     product_id: uuid.UUID | None = None
     item_name: str = Field(min_length=1, max_length=255)
