@@ -137,12 +137,14 @@ function CollapsibleGroup({
       <button
         type="button"
         aria-expanded={open}
+        aria-label={label}
         onClick={onToggle}
-        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+        className="flex w-full items-center justify-between rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
       >
-        <span>{label}</span>
+        <span aria-hidden="true">{label}</span>
         <MaterialSymbol
-          className={`text-[16px] text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
+          className={`text-[18px] text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           icon="expand_more"
         />
       </button>
@@ -152,24 +154,7 @@ function CollapsibleGroup({
             <NavItemLink item={item} key={item.key} />
           ))}
         </div>
-      ) : (
-        <div className="flex flex-wrap gap-1 px-3 pb-1 pt-0.5">
-          {items.map((item) => (
-            <NavLink
-              key={item.key}
-              to={item.href}
-              title={item.label}
-              className={({ isActive }) =>
-                isActive
-                  ? "flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700"
-                  : "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-              }
-            >
-              {({ isActive }) => <MaterialSymbol filled={isActive} className="text-[18px]" icon={item.icon} />}
-            </NavLink>
-          ))}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -205,9 +190,8 @@ export default function AdminSidebar(): JSX.Element {
 
   const ungrouped = navItems.filter((item) => !assignedKeys.has(item.key));
 
-  // All labeled groups open by default
-  const labeledGroupIds = grouped.filter((g) => g.label !== null).map((g) => g.id);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(labeledGroupIds));
+  // All labeled groups collapsed by default
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
 
   function toggleGroup(id: string): void {
     setOpenGroups((prev) => {

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
@@ -66,11 +66,20 @@ describe("AdminSidebar", () => {
   test("falls back to the static admin menu when backend menu items are absent", () => {
     renderSidebar(baseBootstrap);
 
+    // Unlabeled items (Overview, Communications, Club Settings) always visible
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /book golf/i })).toBeInTheDocument();
+
+    // Labeled groups start collapsed — expand Golf to find its links
+    expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Golf$/i }));
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+
+    // Expand Finance to find Close Day
+    expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
+    expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
   });
 
   test("uses backend menu items to hide disabled admin domains during rollout", () => {
@@ -105,8 +114,14 @@ describe("AdminSidebar", () => {
     });
 
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
+
+    // People group exists — expand it to see its links
+    fireEvent.click(screen.getByRole("button", { name: /^People$/i }));
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Dashboard$/i })).toHaveLength(1);
+
+    // Golf and Finance groups should not appear at all
+    expect(screen.queryByRole("button", { name: /^Golf$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
@@ -144,6 +159,8 @@ describe("AdminSidebar", () => {
       ],
     });
 
+    // Operations group contains these items — expand it
+    fireEvent.click(screen.getByRole("button", { name: /^Operations$/i }));
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /pro shop/i })).not.toBeInTheDocument();
