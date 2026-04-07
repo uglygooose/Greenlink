@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-08 (Phase 13 complete, Phase 14 next)
+Last updated: 2026-04-08 (Phase 14 complete, Phase 15 next)
 
 ## Canonical Snapshot Role
 
@@ -136,7 +136,8 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 
 - `active_targets` is tested implicitly via the dashboard summary endpoint; no isolated unit test for `_get_active_targets()` with live `ClubTarget` fixture rows.
 - Communications: broadcast blasts (create/send/history) are live. Scheduling and in-app push surface remain future evolution.
-- Pro shop and halfway have no inventory management or prep-status workflows (Phase 14).
+- Pro shop: product CRUD (create, edit, toggle active) live; no hard delete (deactivation is the pattern).
+- Halfway: 3-column kanban with placed/preparing/ready lanes and advance/cancel buttons; 30s polling active.
 - Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
 - No third-party accounting sync beyond tracked handoff (Phase 17).

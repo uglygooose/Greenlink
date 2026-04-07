@@ -127,9 +127,17 @@ Phase 13 - Communications Expansion: COMPLETED
   - 126 frontend Vitest tests pass
 - 13-C Email delivery: tracked handoff only (logs recipients when no SMTP configured; SMTP path stubbed via smtplib if comms_smtp_host is set)
 
-Phase 14 - Pro Shop & Halfway Depth: NOT STARTED
-- 14-A Pro shop: ProShopItem model, CRUD endpoints, POS integration, AdminProShopPage
-- 14-B Halfway: prep_status transitions on HalfwayOrder, AdminHalfwayPage kanban queue with React Query polling
+Phase 14 - Pro Shop & Halfway Depth: COMPLETED
+- 14-A Pro shop product CRUD: COMPLETED
+  - PosProductCreateRequest, PosProductUpdateRequest schemas
+  - PosService.create_product(), update_product() (toggle active included)
+  - POST /pos/products (201), PATCH /pos/products/{id} — club_admin required
+  - AdminProShopPage: ProductEditorModal, New Product button, Edit/Activate/Deactivate per card
+- 14-B Halfway kanban with status transitions: COMPLETED
+  - useMarkOrderPreparingMutation, useMarkOrderReadyMutation, useMarkOrderCollectedMutation, useCancelOrderMutation
+  - Both orders and halfway query caches invalidated on status change
+  - AdminHalfwayPage: 3-column kanban (Placed/Preparing/Ready) with advance and cancel actions
+  - 30s auto-refresh already active via refetchInterval on halfway summary hook
 
 Phase 15 - Player Module Completion: NOT STARTED
 - 15-A Booking cancellation with policy enforcement (backend policy check)
