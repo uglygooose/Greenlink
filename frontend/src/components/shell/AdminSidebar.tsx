@@ -138,11 +138,11 @@ function CollapsibleGroup({
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex w-full items-center justify-between rounded-xl px-4 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
       >
         <span>{label}</span>
         <MaterialSymbol
-          className={`text-[14px] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          className={`text-[16px] text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           icon="expand_more"
         />
       </button>
@@ -152,7 +152,24 @@ function CollapsibleGroup({
             <NavItemLink item={item} key={item.key} />
           ))}
         </div>
-      ) : null}
+      ) : (
+        <div className="flex flex-wrap gap-1 px-3 pb-1 pt-0.5">
+          {items.map((item) => (
+            <NavLink
+              key={item.key}
+              to={item.href}
+              title={item.label}
+              className={({ isActive }) =>
+                isActive
+                  ? "flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700"
+                  : "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              }
+            >
+              {({ isActive }) => <MaterialSymbol filled={isActive} className="text-[18px]" icon={item.icon} />}
+            </NavLink>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -214,9 +231,9 @@ export default function AdminSidebar(): JSX.Element {
           </div>
         </div>
 
-        <nav className="space-y-0.5">
+        <nav className="space-y-1">
           {grouped.map((group, index) => (
-            <div className={index > 0 ? "pt-3" : undefined} key={group.id}>
+            <div className={index > 0 ? "pt-2" : undefined} key={group.id}>
               {group.label ? (
                 <CollapsibleGroup
                   label={group.label}
@@ -235,7 +252,7 @@ export default function AdminSidebar(): JSX.Element {
           ))}
 
           {ungrouped.length > 0 ? (
-            <div className="pt-3">
+            <div className="pt-2">
               <div className="space-y-0.5">
                 {ungrouped.map((item) => (
                   <NavItemLink item={item} key={item.key} />
