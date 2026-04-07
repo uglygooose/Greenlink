@@ -69,7 +69,6 @@ describe("AdminSidebar", () => {
     // Unlabeled items (Overview, Communications, Club Settings) always visible
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /book golf/i })).toBeInTheDocument();
 
     // Labeled groups start collapsed — expand Golf to find its links
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
@@ -125,7 +124,6 @@ describe("AdminSidebar", () => {
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /book golf/i })).not.toBeInTheDocument();
   });
 
   test("renders backend-defined admin domains that were not present in the old static menu", () => {

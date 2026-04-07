@@ -4,7 +4,51 @@ import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery, usePricingMatricesQuery, useRuleSetsQuery, useTeesQuery } from "../features/golf-settings/hooks";
 import { useClubTargetsQuery } from "../features/targets/hooks";
+import { useFinanceExportBatchesQuery } from "../features/finance/hooks";
 import { useSession } from "../session/session-context";
+
+interface SettingsCard {
+  title: string;
+  description: string;
+  href: string;
+  icon: string;
+  meta: string | null;
+}
+
+function SettingsSection({
+  heading,
+  cards,
+}: {
+  heading: string;
+  cards: SettingsCard[];
+}): JSX.Element {
+  return (
+    <div>
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{heading}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {cards.map((card) => (
+          <NavLink
+            key={card.href}
+            to={card.href}
+            className="flex items-start gap-4 rounded-2xl bg-surface-container-lowest p-5 shadow-sm transition-colors hover:bg-slate-50"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container text-primary">
+              <MaterialSymbol icon={card.icon} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-on-surface">{card.title}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{card.description}</p>
+              {card.meta ? (
+                <p className="mt-2 text-[11px] font-bold text-primary">{card.meta}</p>
+              ) : null}
+            </div>
+            <MaterialSymbol className="ml-auto shrink-0 text-slate-300" icon="chevron_right" />
+          </NavLink>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function AdminClubSettingsPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
@@ -16,138 +60,74 @@ export function AdminClubSettingsPage(): JSX.Element {
   const ruleSetsQuery = useRuleSetsQuery({ accessToken, selectedClubId });
   const pricingQuery = usePricingMatricesQuery({ accessToken, selectedClubId });
   const targetsQuery = useClubTargetsQuery({ accessToken, selectedClubId });
+  const batchesQuery = useFinanceExportBatchesQuery({ accessToken, selectedClubId });
 
-  const activeModules = Object.entries(bootstrap?.module_flags ?? {})
-    .filter(([, enabled]) => enabled)
-    .map(([key]) => key);
+  const courses = coursesQuery.data?.length ?? 0;
+  const tees = teesQuery.data?.length ?? 0;
+  const ruleSets = ruleSetsQuery.data?.length ?? 0;
+  const matrices = pricingQuery.data?.length ?? 0;
+  const targets = targetsQuery.data?.total_count ?? 0;
+  const batches = batchesQuery.data?.total_count ?? 0;
+
+  const golfCards: SettingsCard[] = [
+    {
+      title: "Golf Settings",
+      description: "Courses, tees, booking rule sets, and pricing matrices.",
+      href: "/admin/golf/settings",
+      icon: "tune",
+      meta: courses > 0 ? `${courses} course${courses !== 1 ? "s" : ""} · ${tees} tee${tees !== 1 ? "s" : ""} · ${ruleSets} rule set${ruleSets !== 1 ? "s" : ""} · ${matrices} pricing matrix${matrices !== 1 ? "es" : ""}` : null,
+    },
+  ];
+
+  const clubCards: SettingsCard[] = [
+    {
+      title: "Targets",
+      description: "Operating targets for rounds, revenue, and membership — surfaced on dashboards.",
+      href: "/admin/targets",
+      icon: "track_changes",
+      meta: targets > 0 ? `${targets} active target${targets !== 1 ? "s" : ""}` : "No active targets",
+    },
+  ];
+
+  const financeCards: SettingsCard[] = [
+    {
+      title: "Accounting Export Profiles",
+      description: "Map canonical finance batches to your accounting package format (Generic Journal, Pastel, Sage).",
+      href: "/admin/finance",
+      icon: "receipt_long",
+      meta: batches > 0 ? `${batches} batch${batches !== 1 ? "es" : ""} in history` : null,
+    },
+  ];
 
   return (
     <AdminWorkspace
       title="Club Settings"
-      description="Admin-owned club configuration hub linking to live operational settings without duplicating superadmin ownership."
-      actions={
-        <>
-          <NavLink
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
-            to="/admin/golf/settings"
-          >
-            <MaterialSymbol filled icon="tune" />
-            Golf Settings
-          </NavLink>
-          <NavLink
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-on-surface transition-colors hover:bg-slate-50"
-            to="/admin/targets"
-          >
-            <MaterialSymbol icon="track_changes" />
-            Targets
-          </NavLink>
-        </>
-      }
-      kpis={
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border-l-4 border-primary bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Courses</span>
-              <MaterialSymbol className="text-primary" icon="map" />
+      description={selectedClub?.name ?? "Settings hub"}
+    >
+      <div className="space-y-8">
+        <div className="rounded-2xl bg-surface-container-low px-6 py-5">
+          <div className="flex flex-wrap items-center gap-6">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Club</p>
+              <p className="mt-0.5 font-semibold text-on-surface">{selectedClub?.name ?? "—"}</p>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-headline text-3xl font-extrabold text-on-surface">{coursesQuery.data?.length ?? 0}</span>
-              <span className="text-xs font-medium text-primary">{teesQuery.data?.length ?? 0} tees</span>
+            <div className="h-5 w-px bg-slate-200" />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Timezone</p>
+              <p className="mt-0.5 font-semibold text-on-surface">{selectedClub?.timezone ?? "—"}</p>
             </div>
-          </div>
-          <div className="rounded-xl border-l-4 border-secondary bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Rulesets</span>
-              <MaterialSymbol className="text-secondary" icon="rule_settings" />
+            <div className="h-5 w-px bg-slate-200" />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Location</p>
+              <p className="mt-0.5 font-semibold text-on-surface">{selectedClub?.location ?? "—"}</p>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-headline text-3xl font-extrabold text-on-surface">{ruleSetsQuery.data?.length ?? 0}</span>
-              <span className="text-xs font-medium text-secondary">{pricingQuery.data?.length ?? 0} matrices</span>
-            </div>
-          </div>
-          <div className="rounded-xl border-l-4 border-emerald-500 bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Targets</span>
-              <MaterialSymbol className="text-emerald-500" icon="track_changes" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-headline text-3xl font-extrabold text-on-surface">{targetsQuery.data?.total_count ?? 0}</span>
-              <span className="text-xs font-medium text-emerald-600">live club targets</span>
-            </div>
-          </div>
-          <div className="rounded-xl border-l-4 border-amber-500 bg-surface-container-lowest p-6 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Modules</span>
-              <MaterialSymbol className="text-amber-500" icon="extension" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-headline text-3xl font-extrabold text-on-surface">{activeModules.length}</span>
-              <span className="text-xs font-medium text-amber-700">enabled</span>
-            </div>
+            <p className="ml-auto text-xs text-slate-400">Club identity is managed by your platform administrator.</p>
           </div>
         </div>
-      }
-    >
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <section className="space-y-6">
-          <div className="rounded-2xl bg-surface-container-low p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Club Context</p>
-            <h2 className="mt-2 font-headline text-xl font-bold text-on-surface">{selectedClub?.name ?? "Selected club"}</h2>
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Timezone</p>
-                <p className="mt-2 text-sm font-semibold text-on-surface">{selectedClub?.timezone ?? "Unavailable"}</p>
-              </div>
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Active modules</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {activeModules.length > 0 ? (
-                    activeModules.map((moduleKey) => (
-                      <span className="rounded-full bg-primary-container px-3 py-1 text-xs font-bold text-on-primary-container" key={moduleKey}>
-                        {moduleKey}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-slate-500">No enabled modules</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="rounded-2xl bg-surface-container-lowest shadow-sm">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Live Surfaces</p>
-              <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Admin-owned configuration areas</h3>
-            </div>
-            <div className="grid gap-4 p-4 md:grid-cols-2">
-              <NavLink className="rounded-2xl bg-surface-container-low p-5 transition-colors hover:bg-slate-50" to="/admin/golf/settings">
-                <p className="text-sm font-semibold text-on-surface">Golf Settings</p>
-                <p className="mt-1 text-xs text-slate-500">Courses, tees, booking rules, and pricing definitions.</p>
-              </NavLink>
-              <NavLink className="rounded-2xl bg-surface-container-low p-5 transition-colors hover:bg-slate-50" to="/admin/targets">
-                <p className="text-sm font-semibold text-on-surface">Targets</p>
-                <p className="mt-1 text-xs text-slate-500">Club-level operating targets that feed dashboard context.</p>
-              </NavLink>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-6">
-          <div className="rounded-2xl bg-surface-container-low p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Boundary Guardrails</p>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-sm font-semibold text-on-surface">Admin owns</p>
-                <p className="mt-1 text-xs text-slate-500">Daily operational configuration and club-scoped settings.</p>
-              </div>
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-sm font-semibold text-on-surface">Superadmin owns</p>
-                <p className="mt-1 text-xs text-slate-500">Club lifecycle, onboarding, platform registry, and module enablement.</p>
-              </div>
-            </div>
-          </div>
-        </section>
+        <SettingsSection heading="Golf" cards={golfCards} />
+        <SettingsSection heading="Club Operations" cards={clubCards} />
+        <SettingsSection heading="Finance & Export" cards={financeCards} />
       </div>
     </AdminWorkspace>
   );

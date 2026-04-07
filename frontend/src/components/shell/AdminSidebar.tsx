@@ -57,7 +57,7 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
 
 const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "overview", label: null, keys: ["dashboard"] },
-  { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet", "golf_settings"] },
+  { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet"] },
   { id: "people", label: "People", keys: ["people_dashboard", "members"] },
   { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal"] },
@@ -65,7 +65,7 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "club-settings", label: null, keys: ["club_settings"] },
 ];
 
-const SECONDARY_NAV_KEYS = ["orders", "targets"];
+const SECONDARY_NAV_KEYS = ["orders"];
 
 function navLinkClass(isActive: boolean): string {
   return isActive
@@ -169,10 +169,8 @@ export default function AdminSidebar(): JSX.Element {
       icon: BACKEND_ICON_BY_KEY[item.key] ?? "apps",
       href: item.path,
     }));
-  const menuKeys = new Set((bootstrap?.menu_items ?? []).map((item) => item.key));
   const usesBackendMenu = backendNavItems.length > 0;
   const navItems = usesBackendMenu ? backendNavItems : FALLBACK_NAV_ITEMS;
-  const canOpenGolf = usesBackendMenu ? menuKeys.has("golf_tee_sheet") : true;
 
   const assignedKeys = new Set<string>();
   const grouped = PRIMARY_NAV_GROUPS.map((group) => {
@@ -248,16 +246,6 @@ export default function AdminSidebar(): JSX.Element {
       </div>
 
       <div className="space-y-4 border-t border-slate-200 px-6 py-6 dark:border-slate-800">
-        {canOpenGolf ? (
-          <NavLink
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-white shadow-sm transition-colors hover:bg-primary-dim"
-            to="/admin/golf/tee-sheet"
-          >
-            <MaterialSymbol filled className="text-sm" icon="add_circle" />
-            <span>Book Golf</span>
-          </NavLink>
-        ) : null}
-
         {secondaryLinks.length > 0 ? (
           <div className="space-y-1">
             <p className="px-4 text-[9px] font-bold uppercase tracking-widest text-slate-400">Direct Access</p>
