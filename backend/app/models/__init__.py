@@ -13,7 +13,11 @@ from app.models.club_setting import ClubSetting
 from app.models.club_target import ClubTarget
 from app.models.course import Course
 from app.models.domain_event_record import DomainEventRecord
+from app.models.communication_blast import CommunicationBlast
 from app.models.enums import (
+    BlastChannel,
+    BlastStatus,
+    BlastTargetSegment,
     BookingParticipantType,
     BookingPaymentStatus,
     BookingRuleAppliesTo,
@@ -68,6 +72,10 @@ __all__ = [
     "AccountCustomer",
     "AuthSession",
     "AccountingExportProfile",
+    "BlastChannel",
+    "BlastStatus",
+    "BlastTargetSegment",
+    "CommunicationBlast",
     "BulkIntakeAction",
     "Booking",
     "BookingParticipant",

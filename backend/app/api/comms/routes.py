@@ -15,12 +15,19 @@ from app.auth.dependencies import get_current_user, get_db
 from app.core.exceptions import AuthorizationError
 from app.models import ClubMembershipRole, User, UserType
 from app.models.enums import NewsPostStatus
+from app.schemas.blasts import (
+    BlastCreateRequest,
+    BlastListResponse,
+    BlastResponse,
+    BlastSendResponse,
+)
 from app.schemas.comms import (
     NewsPostCreateRequest,
     NewsPostListResponse,
     NewsPostResponse,
     NewsPostUpdateRequest,
 )
+from app.services.comms.blast_service import BlastService
 from app.services.comms.news_post_service import NewsPostService
 
 router = APIRouter()
@@ -129,3 +136,51 @@ def delete_news_post(
     assert context.selected_club is not None
     service = NewsPostService(db)
     service.delete_post(club_id=context.selected_club.id, post_id=post_id)
+
+
+# ── Broadcast blasts ──────────────────────────────────────────────────────────
+
+
+@router.get("/blasts", response_model=BlastListResponse)
+def list_blasts(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> BlastListResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    return BlastService(db).list_blasts(club_id=context.selected_club.id)
+
+
+@router.post("/blasts", response_model=BlastResponse, status_code=201)
+def create_blast(
+    payload: BlastCreateRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> BlastResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_club_config_write(current_user, context)
+    assert context.selected_club is not None
+    return BlastService(db).create_blast(
+        club_id=context.selected_club.id,
+        created_by_person_id=current_user.person_id,
+        payload=payload,
+    )
+
+
+@router.post("/blasts/{blast_id}/send", response_model=BlastSendResponse)
+def send_blast(
+    blast_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> BlastSendResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_club_config_write(current_user, context)
+    assert context.selected_club is not None
+    return BlastService(db).send_blast(
+        club_id=context.selected_club.id,
+        blast_id=blast_id,
+    )

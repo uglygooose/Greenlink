@@ -15,6 +15,55 @@ from app.auth.dependencies import get_db
 from app.db.base import Base
 from app.main import app
 
+# PostgreSQL ENUM types that SQLAlchemy creates but may not reliably drop via
+# drop_all() when reusing the same test database across test functions.
+# This list must be kept in sync with any sa.Enum / Mapped[StrEnum] columns.
+_ENUM_TYPE_NAMES = [
+    "usertype",
+    "clubmembershiprole",
+    "clubmembershipstatus",
+    "clubinvitationstatus",
+    "clubonboardingstate",
+    "clubonboardingstep",
+    "readinessstatus",
+    "integrityissueseverity",
+    "integrityissuescope",
+    "bulkintakeaction",
+    "bookingruleappliesto",
+    "bookingrulescopetype",
+    "bookingruleconflictstrategy",
+    "bookingruletype",
+    "pricingruleappliesto",
+    "pricingdaytype",
+    "pricingtimeband",
+    "bookingstatus",
+    "bookingparticipanttype",
+    "bookingsource",
+    "financeaccountstatus",
+    "financetransactiontype",
+    "financetransactionsource",
+    "financeexportprofile",
+    "financeexportbatchstatus",
+    "ordersource",
+    "orderstatus",
+    "tendertype",
+    "startlane",
+    "bookingpaymentstatus",
+    "newspostvisibility",
+    "newspoststatus",
+    "blasttargetsegment",
+    "blastchannel",
+    "blaststatus",
+]
+
+
+def _drop_all_enum_types(engine) -> None:
+    """Explicitly drop all PostgreSQL ENUM types that may linger after drop_all()."""
+    with engine.connect() as conn:
+        for type_name in _ENUM_TYPE_NAMES:
+            conn.execute(text(f'DROP TYPE IF EXISTS "{type_name}" CASCADE'))
+        conn.commit()
+
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink_test"
 DEFAULT_TEST_ADMIN_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/postgres"
 TEST_DB_PREFLIGHT_CONNECT_TIMEOUT_SECONDS = 5
@@ -92,6 +141,7 @@ def db_session() -> Generator[Session, None, None]:
         bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
     )
     Base.metadata.drop_all(bind=engine)
+    _drop_all_enum_types(engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -99,6 +149,7 @@ def db_session() -> Generator[Session, None, None]:
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        _drop_all_enum_types(engine)
         engine.dispose()
 
 

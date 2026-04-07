@@ -202,3 +202,21 @@ class NewsPostVisibility(StrEnum):
 class NewsPostStatus(StrEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
+
+
+class BlastTargetSegment(StrEnum):
+    ALL = "all"
+    MEMBERS = "members"
+    STAFF = "staff"
+    ADMIN = "admin"
+
+
+class BlastChannel(StrEnum):
+    IN_APP = "in_app"
+    EMAIL = "email"
+
+
+class BlastStatus(StrEnum):
+    DRAFT = "draft"
+    SENT = "sent"
+    FAILED = "failed"
