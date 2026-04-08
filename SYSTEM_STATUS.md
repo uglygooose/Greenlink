@@ -20,6 +20,8 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Status: Partial
 - Live: tee-sheet read model, booking lifecycle, admin tee-sheet route inside router-owned persistent admin shell
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
+- Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
+- Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 
 ## FIN Status
@@ -152,8 +154,11 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - `frontend`: targeted Vitest `src/pages/admin-finance-dashboard-page.test.tsx` - clean (Phase 11-A, new)
 - `frontend`: targeted Vitest `src/pages/admin-people-dashboard-page.test.tsx` - clean (Phase 11-A, new)
 - `frontend`: targeted Vitest `src/pages/admin-club-settings-page.test.tsx` - clean (Phase 11-A, new)
-- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`3 passed`)
-- `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx` - clean (`18 passed`)
+- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`4 passed`)
+- `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx src/features/tee-sheet/hooks.test.ts` - clean (`37 passed`)
+- `frontend`: `npm.cmd run typecheck` - clean after tee-sheet Phase 6 changes
+- `backend`: `py -m py_compile backend/app/schemas/bookings.py backend/app/services/booking_service.py backend/app/services/booking_update_service.py` - clean
+- `backend`: targeted pytest `backend/tests/test_booking_creation_foundation.py backend/tests/test_booking_update_foundation.py -q` - clean (`8 passed`)
 - `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean (`5 passed`)
 - `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - clean

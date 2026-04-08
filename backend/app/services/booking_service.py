@@ -238,6 +238,8 @@ class BookingService:
             party_size=len(resolved_participants),
             primary_person_id=primary_participant.person_id,
             primary_membership_id=primary_participant.club_membership_id,
+            cart_flag=payload.cart_flag,
+            caddie_flag=payload.caddie_flag,
             participants=[
                 self._to_booking_participant(participant) for participant in resolved_participants
             ],

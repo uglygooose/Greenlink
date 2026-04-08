@@ -4,6 +4,9 @@ import { fetchCourses, fetchTeeSheetDay } from "../../api/operations";
 import type { BookingRuleAppliesTo } from "../../types/operations";
 import type { TeeSheetDayResponse } from "../../types/tee-sheet";
 
+export const TEE_SHEET_STALE_TIME = 60_000;
+export const TEE_SHEET_REFETCH_INTERVAL = 30_000;
+
 export const teeSheetKeys = {
   day: (clubId: string, courseId: string, day: string, membershipType: BookingRuleAppliesTo, teeId?: string | null) =>
     ["tee-sheet", clubId, courseId, day, membershipType, teeId ?? "all-tees"] as const,
@@ -22,9 +25,27 @@ function isReady(
   accessToken: string | null,
   selectedClubId: string | null,
   courseId: string | null,
-  teeId?: string | null,
 ): accessToken is string {
-  return Boolean(accessToken && selectedClubId && courseId && teeId);
+  return Boolean(accessToken && selectedClubId && courseId);
+}
+
+export function teeSheetDayQueryOptions({
+  accessToken,
+  selectedClubId,
+  courseId,
+  date,
+  membershipType,
+  teeId,
+}: TeeSheetQueryOptions) {
+  return {
+    queryKey: teeSheetKeys.day(selectedClubId ?? "none", courseId ?? "none", date, membershipType, teeId),
+    queryFn: () =>
+      fetchTeeSheetDay(
+        { courseId: courseId as string, date, membershipType, teeId },
+        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
+      ),
+    staleTime: TEE_SHEET_STALE_TIME,
+  };
 }
 
 export function useTeeSheetDayQuery({
@@ -36,13 +57,16 @@ export function useTeeSheetDayQuery({
   teeId,
 }: TeeSheetQueryOptions) {
   return useQuery<TeeSheetDayResponse>({
-    queryKey: teeSheetKeys.day(selectedClubId ?? "none", courseId ?? "none", date, membershipType, teeId),
-    queryFn: () =>
-      fetchTeeSheetDay(
-        { courseId: courseId as string, date, membershipType, teeId },
-        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
-      ),
-    enabled: isReady(accessToken, selectedClubId, courseId, teeId),
+    ...teeSheetDayQueryOptions({
+      accessToken,
+      selectedClubId,
+      courseId,
+      date,
+      membershipType,
+      teeId,
+    }),
+    enabled: isReady(accessToken, selectedClubId, courseId),
+    refetchInterval: TEE_SHEET_REFETCH_INTERVAL,
   });
 }
 
@@ -63,15 +87,12 @@ export async function prefetchTeeSheetDay(
   }
   const today = new Date().toISOString().slice(0, 10);
   await queryClient.prefetchQuery({
-    queryKey: teeSheetKeys.day(selectedClubId, courses[0].id, today, "member"),
-    queryFn: () =>
-      fetchTeeSheetDay(
-        {
-          courseId: courses[0].id,
-          date: today,
-          membershipType: "member",
-        },
-        { accessToken, selectedClubId },
-      ),
+    ...teeSheetDayQueryOptions({
+      accessToken,
+      selectedClubId,
+      courseId: courses[0].id,
+      date: today,
+      membershipType: "staff",
+    }),
   });
 }

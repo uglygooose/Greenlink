@@ -197,6 +197,8 @@ class BookingUpdateService:
         booking.primary_person_id = primary_participant.person_id
         booking.primary_membership_id = primary_participant.club_membership_id
         booking.party_size = len(resolved_participants)
+        booking.cart_flag = payload.cart_flag
+        booking.caddie_flag = payload.caddie_flag
         booking.participants = [
             self._to_booking_participant(booking_id=booking.id, participant=participant)
             for participant in resolved_participants

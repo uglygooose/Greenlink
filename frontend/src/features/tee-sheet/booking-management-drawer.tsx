@@ -1,5 +1,9 @@
+import { useRef } from "react";
+
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
+import { BookingExtrasControls } from "./booking-extras-controls";
 import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
+import { useDrawerAccessibility } from "./use-drawer-accessibility";
 import type { BookingPaymentStatus, BookingSummary } from "../../types/bookings";
 import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
@@ -7,6 +11,8 @@ import type { TeeSheetSlotView } from "../../types/tee-sheet";
 type FeedbackTone = "error" | "info";
 
 interface BookingManagementDrawerProps {
+  editCaddieFlag: boolean;
+  editCartFlag: boolean;
   colorCode: string | null;
   directory: ClubPersonEntry[];
   editingBookingId: string | null;
@@ -20,7 +26,9 @@ interface BookingManagementDrawerProps {
   onComplete: (bookingId: string) => void;
   onEditAddParticipant: () => void;
   onEditCancel: () => void;
+  onEditCaddieFlagChange: (value: boolean) => void;
   onEditChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
+  onEditCartFlagChange: (value: boolean) => void;
   onEditRemoveParticipant: (key: string) => void;
   onEditSave: (bookingId: string) => void;
   onEditStart: (booking: BookingSummary) => void;
@@ -62,11 +70,13 @@ function paymentStatusClassName(status: BookingPaymentStatus | null | undefined)
     case "paid":
       return "bg-primary-container/50 text-on-primary-container";
     case "pending":
-      return "bg-secondary-container text-on-secondary-container";
+      // Intentionally amber — NOT secondary-container which is also used by the
+      // checked_in booking-status badge above it, preventing visual confusion.
+      return "bg-amber-100 text-amber-800";
     case "complimentary":
       return "bg-surface-container-high text-on-surface";
     case "waived":
-      return "bg-amber-100 text-amber-800";
+      return "bg-surface-container-high text-slate-500";
     default:
       return "bg-surface-container-high text-on-surface";
   }
@@ -127,23 +137,31 @@ function ActionButton({
 }
 
 function EditPanel({
+  caddieFlag,
   booking,
+  cartFlag,
   directory,
   onAddParticipant,
   onCancel,
+  onCaddieFlagChange,
   onChangeParticipant,
   onRemoveParticipant,
   onSave,
+  onCartFlagChange,
   participants,
   saving,
 }: {
+  caddieFlag: boolean;
   booking: BookingSummary;
+  cartFlag: boolean;
   directory: ClubPersonEntry[];
   onAddParticipant: () => void;
   onCancel: () => void;
+  onCaddieFlagChange: (value: boolean) => void;
   onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
   onRemoveParticipant: (key: string) => void;
   onSave: () => void;
+  onCartFlagChange: (value: boolean) => void;
   participants: DraftParticipant[];
   saving: boolean;
 }): JSX.Element {
@@ -169,6 +187,12 @@ function EditPanel({
         onRemoveParticipant={onRemoveParticipant}
         participants={participants}
       />
+      <BookingExtrasControls
+        caddieFlag={caddieFlag}
+        cartFlag={cartFlag}
+        onCaddieFlagChange={onCaddieFlagChange}
+        onCartFlagChange={onCartFlagChange}
+      />
       <div className="flex items-center justify-end gap-3">
         <button
           className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-on-surface"
@@ -192,6 +216,8 @@ function EditPanel({
 }
 
 export function BookingManagementDrawer({
+  editCaddieFlag,
+  editCartFlag,
   colorCode,
   directory,
   editingBookingId,
@@ -205,7 +231,9 @@ export function BookingManagementDrawer({
   onComplete,
   onEditAddParticipant,
   onEditCancel,
+  onEditCaddieFlagChange,
   onEditChangeParticipant,
+  onEditCartFlagChange,
   onEditRemoveParticipant,
   onEditSave,
   onEditStart,
@@ -217,6 +245,10 @@ export function BookingManagementDrawer({
   slot,
   teeLabel,
 }: BookingManagementDrawerProps): JSX.Element {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  useDrawerAccessibility({ containerRef: panelRef, initialFocusRef: closeButtonRef, onClose });
+
   return (
     <>
       <button
@@ -225,7 +257,13 @@ export function BookingManagementDrawer({
         onClick={onClose}
         type="button"
       />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl">
+      <aside
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        tabIndex={-1}
+      >
         <div className="flex items-center justify-between px-6 pb-5 pt-6">
           <div>
             <h3 className="font-headline text-lg font-extrabold text-slate-900">Booking Management</h3>
@@ -237,6 +275,7 @@ export function BookingManagementDrawer({
             aria-label="Close booking drawer"
             className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
             onClick={onClose}
+            ref={closeButtonRef}
             type="button"
           >
             <MaterialSymbol icon="close" />
@@ -332,11 +371,15 @@ export function BookingManagementDrawer({
 
                   {isEditing ? (
                     <EditPanel
+                      caddieFlag={editCaddieFlag}
                       booking={booking}
+                      cartFlag={editCartFlag}
                       directory={directory}
                       onAddParticipant={onEditAddParticipant}
                       onCancel={onEditCancel}
+                      onCaddieFlagChange={onEditCaddieFlagChange}
                       onChangeParticipant={onEditChangeParticipant}
+                      onCartFlagChange={onEditCartFlagChange}
                       onRemoveParticipant={onEditRemoveParticipant}
                       onSave={() => onEditSave(booking.id)}
                       participants={editParticipants}

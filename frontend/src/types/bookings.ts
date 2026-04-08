@@ -19,6 +19,8 @@ export interface BookingCreateInput {
   source?: "admin" | "member_portal";
   applies_to?: "member" | "staff" | null;
   reference_datetime?: string | null;
+  cart_flag?: boolean;
+  caddie_flag?: boolean;
   participants: BookingCreateParticipantInput[];
 }
 
@@ -92,6 +94,8 @@ export interface BookingUpdateInput {
   participants: BookingCreateParticipantInput[];
   applies_to?: "member" | "staff" | null;
   reference_datetime?: string | null;
+  cart_flag?: boolean;
+  caddie_flag?: boolean;
 }
 
 export interface BookingUpdateFailureDetail {

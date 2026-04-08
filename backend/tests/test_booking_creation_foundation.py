@@ -214,6 +214,8 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
             "source": "admin",
             "applies_to": "member",
             "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+            "cart_flag": True,
+            "caddie_flag": True,
             "participants": [
                 {
                     "participant_type": "member",
@@ -234,6 +236,8 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     assert payload["decision"] == "allowed"
     assert payload["booking"]["party_size"] == 2
     assert payload["booking"]["status"] == "reserved"
+    assert payload["booking"]["cart_flag"] is True
+    assert payload["booking"]["caddie_flag"] is True
     assert any(item["code"] == "slot_capacity_available" for item in payload["availability"]["resolved_checks"])
     assert all(item["code"] == "live_concurrency_not_evaluated" for item in payload["availability"]["unresolved_checks"])
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 1
@@ -253,6 +257,8 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     assert first_slot["occupancy"]["reserved_player_count"] == 2
     assert first_slot["party_summary"]["member_count"] == 1
     assert first_slot["party_summary"]["guest_count"] == 1
+    assert first_slot["bookings"][0]["cart_flag"] is True
+    assert first_slot["bookings"][0]["caddie_flag"] is True
 
 
 def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_sheet(

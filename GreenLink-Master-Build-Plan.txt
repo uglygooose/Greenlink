@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-07 (end of Phase 10)
+Last updated: 2026-04-08 (Tee Sheet UX Rebuild — Phases 1-6 complete; Phase 7 not started)
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -138,6 +138,156 @@ Phase 14 - Pro Shop & Halfway Depth: COMPLETED
   - Both orders and halfway query caches invalidated on status change
   - AdminHalfwayPage: 3-column kanban (Placed/Preparing/Ready) with advance and cancel actions
   - 30s auto-refresh already active via refetchInterval on halfway summary hook
+
+─────────────────────────────────────────────────────────────────────────────
+TEE SHEET UX REBUILD (phased initiative, frontend-only unless noted)
+Audit baseline: 2026-04-08 — benchmarked against GolfManager and Lightspeed Golf
+Architecture constraint: frontend only consumes TeeSheetDayResponse; no backend
+  contract changes unless a phase explicitly states otherwise.
+NOTE: The tee sheet remains a partial operational surface. TS-2 (Phase 2 above)
+records the existing booking lifecycle and move UX as live, but the sheet still
+lacks swimlane layout, booking-type colour coding, waitlist, player flags, and
+real-time sync. The rebuild phases below close those gaps
+incrementally. Phase 1 is a correctness/bug-fix pass only — it does not add or
+complete any missing operational features.
+─────────────────────────────────────────────────────────────────────────────
+
+TS-UX Phase 1 - Critical Bug Fixes / Correctness (Frontend Only): COMPLETED 2026-04-08
+- 1.1 Prefetch cache key mismatch fixed:
+    isReady() no longer gates on teeId; page defaults to teeId=null (all-tees).
+    Auto-sync useEffect removed. Tee selector gains "All Tees" first option.
+    Prefetch key now matches the page query key — prefetch is no longer a no-op.
+- 1.2 Hardcoded membershipType="member" fixed:
+    membershipType lifted to useState("staff") — staff see the most permissive
+    availability view by default. "View As" dropdown added to toolbar (Staff /
+    Member / Guest) for troubleshooting availability rule perspectives.
+    Prefetch updated to use "staff". Draft participant type decoupled from view
+    mode — create form always initialises with participant_type="member".
+- 1.3 Color collision fixed:
+    bookingStatusClass("checked_in") and paymentClass("pending") both resolved
+    to bg-secondary-container — identical appearance. Fix: payment status on the
+    tee sheet chip is now a MaterialSymbol icon badge (check_circle / schedule /
+    remove_circle / card_giftcard) with distinct hue-class per status. paymentClass
+    function removed. Management drawer paymentStatusClassName("pending") changed
+    to bg-amber-100/text-amber-800 (was bg-secondary-container — collision with
+    checked_in booking status badge).
+- 1.4 staleTime: 60_000 added to tee sheet query (eliminates tab-switch refetches).
+- 1.5 refetchInterval: 30_000 added to tee sheet query (multi-terminal live sync).
+- 1.6 Close buttons: already present on both drawers — no change required.
+Test gate: tsc --noEmit clean; 18/18 Vitest tests pass.
+
+TS-UX Phase 2 - Visual Hierarchy & Scannability (Frontend Only): COMPLETED 2026-04-08
+- 2.1 Booking-type left-border colour coding (member=blue, guest=amber, staff=grey)
+- 2.2 Status icon badges on chips (paid/unpaid/checked-in/no-show/completed/cancelled)
+- 2.3 tee.color_code surfaced as left border on lane cells
+- 2.4 cart_flag / caddie_flag icon overlays on booking chips
+- 2.5 Blocked slot visual contrast increase + diagonal stripe pattern
+- 2.6 Collapsible legend strip below sticky toolbar
+- 2.7 slot.warnings inline amber badge on bookable slots
+- 2.8 KPI alert count click → activates Closed/Holds filter
+Post-phase refinements (also completed 2026-04-08):
+- bookingPrimaryType() fallback: returns null (not "guest") when no usable participant data;
+  participantTypeBorderClass(null) → border-l-slate-200 (neutral; prevents type misread)
+- Alert KPI button: title="Filter to Closed / Holds view"; comment clarifies UI convenience
+  only — does NOT assert "alerts" == "closed" domain equivalence
+
+TS-UX Phase 3 - Interaction Speed & Ergonomics: COMPLETED 2026-04-08
+- 3.1 Quick-action hover buttons on occupied chips
+  - Inline Check In / No-Show / Cancel buttons now render on hover with stopPropagation,
+    tooltip titles, and disabled states derived from backend booking status.
+- 3.2 "Check In All" per time bucket
+  - Time-bucket rail now exposes Check In All for reserved bookings in that bucket.
+  - Uses existing check-in endpoint calls in parallel and surfaces partial failures honestly.
+- 3.3 cart_flag / caddie_flag toggles in Create and Edit flows
+  - Backend: BookingCreateRequest and BookingUpdateRequest now accept cart_flag/caddie_flag.
+  - Backend: booking_service.py and booking_update_service.py now pass the fields through unchanged.
+  - Frontend: create and edit drawers now expose Cart/Caddie toggles and send them in payload intent.
+- 3.4 Drag/drop consistency
+  - All participant chips for the same booking are draggable as the same move intent.
+  - Primary chip now carries a visible grip icon.
+- 3.5 Keyboard shortcuts
+  - Left / Right = previous / next date
+  - T = today
+  - Escape = close drawer
+  - D = focus date input
+  - F and / = focus search
+  - Shortcuts do not fire while typing in inputs, textareas, or selects.
+- 3.6 Drawer operational completeness
+  - Create and management drawers now expose dialog semantics, focus trap, visible close button,
+    and Escape-close behavior without touching the admin shell layout.
+
+TS-UX Phase 4 - Performance & Data Efficiency: COMPLETED 2026-04-08
+- 4.1 Optimistic updates for check-in, no-show, complete, cancel
+    optimisticallyTransitionBooking() uses LIFECYCLE_TRANSITIONS status map; onMutate
+    captures previousDay; onSettled always invalidates; blocked rolls back + surfaces
+    error to notice (inline action) or drawer feedback (drawer action).
+- 4.2 Prefetch ±1 adjacent days after current day load
+    prefetchedAdjacentSeedRef deduplicates; teeSheetDayQueryOptions reused for prev/next
+    prefetch triggered on teeSheetQuery.data change.
+- 4.3 Debounce search (200ms) + clear button + "No results" empty state
+    useDebouncedValue hook; raw searchInputValue / debounced debouncedSearchTerm;
+    showClearSearch clear ✕ button with focus-restore; filteredEmptyMessage contextual.
+- 4.4 React.memo on slot cell components
+    OccupiedBookingCell, BookingChipContent, BookingQuickActionPanel, OpenPlayerSlotContent
+    wrapped with memo + custom areEqual comparators; callbacks stabilised with useCallback.
+
+TS-UX Phase 5 - Filtering & Navigation Upgrades: COMPLETE 2026-04-08
+- 5.1 Booking-type filter pill (Member / Guest / Staff / All): DONE
+- 5.2 Time range filter (From / To) in toolbar: DONE
+- 5.3 Party size filter (1 / 2 / 3 / 4-ball / Any): DONE
+- 5.4 "Find Next Open Slot" button: DONE — scrolls to first open slot, 1.5s ring highlight
+- 5.5 Compound filter state object (TeeSheetFilterState) replaces single ViewFilter: DONE
+    TeeSheetFilterState = { viewFilter, participantType, partySize, timeFrom, timeTo }
+    slotMatchesFilters() composes all 4 filter functions; hasActiveFilters computed boolean
+- 5.6 Styled calendar popover replaces native <input type="date">; week strip with occupancy dots: DONE
+    date-picker-popover.tsx; occupancySignal() reads from React Query cache via getQueryData
+    Close on outside click (mousedown) + Escape (capture phase); D key toggles calendarOpen state
+- All 29 tests passing (fixed teeSheetPayload: occupied_player_count 2→0 for reserved status)
+
+TS-UX Phase 6 - Swimlane Grid Layout (Frontend Only, Major): COMPLETED 2026-04-08
+- Validation: `npm.cmd run typecheck` clean; targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx src/features/tee-sheet/hooks.test.ts` clean (`37 passed`)
+- New TeeSheetSwimLaneGrid component alongside existing table (feature-flagged): DONE
+    Data pivot: tee rows × time columns. swimLaneRows = unique rowKeys sorted by laneOrder+rowLabel.
+    Columns from filteredBuckets. Cell lookup: Map<rowKey, Map<slotDatetime, LaneSlot>>.
+    Compact cell: status badge + participant names + left-border booking type + quick action panel on hover.
+    Drag-drop carried forward: same onDragStart/onDrop handlers, dropAllowed(), dropKey().
+    Sticky left tee column (w-36 min-w, colorCode as border-left inline style).
+    Sticky top time header row.
+- Current-time indicator (red vertical line, auto-scroll, updates every minute): DONE
+    Compute fractional column index from nowTimeKey() vs column localTimes array.
+    absolute div with left% = index/total * 100; useEffect interval 60s to force re-render.
+    Auto-scroll to current time on initial load (same pendingAutoScrollDateRef pattern).
+- Day Overview bar (compressed full-day strip above grid; click to scroll): DONE
+    One narrow div per bucket (2px wide), bg color from occupancySignal or slotSummaryClass.
+    onClick: scroll corresponding column into view.
+- Column virtualisation via @tanstack/react-virtual: DONE
+    useVirtualizer({ count: columns.length, getScrollElement, estimateSize: () => density === "compact" ? 120 : 160, horizontal: true })
+    Render only virtualItems; totalSize as container width.
+- Compact / comfortable density toggle: DONE
+    type Density = "compact" | "comfortable"; useState + localStorage "gl-tee-sheet-density"
+    compact: cell min-h-[3rem] text-xs; comfortable: cell min-h-[5rem] text-sm
+- Feature flag: "Layout: Classic | Timeline" in toolbar, stored in localStorage: DONE
+    type Layout = "classic" | "timeline"; useState + localStorage "gl-tee-sheet-layout"
+    Toggle button in toolbar; renders <TeeSheetSwimLaneGrid> vs existing <table> section.
+    Density toggle only visible when layout === "timeline".
+- All Phase 1–5 work (filters, optimistic updates, drawers, drag-drop) carries forward identically
+
+TS-UX Phase 7 - Operational Depth (Frontend + Backend): NOT STARTED
+- 7.1 Booking internal_note field (backend: add to Booking model + PATCH)
+- 7.2 Cancellation reason tracking (backend: cancellation_reason field + cancel body)
+- 7.3 No-show reason tracking (backend: no_show_reason field)
+- 7.4 Day-level staff notes (backend: TeeSheetDayNote model + CRUD)
+- 7.5 Bulk check-in with parallel requests + partial-failure handling
+- 7.6 booking.source badge ("P" for portal) + source filter option
+
+TS-UX Phase 8 - Advanced Features (Significant Backend): NOT STARTED
+- 8.1 Member typeahead in booking creation (backend: GET /api/members/search)
+- 8.2 Player flags / alerts (backend: is_vip, has_medical_alert, has_outstanding_balance)
+- 8.3 Event/competition name overlay + navigation link (backend: event_name in slot state)
+- 8.4 Waitlist system (backend: WaitlistEntry model, CRUD, auto-promotion)
+- 8.5 Real-time sync via SSE or WebSocket (backend: streaming endpoint)
+
+─────────────────────────────────────────────────────────────────────────────
 
 Phase 15 - Player Module Completion: NOT STARTED
 - 15-A Booking cancellation with policy enforcement (backend policy check)

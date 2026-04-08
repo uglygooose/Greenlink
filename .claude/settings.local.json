@@ -17,7 +17,10 @@
       "Bash(curl -s http://localhost:5173 -o /dev/null -w \"%{http_code}\")",
       "Bash(grep -rn \"password\\\\|admin@\\\\|member@\\\\|staff@\\\\|superadmin@\" /c/Users/athom/Documents/Projects/GreenLink/backend/ --include=*.py -l)",
       "Bash(py -3.12 -m uv run python -m app.scripts.seed_users)",
-      "Bash(find /c/Users/athom/Documents/Projects/GreenLink/.claude/worktrees/agent-ab068919 -name admin-*.tsx)"
+      "Bash(find /c/Users/athom/Documents/Projects/GreenLink/.claude/worktrees/agent-ab068919 -name admin-*.tsx)",
+      "Bash(node_modules/.bin/vitest run:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npm install:*)"
     ]
   }
 }

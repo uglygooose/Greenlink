@@ -42,6 +42,8 @@ class BookingCreateRequest(BaseModel):
     source: BookingSource = BookingSource.ADMIN
     applies_to: BookingRuleAppliesTo | None = None
     reference_datetime: datetime | None = None
+    cart_flag: bool = False
+    caddie_flag: bool = False
     participants: list[BookingCreateParticipantInput] = Field(default_factory=list, max_length=32)
 
     @field_validator("slot_datetime", "reference_datetime")
@@ -163,6 +165,8 @@ class BookingUpdateRequest(BaseModel):
     participants: list[BookingCreateParticipantInput] = Field(default_factory=list, max_length=32)
     applies_to: BookingRuleAppliesTo | None = None
     reference_datetime: datetime | None = None
+    cart_flag: bool = False
+    caddie_flag: bool = False
 
     @field_validator("reference_datetime")
     @classmethod

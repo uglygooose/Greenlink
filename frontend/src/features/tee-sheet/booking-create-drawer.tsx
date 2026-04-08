@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
+import { BookingExtrasControls } from "./booking-extras-controls";
 import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
+import { useDrawerAccessibility } from "./use-drawer-accessibility";
 import type { BookingCreateParticipantInput } from "../../types/bookings";
 import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
@@ -9,16 +11,20 @@ import type { TeeSheetSlotView } from "../../types/tee-sheet";
 type FeedbackTone = "error" | "info";
 
 interface BookingCreateDrawerProps {
+  caddieFlag: boolean;
   colorCode: string | null;
   creating: boolean;
+  cartFlag: boolean;
   directory: ClubPersonEntry[];
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone | null;
   laneLabel: string;
   onAddParticipant: () => void;
+  onCaddieFlagChange: (value: boolean) => void;
   onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
   onClose: () => void;
   onCreate: () => void;
+  onCartFlagChange: (value: boolean) => void;
   onRemoveParticipant: (key: string) => void;
   participants: DraftParticipant[];
   selectedDate: string;
@@ -52,23 +58,30 @@ function asPayload(participants: DraftParticipant[]): BookingCreateParticipantIn
 }
 
 export function BookingCreateDrawer({
+  caddieFlag,
   colorCode,
   creating,
+  cartFlag,
   directory,
   feedbackMessage,
   feedbackTone,
   laneLabel,
   onAddParticipant,
+  onCaddieFlagChange,
   onChangeParticipant,
   onClose,
   onCreate,
+  onCartFlagChange,
   onRemoveParticipant,
   participants,
   selectedDate,
   slot,
   teeLabel,
 }: BookingCreateDrawerProps): JSX.Element {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
   const payloadPreview = useMemo(() => asPayload(participants), [participants]);
+  useDrawerAccessibility({ containerRef: panelRef, initialFocusRef: closeButtonRef, onClose });
 
   return (
     <>
@@ -78,7 +91,13 @@ export function BookingCreateDrawer({
         onClick={onClose}
         type="button"
       />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl">
+      <aside
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl"
+        ref={panelRef}
+        role="dialog"
+        tabIndex={-1}
+      >
         <div className="flex items-center justify-between px-6 pb-5 pt-6">
           <div>
             <h3 className="font-headline text-lg font-extrabold text-slate-900">Create Booking</h3>
@@ -90,6 +109,7 @@ export function BookingCreateDrawer({
             aria-label="Close create booking drawer"
             className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
             onClick={onClose}
+            ref={closeButtonRef}
             type="button"
           >
             <MaterialSymbol icon="close" />
@@ -132,6 +152,13 @@ export function BookingCreateDrawer({
             participants={participants}
           />
 
+          <BookingExtrasControls
+            caddieFlag={caddieFlag}
+            cartFlag={cartFlag}
+            onCaddieFlagChange={onCaddieFlagChange}
+            onCartFlagChange={onCartFlagChange}
+          />
+
           <section className="rounded-2xl bg-surface-container-low p-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Request Preview</p>
             <p className="mt-2 text-sm text-slate-500">
@@ -150,6 +177,10 @@ export function BookingCreateDrawer({
                   </span>
                 </div>
               ))}
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span>Extras</span>
+                <span>{[cartFlag ? "Cart" : null, caddieFlag ? "Caddie" : null].filter(Boolean).join(" | ") || "None"}</span>
+              </div>
             </div>
           </section>
         </div>

@@ -45,6 +45,8 @@ The canonical authority set is:
 - Booking lifecycle and admin lifecycle actions are live.
 - Admin tee-sheet route is live inside the router-owned persistent admin shell.
 - Booking creation, editing, and move UX are live.
+- Inline chip quick actions, per-time-bucket bulk check-in, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped drawers are live.
+- Feature-flagged timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
 - `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance

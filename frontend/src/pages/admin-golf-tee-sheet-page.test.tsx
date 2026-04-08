@@ -9,14 +9,16 @@ import {
   moveBooking,
   updateBooking,
 } from "../api/operations";
-import { AdminGolfTeeSheetPage, nearestBucketTime } from "./admin-golf-tee-sheet-page";
+import { AdminGolfTeeSheetPage, nearestBucketTime, optimisticallyTransitionBooking } from "./admin-golf-tee-sheet-page";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
 const mockUseTeesQuery = vi.fn();
 const mockUseTeeSheetDayQuery = vi.fn();
 const mockUseClubDirectoryQuery = vi.fn();
+const mockTeeSheetDayQueryOptions = vi.fn();
 const scrollIntoViewMock = vi.fn();
+const scrollToMock = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -33,14 +35,16 @@ vi.mock("../features/people/hooks", () => ({
 
 vi.mock("../features/tee-sheet/hooks", () => ({
   teeSheetKeys: {
-    day: (clubId: string, courseId: string, day: string, membershipType: string) => [
+    day: (clubId: string, courseId: string, day: string, membershipType: string, teeId?: string | null) => [
       "tee-sheet",
       clubId,
       courseId,
       day,
       membershipType,
+      teeId ?? "all-tees",
     ],
   },
+  teeSheetDayQueryOptions: (...args: unknown[]) => mockTeeSheetDayQueryOptions(...args),
   useTeeSheetDayQuery: () => mockUseTeeSheetDayQuery(),
 }));
 
@@ -54,13 +58,12 @@ vi.mock("../api/operations", () => ({
   updateBooking: vi.fn(),
 }));
 
-function renderPage(): void {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+function renderPage(queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: false },
+    mutations: { retry: false },
+  },
+})): QueryClient {
 
   render(
     <MemoryRouter initialEntries={["/admin/golf/tee-sheet"]}>
@@ -69,6 +72,26 @@ function renderPage(): void {
       </QueryClientProvider>
     </MemoryRouter>,
   );
+
+  return queryClient;
+}
+
+function cloneTeeSheetPayload(): any {
+  return JSON.parse(JSON.stringify(teeSheetPayload));
+}
+
+function teeSheetDayKey(date: string, membershipType = "staff", teeId: string | null = null): string[] {
+  return ["tee-sheet", "club-1", "course-1", date, membershipType, teeId ?? "all-tees"];
+}
+
+function testLocalDateString(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addTestDays(value: string, amount: number): string {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + amount);
+  return testLocalDateString(date);
 }
 
 const teeSheetPayload = {
@@ -96,7 +119,7 @@ const teeSheetPayload = {
           state_flags: {},
           occupancy: {
             player_capacity: 4,
-            occupied_player_count: 2,
+            occupied_player_count: 0,
             reserved_player_count: 2,
             confirmed_booking_count: 0,
             reserved_booking_count: 1,
@@ -396,13 +419,21 @@ const teeSheetPayload = {
 describe("AdminGolfTeeSheetPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value: scrollIntoViewMock,
       writable: true,
     });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToMock,
+      writable: true,
+    });
     mockUseSession.mockReturnValue({
       accessToken: "token",
+      initialized: true,
+      loading: false,
       bootstrap: {
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
@@ -420,6 +451,13 @@ describe("AdminGolfTeeSheetPage", () => {
       error: null,
     });
     mockUseTeeSheetDayQuery.mockReturnValue({ data: teeSheetPayload, isLoading: false, error: null });
+    mockTeeSheetDayQueryOptions.mockImplementation(
+      ({ selectedClubId, courseId, date, membershipType, teeId }: { selectedClubId: string; courseId: string; date: string; membershipType: string; teeId?: string | null }) => ({
+        queryKey: ["tee-sheet", selectedClubId, courseId, date, membershipType, teeId ?? "all-tees"],
+        queryFn: vi.fn().mockResolvedValue(teeSheetPayload),
+        staleTime: 60_000,
+      }),
+    );
     mockUseClubDirectoryQuery.mockReturnValue({
       data: [{ person: { id: "person-1", full_name: "Member One" }, membership: { role: "MEMBER" } }],
     });
@@ -571,10 +609,249 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /check in/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^check in$/i }));
 
     await waitFor(() => {
       expect(checkInBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+  });
+
+  test("fires quick chip actions without opening the management drawer", async () => {
+    vi.mocked(checkInBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /check in booking booking-1/i })[0]);
+
+    await waitFor(() => {
+      expect(checkInBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+    expect(screen.queryByRole("heading", { name: /booking management/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("Booking checked in. Tee sheet refreshed from backend state.")).toBeInTheDocument();
+  });
+
+  test("disables invalid quick chip actions from the current backend booking state", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[0].slots[0].bookings[0].status = "checked_in";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    screen.getAllByRole("button", { name: /check in booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
+    screen.getAllByRole("button", { name: /no-show booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
+    screen.getAllByRole("button", { name: /cancel booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
+  });
+
+  test("checks in all reserved bookings in a time bucket and surfaces partial failures", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[1].slots[0].bookings = [
+      {
+        id: "booking-3",
+        status: "reserved",
+        party_size: 1,
+        slot_datetime: "2026-03-30T04:00:00Z",
+        start_lane: "hole_10",
+        fee_label: "Member Rate",
+        payment_status: "paid",
+        cart_flag: false,
+        caddie_flag: false,
+        participants: [{ display_name: "Member Three", participant_type: "member", is_primary: true }],
+      },
+    ];
+    payload.rows[1].slots[0].occupancy.reserved_player_count = 1;
+    payload.rows[1].slots[0].occupancy.reserved_booking_count = 1;
+    payload.rows[1].slots[0].party_summary.member_count = 1;
+    payload.rows[1].slots[0].party_summary.total_players = 1;
+    payload.rows[1].slots[0].party_summary.has_activity = true;
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+    vi.mocked(checkInBooking)
+      .mockResolvedValueOnce({
+        booking_id: "booking-1",
+        decision: "allowed",
+        transition_applied: true,
+        booking: null,
+        failures: [],
+      })
+      .mockResolvedValueOnce({
+        booking_id: "booking-3",
+        decision: "blocked",
+        transition_applied: false,
+        booking: null,
+        failures: [{ code: "booking_status_not_eligible", message: "Only reserved bookings may be checked in." }],
+      });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /check in all reserved bookings at 06:00/i }));
+
+    await waitFor(() => {
+      expect(checkInBooking).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText("Check In All completed 1/2. Only reserved bookings may be checked in.")).toBeInTheDocument();
+  });
+
+  test("optimistically updates lifecycle cache data and rolls back on error", async () => {
+    const today = testLocalDateString(new Date());
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(teeSheetDayKey(today), cloneTeeSheetPayload());
+
+    let rejectCheckIn!: (error: Error) => void;
+    vi.mocked(checkInBooking).mockReturnValue(
+      new Promise((_, reject: (error: Error) => void) => {
+        rejectCheckIn = reject;
+      }) as ReturnType<typeof checkInBooking>,
+    );
+
+    renderPage(queryClient);
+    await waitFor(() => {
+      expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /check in booking booking-1/i })[0]);
+
+    await waitFor(() => {
+      const optimistic = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      expect(optimistic.rows[0].slots[0].bookings[0].status).toBe("checked_in");
+      expect(optimistic.rows[0].slots[0].occupancy.reserved_player_count).toBe(0);
+      expect(optimistic.rows[0].slots[0].occupancy.occupied_player_count).toBe(2);
+    });
+
+    rejectCheckIn(new Error("network down"));
+
+    await waitFor(() => {
+      const rolledBack = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      expect(rolledBack.rows[0].slots[0].bookings[0].status).toBe("reserved");
+      expect(rolledBack.rows[0].slots[0].occupancy.reserved_player_count).toBe(2);
+      expect(rolledBack.rows[0].slots[0].occupancy.occupied_player_count).toBe(0);
+    });
+  });
+
+  test("only applies deterministic optimistic lifecycle transitions", () => {
+    const reservedPayload = cloneTeeSheetPayload();
+    const checkedInPayload = cloneTeeSheetPayload();
+    checkedInPayload.rows[0].slots[0].bookings[0].status = "checked_in";
+    checkedInPayload.rows[0].slots[0].occupancy.occupied_player_count = 2;
+    checkedInPayload.rows[0].slots[0].occupancy.reserved_player_count = 0;
+    checkedInPayload.rows[0].slots[0].occupancy.confirmed_booking_count = 1;
+    checkedInPayload.rows[0].slots[0].occupancy.reserved_booking_count = 0;
+
+    expect(optimisticallyTransitionBooking(reservedPayload, "booking-1", "check_in")?.rows[0].slots[0].bookings[0].status).toBe("checked_in");
+    expect(optimisticallyTransitionBooking(reservedPayload, "booking-1", "cancel")?.rows[0].slots[0].bookings[0].status).toBe("cancelled");
+    expect(optimisticallyTransitionBooking(reservedPayload, "booking-1", "no_show")?.rows[0].slots[0].bookings[0].status).toBe("no_show");
+    expect(optimisticallyTransitionBooking(checkedInPayload, "booking-1", "complete")?.rows[0].slots[0].bookings[0].status).toBe("completed");
+    expect(optimisticallyTransitionBooking(checkedInPayload, "booking-1", "cancel")).toBe(checkedInPayload);
+  });
+
+  test("prefetches adjacent days after the current day loads", async () => {
+    const today = testLocalDateString(new Date());
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const prefetchSpy = vi.spyOn(queryClient, "prefetchQuery");
+
+    renderPage(queryClient);
+    await waitFor(() => {
+      expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(prefetchSpy).toHaveBeenCalledTimes(2);
+    });
+    expect(mockTeeSheetDayQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ courseId: "course-1", date: addTestDays(today, -1), membershipType: "staff", teeId: null }),
+    );
+    expect(mockTeeSheetDayQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ courseId: "course-1", date: addTestDays(today, 1), membershipType: "staff", teeId: null }),
+    );
+  });
+
+  test("debounces search, shows an honest no-results state, and clears back to the live sheet", async () => {
+    vi.useFakeTimers({ now: new Date("2026-03-30T12:00:00.000Z") });
+    try {
+      renderPage();
+
+      const search = screen.getByPlaceholderText(/search players, lane, or time/i);
+      fireEvent.change(search, { target: { value: "zzz" } });
+
+      expect(screen.getByLabelText(/1st tee lane row 06:00/i)).toBeInTheDocument();
+
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      expect(screen.getByText(/No results match "zzz" on this view/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /clear tee-sheet search/i }));
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      expect(screen.queryByText(/No results match "zzz" on this view/i)).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/1st tee lane row 06:00/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("supports keyboard shortcuts while avoiding interference with active text entry", async () => {
+    vi.useFakeTimers({ now: new Date("2026-04-08T12:00:00.000Z") });
+    try {
+      renderPage();
+      // Date is surfaced via a custom calendar popover button (5.6) — verify using long date text.
+      expect(screen.getAllByText("April 8, 2026").length).toBeGreaterThan(0);
+
+      // "/" focuses search input
+      fireEvent.keyDown(window, { key: "/" });
+      expect(screen.getByPlaceholderText(/search players, lane, or time/i)).toHaveFocus();
+
+      // ArrowRight while search is focused does NOT change date
+      fireEvent.keyDown(screen.getByPlaceholderText(/search players, lane, or time/i), { key: "ArrowRight" });
+      expect(screen.getAllByText("April 8, 2026").length).toBeGreaterThan(0);
+
+      // ArrowRight from window advances date by 1
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      expect(screen.getAllByText("April 9, 2026").length).toBeGreaterThan(0);
+
+      // T returns to today
+      fireEvent.keyDown(window, { key: "t" });
+      expect(screen.getAllByText("April 8, 2026").length).toBeGreaterThan(0);
+
+      // D toggles the calendar popover open
+      fireEvent.keyDown(window, { key: "d" });
+      expect(screen.getByRole("button", { name: /open date picker/i })).toHaveAttribute("aria-expanded", "true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("closes the topmost drawer on Escape and traps focus within the drawer", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+
+    const closeButton = await screen.findByRole("button", { name: /^close create booking drawer$/i });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    const createButton = screen.getByRole("button", { name: /^create booking$/i });
+    createButton.focus();
+    expect(createButton).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(closeButton).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 
@@ -670,5 +947,164 @@ describe("AdminGolfTeeSheetPage", () => {
         expect.anything(),
       );
     });
+  });
+
+  test("includes cart and caddie intent in the create flow payload", async () => {
+    vi.mocked(createBooking).mockResolvedValue({
+      decision: "allowed",
+      booking: null,
+      availability: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^cart$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^caddie$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^create booking$/i }));
+
+    await waitFor(() => {
+      expect(createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cart_flag: true,
+          caddie_flag: true,
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("includes cart and caddie intent in the edit flow payload", async () => {
+    vi.mocked(updateBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      booking: null,
+      availability: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /edit booking booking-1/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^cart$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^caddie$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save booking booking-1/i }));
+
+    await waitFor(() => {
+      expect(updateBooking).toHaveBeenCalledWith(
+        "booking-1",
+        expect.objectContaining({
+          cart_flag: false,
+          caddie_flag: true,
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("toggles timeline layout and persists the feature flag", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    expect(localStorage.getItem("gl-tee-sheet-layout")).toBe("timeline");
+    expect(screen.getByTestId("tee-sheet-swimlane-grid")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("persists timeline density selection", () => {
+    localStorage.setItem("gl-tee-sheet-layout", "timeline");
+    localStorage.setItem("gl-tee-sheet-density", "compact");
+
+    renderPage();
+
+    const compactButton = screen.getByRole("button", { name: "Compact" });
+    const comfortableButton = screen.getByRole("button", { name: "Comfortable" });
+    expect(compactButton).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(comfortableButton);
+
+    expect(localStorage.getItem("gl-tee-sheet-density")).toBe("comfortable");
+    expect(comfortableButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("renders the timeline grid from the existing bucket data with a current-time indicator", () => {
+    vi.useFakeTimers({ now: new Date("2026-03-30T04:05:00.000Z") });
+    try {
+      localStorage.setItem("gl-tee-sheet-layout", "timeline");
+
+      renderPage();
+
+      expect(screen.getByTestId("tee-sheet-swimlane-grid")).toBeInTheDocument();
+      expect(screen.getByTestId("timeline-current-time-indicator")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /create new booking at 06:30/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("clicking the day overview scrolls the timeline", () => {
+    localStorage.setItem("gl-tee-sheet-layout", "timeline");
+
+    renderPage();
+    scrollToMock.mockClear();
+
+    fireEvent.click(screen.getByTestId("timeline-overview-06:20"));
+
+    expect(scrollToMock).toHaveBeenCalled();
+  });
+
+  test("timeline mode keeps drag and drop wired to the existing move mutation", async () => {
+    localStorage.setItem("gl-tee-sheet-layout", "timeline");
+    vi.mocked(moveBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.dragStart(screen.getByRole("button", { name: /open booking booking-1/i }));
+    const targetCell = screen.getByLabelText(/10th tee timeline row 06:00/i);
+    fireEvent.dragEnter(targetCell);
+    fireEvent.dragOver(targetCell);
+    fireEvent.drop(targetCell);
+
+    await waitFor(() => {
+      expect(moveBooking).toHaveBeenCalledWith(
+        "booking-1",
+        expect.objectContaining({
+          target_slot_datetime: "2026-03-30T04:00:00Z",
+          target_start_lane: "hole_10",
+          target_tee_id: "tee-1",
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("timeline mode keeps quick actions wired to the existing lifecycle mutations", async () => {
+    localStorage.setItem("gl-tee-sheet-layout", "timeline");
+    vi.mocked(checkInBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /check in booking booking-1/i })[0]);
+
+    await waitFor(() => {
+      expect(checkInBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+    expect(screen.queryByRole("heading", { name: /booking management/i })).not.toBeInTheDocument();
   });
 });

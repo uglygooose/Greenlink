@@ -266,6 +266,8 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
         json={
             "applies_to": "member",
             "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+            "cart_flag": False,
+            "caddie_flag": True,
             "participants": [
                 {
                     "participant_type": "member",
@@ -291,6 +293,8 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     assert payload["decision"] == "allowed"
     assert payload["booking"]["party_size"] == 3
     assert payload["booking"]["primary_person_id"] == str(second_member.person_id)
+    assert payload["booking"]["cart_flag"] is False
+    assert payload["booking"]["caddie_flag"] is True
     assert payload["booking"]["participants"][0]["display_name"] == second_member.person.full_name
     assert [item["display_name"] for item in payload["booking"]["participants"][1:]] == ["Guest Alpha", "Guest Beta"]
 
@@ -309,11 +313,15 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     assert first_slot["occupancy"]["reserved_player_count"] == 3
     assert first_slot["party_summary"]["member_count"] == 1
     assert first_slot["party_summary"]["guest_count"] == 2
+    assert first_slot["bookings"][0]["cart_flag"] is False
+    assert first_slot["bookings"][0]["caddie_flag"] is True
     assert first_slot["bookings"][0]["participants"][0]["display_name"] == second_member.person.full_name
 
     refreshed_booking = db_session.scalar(select(Booking).where(Booking.id == booking.id))
     assert refreshed_booking is not None
     assert refreshed_booking.party_size == 3
+    assert refreshed_booking.cart_flag is False
+    assert refreshed_booking.caddie_flag is True
 
 
 def test_booking_update_blocks_when_participant_lacks_membership(
