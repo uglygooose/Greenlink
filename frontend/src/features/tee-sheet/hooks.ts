@@ -66,7 +66,9 @@ export function useTeeSheetDayQuery({
       teeId,
     }),
     enabled: isReady(accessToken, selectedClubId, courseId),
+    placeholderData: (previousData) => previousData,
     refetchInterval: TEE_SHEET_REFETCH_INTERVAL,
+    refetchOnWindowFocus: false,
   });
 }
 

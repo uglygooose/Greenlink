@@ -2,7 +2,6 @@ import { memo, type DragEvent } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type {
-  BookingParticipantSummary,
   BookingParticipantType,
   BookingPaymentStatus,
   StartLane,
@@ -13,7 +12,6 @@ import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../types/te
 export type Action = "cancel" | "check_in" | "complete" | "no_show";
 export type QuickAction = Exclude<Action, "complete">;
 export type LayoutMode = "classic" | "timeline";
-export type TimelineDensity = "compact" | "comfortable";
 export type TeeSheetBookingView = TeeSheetSlotView["bookings"][number];
 
 export type LaneSlot = {
@@ -32,17 +30,18 @@ export type TeeSheetBucket = {
   slots: LaneSlot[];
 };
 
-export type SlotPlayerCell =
+export type SlotBookingSegment =
   | {
       booking: TeeSheetBookingView;
-      column: number;
-      kind: "occupied";
-      participant: BookingParticipantSummary;
-      primaryHandle: boolean;
+      kind: "booking";
+      participantNames: string[];
+      startColumn: number;
+      span: number;
     }
   | {
-      column: number;
-      kind: "empty";
+      kind: "open";
+      startColumn: number;
+      span: number;
     };
 
 export const QUICK_ACTIONS: Array<{ action: QuickAction; icon: string; label: string }> = [
@@ -239,52 +238,63 @@ export function slotRemainingCapacity(slot: TeeSheetSlotView): number {
   return Math.max(slotCapacity(slot) - slotPlayerCount(slot), 0);
 }
 
-export function slotPlayerCells(slot: TeeSheetSlotView): SlotPlayerCell[] {
+export function bookingParticipantNames(booking: TeeSheetBookingView): string[] {
+  if (booking.participants.length > 0) {
+    return booking.participants.map((participant) => participant.display_name);
+  }
+  return Array.from({ length: booking.party_size }, (_, index) => `Player ${index + 1}`);
+}
+
+export function slotBookingSegments(slot: TeeSheetSlotView): SlotBookingSegment[] {
   const capacity = slotCapacity(slot);
-  const cells: SlotPlayerCell[] = [];
+  const segments: SlotBookingSegment[] = [];
+  let currentColumn = 1;
+
   for (const booking of slot.bookings) {
-    const participants =
-      booking.participants.length > 0
-        ? booking.participants
-        : Array.from({ length: booking.party_size }, (_, index) => ({
-            display_name: `Player ${index + 1}`,
-            participant_type: "guest" as const,
-            is_primary: index === 0,
-          }));
-    participants.forEach((participant, index) => {
-      if (cells.length < capacity) {
-        cells.push({
-          booking,
-          column: cells.length + 1,
-          kind: "occupied",
-          participant,
-          primaryHandle: index === 0,
-        });
-      }
+    const span = Math.min(Math.max(bookingPlayerCount(booking), 1), capacity - currentColumn + 1);
+    if (span <= 0) break;
+    segments.push({
+      booking,
+      kind: "booking",
+      participantNames: bookingParticipantNames(booking),
+      startColumn: currentColumn,
+      span,
+    });
+    currentColumn += span;
+  }
+
+  if (currentColumn <= capacity) {
+    segments.push({
+      kind: "open",
+      startColumn: currentColumn,
+      span: capacity - currentColumn + 1,
     });
   }
-  while (cells.length < capacity) {
-    cells.push({ column: cells.length + 1, kind: "empty" });
-  }
-  return cells;
+
+  return segments;
 }
 
 export function bookingChipClass(
   booking: TeeSheetBookingView,
-  primaryHandle: boolean,
   compact = false,
 ): string {
   const base = compact
     ? "flex min-h-[2.75rem] w-full flex-col justify-between overflow-hidden rounded-[14px] px-2.5 py-2 text-left transition-all select-none"
     : "flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-all select-none";
-  if (!primaryHandle) return `${base} cursor-grab bg-surface-container-low hover:bg-surface-container active:cursor-grabbing`;
   if (booking.status === "checked_in") {
-    return `${base} cursor-grab bg-secondary-container/70 hover:bg-secondary-container active:cursor-grabbing`;
+    return `${base} cursor-pointer bg-secondary-container/70 hover:bg-secondary-container`;
   }
   if (booking.payment_status === "pending") {
-    return `${base} cursor-grab bg-primary-container/70 hover:bg-primary-container active:cursor-grabbing`;
+    return `${base} cursor-pointer bg-primary-container/70 hover:bg-primary-container`;
   }
-  return `${base} cursor-grab bg-surface-container-low hover:bg-surface-container active:cursor-grabbing`;
+  return `${base} cursor-pointer bg-surface-container-low hover:bg-surface-container`;
+}
+
+function bookingDragHandleClass(compact = false): string {
+  return [
+    "inline-flex items-center gap-1 rounded-full border border-outline-variant/30 bg-white/80 px-2 py-1 text-slate-500 shadow-sm",
+    compact ? "text-[9px]" : "text-[10px]",
+  ].join(" ");
 }
 
 export function slotSummaryClass(slot: TeeSheetSlotView): string {
@@ -334,48 +344,66 @@ export function quickActionTooltip(booking: TeeSheetBookingView, action: QuickAc
   return `${label} unavailable for ${booking.status.replace(/_/g, " ")}`;
 }
 
-interface BookingChipContentProps {
-  booking: TeeSheetBookingView;
-  column: number;
-  compact?: boolean;
-  participant: BookingParticipantSummary;
-  primaryHandle: boolean;
+function bookingCoverageLabel(startColumn: number, span: number): string {
+  if (span <= 1) return `P${startColumn}`;
+  return `P${startColumn}-P${startColumn + span - 1}`;
 }
 
-export const BookingChipContent = memo(function BookingChipContent({
+function bookingSecondaryText(names: string[]): string | null {
+  if (names.length <= 1) return null;
+  if (names.length === 2) return names[1];
+  return `${names[1]} +${names.length - 2} more`;
+}
+
+interface BookingCardContentProps {
+  booking: TeeSheetBookingView;
+  compact?: boolean;
+  participantNames: string[];
+  startColumn: number;
+  span: number;
+}
+
+export const BookingCardContent = memo(function BookingCardContent({
   booking,
-  column,
   compact = false,
-  participant,
-  primaryHandle,
-}: BookingChipContentProps): JSX.Element {
+  participantNames,
+  startColumn,
+  span,
+}: BookingCardContentProps): JSX.Element {
+  const primaryName = participantNames[0] ?? "Booking";
+  const secondaryText = bookingSecondaryText(participantNames);
   return (
     <>
       <div className="flex items-center justify-between gap-2">
-        <span className={`flex items-center gap-1 font-bold uppercase tracking-[0.18em] text-slate-400 ${compact ? "text-[8px]" : "text-[9px]"}`}>
-          <span>P{column}</span>
-          {primaryHandle ? <MaterialSymbol className={compact ? "text-[10px]" : "text-[11px]"} icon="drag_indicator" /> : null}
+        <span className={`font-bold uppercase tracking-[0.18em] text-slate-400 ${compact ? "text-[8px]" : "text-[9px]"}`}>
+          {bookingCoverageLabel(startColumn, span)}
         </span>
-        {primaryHandle ? (
-          <div className="flex items-center gap-1">
-            <span title={booking.status.replace(/_/g, " ")}>
-              <MaterialSymbol
-                className={`${compact ? "text-xs" : "text-sm"} ${bookingStatusIconClass(booking.status)}`}
-                icon={bookingStatusIconName(booking.status)}
-              />
-            </span>
-            <span title={paymentLabel(booking.payment_status)}>
-              <MaterialSymbol
-                className={`${compact ? "text-xs" : "text-sm"} ${paymentIconClass(booking.payment_status)}`}
-                icon={paymentIcon(booking.payment_status)}
-              />
-            </span>
-          </div>
+        <div className="flex items-center gap-1">
+          <span title={booking.status.replace(/_/g, " ")}>
+            <MaterialSymbol
+              className={`${compact ? "text-xs" : "text-sm"} ${bookingStatusIconClass(booking.status)}`}
+              icon={bookingStatusIconName(booking.status)}
+            />
+          </span>
+          <span title={paymentLabel(booking.payment_status)}>
+            <MaterialSymbol
+              className={`${compact ? "text-xs" : "text-sm"} ${paymentIconClass(booking.payment_status)}`}
+              icon={paymentIcon(booking.payment_status)}
+            />
+          </span>
+        </div>
+      </div>
+      <div className="space-y-0.5">
+        <p className={`truncate font-bold leading-none text-on-surface ${compact ? "text-[11px]" : "text-sm"}`}>{primaryName}</p>
+        {secondaryText ? (
+          <p className={`truncate text-slate-500 ${compact ? "text-[10px]" : "text-xs"}`}>{secondaryText}</p>
         ) : null}
       </div>
-      <p className={`truncate font-bold leading-none text-on-surface ${compact ? "text-[11px]" : "text-xs"}`}>{participant.display_name}</p>
-      {primaryHandle && (booking.cart_flag || booking.caddie_flag) ? (
-        <div className="mt-0.5 flex items-center gap-1">
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className={`text-slate-500 ${compact ? "text-[10px]" : "text-xs"}`}>
+          {span}-player booking
+        </span>
+        <div className="flex items-center gap-1">
           {booking.cart_flag ? (
             <span title="Cart assigned">
               <MaterialSymbol className={compact ? "text-[10px] text-slate-400" : "text-[11px] text-slate-400"} icon="airport_shuttle" />
@@ -386,8 +414,12 @@ export const BookingChipContent = memo(function BookingChipContent({
               <MaterialSymbol className={compact ? "text-[10px] text-slate-400" : "text-[11px] text-slate-400"} icon="person" />
             </span>
           ) : null}
+          <span className={bookingDragHandleClass(compact)} title="Drag to move booking">
+            <MaterialSymbol className={compact ? "text-xs" : "text-sm"} icon="drag_indicator" />
+            <span>Move</span>
+          </span>
         </div>
-      ) : null}
+      </div>
     </>
   );
 }, (previousProps, nextProps) => {
@@ -400,11 +432,9 @@ export const BookingChipContent = memo(function BookingChipContent({
     previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
     previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
     previousPrimaryType === nextPrimaryType &&
-    previousProps.participant.display_name === nextProps.participant.display_name &&
-    previousProps.participant.participant_type === nextProps.participant.participant_type &&
-    previousProps.participant.is_primary === nextProps.participant.is_primary &&
-    previousProps.primaryHandle === nextProps.primaryHandle &&
-    previousProps.column === nextProps.column &&
+    previousProps.participantNames.join("|") === nextProps.participantNames.join("|") &&
+    previousProps.startColumn === nextProps.startColumn &&
+    previousProps.span === nextProps.span &&
     previousProps.compact === nextProps.compact
   );
 });
@@ -460,53 +490,61 @@ export const BookingQuickActionPanel = memo(function BookingQuickActionPanel({
   previousProps.compact === nextProps.compact
 ));
 
-interface OccupiedBookingCellProps {
+interface OccupiedBookingCardProps {
   booking: TeeSheetBookingView;
-  column: number;
   compact?: boolean;
   movingBookingId: string | null;
   onEndDrag: () => void;
   onOpenManage: (slot: LaneSlot) => void;
   onQuickAction: (action: QuickAction, bookingId: string) => void;
   onStartDrag: (event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot) => void;
-  participant: BookingParticipantSummary;
+  participantNames: string[];
   pendingAction: Action | null;
   pendingBookingId: string | null;
-  primaryHandle: boolean;
+  startColumn: number;
+  span: number;
   slot: LaneSlot;
 }
 
-export const OccupiedBookingCell = memo(function OccupiedBookingCell({
+export const OccupiedBookingCard = memo(function OccupiedBookingCard({
   booking,
-  column,
   compact = false,
   movingBookingId,
   onEndDrag,
   onOpenManage,
   onQuickAction,
   onStartDrag,
-  participant,
+  participantNames,
   pendingAction,
   pendingBookingId,
-  primaryHandle,
+  startColumn,
+  span,
   slot,
-}: OccupiedBookingCellProps): JSX.Element {
+}: OccupiedBookingCardProps): JSX.Element {
   return (
     <div className="relative group/chip">
       <button
-        aria-label={primaryHandle ? `Open booking ${booking.id}` : `Open participant ${participant.display_name}`}
+        aria-label={`Open booking ${booking.id}`}
         className={[
-          bookingChipClass(booking, primaryHandle, compact),
+          bookingChipClass(booking, compact),
           participantTypeBorderClass(bookingPrimaryType(booking)),
           movingBookingId === booking.id ? "opacity-50" : "",
+          "w-full",
         ].join(" ")}
         draggable
         onClick={() => onOpenManage(slot)}
         onDragEnd={onEndDrag}
         onDragStart={(event) => onStartDrag(event, booking.id, slot)}
+        title="Drag to move booking"
         type="button"
       >
-        <BookingChipContent booking={booking} column={column} compact={compact} participant={participant} primaryHandle={primaryHandle} />
+        <BookingCardContent
+          booking={booking}
+          compact={compact}
+          participantNames={participantNames}
+          span={span}
+          startColumn={startColumn}
+        />
       </button>
       <BookingQuickActionPanel
         booking={booking}
@@ -527,11 +565,9 @@ export const OccupiedBookingCell = memo(function OccupiedBookingCell({
     previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
     previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
     previousPrimaryType === nextPrimaryType &&
-    previousProps.participant.display_name === nextProps.participant.display_name &&
-    previousProps.participant.participant_type === nextProps.participant.participant_type &&
-    previousProps.participant.is_primary === nextProps.participant.is_primary &&
-    previousProps.primaryHandle === nextProps.primaryHandle &&
-    previousProps.column === nextProps.column &&
+    previousProps.participantNames.join("|") === nextProps.participantNames.join("|") &&
+    previousProps.startColumn === nextProps.startColumn &&
+    previousProps.span === nextProps.span &&
     previousProps.movingBookingId === nextProps.movingBookingId &&
     previousProps.pendingBookingId === nextProps.pendingBookingId &&
     previousProps.pendingAction === nextProps.pendingAction &&
@@ -546,24 +582,28 @@ export const OccupiedBookingCell = memo(function OccupiedBookingCell({
 });
 
 interface OpenPlayerSlotContentProps {
-  column: number;
   compact?: boolean;
   enabled: boolean;
+  span?: number;
 }
 
 export const OpenPlayerSlotContent = memo(function OpenPlayerSlotContent({
-  column,
   compact = false,
   enabled,
+  span = 1,
 }: OpenPlayerSlotContentProps): JSX.Element {
   return (
     <>
-      <span className={`font-bold uppercase tracking-[0.18em] text-slate-400 ${compact ? "text-[8px]" : "text-[9px]"}`}>P{column}</span>
-      <span className={`truncate font-bold text-on-surface ${compact ? "text-[11px]" : "text-xs"}`}>{enabled ? "Open" : "Unavailable"}</span>
+      <span className={`font-bold uppercase tracking-[0.18em] text-slate-400 ${compact ? "text-[8px]" : "text-[9px]"}`}>
+        {span === 1 ? "Open" : `${span} Open`}
+      </span>
+      <span className={`truncate font-bold text-on-surface ${compact ? "text-[11px]" : "text-xs"}`}>
+        {enabled ? (span === 1 ? "Available" : `${span} player spots`) : "Unavailable"}
+      </span>
     </>
   );
 }, (previousProps, nextProps) => (
-  previousProps.column === nextProps.column &&
+  previousProps.span === nextProps.span &&
   previousProps.enabled === nextProps.enabled &&
   previousProps.compact === nextProps.compact
 ));

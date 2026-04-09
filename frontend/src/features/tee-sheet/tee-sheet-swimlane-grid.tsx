@@ -5,7 +5,7 @@ import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type { StartLane } from "../../types/bookings";
 import type { TeeSheetSlotDisplayStatus } from "../../types/tee-sheet";
 import {
-  OccupiedBookingCell,
+  OccupiedBookingCard,
   OpenPlayerSlotContent,
   canCreate,
   canDrop,
@@ -15,7 +15,7 @@ import {
   detail,
   laneOrder,
   nowTimeKey,
-  slotPlayerCells,
+  slotBookingSegments,
   slotPlayerCount,
   slotRemainingCapacity,
   slotSummaryClass,
@@ -26,28 +26,21 @@ import {
   type LaneSlot,
   type QuickAction,
   type TeeSheetBucket,
-  type TimelineDensity,
 } from "./sheet-shared";
 
 type SwimLaneRow = {
   colorCode: string | null;
   laneLabel: string;
-  rowKey: string;
+  laneKey: string;
   rowLabel: string;
   startLane: StartLane | null;
   teeId: string | null;
-};
-
-type ViewportMetrics = {
-  clientWidth: number;
-  scrollLeft: number;
 };
 
 type TeeSheetSwimLaneGridProps = {
   activeDropKey: string | null;
   checkingInAllBucket: string | null;
   columns: TeeSheetBucket[];
-  density: TimelineDensity;
   dragged: { bookingId: string; rowKey: string; slotDatetime: string } | null;
   dropAllowed: (target: LaneSlot) => boolean;
   dropKey: (slot: LaneSlot) => string;
@@ -70,14 +63,8 @@ type TeeSheetSwimLaneGridProps = {
 
 const LEFT_RAIL_WIDTH = 144;
 const HEADER_HEIGHT = 116;
-
-function densityColumnWidth(density: TimelineDensity): number {
-  return density === "compact" ? 118 : 156;
-}
-
-function densityRowHeight(density: TimelineDensity): number {
-  return density === "compact" ? 92 : 128;
-}
+const COLUMN_WIDTH = 160;
+const ROW_HEIGHT = 128;
 
 function bucketPriorityStatus(slots: LaneSlot[]): TeeSheetSlotDisplayStatus {
   if (slots.some((slot) => slot.slot.display_status === "blocked")) return "blocked";
@@ -101,11 +88,14 @@ function scrollElementTo(element: HTMLElement, left: number, behavior: ScrollBeh
   element.scrollLeft = nextLeft;
 }
 
+function swimLaneKey(startLane: StartLane | null): string {
+  return startLane ?? "hole_1";
+}
+
 export function TeeSheetSwimLaneGrid({
   activeDropKey,
   checkingInAllBucket,
   columns,
-  density,
   dragged,
   dropAllowed,
   dropKey,
@@ -128,11 +118,9 @@ export function TeeSheetSwimLaneGrid({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrolledDateRef = useRef<string | null>(null);
   const [minuteTick, setMinuteTick] = useState(0);
-  const [viewportMetrics, setViewportMetrics] = useState<ViewportMetrics>({ clientWidth: 0, scrollLeft: 0 });
 
-  const columnWidth = densityColumnWidth(density);
-  const rowHeight = densityRowHeight(density);
-  const compact = density === "compact";
+  const columnWidth = COLUMN_WIDTH;
+  const rowHeight = ROW_HEIGHT;
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -147,11 +135,12 @@ export function TeeSheetSwimLaneGrid({
     const rowMap = new Map<string, SwimLaneRow>();
     for (const bucket of columns) {
       for (const slot of bucket.slots) {
-        if (!rowMap.has(slot.rowKey)) {
-          rowMap.set(slot.rowKey, {
+        const laneKey = swimLaneKey(slot.startLane);
+        if (!rowMap.has(laneKey)) {
+          rowMap.set(laneKey, {
             colorCode: slot.colorCode,
             laneLabel: slot.laneLabel,
-            rowKey: slot.rowKey,
+            laneKey,
             rowLabel: slot.rowLabel,
             startLane: slot.startLane,
             teeId: slot.teeId,
@@ -168,12 +157,31 @@ export function TeeSheetSwimLaneGrid({
     const lookup = new Map<string, Map<string, LaneSlot>>();
     for (const bucket of columns) {
       for (const slot of bucket.slots) {
-        const rowMap = lookup.get(slot.rowKey) ?? new Map<string, LaneSlot>();
+        const laneKey = swimLaneKey(slot.startLane);
+        const rowMap = lookup.get(laneKey) ?? new Map<string, LaneSlot>();
         rowMap.set(bucket.slotDatetime, slot);
-        lookup.set(slot.rowKey, rowMap);
+        lookup.set(laneKey, rowMap);
       }
     }
     return lookup;
+  }, [columns]);
+
+  const hourGroups = useMemo(() => {
+    const statusPriority: Record<string, number> = { available: 0, indeterminate: 1, reserved: 2, warning: 3, blocked: 4 };
+    const groupMap = new Map<string, { hour: string; firstIndex: number; priorityStatus: TeeSheetSlotDisplayStatus }>();
+    for (let i = 0; i < columns.length; i++) {
+      const bucket = columns[i];
+      const hour = timeKey(bucket.localTime).slice(0, 2);
+      if (!groupMap.has(hour)) {
+        groupMap.set(hour, { hour, firstIndex: i, priorityStatus: "available" });
+      }
+      const group = groupMap.get(hour)!;
+      const status = bucketPriorityStatus(bucket.slots);
+      if ((statusPriority[status] ?? 0) > (statusPriority[group.priorityStatus] ?? 0)) {
+        group.priorityStatus = status;
+      }
+    }
+    return Array.from(groupMap.values());
   }, [columns]);
 
   const virtualizer = useVirtualizer({
@@ -206,16 +214,29 @@ export function TeeSheetSwimLaneGrid({
     return fractionalIndex * columnWidth;
   }, [columnWidth, columns, intervalMinutes, minuteTick, selectedDate, timezone]);
 
-  const overviewViewport = useMemo(() => {
-    const maxScrollLeft = Math.max(totalColumnWidth - viewportMetrics.clientWidth, 0);
-    const availableWidth = Math.max(viewportMetrics.clientWidth - LEFT_RAIL_WIDTH, 0);
-    if (totalColumnWidth <= 0 || availableWidth <= 0) {
-      return { leftPercent: 0, widthPercent: 0 };
+  const currentBucketIndex = useMemo(() => {
+    void minuteTick;
+    if (columns.length === 0) return null;
+    if (selectedDate !== currentDateInTimezone(timezone)) return null;
+
+    const nowMinutes = clockMinutes(nowTimeKey(timezone));
+    let activeIndex = 0;
+
+    for (let index = 0; index < columns.length; index += 1) {
+      if (clockMinutes(timeKey(columns[index].localTime)) <= nowMinutes) {
+        activeIndex = index;
+        continue;
+      }
+      break;
     }
-    const widthPercent = clamp((availableWidth / totalColumnWidth) * 100, 0, 100);
-    const leftPercent = maxScrollLeft === 0 ? 0 : clamp((viewportMetrics.scrollLeft / maxScrollLeft) * (100 - widthPercent), 0, 100 - widthPercent);
-    return { leftPercent, widthPercent };
-  }, [totalColumnWidth, viewportMetrics.clientWidth, viewportMetrics.scrollLeft]);
+
+    return activeIndex;
+  }, [columns, minuteTick, selectedDate, timezone]);
+
+  const currentHour = currentBucketIndex !== null && columns[currentBucketIndex]
+    ? timeKey(columns[currentBucketIndex].localTime).slice(0, 2)
+    : null;
+
 
   function columnScrollLeft(index: number, align: "center" | "start"): number {
     const viewportWidth = scrollRef.current?.clientWidth ?? 0;
@@ -224,21 +245,6 @@ export function TeeSheetSwimLaneGrid({
     if (align === "start") return baseLeft;
     return baseLeft - (usableWidth - columnWidth) / 2;
   }
-
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    const updateViewport = (): void => {
-      setViewportMetrics({ clientWidth: element.clientWidth, scrollLeft: element.scrollLeft });
-    };
-    updateViewport();
-    element.addEventListener("scroll", updateViewport);
-    window.addEventListener("resize", updateViewport);
-    return () => {
-      element.removeEventListener("scroll", updateViewport);
-      window.removeEventListener("resize", updateViewport);
-    };
-  }, []);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -261,45 +267,60 @@ export function TeeSheetSwimLaneGrid({
     autoScrolledDateRef.current = null;
   }, [selectedDate]);
 
+  function bucketRhythmClass(index: number): string {
+    if (currentBucketIndex === null) return "border-slate-200 bg-surface-container";
+    if (index === currentBucketIndex) return "border-red-200 bg-red-50";
+    if (index > currentBucketIndex && index <= currentBucketIndex + 2) return "border-amber-200 bg-amber-50/70";
+    return "border-slate-200 bg-surface-container";
+  }
+
+  function bucketCellClass(index: number): string {
+    if (currentBucketIndex === null) return "border-slate-200/80";
+    if (index === currentBucketIndex) return "border-red-200 bg-red-50/30";
+    if (index > currentBucketIndex && index <= currentBucketIndex + 2) return "border-amber-100 bg-amber-50/20";
+    return "border-slate-200/80";
+  }
+
   return (
     <section className="overflow-hidden rounded-[28px] border border-slate-200/70 bg-white shadow-sm" data-testid="tee-sheet-swimlane-grid">
-      <div className="border-b border-slate-100 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="w-32 shrink-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Day Overview</p>
-            <p className="text-xs text-slate-500">Click to jump across the visible timeline.</p>
-          </div>
-          <div className="relative flex-1 overflow-hidden rounded-full bg-surface-container-low px-1 py-1">
-            <div className="flex h-6 items-stretch gap-px">
-              {columns.map((bucket, index) => {
-                const status = bucketPriorityStatus(bucket.slots);
+      {hourGroups.length > 0 ? (
+        <div className="border-b border-slate-100 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="w-32 shrink-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump to Hour</p>
+            </div>
+            <div className="flex flex-1 flex-wrap gap-1.5">
+              {hourGroups.map((group) => {
+                const isCurrent = group.hour === currentHour;
                 return (
                   <button
-                    aria-label={`Jump to ${timeKey(bucket.localTime)}`}
-                    className={`min-w-0 flex-1 rounded-full transition-opacity hover:opacity-80 ${statusClass(status)}`}
-                    data-testid={`timeline-overview-${timeKey(bucket.localTime)}`}
-                    key={bucket.slotDatetime}
+                    aria-label={`Jump to ${group.hour}:00`}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-center transition-colors ${
+                      isCurrent
+                        ? "bg-red-50 ring-2 ring-red-400/60"
+                        : "bg-surface-container-low hover:bg-surface-container"
+                    }`}
+                    data-testid={`timeline-overview-${group.hour}:00`}
+                    key={group.hour}
                     onClick={() => {
                       const element = scrollRef.current;
                       if (!element) return;
-                      scrollElementTo(element, columnScrollLeft(index, "center"), "smooth");
+                      scrollElementTo(element, columnScrollLeft(group.firstIndex, "start"), "smooth");
                     }}
-                    title={`Jump to ${timeKey(bucket.localTime)}`}
+                    title={`Jump to ${group.hour}:00`}
                     type="button"
-                  />
+                  >
+                    <span className={`text-[11px] font-bold leading-none ${isCurrent ? "text-red-600" : "text-slate-700"}`}>
+                      {group.hour}:00
+                    </span>
+                    <span className={`mt-0.5 h-1 w-8 rounded-full ${statusClass(group.priorityStatus)}`} />
+                  </button>
                 );
               })}
             </div>
-            {overviewViewport.widthPercent > 0 ? (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 rounded-full border border-red-400/70 bg-red-100/20"
-                style={{ left: `${overviewViewport.leftPercent}%`, width: `${overviewViewport.widthPercent}%` }}
-              />
-            ) : null}
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div
         className="relative max-h-[70vh] overflow-auto bg-surface-container-lowest"
@@ -309,22 +330,32 @@ export function TeeSheetSwimLaneGrid({
         <div style={{ minWidth: `${LEFT_RAIL_WIDTH + totalColumnWidth}px`, width: LEFT_RAIL_WIDTH + totalColumnWidth }}>
           <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90" style={{ height: HEADER_HEIGHT }}>
             <div
-              className="sticky left-0 z-40 flex h-full items-end border-r border-slate-200 bg-white px-4 py-3 shadow-sm"
-              style={columns[0]?.slots[0]?.colorCode ? { borderLeft: `4px solid ${columns[0].slots[0].colorCode}` } : undefined}
+              className="sticky left-0 top-0 z-40 flex h-full items-end border-r border-slate-200 bg-white px-4 py-3 shadow-sm"
+              style={{ width: LEFT_RAIL_WIDTH }}
             >
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Tee / Lane</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Starting Lane</p>
                 <p className="font-headline text-lg font-extrabold text-on-surface">Timeline</p>
               </div>
             </div>
 
             <div aria-hidden="true" className="pointer-events-none absolute bottom-0 top-0 z-10" style={{ left: LEFT_RAIL_WIDTH, width: totalColumnWidth }}>
               {currentTimeOffset != null ? (
-                <div
-                  className="absolute bottom-0 top-0 w-0.5 bg-red-500/80"
-                  data-testid="timeline-current-time-indicator"
-                  style={{ left: currentTimeOffset }}
-                />
+                <>
+                  <div
+                    className="absolute -top-0.5 flex -translate-x-1/2 flex-col items-center gap-1"
+                    style={{ left: currentTimeOffset }}
+                  >
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-red-500">
+                      Now
+                    </span>
+                  </div>
+                  <div
+                    className="absolute bottom-0 top-0 w-0.5 bg-red-500/80"
+                    data-testid="timeline-current-time-indicator"
+                    style={{ left: currentTimeOffset }}
+                  />
+                </>
               ) : null}
             </div>
 
@@ -333,23 +364,31 @@ export function TeeSheetSwimLaneGrid({
               const reservedBookings = bucket.slots.flatMap((slot) => slot.slot.bookings.filter((booking) => booking.status === "reserved"));
               const bookedPlayers = bucket.slots.reduce((sum, slot) => sum + slotPlayerCount(slot.slot), 0);
               const canCreateInBucket = bucket.slots.some((slot) => canCreate(slot.slot));
+              const isCurrentBucket = currentBucketIndex === virtualColumn.index;
+              const isUpcomingBucket = currentBucketIndex !== null && virtualColumn.index > currentBucketIndex && virtualColumn.index <= currentBucketIndex + 2;
               return (
                 <div
-                  className="absolute top-0 border-r border-slate-100 px-3 py-3"
+                  className="absolute top-0 border-r border-slate-200 px-3 py-3"
+                  data-testid={`timeline-header-${timeKey(bucket.localTime)}`}
                   id={`bucket-${timeKey(bucket.localTime)}`}
                   key={bucket.slotDatetime}
                   style={{ height: HEADER_HEIGHT, left: LEFT_RAIL_WIDTH + virtualColumn.start, width: virtualColumn.size }}
                 >
-                  <div className="flex h-full flex-col justify-between rounded-[18px] bg-surface-container px-3 py-2 shadow-sm">
+                  <div className={`flex h-full flex-col justify-between rounded-[18px] border px-3 py-2 shadow-sm ${bucketRhythmClass(virtualColumn.index)}`}>
                     <div>
-                      <p className="font-headline text-lg font-extrabold text-on-surface">{timeKey(bucket.localTime)}</p>
-                      {bookedPlayers > 0 ? <p className="mt-0.5 text-[10px] text-slate-400">{bookedPlayers} booked</p> : null}
+                      <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                        {isCurrentBucket ? "Now" : isUpcomingBucket ? "Next Up" : "Tee Time"}
+                      </p>
+                      <p className="font-headline text-xl font-extrabold leading-none text-on-surface">{timeKey(bucket.localTime)}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {bookedPlayers > 0 ? `${bookedPlayers} booked` : "Open bucket"}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       {canCreateInBucket ? (
                         <button
                           aria-label={`Create new booking at ${timeKey(bucket.localTime)}`}
-                          className="w-full rounded-lg bg-primary px-2 py-1 text-[9px] font-bold uppercase tracking-[0.10em] text-white transition-colors hover:bg-primary-dim"
+                          className="w-full rounded-lg border border-primary/15 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-[0.10em] text-primary transition-colors hover:bg-primary-container/20"
                           onClick={() => {
                             const available = bucket.slots.find((slot) => canCreate(slot.slot));
                             if (available) onOpenCreate(available);
@@ -388,33 +427,33 @@ export function TeeSheetSwimLaneGrid({
             ) : null}
 
             {rows.map((row) => {
-              const rowSlots = slotLookup.get(row.rowKey) ?? new Map<string, LaneSlot>();
+              const rowSlots = slotLookup.get(row.laneKey) ?? new Map<string, LaneSlot>();
               return (
                 <div
                   className="relative border-b border-slate-100"
-                  key={row.rowKey}
+                  key={row.laneKey}
                   style={{ minHeight: rowHeight }}
                 >
                   <div
                     className="sticky left-0 z-20 flex h-full items-center border-r border-slate-200 bg-white px-4 py-3 shadow-sm"
-                    style={row.colorCode ? { borderLeft: `4px solid ${row.colorCode}`, width: LEFT_RAIL_WIDTH } : { width: LEFT_RAIL_WIDTH }}
+                    data-testid={`timeline-lane-row-${row.startLane ?? "hole_1"}`}
+                    style={{ width: LEFT_RAIL_WIDTH }}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-on-surface">{row.rowLabel}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{row.laneLabel}</p>
+                      <p className="truncate text-sm font-semibold text-on-surface">{row.laneLabel}</p>
                     </div>
                   </div>
 
                   {renderedColumns.map((virtualColumn) => {
                     const bucket = columns[virtualColumn.index];
                     const slot = rowSlots.get(bucket.slotDatetime) ?? null;
-                    const slotKey = slot ? dropKey(slot) : `${row.rowKey}:${bucket.slotDatetime}`;
+                    const slotKey = slot ? dropKey(slot) : `${row.laneKey}:${bucket.slotDatetime}`;
                     const isHighlighted = highlightedSlotKey === slotKey;
                     const isActiveDrop = slot ? activeDropKey === dropKey(slot) : false;
                     const allowedDrop = slot ? dropAllowed(slot) : false;
                     const reservedBlock = slot ? slot.slot.display_status === "blocked" || slot.slot.display_status === "reserved" : false;
-                    const playerCells = slot ? slotPlayerCells(slot.slot) : [];
-                    const occupiedCells = playerCells.filter((cell) => cell.kind === "occupied");
+                    const bookingSegments = slot ? slotBookingSegments(slot.slot) : [];
+                    const bookingCards = bookingSegments.filter((segment) => segment.kind === "booking");
                     const remainingCapacity = slot ? slotRemainingCapacity(slot.slot) : 0;
                     const createAllowed = slot ? canCreate(slot.slot) : false;
                     const manageAllowed = slot ? canManage(slot.slot) : false;
@@ -423,9 +462,9 @@ export function TeeSheetSwimLaneGrid({
                     return (
                       <div
                         aria-label={slot ? `${row.laneLabel} timeline row ${timeKey(bucket.localTime)}` : undefined}
-                        className={`absolute top-0 border-r border-slate-100 px-2 py-2 ${isActiveDrop ? "bg-primary-container/10" : ""}`}
+                        className={`absolute top-0 border-r px-2 py-2 ${bucketCellClass(virtualColumn.index)} ${isActiveDrop ? "bg-primary-container/10" : ""}`}
                         data-slot-anchor={slotKey}
-                        key={`${row.rowKey}:${bucket.slotDatetime}`}
+                        key={`${row.laneKey}:${bucket.slotDatetime}`}
                         onDragEnter={(event) => {
                           event.preventDefault();
                           if (slot && allowedDrop) onSetActiveDropKey(dropKey(slot));
@@ -473,13 +512,13 @@ export function TeeSheetSwimLaneGrid({
                               droppable ? "border-outline-variant/30 bg-white" : "border-outline-variant/20 bg-surface-container-low"
                             }`}
                           >
-                            <div className="mb-2 flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">{row.laneLabel}</p>
-                                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${statusClass(slot.slot.display_status)}`}>
-                                  {statusLabel(slot.slot.display_status)}
-                                </span>
-                              </div>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${statusClass(slot.slot.display_status)}`}>
+                                {statusLabel(slot.slot.display_status)}
+                              </span>
+                              <span className="text-[10px] font-medium text-slate-500">
+                                {slot.slot.bookings.length > 0 ? `${slot.slot.bookings.length} booking${slot.slot.bookings.length === 1 ? "" : "s"}` : `${remainingCapacity} open`}
+                              </span>
                               {slot.slot.warnings.length > 0 && slot.slot.display_status !== "blocked" ? (
                                 <span className="flex items-center gap-0.5" title={slot.slot.warnings[0].message}>
                                   <MaterialSymbol className="text-xs text-amber-500" icon="warning" />
@@ -491,35 +530,35 @@ export function TeeSheetSwimLaneGrid({
                             </div>
 
                             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                              {occupiedCells.map((cell) =>
-                                cell.kind === "occupied" ? (
-                                  <OccupiedBookingCell
-                                    booking={cell.booking}
-                                    column={cell.column}
-                                    compact={compact}
-                                    key={`${cell.booking.id}-${cell.column}-${cell.participant.display_name}`}
+                              {bookingCards.map((segment) =>
+                                segment.kind === "booking" ? (
+                                  <OccupiedBookingCard
+                                    booking={segment.booking}
+                                    compact={false}
+                                    key={`${segment.booking.id}-${segment.startColumn}-${segment.span}`}
                                     movingBookingId={movingBookingId}
                                     onEndDrag={onEndDrag}
                                     onOpenManage={onOpenManage}
                                     onQuickAction={onQuickAction}
                                     onStartDrag={onStartDrag}
-                                    participant={cell.participant}
+                                    participantNames={segment.participantNames}
                                     pendingAction={pendingAction}
                                     pendingBookingId={pendingBookingId}
-                                    primaryHandle={cell.primaryHandle}
                                     slot={slot}
+                                    span={segment.span}
+                                    startColumn={segment.startColumn}
                                   />
                                 ) : null,
                               )}
 
-                              {occupiedCells.length === 0 && createAllowed ? (
+                              {bookingCards.length === 0 && createAllowed ? (
                                 <button
                                   aria-label={`Create booking for ${row.laneLabel} ${timeKey(bucket.localTime)}`}
                                   className="flex min-h-[3rem] w-full items-center gap-2 rounded-[14px] border border-dashed border-outline-variant/40 bg-white px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary-container/10"
                                   onClick={() => onOpenCreate(slot)}
                                   type="button"
                                 >
-                                  <OpenPlayerSlotContent column={1} compact={compact} enabled />
+                                  <OpenPlayerSlotContent compact={false} enabled span={remainingCapacity} />
                                   <span className="ml-auto text-[10px] font-semibold text-slate-400">{remainingCapacity} open</span>
                                 </button>
                               ) : null}
@@ -529,7 +568,7 @@ export function TeeSheetSwimLaneGrid({
                               <div className="min-w-0">
                                 {manageAllowed ? (
                                   <p className="truncate text-[10px] text-slate-500">
-                                    {slot.slot.bookings.length} booking{slot.slot.bookings.length === 1 ? "" : "s"}
+                                    {detail(slot.slot)}
                                   </p>
                                 ) : createAllowed ? (
                                   <p className="truncate text-[10px] text-slate-500">{remainingCapacity} player spots open</p>

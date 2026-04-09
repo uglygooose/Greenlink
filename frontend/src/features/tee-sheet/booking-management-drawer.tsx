@@ -289,9 +289,6 @@ export function BookingManagementDrawer({
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
                 <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
-                  {teeLabel}
-                  {colorCode ? ` | ${colorCode}` : ""}
-                  {" | "}
                   {slot.party_summary.total_players ?? 0} players in active view
                 </p>
               </div>

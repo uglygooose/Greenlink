@@ -76,8 +76,73 @@ function renderPage(queryClient = new QueryClient({
   return queryClient;
 }
 
+function openFiltersView(): void {
+  fireEvent.click(screen.getByTestId("filters-view-toggle"));
+}
+
 function cloneTeeSheetPayload(): any {
   return JSON.parse(JSON.stringify(teeSheetPayload));
+}
+
+function cloneDuplicateLanePayload(): any {
+  const payload = cloneTeeSheetPayload();
+  payload.rows.push(
+    {
+      row_key: "white-hole-1",
+      tee_id: "tee-2",
+      start_lane: "hole_1",
+      label: "White",
+      color_code: "#d9d9d9",
+      slots: payload.rows[0].slots.map((slot: any) => ({
+        ...slot,
+        bookings: [],
+        occupancy: {
+          ...slot.occupancy,
+          occupied_player_count: 0,
+          reserved_player_count: 0,
+          confirmed_booking_count: 0,
+          reserved_booking_count: 0,
+          remaining_player_capacity: slot.occupancy.player_capacity,
+        },
+        party_summary: {
+          ...slot.party_summary,
+          member_count: 0,
+          guest_count: 0,
+          staff_count: 0,
+          total_players: 0,
+          has_activity: false,
+        },
+      })),
+    },
+    {
+      row_key: "white-hole-10",
+      tee_id: "tee-2",
+      start_lane: "hole_10",
+      label: "White",
+      color_code: "#d9d9d9",
+      slots: payload.rows[1].slots.map((slot: any) => ({
+        ...slot,
+        bookings: [],
+        occupancy: {
+          ...slot.occupancy,
+          occupied_player_count: 0,
+          reserved_player_count: 0,
+          confirmed_booking_count: 0,
+          reserved_booking_count: 0,
+          remaining_player_capacity: slot.occupancy.player_capacity,
+        },
+        party_summary: {
+          ...slot.party_summary,
+          member_count: 0,
+          guest_count: 0,
+          staff_count: 0,
+          total_players: 0,
+          has_activity: false,
+        },
+      })),
+    },
+  );
+  return payload;
 }
 
 function teeSheetDayKey(date: string, membershipType = "staff", teeId: string | null = null): string[] {
@@ -497,15 +562,38 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getAllByText("10th Tee").length).toBeGreaterThan(0);
     expect(screen.getAllByText("06:00").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /open booking booking-1/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /open participant guest one/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 4/i })).toBeInTheDocument();
+    expect(screen.getByText("Member One")).toBeInTheDocument();
+    expect(screen.getByText("Guest One")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /create booking for 1st tee 06:00/i }).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
 
     expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cart").length).toBeGreaterThan(0);
+  });
+
+  test("groups duplicate tee rows into one lane per time row across both layouts", () => {
+    mockUseTeesQuery.mockReturnValue({
+      data: [
+        { id: "tee-1", course_id: "course-1", active: true },
+        { id: "tee-2", course_id: "course-1", active: true },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: cloneDuplicateLanePayload(), isLoading: false, error: null });
+
+    renderPage();
+
+    expect(screen.getAllByLabelText(/lane row 06:00/i)).toHaveLength(2);
+
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    expect(screen.getAllByTestId("timeline-lane-row-hole_1")).toHaveLength(1);
+    expect(screen.getAllByTestId("timeline-lane-row-hole_10")).toHaveLength(1);
+    expect(screen.queryByText("White")).not.toBeInTheDocument();
   });
 
   test("keeps the operational toolbar sticky with date controls in view", () => {
@@ -515,16 +603,40 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getByRole("button", { name: "Previous day" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next day" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Slots" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Golf Day" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Closed / Holds" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Hide Controlled Slots/i })).not.toBeInTheDocument();
-    expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Next Available/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search players, bookings, or time")).toBeInTheDocument();
+    expect(screen.getByTestId("filters-view-toggle")).toBeInTheDocument();
+    expect(screen.queryByText("View As")).not.toBeInTheDocument();
+    expect(screen.queryByText("All Tees")).not.toBeInTheDocument();
+    expect(screen.queryByText("Filters")).not.toBeInTheDocument();
+  });
+
+  test("opens secondary controls from the filters and view panel only", () => {
+    renderPage();
+
+    expect(screen.queryByTestId("filters-view-panel")).not.toBeInTheDocument();
+
+    openFiltersView();
+
+    expect(screen.getByTestId("filters-view-panel")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Classic" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Timeline" })).toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+  });
+
+  test("removes tee and participant controls from the tee-sheet surface", () => {
+    renderPage();
+
+    expect(screen.queryByText("View As")).not.toBeInTheDocument();
+    expect(screen.queryByText("Type")).not.toBeInTheDocument();
+    expect(screen.queryByText("All Tees")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Staff" })).not.toBeInTheDocument();
   });
 
   test("filters the sheet to open sellable slots", () => {
     renderPage();
 
+    openFiltersView();
     fireEvent.click(screen.getByRole("button", { name: "Open Slots" }));
 
     expect(screen.getByLabelText(/10th tee lane row 06:20/i)).toBeInTheDocument();
@@ -536,6 +648,7 @@ describe("AdminGolfTeeSheetPage", () => {
   test("filters the sheet to golf day allocations", () => {
     renderPage();
 
+    openFiltersView();
     fireEvent.click(screen.getByRole("button", { name: "Golf Day" }));
 
     expect(screen.getByLabelText(/1st tee lane row 06:10/i)).toBeInTheDocument();
@@ -546,6 +659,7 @@ describe("AdminGolfTeeSheetPage", () => {
   test("filters the sheet to closed or held lanes", () => {
     renderPage();
 
+    openFiltersView();
     fireEvent.click(screen.getByRole("button", { name: "Closed / Holds" }));
 
     expect(screen.getByLabelText(/1st tee lane row 06:10/i)).toBeInTheDocument();
@@ -557,7 +671,7 @@ describe("AdminGolfTeeSheetPage", () => {
   test("opens the create drawer for remaining player capacity on a partially filled slot", async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /create booking for 1st tee 06:00/i })[0]);
 
     expect(await screen.findByRole("heading", { name: /create booking/i })).toBeInTheDocument();
   });
@@ -715,7 +829,7 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage(queryClient);
     await waitFor(() => {
-      expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+      expect(screen.getByTestId("tee-sheet-toolbar")).toBeInTheDocument();
     });
     fireEvent.click(screen.getAllByRole("button", { name: /check in booking booking-1/i })[0]);
 
@@ -764,7 +878,7 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage(queryClient);
     await waitFor(() => {
-      expect(screen.getByText("Showing 8 of 8 lane slots")).toBeInTheDocument();
+      expect(screen.getByTestId("tee-sheet-toolbar")).toBeInTheDocument();
     });
 
     await waitFor(() => {
@@ -783,7 +897,7 @@ describe("AdminGolfTeeSheetPage", () => {
     try {
       renderPage();
 
-      const search = screen.getByPlaceholderText(/search players, lane, or time/i);
+      const search = screen.getByPlaceholderText(/search players, bookings, or time/i);
       fireEvent.change(search, { target: { value: "zzz" } });
 
       expect(screen.getByLabelText(/1st tee lane row 06:00/i)).toBeInTheDocument();
@@ -811,10 +925,10 @@ describe("AdminGolfTeeSheetPage", () => {
 
       // "/" focuses search input
       fireEvent.keyDown(window, { key: "/" });
-      expect(screen.getByPlaceholderText(/search players, lane, or time/i)).toHaveFocus();
+      expect(screen.getByPlaceholderText(/search players, bookings, or time/i)).toHaveFocus();
 
       // ArrowRight while search is focused does NOT change date
-      fireEvent.keyDown(screen.getByPlaceholderText(/search players, lane, or time/i), { key: "ArrowRight" });
+      fireEvent.keyDown(screen.getByPlaceholderText(/search players, bookings, or time/i), { key: "ArrowRight" });
       expect(screen.getAllByText("April 8, 2026").length).toBeGreaterThan(0);
 
       // ArrowRight from window advances date by 1
@@ -836,7 +950,7 @@ describe("AdminGolfTeeSheetPage", () => {
   test("closes the topmost drawer on Escape and traps focus within the drawer", async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /create booking for 1st tee 06:00/i })[0]);
 
     const closeButton = await screen.findByRole("button", { name: /^close create booking drawer$/i });
     await waitFor(() => {
@@ -959,7 +1073,7 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /create booking for 1st tee 06:00 player slot 3/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /create booking for 1st tee 06:00/i })[0]);
     fireEvent.click(await screen.findByRole("button", { name: /^cart$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^caddie$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^create booking$/i }));
@@ -1004,9 +1118,25 @@ describe("AdminGolfTeeSheetPage", () => {
     });
   });
 
+  test("booking cards are draggable in classic mode", () => {
+    renderPage();
+
+    expect(screen.getByRole("button", { name: /open booking booking-1/i })).toHaveAttribute("draggable", "true");
+  });
+
+  test("clicking a booking card opens details instead of moving the booking", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /open booking booking-1/i }));
+
+    expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
+    expect(moveBooking).not.toHaveBeenCalled();
+  });
+
   test("toggles timeline layout and persists the feature flag", () => {
     renderPage();
 
+    openFiltersView();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
 
     expect(localStorage.getItem("gl-tee-sheet-layout")).toBe("timeline");
@@ -1014,20 +1144,17 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("persists timeline density selection", () => {
-    localStorage.setItem("gl-tee-sheet-layout", "timeline");
-    localStorage.setItem("gl-tee-sheet-density", "compact");
-
+  test("only the active layout renders the expensive tee-sheet surface", () => {
     renderPage();
 
-    const compactButton = screen.getByRole("button", { name: "Compact" });
-    const comfortableButton = screen.getByRole("button", { name: "Comfortable" });
-    expect(compactButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("classic-tee-sheet-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("tee-sheet-swimlane-grid")).not.toBeInTheDocument();
 
-    fireEvent.click(comfortableButton);
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
 
-    expect(localStorage.getItem("gl-tee-sheet-density")).toBe("comfortable");
-    expect(comfortableButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("tee-sheet-swimlane-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("classic-tee-sheet-grid")).not.toBeInTheDocument();
   });
 
   test("renders the timeline grid from the existing bucket data with a current-time indicator", () => {
@@ -1038,7 +1165,10 @@ describe("AdminGolfTeeSheetPage", () => {
       renderPage();
 
       expect(screen.getByTestId("tee-sheet-swimlane-grid")).toBeInTheDocument();
+      expect(screen.getByTestId("timeline-header-06:00")).toHaveTextContent("06:00");
+      expect(screen.getByTestId("timeline-header-06:10")).toHaveTextContent("06:10");
       expect(screen.getByTestId("timeline-current-time-indicator")).toBeInTheDocument();
+      expect(screen.getAllByText("Now").length).toBeGreaterThan(0);
       expect(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /create new booking at 06:30/i })).toBeInTheDocument();
     } finally {
@@ -1052,7 +1182,7 @@ describe("AdminGolfTeeSheetPage", () => {
     renderPage();
     scrollToMock.mockClear();
 
-    fireEvent.click(screen.getByTestId("timeline-overview-06:20"));
+    fireEvent.click(screen.getByTestId("timeline-overview-06:00"));
 
     expect(scrollToMock).toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -21,17 +21,35 @@ import { BookingManagementDrawer } from "../features/tee-sheet/booking-managemen
 import type { DraftParticipant } from "../features/tee-sheet/booking-party-editor";
 import { DatePickerPopover } from "../features/tee-sheet/date-picker-popover";
 import { teeSheetDayQueryOptions, teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
+import {
+  bookingParticipantNames,
+  bookingPlayerCount,
+  bookingStatusIconClass,
+  bookingStatusIconName,
+  BookingQuickActionPanel,
+  canCreate,
+  canDrop,
+  canManage,
+  participantTypeBorderClass,
+  paymentIcon,
+  paymentIconClass,
+  slotCapacity,
+  slotPlayerCount,
+  slotRemainingCapacity,
+  type Action,
+  type LaneSlot,
+  type LayoutMode,
+  type QuickAction,
+  type TeeSheetBookingView,
+} from "../features/tee-sheet/sheet-shared";
 import { TeeSheetSwimLaneGrid } from "../features/tee-sheet/tee-sheet-swimlane-grid";
-import type { LayoutMode, TimelineDensity } from "../features/tee-sheet/sheet-shared";
 import { useSession } from "../session/session-context";
 import type {
   BookingCreateInput,
   BookingCreateParticipantInput,
   BookingCreateResult,
   BookingLifecycleMutationResult,
-  BookingParticipantSummary,
   BookingParticipantType,
-  BookingPaymentStatus,
   BookingSummary,
   BookingUpdateInput,
   BookingUpdateResult,
@@ -41,35 +59,11 @@ import type { BookingRuleAppliesTo, Tee } from "../types/operations";
 import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../types/tee-sheet";
 
 
-type Action = "cancel" | "check_in" | "complete" | "no_show";
-type QuickAction = Exclude<Action, "complete">;
 type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
 type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
-type TeeSheetBookingView = TeeSheetSlotView["bookings"][number];
 type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid";
-type LaneSlot = {
-  colorCode: string | null;
-  laneLabel: string;
-  rowKey: string;
-  rowLabel: string;
-  slot: TeeSheetSlotView;
-  startLane: StartLane | null;
-  teeId: string | null;
-};
-type SlotPlayerCell =
-  | {
-      booking: TeeSheetBookingView;
-      column: number;
-      kind: "occupied";
-      participant: BookingParticipantSummary;
-      primaryHandle: boolean;
-    }
-  | {
-      column: number;
-      kind: "empty";
-    };
 
 const COPY: Record<Action, { already: string; blocked: string; success: string }> = {
   cancel: {
@@ -103,12 +97,10 @@ const VIEW_FILTERS: Array<{ label: string; value: ViewFilter }> = [
 ];
 
 // 5.5: Compound filter state — replaces the single ViewFilter.
-type ParticipantTypeFilter = BookingParticipantType | "all";
 type PartySize = 1 | 2 | 3 | 4 | "any";
 
 type TeeSheetFilterState = {
   viewFilter: ViewFilter;
-  participantType: ParticipantTypeFilter;
   partySize: PartySize;
   timeFrom: string | null; // "HH:MM"
   timeTo: string | null;   // "HH:MM"
@@ -116,18 +108,10 @@ type TeeSheetFilterState = {
 
 const DEFAULT_FILTERS: TeeSheetFilterState = {
   viewFilter: "all",
-  participantType: "all",
   partySize: "any",
   timeFrom: null,
   timeTo: null,
 };
-
-const PARTICIPANT_TYPE_FILTERS: Array<{ label: string; value: ParticipantTypeFilter }> = [
-  { label: "All", value: "all" },
-  { label: "Member", value: "member" },
-  { label: "Guest", value: "guest" },
-  { label: "Staff", value: "staff" },
-];
 
 const PARTY_SIZE_FILTERS: Array<{ label: string; value: PartySize }> = [
   { label: "Any", value: "any" },
@@ -135,12 +119,6 @@ const PARTY_SIZE_FILTERS: Array<{ label: string; value: PartySize }> = [
   { label: "2-ball", value: 2 },
   { label: "3-ball", value: 3 },
   { label: "4-ball", value: 4 },
-];
-
-const QUICK_ACTIONS: Array<{ action: QuickAction; icon: string; label: string }> = [
-  { action: "check_in", icon: "how_to_reg", label: "Check In" },
-  { action: "no_show", icon: "person_off", label: "No-Show" },
-  { action: "cancel", icon: "event_busy", label: "Cancel" },
 ];
 
 const LIFECYCLE_TRANSITIONS: Record<Action, { from: TeeSheetBookingView["status"]; to: TeeSheetBookingView["status"] }> = {
@@ -238,17 +216,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable;
 }
 
-function canQuickAction(booking: TeeSheetBookingView, action: QuickAction): boolean {
-  if (action === "cancel") return booking.status === "reserved";
-  if (action === "check_in") return booking.status === "reserved";
-  return booking.status === "reserved";
-}
-
-function quickActionTooltip(booking: TeeSheetBookingView, action: QuickAction, label: string): string {
-  if (canQuickAction(booking, action)) return label;
-  return `${label} unavailable for ${booking.status.replace(/_/g, " ")}`;
-}
-
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -295,179 +262,8 @@ function statusClass(value: TeeSheetSlotDisplayStatus): string {
   }
 }
 
-function paymentLabel(value: BookingPaymentStatus | null | undefined): string {
-  return value ? value.replace("_", " ") : "unassigned";
-}
-
-// Booking lifecycle status — icon-only channel (2.2).
-// Text label kept only for tooltip / accessibility title.
-function bookingStatusIconName(value: TeeSheetBookingView["status"]): string {
-  switch (value) {
-    case "checked_in":
-      return "check_circle";
-    case "completed":
-      return "task_alt";
-    case "no_show":
-      return "person_off";
-    case "cancelled":
-      return "cancel";
-    default:
-      return "radio_button_unchecked";
-  }
-}
-
-function bookingStatusIconClass(value: TeeSheetBookingView["status"]): string {
-  switch (value) {
-    case "checked_in":
-      return "text-emerald-600";
-    case "completed":
-      return "text-slate-300";
-    case "no_show":
-      return "text-red-500";
-    case "cancelled":
-      return "text-slate-400";
-    default:
-      return "text-slate-400";
-  }
-}
-
-// Booking type — left-border colour channel (2.1).
-// Uses the primary participant's type so the colour is consistent across all
-// cells of the same booking.
-// Returns the participant type of the booking's primary player.
-// Resolution order:
-//   1. First participant explicitly flagged is_primary === true
-//   2. First participant in the array (position 0) — covers cases where the
-//      is_primary flag was not set or is malformed
-//   3. null — no usable participant data at all (renders a neutral border so
-//      staff are not misled into thinking a booking is a specific type)
-function bookingPrimaryType(booking: TeeSheetBookingView): BookingParticipantType | null {
-  return (
-    booking.participants.find((p) => p.is_primary)?.participant_type ??
-    booking.participants[0]?.participant_type ??
-    null
-  );
-}
-
-function participantTypeBorderClass(type: BookingParticipantType | null): string {
-  switch (type) {
-    case "member":
-      return "border-l-[3px] border-l-blue-600";
-    case "guest":
-      return "border-l-[3px] border-l-amber-500";
-    case "staff":
-      return "border-l-[3px] border-l-slate-400";
-    default:
-      // null or unknown — very light neutral; signals "type indeterminate"
-      // without asserting a specific category.
-      return "border-l-[3px] border-l-slate-200";
-  }
-}
-
-// Payment status icon — distinct visual channel from booking status so the two
-// cannot be confused when both appear on the same chip.
-function paymentIcon(value: BookingPaymentStatus | null | undefined): string {
-  switch (value) {
-    case "paid":
-      return "check_circle";
-    case "pending":
-      return "schedule";
-    case "waived":
-      return "remove_circle";
-    case "complimentary":
-      return "card_giftcard";
-    default:
-      return "help_outline";
-  }
-}
-
-function paymentIconClass(value: BookingPaymentStatus | null | undefined): string {
-  switch (value) {
-    case "paid":
-      return "text-emerald-600";
-    case "pending":
-      return "text-amber-500";
-    case "waived":
-      return "text-slate-400";
-    case "complimentary":
-      return "text-secondary";
-    default:
-      return "text-slate-400";
-  }
-}
-
 function detail(slot: TeeSheetSlotView): string {
   return slot.blockers[0]?.reason ?? slot.unresolved_checks[0]?.reason ?? slot.warnings[0]?.message ?? "Open for booking";
-}
-
-function slotCapacity(slot: TeeSheetSlotView): number {
-  const value = slot.occupancy.player_capacity ?? 4;
-  return Math.max(1, Math.min(value, 4));
-}
-
-function bookingPlayerCount(booking: TeeSheetBookingView): number {
-  return booking.participants.length > 0 ? booking.participants.length : booking.party_size;
-}
-
-function slotPlayerCount(slot: TeeSheetSlotView): number {
-  return slot.bookings.reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
-}
-
-function slotRemainingCapacity(slot: TeeSheetSlotView): number {
-  return Math.max(slotCapacity(slot) - slotPlayerCount(slot), 0);
-}
-
-function slotPlayerCells(slot: TeeSheetSlotView): SlotPlayerCell[] {
-  const capacity = slotCapacity(slot);
-  const cells: SlotPlayerCell[] = [];
-  for (const booking of slot.bookings) {
-    const participants =
-      booking.participants.length > 0
-        ? booking.participants
-        : Array.from({ length: booking.party_size }, (_, index) => ({
-            display_name: `Player ${index + 1}`,
-            participant_type: "guest" as const,
-            is_primary: index === 0,
-          }));
-    participants.forEach((participant, index) => {
-      if (cells.length < capacity) {
-        cells.push({
-          booking,
-          column: cells.length + 1,
-          kind: "occupied",
-          participant,
-          primaryHandle: index === 0,
-        });
-      }
-    });
-  }
-  while (cells.length < capacity) {
-    cells.push({ column: cells.length + 1, kind: "empty" });
-  }
-  return cells;
-}
-
-function participantTypeLabel(value: BookingParticipantType): string {
-  switch (value) {
-    case "staff":
-      return "Staff";
-    case "guest":
-      return "Guest";
-    default:
-      return "Member";
-  }
-}
-
-function bookingChipClass(booking: TeeSheetBookingView, primaryHandle: boolean): string {
-  const base = "flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-all select-none";
-  if (!primaryHandle) return `${base} cursor-grab bg-surface-container-low hover:bg-surface-container active:cursor-grabbing`;
-  if (booking.status === "checked_in") {
-    return `${base} cursor-grab bg-secondary-container/70 hover:bg-secondary-container active:cursor-grabbing`;
-  }
-  if (booking.payment_status === "pending") {
-    return `${base} cursor-grab bg-primary-container/70 hover:bg-primary-container active:cursor-grabbing`;
-  }
-  return `${base} cursor-grab bg-surface-container-low hover:bg-surface-container active:cursor-grabbing`;
 }
 
 function slotSummaryClass(slot: TeeSheetSlotView): string {
@@ -521,12 +317,6 @@ function slotMatchesFilter(slot: TeeSheetSlotView, filter: ViewFilter): boolean 
   }
 }
 
-// 5.1: Filter by primary participant type of any booking in the slot.
-function slotMatchesParticipantType(slot: TeeSheetSlotView, participantType: ParticipantTypeFilter): boolean {
-  if (participantType === "all") return true;
-  return slot.bookings.some((b) => bookingPrimaryType(b) === participantType);
-}
-
 // 5.3: Filter by number of players in any booking in the slot.
 function slotMatchesPartySize(slot: TeeSheetSlotView, partySize: PartySize): boolean {
   if (partySize === "any") return true;
@@ -546,10 +336,50 @@ function slotMatchesTimeRange(slot: TeeSheetSlotView, timeFrom: string | null, t
 function slotMatchesFilters(slot: TeeSheetSlotView, f: TeeSheetFilterState): boolean {
   return (
     slotMatchesFilter(slot, f.viewFilter) &&
-    slotMatchesParticipantType(slot, f.participantType) &&
     slotMatchesPartySize(slot, f.partySize) &&
     slotMatchesTimeRange(slot, f.timeFrom, f.timeTo)
   );
+}
+
+function laneGroupKey(startLane: StartLane | null): string {
+  return startLane ?? "hole_1";
+}
+
+function slotSurfacePriority(slot: TeeSheetSlotView): number {
+  if (slot.bookings.length > 0) return 4;
+  if (canCreate(slot)) return 3;
+  if (slot.display_status === "warning" || slot.display_status === "indeterminate") return 2;
+  if (slot.display_status === "available") return 1;
+  return 0;
+}
+
+function mergeLaneSlotGroup(group: LaneSlot[]): LaneSlot {
+  const representative = [...group].sort((a, b) => slotSurfacePriority(b.slot) - slotSurfacePriority(a.slot))[0] ?? group[0];
+  const bookings = Array.from(
+    new Map(
+      group
+        .flatMap((item) => item.slot.bookings)
+        .map((booking) => [booking.id, booking] as const),
+    ).values(),
+  );
+  const warnings = Array.from(
+    new Map(
+      group
+        .flatMap((item) => item.slot.warnings)
+        .map((warning) => [`${warning.code}:${warning.message}`, warning] as const),
+    ).values(),
+  );
+
+  return {
+    ...representative,
+    colorCode: null,
+    laneLabel: laneLabel(representative.startLane),
+    rowLabel: laneLabel(representative.startLane),
+    slot: {
+      ...updateSlotFromBookings(representative.slot, bookings),
+      warnings,
+    },
+  };
 }
 
 function updateSlotFromBookings(slot: TeeSheetSlotView, bookings: TeeSheetBookingView[]): TeeSheetSlotView {
@@ -659,294 +489,6 @@ export function optimisticallyTransitionBooking(
   return changed ? { ...day, rows: nextRows } : day;
 }
 
-function canManage(slot: TeeSheetSlotView): boolean {
-  return slot.bookings.length > 0;
-}
-
-function canCreate(slot: TeeSheetSlotView): boolean {
-  return slot.display_status !== "blocked" && slot.display_status !== "reserved" && slotRemainingCapacity(slot) > 0;
-}
-
-function canDrop(slot: TeeSheetSlotView): boolean {
-  return slot.display_status !== "blocked" && slot.display_status !== "reserved";
-}
-
-interface OccupiedBookingCellProps {
-  booking: TeeSheetBookingView;
-  column: number;
-  movingBookingId: string | null;
-  onEndDrag: () => void;
-  onOpenManage: (slot: LaneSlot) => void;
-  onQuickAction: (action: QuickAction, bookingId: string) => void;
-  onStartDrag: (event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot) => void;
-  participant: BookingParticipantSummary;
-  pendingAction: Action | null;
-  pendingBookingId: string | null;
-  primaryHandle: boolean;
-  slot: LaneSlot;
-}
-
-const OccupiedBookingCell = memo(function OccupiedBookingCell({
-  booking,
-  column,
-  movingBookingId,
-  onEndDrag,
-  onOpenManage,
-  onQuickAction,
-  onStartDrag,
-  participant,
-  pendingAction,
-  pendingBookingId,
-  primaryHandle,
-  slot,
-}: OccupiedBookingCellProps): JSX.Element {
-  return (
-    <div className="relative group/chip">
-      <button
-        aria-label={primaryHandle ? `Open booking ${booking.id}` : `Open participant ${participant.display_name}`}
-        className={[
-          bookingChipClass(booking, primaryHandle),
-          participantTypeBorderClass(bookingPrimaryType(booking)),
-          movingBookingId === booking.id ? "opacity-50" : "",
-        ].join(" ")}
-        draggable
-        onClick={() => onOpenManage(slot)}
-        onDragEnd={onEndDrag}
-        onDragStart={(event) => onStartDrag(event, booking.id, slot)}
-        type="button"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-            <span>P{column}</span>
-            {primaryHandle ? <MaterialSymbol className="text-[11px]" icon="drag_indicator" /> : null}
-          </span>
-          {primaryHandle ? (
-            <div className="flex items-center gap-1">
-              <span title={booking.status.replace(/_/g, " ")}>
-                <MaterialSymbol
-                  className={`text-sm ${bookingStatusIconClass(booking.status)}`}
-                  icon={bookingStatusIconName(booking.status)}
-                />
-              </span>
-              <span title={paymentLabel(booking.payment_status)}>
-                <MaterialSymbol
-                  className={`text-sm ${paymentIconClass(booking.payment_status)}`}
-                  icon={paymentIcon(booking.payment_status)}
-                />
-              </span>
-            </div>
-          ) : null}
-        </div>
-        <p className="truncate text-xs font-bold leading-none text-on-surface">{participant.display_name}</p>
-        {primaryHandle && (booking.cart_flag || booking.caddie_flag) ? (
-          <div className="mt-0.5 flex items-center gap-1">
-            {booking.cart_flag ? (
-              <span title="Cart assigned">
-                <MaterialSymbol className="text-[11px] text-slate-400" icon="airport_shuttle" />
-              </span>
-            ) : null}
-            {booking.caddie_flag ? (
-              <span title="Caddie assigned">
-                <MaterialSymbol className="text-[11px] text-slate-400" icon="person" />
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-      </button>
-      <div className="pointer-events-none absolute right-1 top-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover/chip:pointer-events-auto group-hover/chip:opacity-100 group-focus-within/chip:pointer-events-auto group-focus-within/chip:opacity-100">
-        {QUICK_ACTIONS.map((quickAction) => {
-          const disabled = !canQuickAction(booking, quickAction.action) || pendingBookingId === booking.id;
-          const isPending = pendingBookingId === booking.id && pendingAction === quickAction.action;
-          return (
-            <button
-              aria-label={`${quickAction.label} booking ${booking.id}`}
-              className={`rounded-full border border-white/70 bg-white/95 p-1.5 text-slate-600 shadow-sm transition-colors ${
-                disabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-50 hover:text-slate-900"
-              }`}
-              disabled={disabled}
-              key={`${booking.id}-${quickAction.action}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (disabled) return;
-                onQuickAction(quickAction.action, booking.id);
-              }}
-              title={quickActionTooltip(booking, quickAction.action, quickAction.label)}
-              type="button"
-            >
-              <MaterialSymbol className="text-sm" icon={isPending ? "progress_activity" : quickAction.icon} />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}, (previousProps, nextProps) => {
-  const previousPrimaryType = bookingPrimaryType(previousProps.booking);
-  const nextPrimaryType = bookingPrimaryType(nextProps.booking);
-  return (
-    previousProps.booking.id === nextProps.booking.id &&
-    previousProps.booking.status === nextProps.booking.status &&
-    previousProps.booking.payment_status === nextProps.booking.payment_status &&
-    previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
-    previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
-    previousPrimaryType === nextPrimaryType &&
-    previousProps.participant.display_name === nextProps.participant.display_name &&
-    previousProps.participant.participant_type === nextProps.participant.participant_type &&
-    previousProps.participant.is_primary === nextProps.participant.is_primary &&
-    previousProps.primaryHandle === nextProps.primaryHandle &&
-    previousProps.column === nextProps.column &&
-    previousProps.movingBookingId === nextProps.movingBookingId &&
-    previousProps.pendingBookingId === nextProps.pendingBookingId &&
-    previousProps.pendingAction === nextProps.pendingAction &&
-    previousProps.slot.rowKey === nextProps.slot.rowKey &&
-    previousProps.slot.slot.slot_datetime === nextProps.slot.slot.slot_datetime &&
-    previousProps.onEndDrag === nextProps.onEndDrag &&
-    previousProps.onOpenManage === nextProps.onOpenManage &&
-    previousProps.onQuickAction === nextProps.onQuickAction &&
-    previousProps.onStartDrag === nextProps.onStartDrag
-  );
-});
-
-interface BookingChipContentProps {
-  booking: TeeSheetBookingView;
-  column: number;
-  participant: BookingParticipantSummary;
-  primaryHandle: boolean;
-}
-
-const BookingChipContent = memo(function BookingChipContent({
-  booking,
-  column,
-  participant,
-  primaryHandle,
-}: BookingChipContentProps): JSX.Element {
-  return (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-          <span>P{column}</span>
-          {primaryHandle ? <MaterialSymbol className="text-[11px]" icon="drag_indicator" /> : null}
-        </span>
-        {primaryHandle ? (
-          <div className="flex items-center gap-1">
-            <span title={booking.status.replace(/_/g, " ")}>
-              <MaterialSymbol
-                className={`text-sm ${bookingStatusIconClass(booking.status)}`}
-                icon={bookingStatusIconName(booking.status)}
-              />
-            </span>
-            <span title={paymentLabel(booking.payment_status)}>
-              <MaterialSymbol
-                className={`text-sm ${paymentIconClass(booking.payment_status)}`}
-                icon={paymentIcon(booking.payment_status)}
-              />
-            </span>
-          </div>
-        ) : null}
-      </div>
-      <p className="truncate text-xs font-bold leading-none text-on-surface">{participant.display_name}</p>
-      {primaryHandle && (booking.cart_flag || booking.caddie_flag) ? (
-        <div className="mt-0.5 flex items-center gap-1">
-          {booking.cart_flag ? (
-            <span title="Cart assigned">
-              <MaterialSymbol className="text-[11px] text-slate-400" icon="airport_shuttle" />
-            </span>
-          ) : null}
-          {booking.caddie_flag ? (
-            <span title="Caddie assigned">
-              <MaterialSymbol className="text-[11px] text-slate-400" icon="person" />
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </>
-  );
-}, (previousProps, nextProps) => {
-  const previousPrimaryType = bookingPrimaryType(previousProps.booking);
-  const nextPrimaryType = bookingPrimaryType(nextProps.booking);
-  return (
-    previousProps.booking.id === nextProps.booking.id &&
-    previousProps.booking.status === nextProps.booking.status &&
-    previousProps.booking.payment_status === nextProps.booking.payment_status &&
-    previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
-    previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
-    previousPrimaryType === nextPrimaryType &&
-    previousProps.participant.display_name === nextProps.participant.display_name &&
-    previousProps.participant.participant_type === nextProps.participant.participant_type &&
-    previousProps.participant.is_primary === nextProps.participant.is_primary &&
-    previousProps.primaryHandle === nextProps.primaryHandle &&
-    previousProps.column === nextProps.column
-  );
-});
-
-interface BookingQuickActionPanelProps {
-  booking: TeeSheetBookingView;
-  onQuickAction: (action: QuickAction, bookingId: string) => void;
-  pendingAction: Action | null;
-  pendingBookingId: string | null;
-}
-
-const BookingQuickActionPanel = memo(function BookingQuickActionPanel({
-  booking,
-  onQuickAction,
-  pendingAction,
-  pendingBookingId,
-}: BookingQuickActionPanelProps): JSX.Element {
-  return (
-    <div className="pointer-events-none absolute right-1 top-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover/chip:pointer-events-auto group-hover/chip:opacity-100 group-focus-within/chip:pointer-events-auto group-focus-within/chip:opacity-100">
-      {QUICK_ACTIONS.map((quickAction) => {
-        const disabled = !canQuickAction(booking, quickAction.action) || pendingBookingId === booking.id;
-        const isPending = pendingBookingId === booking.id && pendingAction === quickAction.action;
-        return (
-          <button
-            aria-label={`${quickAction.label} booking ${booking.id}`}
-            className={`rounded-full border border-white/70 bg-white/95 p-1.5 text-slate-600 shadow-sm transition-colors ${
-              disabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-50 hover:text-slate-900"
-            }`}
-            disabled={disabled}
-            key={`${booking.id}-${quickAction.action}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (disabled) return;
-              onQuickAction(quickAction.action, booking.id);
-            }}
-            title={quickActionTooltip(booking, quickAction.action, quickAction.label)}
-            type="button"
-          >
-            <MaterialSymbol className="text-sm" icon={isPending ? "progress_activity" : quickAction.icon} />
-          </button>
-        );
-      })}
-    </div>
-  );
-}, (previousProps, nextProps) => (
-  previousProps.booking.id === nextProps.booking.id &&
-  previousProps.booking.status === nextProps.booking.status &&
-  previousProps.pendingBookingId === nextProps.pendingBookingId &&
-  previousProps.pendingAction === nextProps.pendingAction &&
-  previousProps.onQuickAction === nextProps.onQuickAction
-));
-
-interface OpenPlayerSlotContentProps {
-  column: number;
-  enabled: boolean;
-}
-
-const OpenPlayerSlotContent = memo(function OpenPlayerSlotContent({
-  column,
-  enabled,
-}: OpenPlayerSlotContentProps): JSX.Element {
-  return (
-    <>
-      <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">P{column}</span>
-      <span className="truncate text-xs font-bold text-on-surface">{enabled ? "Open" : "Unavailable"}</span>
-    </>
-  );
-}, (previousProps, nextProps) => (
-  previousProps.column === nextProps.column &&
-  previousProps.enabled === nextProps.enabled
-));
-
 function primaryType(value: BookingRuleAppliesTo): BookingParticipantType {
   return value === "staff" ? "staff" : "member";
 }
@@ -1028,9 +570,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap, initialized, loading } = useSession();
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(todayValue);
-  const [membershipType, setMembershipType] = useState<BookingRuleAppliesTo>("staff");
+  const membershipType: BookingRuleAppliesTo = "staff";
   const [courseId, setCourseId] = useState<string | null>(null);
-  const [teeId, setTeeId] = useState<string | null>(null);
+  const teeId = null;
   const [drawerMode, setDrawerMode] = useState<DrawerMode | null>(null);
   const [selectedSlotKey, setSelectedSlotKey] = useState<SelectedSlotKey | null>(null);
   const [drawerFeedbackMessage, setDrawerFeedbackMessage] = useState<string | null>(null);
@@ -1044,29 +586,15 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [searchInputValue, setSearchInputValue] = useState("");
   // 5.5: Compound filter state replaces single ViewFilter.
   const [filters, setFilters] = useState<TeeSheetFilterState>(DEFAULT_FILTERS);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [highlightedSlotKey, setHighlightedSlotKey] = useState<string | null>(null);
-  // Legend visibility persisted in localStorage so staff don't re-expand on every visit.
-  const [legendVisible, setLegendVisible] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("gl-tee-sheet-legend") !== "hidden";
-    } catch {
-      return true;
-    }
-  });
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     try {
       const stored = localStorage.getItem("gl-tee-sheet-layout");
       return stored === "timeline" ? "timeline" : "classic";
     } catch {
       return "classic";
-    }
-  });
-  const [timelineDensity, setTimelineDensity] = useState<TimelineDensity>(() => {
-    try {
-      return localStorage.getItem("gl-tee-sheet-density") === "compact" ? "compact" : "comfortable";
-    } catch {
-      return "comfortable";
     }
   });
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
@@ -1093,8 +621,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   );
   // teeId === null means "all tees" — no auto-resolution to first tee so the query key
   // matches the nav-hover prefetch (which also uses null / "all-tees").
-  const selectedTee = activeCourseTees.find((tee) => tee.id === teeId) ?? null;
-
   useEffect(() => {
     const courses = coursesQuery.data ?? [];
     if (courses.length === 0) {
@@ -1150,7 +676,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     ]);
   }, [courseId, guardedAccessToken, guardedSelectedClubId, membershipType, queryClient, selectedDate, teeId, teeSheetQuery.data]);
 
-  const slots = useMemo<LaneSlot[]>(
+  const rawSlots = useMemo<LaneSlot[]>(
     () =>
       (teeSheetQuery.data?.rows ?? [])
         .flatMap((row) =>
@@ -1172,6 +698,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         ),
     [teeSheetQuery.data],
   );
+
+  const slots = useMemo<LaneSlot[]>(() => {
+    const laneGroups = new Map<string, LaneSlot[]>();
+    for (const slot of rawSlots) {
+      const key = `${laneGroupKey(slot.startLane)}:${slot.slot.slot_datetime}`;
+      const group = laneGroups.get(key) ?? [];
+      group.push(slot);
+      laneGroups.set(key, group);
+    }
+    return Array.from(laneGroups.values())
+      .map((group) => mergeLaneSlotGroup(group))
+      .sort(
+        (a, b) =>
+          a.slot.local_time.localeCompare(b.slot.local_time) ||
+          laneOrder(a.startLane) - laneOrder(b.startLane) ||
+          a.rowLabel.localeCompare(b.rowLabel),
+      );
+  }, [rawSlots]);
 
   const buckets = useMemo(() => {
     const map = new Map<string, { localTime: string; slotDatetime: string; slots: LaneSlot[] }>();
@@ -1657,6 +1201,16 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
   }, [accessToken, cancelMutation, checkInMutation, noShowMutation, selectedClubId]);
 
+  const handleInlineQuickAction = useCallback((action: QuickAction, bookingId: string): void => {
+    void runInlineQuickAction(action, bookingId);
+  }, [runInlineQuickAction]);
+
+  const changeSelectedDate = useCallback((updater: string | ((current: string) => string)): void => {
+    startTransition(() => {
+      setSelectedDate(updater);
+    });
+  }, []);
+
   async function handleCheckInAll(bucketSlotDatetime: string): Promise<void> {
     if (!accessToken || !selectedClubId) return;
     const reservedBookings = reservedBookingsByBucket.get(bucketSlotDatetime) ?? [];
@@ -1700,7 +1254,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
   }
 
-  const description = `Course: ${activeCourse?.name ?? "Course setup required"} · Tee: ${selectedTee?.name ?? "All tees"}`;
+  const description = `Course: ${activeCourse?.name ?? "Course setup required"}`;
   const teeSheetErrorMessage =
     teeSheetQuery.error instanceof ApiError && teeSheetQuery.error.status === 401
       ? "Session expired. Redirecting to login."
@@ -1713,9 +1267,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const showFilteredEmptyState =
     configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 && filteredBuckets.length === 0;
   const showClearSearch = searchInputValue.trim().length > 0;
+  const showingTransitionDay = teeSheetQuery.isFetching && teeSheetQuery.data?.date !== selectedDate;
   const hasActiveFilters =
     filters.viewFilter !== "all" ||
-    filters.participantType !== "all" ||
     filters.partySize !== "any" ||
     filters.timeFrom !== null ||
     filters.timeTo !== null;
@@ -1725,7 +1279,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       : debouncedSearchTerm.trim()
         ? `No results match "${debouncedSearchTerm.trim()}" on this view.`
         : "No tee-sheet rows match the current filters.";
-  const visibleSlotCount = filteredBuckets.reduce((sum, bucket) => sum + bucket.slots.length, 0);
+  const currentBucketTime =
+    teeSheetQuery.data?.date === selectedDate && selectedDate === todayValue()
+      ? nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null)
+      : null;
 
   useEffect(() => {
     if (layoutMode !== "classic") return;
@@ -1735,7 +1292,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     const targetTime = nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null);
     if (!targetTime) return;
 
-    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     pendingAutoScrollDateRef.current = null;
   }, [filteredBuckets, layoutMode, selectedDate, teeSheetQuery.data?.timezone, teeSheetQuery.error, teeSheetQuery.isLoading]);
 
@@ -1753,17 +1310,17 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        setSelectedDate((current) => addDays(current, -1));
+        changeSelectedDate((current) => addDays(current, -1));
         return;
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        setSelectedDate((current) => addDays(current, 1));
+        changeSelectedDate((current) => addDays(current, 1));
         return;
       }
       if (event.key === "t" || event.key === "T") {
         event.preventDefault();
-        setSelectedDate(todayValue());
+        changeSelectedDate(todayValue());
         return;
       }
       if (event.key === "d" || event.key === "D") {
@@ -1782,7 +1339,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [drawerMode]);
+  }, [changeSelectedDate, drawerMode]);
 
   return (
     <>
@@ -1790,68 +1347,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         title="Daily Tee Sheet"
         dateLabel={dateLabel(selectedDate)}
         description={description}
-        actions={
-          <>
-            <label className="flex items-center gap-2 rounded-2xl bg-surface-container-high px-4 py-2.5 text-sm font-semibold text-on-surface">
-              <MaterialSymbol className="text-sm" icon="flag" />
-              <select
-                className="border-none bg-transparent pr-5 text-sm font-semibold focus:ring-0"
-                disabled={!hasCourses}
-                onChange={(event) => {
-                  setCourseId(event.target.value || null);
-                  setTeeId(null);
-                  setDrawerMode(null);
-                  setSelectedSlotKey(null);
-                  setEditingBookingId(null);
-                  setEditDrafts([]);
-                  setDrawerFeedbackMessage(null);
-                  setDrawerFeedbackTone(null);
-                }}
-                value={courseId ?? ""}
-              >
-                {hasCourses ? (
-                  (coursesQuery.data ?? []).map((course) => (
-                    <option key={course.id} value={course.id}>
-                      {course.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No courses configured</option>
-                )}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface">
-              <MaterialSymbol className="text-sm text-on-surface-variant" icon="golf_course" />
-              <select
-                className="border-none bg-transparent pr-5 text-sm font-semibold focus:ring-0"
-                disabled={activeCourseTees.length === 0}
-                onChange={(event) => {
-                  setTeeId(event.target.value || null);
-                  setDrawerMode(null);
-                  setSelectedSlotKey(null);
-                  setEditingBookingId(null);
-                  setEditDrafts([]);
-                  setDrawerFeedbackMessage(null);
-                  setDrawerFeedbackTone(null);
-                }}
-                value={teeId ?? ""}
-              >
-                {activeCourseTees.length > 0 ? (
-                  <>
-                    <option value="">All Tees</option>
-                    {activeCourseTees.map((tee) => (
-                      <option key={tee.id} value={tee.id}>
-                        {tee.name}
-                      </option>
-                    ))}
-                  </>
-                ) : (
-                  <option value="">No tees configured</option>
-                )}
-              </select>
-            </label>
-          </>
-        }
         kpis={
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-surface-container-lowest px-5 py-3 shadow-sm">
             <div className="flex items-center gap-2">
@@ -1913,11 +1408,16 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
           <div className="space-y-4">
             {teeSheetQuery.isLoading ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">Loading tee sheet...</div> : null}
             {teeSheetQuery.error ? <div className="rounded-2xl bg-error-container/30 px-6 py-5 text-sm text-error shadow-sm">{teeSheetErrorMessage}</div> : null}
+            {showingTransitionDay ? (
+              <div className="rounded-2xl bg-surface-container-lowest px-6 py-4 text-sm text-slate-500 shadow-sm">
+                Loading {dateLabel(selectedDate)}. Previous day remains visible until the next read model arrives.
+              </div>
+            ) : null}
             {showLiveEmptyState ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">No tee-sheet rows were generated for the selected day.</div> : null}
             {showFilteredEmptyState ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">{filteredEmptyMessage}</div> : null}
 
             {!teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 ? (
-              <>
+              <div className={`space-y-4 transition-opacity ${showingTransitionDay ? "opacity-70" : "opacity-100"}`}>
                 <section
                   className="sticky top-20 z-20 rounded-[28px] border border-slate-200/70 bg-white/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80"
                   data-testid="tee-sheet-toolbar"
@@ -1931,7 +1431,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             clubId={guardedSelectedClubId}
                             courseId={courseId}
                             membershipType={membershipType}
-                            onChange={setSelectedDate}
+                            onChange={changeSelectedDate}
                             onOpenChange={setCalendarOpen}
                             open={calendarOpen}
                             queryClient={queryClient}
@@ -1942,7 +1442,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             <button
                               aria-label="Previous day"
                               className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => setSelectedDate((current) => addDays(current, -1))}
+                              onClick={() => changeSelectedDate((current) => addDays(current, -1))}
                               type="button"
                             >
                               <MaterialSymbol icon="chevron_left" />
@@ -1950,7 +1450,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             <button
                               aria-label="Today"
                               className="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => setSelectedDate(todayValue())}
+                              onClick={() => changeSelectedDate(todayValue())}
                               type="button"
                             >
                               Today
@@ -1958,7 +1458,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             <button
                               aria-label="Next day"
                               className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => setSelectedDate((current) => addDays(current, 1))}
+                              onClick={() => changeSelectedDate((current) => addDays(current, 1))}
                               type="button"
                             >
                               <MaterialSymbol icon="chevron_right" />
@@ -1966,16 +1466,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="rounded-2xl bg-surface-container-low px-4 py-3">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Sheet Scope</p>
-                            <p className="text-sm font-semibold text-on-surface">
-                              Showing {visibleSlotCount} of {slots.length} lane slots
-                            </p>
-                          </div>
                           {/* 5.4: Find Next Open Slot — scrolls to the first available slot in the current view */}
                           {configuredForSheet && openSlots > 0 ? (
                             <button
-                              className="flex items-center gap-1.5 rounded-2xl bg-primary-container/60 px-3 py-2.5 text-xs font-bold text-on-primary-container transition-colors hover:bg-primary-container"
+                              className="flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
                               onClick={() => {
                                 const firstOpen = filteredBuckets.flatMap((b) => b.slots).find((s) => canCreate(s.slot));
                                 if (!firstOpen) {
@@ -1983,45 +1477,29 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   return;
                                 }
                                 const targetTime = timeKey(firstOpen.slot.local_time);
-                                document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
                                 const key = `${firstOpen.rowKey}:${firstOpen.slot.slot_datetime}`;
                                 setHighlightedSlotKey(key);
                                 setTimeout(() => setHighlightedSlotKey(null), 1500);
                               }}
-                              title="Jump to the first available open slot"
+                              title="Jump to the next available slot"
                               type="button"
                             >
                               <MaterialSymbol className="text-sm" icon="my_location" />
-                              <span>Next Open</span>
+                              <span>Next Available</span>
                             </button>
                           ) : null}
                         </div>
                       </div>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                         <label className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">View As</span>
-                          <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
-                            <MaterialSymbol className="text-sm text-on-surface-variant" icon="manage_accounts" />
-                            <select
-                              className="border-none bg-transparent pr-5 text-sm font-medium focus:ring-0"
-                              onChange={(event) => setMembershipType(event.target.value as BookingRuleAppliesTo)}
-                              title="Evaluate slot availability under these booking rules"
-                              value={membershipType}
-                            >
-                              <option value="staff">Staff</option>
-                              <option value="member">Member</option>
-                              <option value="guest">Guest</option>
-                            </select>
-                          </span>
-                        </label>
-                        <label className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Search Sheet</span>
+                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Search</span>
                           <span className="relative flex items-center">
                             <MaterialSymbol className="pointer-events-none absolute left-3 text-sm text-slate-400" icon="search" />
                             <input
                               className="w-full rounded-2xl bg-surface-container-low px-10 py-2.5 pr-10 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72"
                               onChange={(event) => setSearchInputValue(event.target.value)}
-                              placeholder="Search players, lane, or time"
+                              placeholder="Search players, bookings, or time"
                               ref={searchInputRef}
                               type="search"
                               value={searchInputValue}
@@ -2042,7 +1520,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           </span>
                         </label>
                         <label className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To Time</span>
+                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To</span>
                           <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
                             <MaterialSymbol className="text-sm text-on-surface-variant" icon="schedule" />
                             <select
@@ -2051,7 +1529,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               onChange={(event) => {
                                 const value = event.target.value;
                                 if (!value) return;
-                                document.getElementById(`bucket-${value}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                document.getElementById(`bucket-${value}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
                               }}
                             >
                               <option value="">Select time</option>
@@ -2063,98 +1541,44 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             </select>
                           </span>
                         </label>
-                        <div className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Layout</span>
-                          <div className="flex items-center rounded-2xl bg-surface-container-low p-1">
-                            {(["classic", "timeline"] as const).map((value) => (
-                              <button
-                                aria-pressed={layoutMode === value}
-                                className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
-                                  layoutMode === value
-                                    ? "bg-white text-on-surface shadow-sm"
-                                    : "text-slate-500 hover:text-slate-700"
-                                }`}
-                                key={value}
-                                onClick={() => {
-                                  setLayoutMode(value);
-                                  try {
-                                    localStorage.setItem("gl-tee-sheet-layout", value);
-                                  } catch {
-                                    // Ignore localStorage failures.
-                                  }
-                                }}
-                                type="button"
-                              >
-                                {value === "classic" ? "Classic" : "Timeline"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        {layoutMode === "timeline" ? (
-                          <div className="space-y-1">
-                            <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Density</span>
-                            <div className="flex items-center rounded-2xl bg-surface-container-low p-1">
-                              {(["compact", "comfortable"] as const).map((value) => (
-                                <button
-                                  aria-pressed={timelineDensity === value}
-                                  className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
-                                    timelineDensity === value
-                                      ? "bg-white text-on-surface shadow-sm"
-                                      : "text-slate-500 hover:text-slate-700"
-                                  }`}
-                                  key={value}
-                                  onClick={() => {
-                                    setTimelineDensity(value);
-                                    try {
-                                      localStorage.setItem("gl-tee-sheet-density", value);
-                                    } catch {
-                                      // Ignore localStorage failures.
-                                    }
-                                  }}
-                                  type="button"
-                                >
-                                  {value === "compact" ? "Compact" : "Comfortable"}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
                       </div>
                     </div>
 
-                    {/* Operational Filters — compound (5.5) */}
-                    <div className="space-y-2">
+                    <div className="flex items-center justify-end">
+                      <button
+                        aria-expanded={filtersPanelOpen}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container"
+                        data-testid="filters-view-toggle"
+                        onClick={() => setFiltersPanelOpen((open) => !open)}
+                        type="button"
+                      >
+                        <MaterialSymbol className="text-sm" icon={filtersPanelOpen ? "expand_less" : "tune"} />
+                        <span>Filters &amp; View</span>
+                        {hasActiveFilters ? (
+                          <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+                            Active
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
+
+                    {filtersPanelOpen ? (
+                    <div className="space-y-4 rounded-2xl border border-slate-200 bg-surface-container-lowest p-4" data-testid="filters-view-panel">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Filters</p>
-                        <div className="flex items-center gap-2">
-                          {/* Reset all filters when any non-default filter is active */}
-                          {hasActiveFilters ? (
-                            <button
-                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:bg-primary-container/30"
-                              onClick={() => setFilters(DEFAULT_FILTERS)}
-                              type="button"
-                            >
-                              <MaterialSymbol className="text-sm" icon="filter_alt_off" />
-                              <span>Reset</span>
-                            </button>
-                          ) : null}
-                          {/* 2.6: legend toggle */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Filters &amp; View</p>
+                          <p className="text-sm text-slate-500">Secondary controls stay collapsed until staff need them.</p>
+                        </div>
+                        {hasActiveFilters ? (
                           <button
-                            aria-label={legendVisible ? "Hide legend" : "Show legend"}
-                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 transition-colors hover:bg-surface-container-low hover:text-slate-600"
-                            onClick={() => {
-                              setLegendVisible((v) => {
-                                const next = !v;
-                                try { localStorage.setItem("gl-tee-sheet-legend", next ? "visible" : "hidden"); } catch { /* ignore */ }
-                                return next;
-                              });
-                            }}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:bg-primary-container/30"
+                            onClick={() => setFilters(DEFAULT_FILTERS)}
                             type="button"
                           >
-                            <MaterialSymbol className="text-sm" icon={legendVisible ? "expand_less" : "legend_toggle"} />
-                            <span>Legend</span>
+                            <MaterialSymbol className="text-sm" icon="filter_alt_off" />
+                            <span>Reset Filters</span>
                           </button>
-                        </div>
+                        ) : null}
                       </div>
 
                       {/* Status filter (ViewFilter) — row 1 */}
@@ -2170,27 +1594,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               }`}
                               key={filter.value}
                               onClick={() => setFilters((f) => ({ ...f, viewFilter: filter.value }))}
-                              type="button"
-                            >
-                              {filter.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 5.1: Booking type filter — row 2 */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Type</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {PARTICIPANT_TYPE_FILTERS.map((filter) => (
-                            <button
-                              className={`rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
-                                filters.participantType === filter.value
-                                  ? "bg-secondary text-white"
-                                  : "bg-surface-container-low text-on-surface hover:bg-surface-container"
-                              }`}
-                              key={filter.value}
-                              onClick={() => setFilters((f) => ({ ...f, participantType: filter.value }))}
                               type="button"
                             >
                               {filter.label}
@@ -2240,46 +1643,72 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           />
                         </div>
                       </div>
-                    </div>
 
-                    {/* 2.6: Collapsible legend — default visible on first load */}
-                    {legendVisible ? (
-                      <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-2xl border border-slate-100 bg-surface-container-lowest px-4 py-3">
-                        {/* Booking type */}
-                        <div className="flex items-center gap-3">
-                          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Type</span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-3 w-[3px] rounded-full bg-blue-600" /><span className="text-[10px] text-slate-600">Member</span></span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-3 w-[3px] rounded-full bg-amber-500" /><span className="text-[10px] text-slate-600">Guest</span></span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-3 w-[3px] rounded-full bg-slate-400" /><span className="text-[10px] text-slate-600">Staff</span></span>
+                      <div className="flex flex-wrap gap-4 border-t border-slate-200 pt-4">
+                        <div className="space-y-1">
+                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Layout</span>
+                          <div className="flex items-center rounded-2xl bg-surface-container-low p-1">
+                            {(["classic", "timeline"] as const).map((value) => (
+                              <button
+                                aria-pressed={layoutMode === value}
+                                className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                                  layoutMode === value
+                                    ? "bg-white text-on-surface shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                }`}
+                                key={value}
+                                onClick={() => {
+                                  setLayoutMode(value);
+                                  try {
+                                    localStorage.setItem("gl-tee-sheet-layout", value);
+                                  } catch {
+                                    // Ignore localStorage failures.
+                                  }
+                                }}
+                                type="button"
+                              >
+                                {value === "classic" ? "Classic" : "Timeline"}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
-                        {/* Slot status */}
-                        <div className="flex items-center gap-3">
-                          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Slot</span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-container" /><span className="text-[10px] text-slate-600">Open</span></span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-error-container" /><span className="text-[10px] text-slate-600">Blocked</span></span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-200" /><span className="text-[10px] text-slate-600">Warning</span></span>
-                          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-secondary-container" /><span className="text-[10px] text-slate-600">Golf Day</span></span>
-                        </div>
-                        <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
-                        {/* Booking status icons */}
-                        <div className="flex items-center gap-3">
-                          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Status</span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="radio_button_unchecked" /><span className="text-[10px] text-slate-600">Reserved</span></span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-emerald-600" icon="check_circle" /><span className="text-[10px] text-slate-600">In</span></span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-red-500" icon="person_off" /><span className="text-[10px] text-slate-600">No-show</span></span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="cancel" /><span className="text-[10px] text-slate-600">Cancelled</span></span>
-                        </div>
-                        <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
-                        {/* Payment icons */}
-                        <div className="flex items-center gap-3">
-                          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment</span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-emerald-600" icon="check_circle" /><span className="text-[10px] text-slate-600">Paid</span></span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-amber-500" icon="schedule" /><span className="text-[10px] text-slate-600">Unpaid</span></span>
-                          <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="remove_circle" /><span className="text-[10px] text-slate-600">Waived</span></span>
-                        </div>
+
                       </div>
+
+                    </div>
                     ) : null}
+
+                    {/* Legend — always visible inside the sticky toolbar */}
+                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-200/60 pt-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Participant</span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-3 w-[3px] rounded-full bg-blue-600" /><span className="text-[10px] text-slate-600">Member</span></span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-3 w-[3px] rounded-full bg-amber-500" /><span className="text-[10px] text-slate-600">Guest</span></span>
+                      </div>
+                      <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Slot</span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-container" /><span className="text-[10px] text-slate-600">Open</span></span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-error-container" /><span className="text-[10px] text-slate-600">Blocked</span></span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-200" /><span className="text-[10px] text-slate-600">Warning</span></span>
+                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-secondary-container" /><span className="text-[10px] text-slate-600">Golf Day</span></span>
+                      </div>
+                      <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Booking</span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="radio_button_unchecked" /><span className="text-[10px] text-slate-600">Reserved</span></span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-emerald-600" icon="check_circle" /><span className="text-[10px] text-slate-600">Checked In</span></span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-red-500" icon="person_off" /><span className="text-[10px] text-slate-600">No-show</span></span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="cancel" /><span className="text-[10px] text-slate-600">Cancelled</span></span>
+                      </div>
+                      <span className="hidden h-4 w-px bg-slate-200 self-center sm:block" />
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment</span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-emerald-600" icon="check_circle" /><span className="text-[10px] text-slate-600">Paid</span></span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-amber-500" icon="schedule" /><span className="text-[10px] text-slate-600">Unpaid</span></span>
+                        <span className="flex items-center gap-1"><MaterialSymbol className="text-sm text-slate-400" icon="remove_circle" /><span className="text-[10px] text-slate-600">Waived</span></span>
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -2287,7 +1716,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 <section className="overflow-hidden rounded-[28px] bg-surface-container-lowest shadow-sm">
                   <div className="overflow-x-auto">
                     <div className="min-w-[1120px] px-4 py-3">
-                      <table className="w-full min-w-[1120px] table-fixed border-separate [border-spacing:0_6px]">
+                      <table className="w-full min-w-[1120px] table-fixed border-separate [border-spacing:0_6px]" data-testid="classic-tee-sheet-grid">
                         <colgroup>
                           <col className="w-[104px]" />
                           <col className="w-[108px]" />
@@ -2300,7 +1729,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                         <thead>
                           <tr>
                             <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Time</th>
-                            <th className="px-3 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Tee</th>
+                            <th className="px-3 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Lane</th>
                             <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 1</th>
                             <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 2</th>
                             <th className="px-2 pb-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Player 3</th>
@@ -2324,7 +1753,29 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   }
                                 : item.slot;
                               const reservedBlock = (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") && displaySlot.bookings.length === 0;
-                              const cells = slotPlayerCells(displaySlot);
+                              // Build individual player cells — one <td> per slot position, never merged
+                              const capacity = slotCapacity(displaySlot);
+                              const playerCells: Array<
+                                | { kind: "player"; name: string; participantType: BookingParticipantType | null; booking: TeeSheetBookingView; isFirst: boolean }
+                                | { kind: "open" }
+                                | { kind: "unavailable" }
+                              > = [];
+                              for (const booking of displaySlot.bookings) {
+                                const names = bookingParticipantNames(booking);
+                                const count = Math.max(names.length, bookingPlayerCount(booking));
+                                for (let pi = 0; pi < count && playerCells.length < capacity; pi++) {
+                                  playerCells.push({
+                                    kind: "player",
+                                    name: names[pi] ?? `Player ${pi + 1}`,
+                                    participantType: booking.participants[pi]?.participant_type ?? null,
+                                    booking,
+                                    isFirst: pi === 0,
+                                  });
+                                }
+                              }
+                              while (playerCells.length < capacity) {
+                                playerCells.push(canCreate(displaySlot) ? { kind: "open" } : { kind: "unavailable" });
+                              }
                               return (
                                 <tr
                                   aria-label={`${item.laneLabel} lane row ${bucket.localTime.slice(0, 5)}`}
@@ -2352,7 +1803,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   {index === 0 ? (
                                     <td className="w-[96px] px-2 align-top" rowSpan={bucket.slots.length}>
                                       <div className="scroll-mt-44 rounded-[18px] bg-surface-container px-3 py-2 shadow-sm" id={`bucket-${bucket.localTime.slice(0, 5)}`}>
-                                        <p className="font-headline text-lg font-extrabold text-on-surface">{bucket.localTime.slice(0, 5)}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-headline text-lg font-extrabold text-on-surface">{bucket.localTime.slice(0, 5)}</p>
+                                          {currentBucketTime === bucket.localTime.slice(0, 5) ? (
+                                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-red-500">
+                                              Now
+                                            </span>
+                                          ) : null}
+                                        </div>
                                         {(() => {
                                           const total = bucket.slots.reduce((sum, slot) => sum + slotPlayerCount(slot.slot), 0);
                                           return total > 0 ? (
@@ -2390,10 +1848,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                     </td>
                                   ) : null}
 
-                                  {/* 2.3: tee.color_code as left border via inline style (dynamic value) */}
                                   <td
                                     className={`w-[80px] px-3 align-middle transition-colors ${activeDropKey === targetKey ? "bg-primary-container/10" : ""}`}
-                                    style={item.colorCode ? { borderLeft: `4px solid ${item.colorCode}` } : undefined}
                                   >
                                     <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface">{item.laneLabel}</p>
                                     <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${statusClass(item.slot.display_status)}`}>
@@ -2416,122 +1872,98 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   {reservedBlock ? (
                                     <td className="px-2 align-top" colSpan={4}>
                                       {/* 2.5: diagonal stripe overlaid on blocked cells for colorblind accessibility */}
-                                      <div
-                                        className={`flex min-h-[3.5rem] items-center justify-between rounded-[16px] px-3 py-2 ${slotSummaryClass(item.slot)}`}
+                                      <button
+                                        aria-label={`View details for ${item.slot.display_status === "blocked" ? "blocked" : "reserved"} slot at ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
+                                        className={`flex min-h-[3.5rem] w-full cursor-pointer items-center justify-between rounded-[16px] px-3 py-2 text-left transition-opacity hover:opacity-80 ${slotSummaryClass(item.slot)}`}
+                                        onClick={() => openManage(item)}
                                         style={item.slot.display_status === "blocked" ? {
                                           backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.06) 5px, rgba(0,0,0,0.06) 10px)",
                                         } : undefined}
+                                        type="button"
                                       >
                                         <div className="min-w-0">
                                           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                                            {item.slot.display_status === "blocked" ? "Blocked Slot" : "Reserved Slot"}
+                                            {item.slot.display_status === "blocked" ? "Blocked" : "Reserved — no bookings"}
                                           </p>
-                                          <p className="truncate text-xs font-semibold">{detail(item.slot)}</p>
+                                          <p className="truncate text-xs font-semibold">
+                                            {item.slot.blockers[0]?.reason ?? item.slot.unresolved_checks[0]?.reason ?? item.slot.warnings[0]?.message ?? (item.slot.display_status === "blocked" ? "Slot is closed for this period" : "Slot is held by a club event or rule")}
+                                          </p>
                                         </div>
-                                        {activeDropKey === targetKey ? <span className="text-xs font-semibold text-primary">Drop here</span> : null}
-                                      </div>
+                                        <span className="ml-3 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] opacity-60">Details →</span>
+                                      </button>
                                     </td>
                                   ) : (
-                                    cells.map((cell) => (
-                                      <td className="px-2 align-top" key={cell.kind === "occupied" ? `${cell.booking.id}-${cell.column}-${cell.participant.display_name}` : `${targetKey}-empty-${cell.column}`}>
-                                        {cell.kind === "occupied" ? (
-                                          <div className="relative group/chip" data-memo-cell={cell.booking.id}>
-                                            <button
-                                              aria-label={cell.primaryHandle ? `Open booking ${cell.booking.id}` : `Open participant ${cell.participant.display_name}`}
-                                              className={[
-                                                bookingChipClass(cell.booking, cell.primaryHandle),
-                                                // 2.1: left border encodes booking type so member/guest/staff are
-                                                // instantly distinguishable without opening the management drawer.
-                                                participantTypeBorderClass(bookingPrimaryType(cell.booking)),
-                                                movingBookingId === cell.booking.id ? "opacity-50" : "",
-                                              ].join(" ")}
-                                              draggable
-                                              onClick={() => openManage(item)}
-                                              onDragEnd={endDrag}
-                                              onDragStart={(event) => startDrag(event, cell.booking.id, item)}
-                                              type="button"
-                                            >
-                                              <div className="flex items-center justify-between gap-2" data-chip-content={cell.booking.id}>
-                                                <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                                                  <span>P{cell.column}</span>
-                                                  {cell.primaryHandle ? <MaterialSymbol className="text-[11px]" icon="drag_indicator" /> : null}
-                                                </span>
-                                                {cell.primaryHandle ? (
-                                                  <div className="flex items-center gap-1">
-                                                    {/* 2.2: booking lifecycle status as icon — replaces text badge */}
-                                                    <span title={cell.booking.status.replace(/_/g, " ")}>
-                                                      <MaterialSymbol
-                                                        className={`text-sm ${bookingStatusIconClass(cell.booking.status)}`}
-                                                        icon={bookingStatusIconName(cell.booking.status)}
-                                                      />
-                                                    </span>
-                                                    {/* Payment icon (Phase 1) — separate visual channel */}
-                                                    <span title={paymentLabel(cell.booking.payment_status)}>
-                                                      <MaterialSymbol
-                                                        className={`text-sm ${paymentIconClass(cell.booking.payment_status)}`}
-                                                        icon={paymentIcon(cell.booking.payment_status)}
-                                                      />
-                                                    </span>
-                                                  </div>
-                                                ) : null}
-                                              </div>
-                                              <p className="truncate text-xs font-bold text-on-surface leading-none">{cell.participant.display_name}</p>
-                                              {/* 2.4: cart/caddie extras icons — primary chip only, booking-level flags */}
-                                              {cell.primaryHandle && (cell.booking.cart_flag || cell.booking.caddie_flag) ? (
-                                                <div className="mt-0.5 flex items-center gap-1">
+                                    playerCells.map((cell, cellIndex) => (
+                                      <td
+                                        className="w-[calc(25%_-_2px)] px-1 align-top"
+                                        key={
+                                          cell.kind === "player"
+                                            ? `${cell.booking.id}-p${cellIndex}`
+                                            : `${targetKey}-${cell.kind}-${cellIndex}`
+                                        }
+                                      >
+                                        {cell.kind === "player" ? (
+                                          cell.isFirst ? (
+                                            // First cell: draggable button with quick actions panel
+                                            <div className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}>
+                                              <button
+                                                aria-label={`Open booking ${cell.booking.id}`}
+                                                className={`flex min-h-[3.5rem] w-full flex-col justify-between rounded-[14px] border border-slate-100 bg-white px-2 py-1.5 text-left shadow-sm transition-opacity hover:opacity-90 ${participantTypeBorderClass(cell.participantType)}`}
+                                                draggable
+                                                onClick={() => openManage(item)}
+                                                onDragEnd={endDrag}
+                                                onDragStart={(e) => startDrag(e, cell.booking.id, item)}
+                                                title="Drag to move booking"
+                                                type="button"
+                                              >
+                                                <div className="min-w-0">
+                                                  <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
+                                                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${bookingStatusIconClass(cell.booking.status)}`}>
+                                                    <MaterialSymbol className="text-[10px]" icon={bookingStatusIconName(cell.booking.status)} />
+                                                    {cell.booking.status.replace(/_/g, " ")}
+                                                  </span>
+                                                </div>
+                                                <div className="mt-1 flex items-center gap-1">
+                                                  <span title={cell.booking.payment_status ?? ""}>
+                                                    <MaterialSymbol
+                                                      className={`text-[11px] ${paymentIconClass(cell.booking.payment_status)}`}
+                                                      icon={paymentIcon(cell.booking.payment_status)}
+                                                    />
+                                                  </span>
                                                   {cell.booking.cart_flag ? (
-                                                    <span title="Cart assigned">
-                                                      <MaterialSymbol className="text-[11px] text-slate-400" icon="airport_shuttle" />
-                                                    </span>
-                                                  ) : null}
-                                                  {cell.booking.caddie_flag ? (
-                                                    <span title="Caddie assigned">
-                                                      <MaterialSymbol className="text-[11px] text-slate-400" icon="person" />
-                                                    </span>
+                                                    <span title="Cart"><MaterialSymbol className="text-[11px] text-slate-400" icon="shopping_cart" /></span>
                                                   ) : null}
                                                 </div>
-                                              ) : null}
-                                            </button>
-                                            <div className="pointer-events-none absolute right-1 top-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover/chip:pointer-events-auto group-hover/chip:opacity-100 group-focus-within/chip:pointer-events-auto group-focus-within/chip:opacity-100">
-                                              {QUICK_ACTIONS.map((quickAction) => {
-                                                const disabled = !canQuickAction(cell.booking, quickAction.action) || pendingBookingId === cell.booking.id;
-                                                const isPending = pendingBookingId === cell.booking.id && pendingAction === quickAction.action;
-                                                return (
-                                                  <button
-                                                    aria-label={`${quickAction.label} booking ${cell.booking.id}`}
-                                                    className={`rounded-full border border-white/70 bg-white/95 p-1.5 text-slate-600 shadow-sm transition-colors ${
-                                                      disabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-50 hover:text-slate-900"
-                                                    }`}
-                                                    disabled={disabled}
-                                                    key={`${cell.booking.id}-${quickAction.action}`}
-                                                    onClick={(event) => {
-                                                      event.stopPropagation();
-                                                      if (disabled) return;
-                                                      void runInlineQuickAction(quickAction.action, cell.booking.id);
-                                                    }}
-                                                    title={quickActionTooltip(cell.booking, quickAction.action, quickAction.label)}
-                                                    type="button"
-                                                  >
-                                                    <MaterialSymbol className="text-sm" icon={isPending ? "progress_activity" : quickAction.icon} />
-                                                  </button>
-                                                );
-                                              })}
+                                              </button>
+                                              <BookingQuickActionPanel
+                                                booking={cell.booking}
+                                                onQuickAction={handleInlineQuickAction}
+                                                pendingAction={pendingAction}
+                                                pendingBookingId={pendingBookingId}
+                                              />
                                             </div>
-                                          </div>
-                                        ) : (
+                                          ) : (
+                                            // Subsequent cells: non-draggable, just shows the player name with type color
+                                            <div
+                                              className={`flex min-h-[3.5rem] w-full flex-col justify-center rounded-[14px] border border-slate-100 bg-white px-2 py-1.5 shadow-sm ${participantTypeBorderClass(cell.participantType)}`}
+                                            >
+                                              <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
+                                              <span className="mt-0.5 text-[9px] capitalize text-slate-400">{cell.participantType ?? "player"}</span>
+                                            </div>
+                                          )
+                                        ) : cell.kind === "open" ? (
                                           <button
-                                            aria-label={`Create booking for ${item.laneLabel} ${bucket.localTime.slice(0, 5)} player slot ${cell.column}`}
-                                            className={`flex min-h-[3.5rem] w-full items-center gap-2 rounded-[16px] border border-dashed px-3 py-2 text-left transition-colors ${
-                                              canCreate(displaySlot)
-                                                ? "border-outline-variant/40 bg-white hover:border-primary/40 hover:bg-primary-container/10"
-                                                : "border-outline-variant/20 bg-surface-container-low text-slate-400"
-                                            }`}
-                                            disabled={!canCreate(displaySlot)}
+                                            aria-label={`Create booking for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
+                                            className="flex min-h-[3.5rem] w-full items-center justify-center rounded-[14px] border border-dashed border-outline-variant/40 bg-white text-slate-400 transition-colors hover:border-primary/40 hover:bg-primary-container/10 hover:text-primary"
                                             onClick={() => openCreate(item)}
                                             type="button"
                                           >
-                                            <OpenPlayerSlotContent column={cell.column} enabled={canCreate(displaySlot)} />
+                                            <MaterialSymbol className="text-base" icon="add" />
                                           </button>
+                                        ) : (
+                                          <div className="flex min-h-[3.5rem] w-full items-center justify-center rounded-[14px] bg-surface-container-low">
+                                            <MaterialSymbol className="text-sm text-slate-300" icon="block" />
+                                          </div>
                                         )}
                                       </td>
                                     ))
@@ -2560,9 +1992,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                         </button>
                                       ) : null}
                                       {!canManage(displaySlot) && !canCreate(displaySlot) ? (
-                                        <div className="flex-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                          Read Only
-                                        </div>
+                                        <button
+                                          aria-label={`View details for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}
+                                          className="flex-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface transition-colors hover:bg-slate-50"
+                                          onClick={() => openManage(item)}
+                                          type="button"
+                                        >
+                                          Details
+                                        </button>
                                       ) : null}
                                       {!canManage(displaySlot) && canCreate(displaySlot) ? (
                                         <div className="flex-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
@@ -2585,7 +2022,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     activeDropKey={activeDropKey}
                     checkingInAllBucket={checkingInAllBucket}
                     columns={filteredBuckets}
-                    density={timelineDensity}
                     dragged={dragged}
                     dropAllowed={dropAllowed}
                     dropKey={dropKey}
@@ -2602,9 +2038,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     }}
                     onOpenCreate={openCreate}
                     onOpenManage={openManage}
-                    onQuickAction={(action, bookingId) => {
-                      void runInlineQuickAction(action, bookingId);
-                    }}
+                    onQuickAction={handleInlineQuickAction}
                     onSetActiveDropKey={setActiveDropKey}
                     onStartDrag={startDrag}
                     pendingAction={pendingAction}
@@ -2613,7 +2047,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     timezone={teeSheetQuery.data?.timezone ?? null}
                   />
                 )}
-              </>
+              </div>
             ) : null}
           </div>
         ) : null}

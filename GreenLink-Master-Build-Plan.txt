@@ -272,6 +272,30 @@ TS-UX Phase 6 - Swimlane Grid Layout (Frontend Only, Major): COMPLETED 2026-04-0
     Density toggle only visible when layout === "timeline".
 - All Phase 1–5 work (filters, optimistic updates, drawers, drag-drop) carries forward identically
 
+TS-UX Phase 6.5 - UX Correction Pass (Frontend Only): COMPLETED 2026-04-08
+- Primary toolbar reduced to date navigation, search, jump-to-time, and Next Available only
+- Course selector, tee selector, View As, and participant-type filter removed from the tee-sheet UI
+- Secondary controls moved behind a closed-by-default "Filters & View" panel
+- Timeline/classic lane rendering now groups duplicate tee rows into one operational lane row per time bucket
+- Tee-colour cues removed from the tee-sheet surface; lane-first labels now anchor the page, grid, and drawers
+- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
+
+TS-UX Phase 6.6 - Operational Usability + Interaction Correction: COMPLETED 2026-04-08
+- Drag semantics corrected to booking-level only: explicit move handle starts drag, non-handle participant surfaces open details/manage
+- Timeline header/time rhythm strengthened; current time and immediate upcoming buckets visually anchored without changing the backend contract
+- Timeline cell clutter reduced so time structure remains dominant and operational scanability improves
+- Render lag reduced by throttling scroll-driven viewport state and mounting booking quick-action controls once per booking instead of once per participant chip
+- Classic remains the default operational fallback; layout toggle and Filters & View remain intact
+- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
+
+TS-UX Phase 6.7 - Booking Card Rebuild + Day-Switch Performance: COMPLETED 2026-04-09
+- Tee-sheet slot rendering rebuilt around booking-level cards instead of participant-level pseudo-cards
+- Classic rows now render booking spans and grouped open capacity, removing the false impression that each player slot is its own movable object
+- Timeline cells now render the same booking-level card model, reducing mounted controls and participant-level clutter
+- Booking cards are draggable from the card surface because the backend move command is booking-level; no participant-level move affordance is faked
+- Tee-sheet day query now keeps previous data during day transitions, disables refetch-on-focus churn, and date navigation runs inside a transition to reduce perceived lag
+- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
+
 TS-UX Phase 7 - Operational Depth (Frontend + Backend): NOT STARTED
 - 7.1 Booking internal_note field (backend: add to Booking model + PATCH)
 - 7.2 Cancellation reason tracking (backend: cancellation_reason field + cancel body)

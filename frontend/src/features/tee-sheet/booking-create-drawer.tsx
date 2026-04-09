@@ -123,9 +123,6 @@ export function BookingCreateDrawer({
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
                 <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
-                  {teeLabel}
-                  {colorCode ? ` | ${colorCode}` : ""}
-                  {" | "}
                   {slot.occupancy.remaining_player_capacity ?? 0} player spaces remaining
                 </p>
               </div>
