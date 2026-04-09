@@ -24,6 +24,7 @@ from app.schemas.operations import (
     PricingMatrixResponse,
     PricingMatrixUpdateRequest,
 )
+from app.services.golf_settings_service import GolfSettingsService
 
 router = APIRouter()
 
@@ -56,14 +57,21 @@ def create_pricing_matrix(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
+    should_publish = payload.active
     matrix = PricingMatrix(
         club_id=context.selected_club.id,
         name=payload.name.strip(),
-        active=payload.active,
+        active=False if should_publish else payload.active,
     )
     db.add(matrix)
     db.flush()
     replace_pricing_rules(db, matrix, payload.rules)
+    if should_publish:
+        db.commit()
+        return GolfSettingsService(db).publish_pricing_matrix(
+            context.selected_club.id,
+            matrix.id,
+        ).pricing_matrix
     db.commit()
     db.expire_all()
     return to_pricing_matrix_response(load_pricing_matrix(db, matrix.id, context.selected_club.id))
@@ -80,10 +88,17 @@ def update_pricing_matrix(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
+    should_publish = payload.active
     matrix = load_pricing_matrix(db, matrix_id, context.selected_club.id)
     matrix.name = payload.name.strip()
-    matrix.active = payload.active
+    matrix.active = False if should_publish else payload.active
     replace_pricing_rules(db, matrix, payload.rules)
+    if should_publish:
+        db.commit()
+        return GolfSettingsService(db).publish_pricing_matrix(
+            context.selected_club.id,
+            matrix.id,
+        ).pricing_matrix
     db.commit()
     db.expire_all()
     return to_pricing_matrix_response(load_pricing_matrix(db, matrix.id, context.selected_club.id))

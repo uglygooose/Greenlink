@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models import BookingRule, BookingRuleSet, Club, ClubConfig, Course, PricingMatrix, PricingRule, Tee
-from app.schemas.operations import BookingRuleSetResponse, PricingMatrixResponse, TeeResponse
+from app.schemas.operations import (
+    BookingRuleResponse,
+    BookingRuleSetResponse,
+    PricingMatrixResponse,
+    PricingRuleResponse,
+    TeeResponse,
+)
 
 DEFAULT_OPERATING_HOURS = {
     "monday": {"open": "06:00", "close": "18:00", "closed": False},
@@ -136,8 +142,58 @@ def to_tee_response(tee: Tee) -> TeeResponse:
 
 
 def to_rule_set_response(ruleset: BookingRuleSet) -> BookingRuleSetResponse:
-    return BookingRuleSetResponse.model_validate(ruleset)
+    return BookingRuleSetResponse(
+        id=ruleset.id,
+        club_id=ruleset.club_id,
+        name=ruleset.name,
+        applies_to=ruleset.applies_to,
+        scope_type=ruleset.scope_type,
+        scope_ref_id=ruleset.scope_ref_id,
+        conflict_strategy=ruleset.conflict_strategy,
+        applies_from=ruleset.applies_from,
+        applies_until=ruleset.applies_until,
+        priority=ruleset.priority,
+        active=ruleset.active,
+        status="active" if ruleset.active else "draft",
+        rules=[
+            BookingRuleResponse(
+                id=rule.id,
+                type=rule.type,
+                evaluation_order=rule.evaluation_order,
+                config=rule.config,
+                active=rule.active,
+                created_at=rule.created_at,
+                updated_at=rule.updated_at,
+            )
+            for rule in sorted(ruleset.rules, key=lambda item: (item.evaluation_order, item.created_at, str(item.id)))
+        ],
+        created_at=ruleset.created_at,
+        updated_at=ruleset.updated_at,
+    )
 
 
 def to_pricing_matrix_response(matrix: PricingMatrix) -> PricingMatrixResponse:
-    return PricingMatrixResponse.model_validate(matrix)
+    return PricingMatrixResponse(
+        id=matrix.id,
+        club_id=matrix.club_id,
+        name=matrix.name,
+        active=matrix.active,
+        status="active" if matrix.active else "draft",
+        rules=[
+            PricingRuleResponse(
+                id=rule.id,
+                applies_to=rule.applies_to,
+                day_type=rule.day_type,
+                time_band=rule.time_band,
+                time_band_ref=rule.time_band_ref,
+                price=rule.price,
+                currency=rule.currency,
+                active=rule.active,
+                created_at=rule.created_at,
+                updated_at=rule.updated_at,
+            )
+            for rule in sorted(matrix.rules, key=lambda item: (item.created_at, str(item.id)))
+        ],
+        created_at=matrix.created_at,
+        updated_at=matrix.updated_at,
+    )

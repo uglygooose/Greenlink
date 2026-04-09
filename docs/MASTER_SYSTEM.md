@@ -1,6 +1,6 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-09
+Last updated: 2026-04-10
 
 ## Canonical Role
 
@@ -96,11 +96,13 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Booking creation, editing, and move UX are live.
 - Inline chip quick actions, per-time-bucket bulk check-in, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped drawers are live.
 - Feature-flagged timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
-- `feature_flags.ux_rebuild_v1` now gates the approved PR1-PR4 rebuild path:
+- `feature_flags.ux_rebuild_v1` now gates the approved PR1-PR6 rebuild path:
   - Today-first admin navigation and shell weighting
   - Today dashboard as an operational work queue
   - tee-sheet operational cockpit shell with operate header, presets, and reduced filter clutter
   - finance actions inside the booking drawer for charges, payments, complimentary, and waived flows
+  - Settings hub at `/admin/settings` with a single Settings nav entry and read-only module visibility
+  - guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
 - `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance
@@ -196,8 +198,8 @@ The approved direction is:
 - settings as structured configuration journey, not a monolithic CRUD/admin page
 
 Current landing status:
-- PR1-PR4 are landed behind `feature_flags.ux_rebuild_v1`
-- PR5 and later rebuild slices remain future work and must not be inferred as complete
+- PR1-PR6 are landed behind `feature_flags.ux_rebuild_v1`
+- PR7 and later rebuild slices remain future work and must not be inferred as complete
 
 ## Current Route Surface
 
@@ -205,7 +207,7 @@ Current landing status:
 - `/admin/dashboard` — overview: action alerts, quick actions, targets, recent activity
 - `/admin/golf/dashboard` — golf domain dashboard (utilization, revenue, warnings, config readiness)
 - `/admin/golf/tee-sheet` — operational tee sheet (create/edit/move/cancel bookings)
-- `/admin/golf/settings` — golf settings (courses, tees, rule sets, pricing matrices)
+- `/admin/golf/settings` — guided golf settings setup (courses, tees, rules, pricing with draft/live control)
 - `/admin/people/dashboard` — people domain dashboard (member breakdown, account posture)
 - `/admin/members` — member directory
 - `/admin/finance/dashboard` — finance domain dashboard (revenue, outstanding, volume, export batches)
@@ -215,7 +217,10 @@ Current landing status:
 - `/admin/pro-shop` — pro shop
 - `/admin/pos-terminal` — POS terminal
 - `/admin/orders` — order queue
-- `/admin/settings/club` — club settings hub
+- `/admin/settings` — settings hub
+- `/admin/settings/club` — legacy settings entry route redirected into the hub when `ux_rebuild_v1` is enabled
+- `/admin/settings/profile` — club profile settings
+- `/admin/settings/modules` — read-only module visibility
 - `/admin/communications` — news posts and comms
 - `/admin/targets` — club targets
 

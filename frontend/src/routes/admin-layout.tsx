@@ -25,6 +25,10 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
     meta: { title: "Golf Settings", searchPlaceholder: "Search settings..." },
   },
   {
+    match: (pathname) => pathname === "/admin/settings",
+    meta: { title: "Settings", searchPlaceholder: "Search settings..." },
+  },
+  {
     match: (pathname) => pathname === "/admin/orders",
     meta: { title: "Order Queue", searchPlaceholder: "Search orders..." },
   },
@@ -67,6 +71,14 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   {
     match: (pathname) => pathname === "/admin/settings/club",
     meta: { title: "Club Settings", searchPlaceholder: "Search settings..." },
+  },
+  {
+    match: (pathname) => pathname === "/admin/settings/profile",
+    meta: { title: "Club Settings", searchPlaceholder: "Search settings..." },
+  },
+  {
+    match: (pathname) => pathname === "/admin/settings/modules",
+    meta: { title: "Modules", searchPlaceholder: "Search settings..." },
   },
 ];
 

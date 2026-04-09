@@ -27,6 +27,7 @@ from app.schemas.rule_context import RuleContextInput
 from app.schemas.rule_evaluation import RuleEvaluationResult
 from app.services.availability_service import AvailabilityService
 from app.services.booking_state_service import BookingStateService
+from app.services.golf_settings_service import GolfSettingsService
 from app.services.rule_context_service import RuleContextService
 from app.services.rule_evaluation_service import RuleEvaluationService
 
@@ -164,6 +165,7 @@ def create_rule_set(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
+    should_publish = payload.active
     ruleset = BookingRuleSet(
         club_id=context.selected_club.id,
         name=payload.name.strip(),
@@ -174,11 +176,17 @@ def create_rule_set(
         applies_from=payload.applies_from,
         applies_until=payload.applies_until,
         priority=payload.priority,
-        active=payload.active,
+        active=False if should_publish else payload.active,
     )
     db.add(ruleset)
     db.flush()
     replace_booking_rules(db, ruleset, payload.rules)
+    if should_publish:
+        db.commit()
+        return GolfSettingsService(db).publish_rule_set(
+            context.selected_club.id,
+            ruleset.id,
+        ).rule_set
     db.commit()
     db.expire_all()
     return to_rule_set_response(load_rule_set(db, ruleset.id, context.selected_club.id))
@@ -195,6 +203,7 @@ def update_rule_set(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
+    should_publish = payload.active
     ruleset = load_rule_set(db, rule_set_id, context.selected_club.id)
     ruleset.name = payload.name.strip()
     ruleset.applies_to = payload.applies_to
@@ -204,8 +213,14 @@ def update_rule_set(
     ruleset.applies_from = payload.applies_from
     ruleset.applies_until = payload.applies_until
     ruleset.priority = payload.priority
-    ruleset.active = payload.active
+    ruleset.active = False if should_publish else payload.active
     replace_booking_rules(db, ruleset, payload.rules)
+    if should_publish:
+        db.commit()
+        return GolfSettingsService(db).publish_rule_set(
+            context.selected_club.id,
+            ruleset.id,
+        ).rule_set
     db.commit()
     db.expire_all()
     return to_rule_set_response(load_rule_set(db, ruleset.id, context.selected_club.id))

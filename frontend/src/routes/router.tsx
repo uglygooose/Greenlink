@@ -3,11 +3,14 @@ import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom"
 import { ProtectedRoute } from "../components/protected-route";
 import { AdminLayout } from "./admin-layout";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
+import { AdminClubSettingsEntryPage } from "../pages/admin-club-settings-entry-page";
 import { AdminClubSettingsPage } from "../pages/admin-club-settings-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminFinanceDashboardPage } from "../pages/admin-finance-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
 import { AdminGolfDashboardPage } from "../pages/admin-golf-dashboard-page";
+import { AdminSettingsHubPage } from "../pages/admin-settings-hub-page";
+import { AdminSettingsModulesPage } from "../pages/admin-settings-modules-page";
 import { AdminProShopPage } from "../pages/admin-pro-shop-page";
 import { AdminPeopleDashboardPage } from "../pages/admin-people-dashboard-page";
 import { AdminReportsPage } from "../pages/admin-reports-page";
@@ -74,7 +77,10 @@ const router = createBrowserRouter([
           { path: "pro-shop", element: <AdminProShopPage /> },
           { path: "reports", element: <AdminReportsPage /> },
           { path: "pos-terminal", element: <AdminPosTerminalPage /> },
-          { path: "settings/club", element: <AdminClubSettingsPage /> },
+          { path: "settings", element: <AdminSettingsHubPage /> },
+          { path: "settings/club", element: <AdminClubSettingsEntryPage /> },
+          { path: "settings/profile", element: <AdminClubSettingsPage /> },
+          { path: "settings/modules", element: <AdminSettingsModulesPage /> },
         ],
       },
       { path: "*", element: <Navigate to="/admin/dashboard" replace /> },

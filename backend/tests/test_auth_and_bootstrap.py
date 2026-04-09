@@ -217,13 +217,12 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
         "dashboard",
         "golf_dashboard",
         "golf_tee_sheet",
-        "golf_settings",
+        "settings_hub",
         "people_dashboard",
         "members",
         "finance_dashboard",
         "finance",
         "reports",
-        "club_settings",
         "targets",
     ]
     assert payload["feature_flags"].get("ux_rebuild_v1") is True

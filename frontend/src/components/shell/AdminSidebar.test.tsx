@@ -29,7 +29,7 @@ const baseBootstrap: SessionBootstrap = {
   landing_path: "/admin/dashboard",
   module_flags: { golf: true, finance: true, pos: true, communications: true },
   permissions: [],
-  feature_flags: {},
+  feature_flags: { ux_rebuild_v1: true },
 };
 
 function renderSidebar(bootstrap: SessionBootstrap): void {
@@ -79,10 +79,10 @@ describe("AdminSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
 
-    // Expand My Club to find Club Settings
-    expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
+    // Expand My Club to find the single Settings hub entry
+    expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
-    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /settings/i })).toHaveAttribute("href", "/admin/settings");
   });
 
   test("uses backend menu items to hide disabled admin domains during rollout", () => {
@@ -127,7 +127,7 @@ describe("AdminSidebar", () => {
     expect(screen.queryByRole("button", { name: /^Golf$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /club settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
   });
 
   test("renders backend-defined admin domains that were not present in the old static menu", () => {
@@ -198,8 +198,19 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
 
     // My Club
-    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /targets/i })).toBeInTheDocument();
+  });
+
+  test("preserves the older static settings links when the rebuild flag is disabled", () => {
+    renderSidebar({
+      ...baseBootstrap,
+      feature_flags: {},
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
+
+    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /golf settings/i })).toBeInTheDocument();
   });
 });

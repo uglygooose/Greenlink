@@ -1,5 +1,5 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-09
+Last updated: 2026-04-10
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
@@ -288,12 +288,14 @@ Rebuild Slice R10 - AI-assisted interventions
 - Success condition:
   - AI adds operational value instead of dashboard noise
 
-Landing status as of 2026-04-09:
+Landing status as of 2026-04-10:
 - PR1 landed behind `feature_flags.ux_rebuild_v1`: navigation and shell weighting path
 - PR2 landed behind `feature_flags.ux_rebuild_v1`: Today dashboard operational work queue
 - PR3 landed behind `feature_flags.ux_rebuild_v1`: tee-sheet operational cockpit shell
 - PR4 landed behind `feature_flags.ux_rebuild_v1`: booking-drawer finance actions backed by new booking finance endpoints
-- PR5+ remain future work
+- PR5 landed behind `feature_flags.ux_rebuild_v1`: Settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
+- PR6 landed behind `feature_flags.ux_rebuild_v1`: guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
+- PR7+ remain future work
 
 ─────────────────────────────────────────────────────────────────────────────
 TEE SHEET UX REBUILD BASELINE (CURRENTLY TRUE)

@@ -20,6 +20,7 @@ import {
 } from "../features/golf-settings/hooks";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useSession } from "../session/session-context";
+import { AdminGolfSettingsGuidedPage } from "./admin-golf-settings-guided-page";
 import type {
   BookingRuleAppliesTo,
   BookingRuleSet,
@@ -213,6 +214,9 @@ function buildPricingMatrixInput(draft: PricingMatrixDraft): PricingMatrixInput 
 export function AdminGolfSettingsPage(): JSX.Element {
   const queryClient = useQueryClient();
   const { accessToken, bootstrap } = useSession();
+  if (bootstrap?.feature_flags?.ux_rebuild_v1) {
+    return <AdminGolfSettingsGuidedPage />;
+  }
   const selectedClubId = bootstrap?.selected_club_id ?? null;
 
   const clubConfigQuery = useClubConfigQuery({ accessToken, selectedClubId });

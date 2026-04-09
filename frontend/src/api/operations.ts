@@ -32,6 +32,9 @@ import type {
 } from "../types/orders";
 import type { SelfProfileResponse, SelfProfileUpdateInput } from "../types/profile";
 import type {
+  GolfSettingsPricingMutationResult,
+  GolfSettingsReadiness,
+  GolfSettingsRulesMutationResult,
   BookingRuleSet,
   BookingRuleSetInput,
   ClubConfig,
@@ -61,6 +64,17 @@ export function fetchClubConfig({ accessToken, selectedClubId }: AuthenticatedOp
     method: "GET",
     accessToken,
     selectedClubId
+  });
+}
+
+export function fetchGolfSettingsReadiness({
+  accessToken,
+  selectedClubId,
+}: AuthenticatedOptions): Promise<GolfSettingsReadiness> {
+  return apiRequest<GolfSettingsReadiness>("/api/golf/settings/readiness", {
+    method: "GET",
+    accessToken,
+    selectedClubId,
   });
 }
 
@@ -149,6 +163,30 @@ export function updateRuleSet(
   });
 }
 
+export function publishGolfRuleSet(
+  ruleSetId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<GolfSettingsRulesMutationResult> {
+  return apiRequest<GolfSettingsRulesMutationResult>("/api/golf/settings/rules/publish", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({ rule_set_id: ruleSetId }),
+  });
+}
+
+export function rollbackGolfRuleSet({
+  accessToken,
+  selectedClubId,
+}: AuthenticatedOptions): Promise<GolfSettingsRulesMutationResult> {
+  return apiRequest<GolfSettingsRulesMutationResult>("/api/golf/settings/rules/rollback", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
+  });
+}
+
 export function fetchPricingMatrices({
   accessToken,
   selectedClubId,
@@ -182,6 +220,30 @@ export function updatePricingMatrix(
     accessToken,
     selectedClubId,
     body: JSON.stringify(payload)
+  });
+}
+
+export function publishGolfPricingMatrix(
+  matrixId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<GolfSettingsPricingMutationResult> {
+  return apiRequest<GolfSettingsPricingMutationResult>("/api/golf/settings/pricing/publish", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({ matrix_id: matrixId }),
+  });
+}
+
+export function rollbackGolfPricingMatrix({
+  accessToken,
+  selectedClubId,
+}: AuthenticatedOptions): Promise<GolfSettingsPricingMutationResult> {
+  return apiRequest<GolfSettingsPricingMutationResult>("/api/golf/settings/pricing/rollback", {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
   });
 }
 

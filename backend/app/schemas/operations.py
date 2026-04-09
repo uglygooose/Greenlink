@@ -4,6 +4,7 @@ import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -241,6 +242,7 @@ class BookingRuleSetResponse(BaseModel):
     applies_until: datetime | None
     priority: int
     active: bool
+    status: Literal["draft", "active"]
     rules: list[BookingRuleResponse]
     created_at: datetime
     updated_at: datetime
@@ -301,6 +303,35 @@ class PricingMatrixResponse(BaseModel):
     club_id: uuid.UUID
     name: str
     active: bool
+    status: Literal["draft", "active"]
     rules: list[PricingRuleResponse]
     created_at: datetime
     updated_at: datetime
+
+
+class GolfSettingsReadinessResponse(BaseModel):
+    courses_configured: bool
+    tees_configured: bool
+    rules_configured: bool
+    pricing_configured: bool
+    overall_ready: bool
+
+
+class GolfSettingsRulesPublishRequest(BaseModel):
+    rule_set_id: uuid.UUID
+
+
+class GolfSettingsPricingPublishRequest(BaseModel):
+    matrix_id: uuid.UUID
+
+
+class GolfSettingsRulesMutationResult(BaseModel):
+    action: Literal["published", "rolled_back"]
+    rule_set: BookingRuleSetResponse
+    readiness: GolfSettingsReadinessResponse
+
+
+class GolfSettingsPricingMutationResult(BaseModel):
+    action: Literal["published", "rolled_back"]
+    pricing_matrix: PricingMatrixResponse
+    readiness: GolfSettingsReadinessResponse

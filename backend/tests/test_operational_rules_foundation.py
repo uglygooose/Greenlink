@@ -258,6 +258,21 @@ def test_club_staff_has_limited_operational_access(client: TestClient, db_sessio
     )
     assert course.status_code == 201
 
+    tee = client.post(
+        "/api/golf/tees",
+        headers=headers,
+        json={
+            "course_id": course.json()["id"],
+            "name": "Forward",
+            "gender": "mixed",
+            "slope_rating": 118,
+            "course_rating": "69.5",
+            "color_code": "#2f6f4f",
+            "active": True,
+        },
+    )
+    assert tee.status_code == 201
+
     rule_set = client.post(
         "/api/rules",
         headers=headers,

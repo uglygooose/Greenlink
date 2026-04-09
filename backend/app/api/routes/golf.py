@@ -60,6 +60,11 @@ from app.schemas.bookings import (
 from app.schemas.operations import (
     CourseCreateRequest,
     CourseResponse,
+    GolfSettingsPricingMutationResult,
+    GolfSettingsPricingPublishRequest,
+    GolfSettingsReadinessResponse,
+    GolfSettingsRulesMutationResult,
+    GolfSettingsRulesPublishRequest,
     TeeCreateRequest,
     TeeResponse,
 )
@@ -72,6 +77,7 @@ from app.services.booking_move_service import BookingMoveService
 from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
 from app.services.booking_update_service import BookingUpdateService
+from app.services.golf_settings_service import GolfSettingsService
 from app.services.player_booking_read_model_service import PlayerBookingReadModelService
 from app.services.tee_sheet_service import TeeSheetService
 
@@ -196,6 +202,7 @@ def create_tee(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
+    GolfSettingsService(db).ensure_courses_exist_for_tees(context.selected_club.id)
     course = get_course_for_club(db, payload.course_id, context.selected_club.id)
     tee = Tee(
         course_id=course.id,
@@ -211,6 +218,68 @@ def create_tee(
     hydrated = db.scalar(select(Tee).options(selectinload(Tee.course)).where(Tee.id == tee.id))
     assert hydrated is not None
     return to_tee_response(hydrated)
+
+
+@router.get("/settings/readiness", response_model=GolfSettingsReadinessResponse)
+def get_golf_settings_readiness(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GolfSettingsReadinessResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    return GolfSettingsService(db).get_readiness(context.selected_club.id)
+
+
+@router.post("/settings/rules/publish", response_model=GolfSettingsRulesMutationResult)
+def publish_golf_rules(
+    payload: GolfSettingsRulesPublishRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GolfSettingsRulesMutationResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    return GolfSettingsService(db).publish_rule_set(context.selected_club.id, payload.rule_set_id)
+
+
+@router.post("/settings/rules/rollback", response_model=GolfSettingsRulesMutationResult)
+def rollback_golf_rules(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GolfSettingsRulesMutationResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    return GolfSettingsService(db).rollback_rule_set(context.selected_club.id)
+
+
+@router.post("/settings/pricing/publish", response_model=GolfSettingsPricingMutationResult)
+def publish_golf_pricing(
+    payload: GolfSettingsPricingPublishRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GolfSettingsPricingMutationResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    return GolfSettingsService(db).publish_pricing_matrix(context.selected_club.id, payload.matrix_id)
+
+
+@router.post("/settings/pricing/rollback", response_model=GolfSettingsPricingMutationResult)
+def rollback_golf_pricing(
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GolfSettingsPricingMutationResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    return GolfSettingsService(db).rollback_pricing_matrix(context.selected_club.id)
 
 
 @router.get("/tee-sheet/day", response_model=TeeSheetDayResponse)

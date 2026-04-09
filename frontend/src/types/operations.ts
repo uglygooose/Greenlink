@@ -98,6 +98,7 @@ export interface BookingRuleSet {
   applies_until: string | null;
   priority: number;
   active: boolean;
+  status: "draft" | "active";
   rules: BookingRule[];
   created_at: string;
   updated_at: string;
@@ -144,6 +145,7 @@ export interface PricingMatrix {
   club_id: string;
   name: string;
   active: boolean;
+  status: "draft" | "active";
   rules: PricingRule[];
   created_at: string;
   updated_at: string;
@@ -153,4 +155,24 @@ export interface PricingMatrixInput {
   name: string;
   active: boolean;
   rules: PricingRuleInput[];
+}
+
+export interface GolfSettingsReadiness {
+  courses_configured: boolean;
+  tees_configured: boolean;
+  rules_configured: boolean;
+  pricing_configured: boolean;
+  overall_ready: boolean;
+}
+
+export interface GolfSettingsRulesMutationResult {
+  action: "published" | "rolled_back";
+  rule_set: BookingRuleSet;
+  readiness: GolfSettingsReadiness;
+}
+
+export interface GolfSettingsPricingMutationResult {
+  action: "published" | "rolled_back";
+  pricing_matrix: PricingMatrix;
+  readiness: GolfSettingsReadiness;
 }

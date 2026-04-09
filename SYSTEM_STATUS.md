@@ -1,6 +1,6 @@
 # GreenLink System Status
 
-Last updated: 2026-04-09
+Last updated: 2026-04-10
 
 ## Canonical Snapshot Role
 
@@ -34,11 +34,13 @@ Current issues include:
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
 - Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
-- Live: `feature_flags.ux_rebuild_v1` now covers the approved PR1-PR4 rebuild slices:
+- Live: `feature_flags.ux_rebuild_v1` now covers the approved PR1-PR6 rebuild slices:
   - Today-first admin navigation weighting
   - Today dashboard operational work queue
   - tee-sheet cockpit shell with operate header, presets, and collapsed filter controls
   - booking-drawer finance actions for post charge, record payment, complimentary, and waived flows
+  - settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
+  - guided golf settings setup with readiness, section locking, draft/live publish, and rollback
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 - Gap: tee sheet is not yet the full operational command center GreenLink requires
 - Gap: refunds, close-day reconciliation handoff, and deeper finance resolution still remain outside the tee-sheet flow
@@ -102,7 +104,7 @@ Current issues include:
 - Live: `AdminGolfDashboardPage` (`/admin/golf/dashboard`) - golf utilization, revenue posture, tee warnings, config readiness; all from backend read models
 - Live: `AdminPeopleDashboardPage` (`/admin/people/dashboard`) - member breakdown, outstanding account posture, directory size; all from backend read models
 - Live: `AdminFinanceDashboardPage` (`/admin/finance/dashboard`) - revenue, outstanding, transaction volume, export batch status; all from backend read models
-- Live: `AdminClubSettingsPage` (`/admin/settings/club`) - configuration hub linking to golf settings and module config; does not duplicate superadmin ownership
+- Live: `AdminSettingsHubPage` (`/admin/settings`) - structured settings hub linking to Club Profile, Golf Configuration, Finance, Modules, Communications, and Targets
 - Live: `AdminHalfwayPage` - 3 queries (halfway summary, finance revenue, finance transaction volume); no React math
 - Live: `AdminReportsPage` - 4 queries (reports summary, finance revenue, finance outstanding, finance transaction volume); no React math
 - Live: `AdminMembersPage` - no_account_count and new_member_count come from reports summary; no client-side date math or cross-query counting
@@ -115,13 +117,13 @@ Current issues include:
 
 Current live state:
 - `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
-- Live: My Club group contains: Communications · Club Settings · Targets · Golf Settings
+- Live: My Club group contains: Settings · Communications · Targets
 - Live: Groups are collapsible; all start collapsed; labeled groups show nothing when closed
 - Live: Group structure is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`; ungrouped items are rendered below without a label
 - Live: backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry; sidebar resolves against it
 - Live: `pos` module relabeled "Commerce" in module catalog
 - Live: `AdminGolfSettingsPage` redesigned — all old CSS class patterns replaced with `AdminWorkspace` + Tailwind utility classes; all mutation logic unchanged
-- Live: `AdminClubSettingsPage` rebuilt — shows live ClubConfig data, course/tee/ruleset/pricing counts, active target count, active export profile name
+- Live: `AdminClubSettingsPage` remains the profile detail surface at `/admin/settings/profile`
 
 Approved direction:
 - move to a lifecycle-weighted navigation model
@@ -134,7 +136,7 @@ Approved direction:
 - `/admin/dashboard` — overview with action alerts, quick actions, targets, recent activity
 - `/admin/golf/dashboard` — golf domain: utilization, revenue, warnings, config readiness
 - `/admin/golf/tee-sheet` — operational tee sheet: create/edit/move/cancel bookings
-- `/admin/golf/settings` — golf settings: courses, tees, rule sets, pricing matrices
+- `/admin/golf/settings` — guided golf settings setup: courses, tees, booking rules, pricing, readiness, publish/rollback
 - `/admin/people/dashboard` — people domain: member breakdown, account posture, directory
 - `/admin/members` — member directory and account management
 - `/admin/finance/dashboard` — finance domain: revenue, outstanding, transaction volume, export batches
@@ -144,7 +146,10 @@ Approved direction:
 - `/admin/pro-shop` — pro shop
 - `/admin/pos-terminal` — POS terminal
 - `/admin/orders` — order queue
-- `/admin/settings/club` — club settings hub
+- `/admin/settings` — settings hub
+- `/admin/settings/club` — legacy settings entry route redirected into the hub when `ux_rebuild_v1` is enabled
+- `/admin/settings/profile` — club profile settings
+- `/admin/settings/modules` — read-only module visibility
 - `/admin/communications` — communications and news posts
 - `/admin/targets` — club targets
 
@@ -176,7 +181,7 @@ Approved direction:
 - Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
 - No third-party accounting sync beyond tracked handoff (Phase 17).
-- Golf settings still needs guided setup, draft/publish, and ownership clarity.
+
 - Today/dashboard still needs operational work-queue restructuring.
 - Tee sheet still needs deeper finance and operational integration.
 - Add-on modules still risk overexposure relative to core product pillars.
@@ -218,3 +223,5 @@ Approved direction:
 
 This file preserves factual current state.
 It does not require preserving dead weight, weak logic, or structurally bad UX during the approved rebuild.
+
+

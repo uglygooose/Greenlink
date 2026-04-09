@@ -3,11 +3,19 @@ import { useQuery, type QueryClient } from "@tanstack/react-query";
 import {
   fetchClubConfig,
   fetchCourses,
+  fetchGolfSettingsReadiness,
   fetchPricingMatrices,
   fetchRuleSets,
   fetchTees,
 } from "../../api/operations";
-import type { BookingRuleSet, ClubConfig, Course, PricingMatrix, Tee } from "../../types/operations";
+import type {
+  BookingRuleSet,
+  ClubConfig,
+  Course,
+  GolfSettingsReadiness,
+  PricingMatrix,
+  Tee,
+} from "../../types/operations";
 
 export const operationsKeys = {
   clubConfig: (clubId: string) => ["operations", clubId, "club-config"] as const,
@@ -15,6 +23,7 @@ export const operationsKeys = {
   tees: (clubId: string) => ["operations", clubId, "tees"] as const,
   rules: (clubId: string) => ["operations", clubId, "rules"] as const,
   pricing: (clubId: string) => ["operations", clubId, "pricing"] as const,
+  readiness: (clubId: string) => ["operations", clubId, "golf-settings-readiness"] as const,
 };
 
 interface QueryOptions {
@@ -67,6 +76,15 @@ export function usePricingMatricesQuery({ accessToken, selectedClubId }: QueryOp
   });
 }
 
+export function useGolfSettingsReadinessQuery({ accessToken, selectedClubId }: QueryOptions) {
+  return useQuery<GolfSettingsReadiness>({
+    queryKey: operationsKeys.readiness(selectedClubId ?? "none"),
+    queryFn: () =>
+      fetchGolfSettingsReadiness({ accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
+    enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
 export async function prefetchOperationalSettings(
   queryClient: QueryClient,
   accessToken: string | null,
@@ -97,6 +115,10 @@ export async function prefetchOperationalSettings(
     queryClient.prefetchQuery({
       queryKey: operationsKeys.pricing(clubId),
       queryFn: () => fetchPricingMatrices({ accessToken: token, selectedClubId: clubId }),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: operationsKeys.readiness(clubId),
+      queryFn: () => fetchGolfSettingsReadiness({ accessToken: token, selectedClubId: clubId }),
     }),
   ]);
 }

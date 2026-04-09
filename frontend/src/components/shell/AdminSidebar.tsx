@@ -21,6 +21,24 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Overview", icon: "dashboard", href: "/admin/dashboard" },
   { key: "golf_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/golf/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
+  { key: "settings_hub", label: "Settings", icon: "settings", href: "/admin/settings" },
+  { key: "people_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/people/dashboard" },
+  { key: "members", label: "Members", icon: "group", href: "/admin/members" },
+  { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
+  { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
+  { key: "reports", label: "Reports", icon: "analytics", href: "/admin/reports" },
+  { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
+  { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
+  { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
+  { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
+  { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
+  { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
+];
+
+const LEGACY_FALLBACK_NAV_ITEMS: NavItem[] = [
+  { key: "dashboard", label: "Overview", icon: "dashboard", href: "/admin/dashboard" },
+  { key: "golf_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/golf/dashboard" },
+  { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
   { key: "people_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/people/dashboard" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
   { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
@@ -40,6 +58,7 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
   dashboard: "dashboard",
   golf_dashboard: "dashboard",
   golf_tee_sheet: "calendar_today",
+  settings_hub: "settings",
   golf_settings: "settings",
   people_dashboard: "dashboard",
   members: "group",
@@ -61,7 +80,7 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "people", label: "People", keys: ["people_dashboard", "members"] },
   { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
-  { id: "my_club", label: "My Club", keys: ["communications", "club_settings", "targets", "golf_settings"] },
+  { id: "my_club", label: "My Club", keys: ["settings_hub", "communications", "targets", "club_settings", "golf_settings"] },
 ];
 
 const SECONDARY_NAV_KEYS: string[] = [];
@@ -143,6 +162,7 @@ function CollapsibleGroup({
 
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
+  const uxRebuildV1 = bootstrap?.feature_flags?.ux_rebuild_v1 === true;
   const backendNavItems = (bootstrap?.menu_items ?? [])
     .filter((item) => item.shell === "admin")
     .map((item) => ({
@@ -152,7 +172,11 @@ export default function AdminSidebar(): JSX.Element {
       href: item.path,
     }));
   const usesBackendMenu = backendNavItems.length > 0;
-  const navItems = usesBackendMenu ? backendNavItems : FALLBACK_NAV_ITEMS;
+  const navItems = usesBackendMenu
+    ? backendNavItems
+    : uxRebuildV1
+      ? FALLBACK_NAV_ITEMS
+      : LEGACY_FALLBACK_NAV_ITEMS;
 
   const assignedKeys = new Set<string>();
   const grouped = PRIMARY_NAV_GROUPS.map((group) => {
