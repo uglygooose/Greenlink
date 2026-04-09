@@ -46,3 +46,6 @@ class AdminDashboardSummaryResponse(BaseModel):
     tee_warnings: list[DashboardNotice]
     recent_activity: list[DashboardActivityItem]
     active_targets: list[DashboardTargetContext] = []
+    unpaid_bookings_today: int = 0
+    no_show_risk_count: int = 0
+    close_day_ready: bool = True

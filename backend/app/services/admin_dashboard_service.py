@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Booking,
+    BookingPaymentStatus,
+    BookingStatus,
     ClubConfig,
     ClubMembership,
     ClubMembershipStatus,
@@ -68,12 +70,18 @@ class AdminDashboardService:
         tee_occupancy, tee_warnings = self._get_tee_occupancy(club_id)
         recent_activity = self._get_recent_activity(club_id)
         active_targets = self._get_active_targets(club_id)
+        unpaid_bookings_today = self._get_unpaid_bookings_today(club_id)
+        no_show_risk_count = self._get_no_show_risk_count(club_id)
+        close_day_ready = unpaid_bookings_today == 0 and no_show_risk_count == 0
         return AdminDashboardSummaryResponse(
             member_count=member_count,
             tee_occupancy=tee_occupancy,
             tee_warnings=tee_warnings,
             recent_activity=recent_activity,
             active_targets=active_targets,
+            unpaid_bookings_today=unpaid_bookings_today,
+            no_show_risk_count=no_show_risk_count,
+            close_day_ready=close_day_ready,
         )
 
     def _get_member_count(self, club_id: uuid.UUID) -> int:
@@ -230,3 +238,52 @@ class AdminDashboardService:
                 )
             )
         return result
+
+    def _get_unpaid_bookings_today(self, club_id: uuid.UUID) -> int:
+        """Count of today's reserved or checked-in bookings with payment_status=pending."""
+        club_config = self.db.scalar(
+            select(ClubConfig).where(ClubConfig.club_id == club_id)
+        )
+        if club_config is None:
+            return 0
+        zone = ZoneInfo(club_config.timezone)
+        today = datetime.now(zone).date()
+        today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        count = self.db.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(
+                Booking.club_id == club_id,
+                Booking.slot_datetime >= today_start_utc,
+                Booking.slot_datetime < today_end_utc,
+                Booking.payment_status == BookingPaymentStatus.PENDING,
+                Booking.status.in_((BookingStatus.RESERVED, BookingStatus.CHECKED_IN)),
+            )
+        )
+        return count or 0
+
+    def _get_no_show_risk_count(self, club_id: uuid.UUID) -> int:
+        """Count of today's reserved bookings whose start time has already passed."""
+        club_config = self.db.scalar(
+            select(ClubConfig).where(ClubConfig.club_id == club_id)
+        )
+        if club_config is None:
+            return 0
+        zone = ZoneInfo(club_config.timezone)
+        today = datetime.now(zone).date()
+        today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        now_utc = datetime.now(UTC)
+        count = self.db.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(
+                Booking.club_id == club_id,
+                Booking.status == BookingStatus.RESERVED,
+                Booking.slot_datetime >= today_start_utc,
+                Booking.slot_datetime < today_end_utc,
+                Booking.slot_datetime < now_utc,
+            )
+        )
+        return count or 0

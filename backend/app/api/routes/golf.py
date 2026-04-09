@@ -33,6 +33,9 @@ from app.models import (
 from app.schemas.bookings import (
     BookingCancelRequest,
     BookingCancelResult,
+    BookingChargePostInput,
+    BookingChargePostRequest,
+    BookingChargePostResult,
     BookingCheckInRequest,
     BookingCheckInResult,
     BookingCreateParticipantInput,
@@ -47,6 +50,11 @@ from app.schemas.bookings import (
     BookingMoveResult,
     BookingNoShowRequest,
     BookingNoShowResult,
+    BookingPaymentRecordRequest,
+    BookingPaymentRecordResult,
+    BookingPaymentStatusUpdateInput,
+    BookingPaymentStatusUpdateRequest,
+    BookingPaymentStatusUpdateResult,
     PlayerBookingReadModelResponse,
 )
 from app.schemas.operations import (
@@ -59,6 +67,7 @@ from app.schemas.tee_sheet import TeeSheetDayQuery, TeeSheetDayResponse
 from app.services.booking_cancellation_service import BookingCancellationService
 from app.services.booking_checkin_service import BookingCheckInService
 from app.services.booking_completion_service import BookingCompletionService
+from app.services.booking_finance_service import BookingFinanceService
 from app.services.booking_move_service import BookingMoveService
 from app.services.booking_no_show_service import BookingNoShowService
 from app.services.booking_service import BookingService
@@ -294,6 +303,71 @@ def update_booking(
     assert context.selected_club is not None
     service = BookingUpdateService(db)
     return service.update_booking(context.selected_club.id, booking_id=booking_id, payload=payload)
+
+
+@router.patch("/bookings/{booking_id}/payment-status", response_model=BookingPaymentStatusUpdateResult)
+def update_booking_payment_status(
+    booking_id: uuid.UUID,
+    payload: BookingPaymentStatusUpdateInput,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingPaymentStatusUpdateResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingFinanceService(db)
+    return service.update_payment_status(
+        club_id=context.selected_club.id,
+        payload=BookingPaymentStatusUpdateRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+            payment_status=payload.payment_status,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/post-charge", response_model=BookingChargePostResult)
+def post_booking_charge(
+    booking_id: uuid.UUID,
+    payload: BookingChargePostInput,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingChargePostResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingFinanceService(db)
+    return service.post_charge(
+        club_id=context.selected_club.id,
+        payload=BookingChargePostRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+            amount=payload.amount,
+            description=payload.description,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/record-payment", response_model=BookingPaymentRecordResult)
+def record_booking_payment(
+    booking_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingPaymentRecordResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingFinanceService(db)
+    return service.record_payment(
+        club_id=context.selected_club.id,
+        payload=BookingPaymentRecordRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+        ),
+    )
 
 
 @router.post("/bookings/{booking_id}/move", response_model=BookingMoveResult)

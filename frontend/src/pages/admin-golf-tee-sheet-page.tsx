@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   cancelBooking,
@@ -9,6 +9,9 @@ import {
   createBooking,
   markBookingNoShow,
   moveBooking,
+  postBookingCharge,
+  recordBookingPayment,
+  updateBookingPaymentStatus,
   updateBooking,
 } from "../api/operations";
 import { ApiError } from "../api/client";
@@ -48,7 +51,10 @@ import type {
   BookingCreateInput,
   BookingCreateParticipantInput,
   BookingCreateResult,
+  BookingChargePostResult,
   BookingLifecycleMutationResult,
+  BookingPaymentRecordResult,
+  BookingPaymentStatusUpdateResult,
   BookingParticipantType,
   BookingSummary,
   BookingUpdateInput,
@@ -63,7 +69,9 @@ type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
 type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
-type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid";
+type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid" | "no_shows" | "arrivals_due";
+type FinanceAction = "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived";
+export type BookingNextAction = "needs_payment" | "ready_to_check_in" | "at_risk" | "completed";
 
 const COPY: Record<Action, { already: string; blocked: string; success: string }> = {
   cancel: {
@@ -91,10 +99,14 @@ const COPY: Record<Action, { already: string; blocked: string; success: string }
 const VIEW_FILTERS: Array<{ label: string; value: ViewFilter }> = [
   { label: "All", value: "all" },
   { label: "Unpaid", value: "unpaid" },
+  { label: "No-Show Risk", value: "no_shows" },
+  { label: "Arrivals Due", value: "arrivals_due" },
   { label: "Open Slots", value: "open" },
   { label: "Golf Day", value: "golf_day" },
   { label: "Closed / Holds", value: "closed" },
 ];
+
+const ARRIVALS_DUE_WINDOW_MINUTES = 90;
 
 // 5.5: Compound filter state — replaces the single ViewFilter.
 type PartySize = 1 | 2 | 3 | 4 | "any";
@@ -302,10 +314,25 @@ function slotMatchesSearch(slot: LaneSlot, search: string): boolean {
   return participantText.includes(query) || metadata.includes(query);
 }
 
-function slotMatchesFilter(slot: TeeSheetSlotView, filter: ViewFilter): boolean {
+function slotHasNoShowRisk(slot: TeeSheetSlotView, referenceDatetime: string | null | undefined): boolean {
+  if (!referenceDatetime) return false;
+  const referenceMillis = Date.parse(referenceDatetime);
+  if (Number.isNaN(referenceMillis)) return false;
+  return slot.bookings.some((booking) => booking.status === "reserved" && Date.parse(booking.slot_datetime) < referenceMillis);
+}
+
+function slotMatchesFilter(
+  slot: TeeSheetSlotView,
+  filter: ViewFilter,
+  referenceDatetime: string | null | undefined,
+): boolean {
   switch (filter) {
     case "unpaid":
       return slot.bookings.some((booking) => booking.payment_status === "pending");
+    case "no_shows":
+      return slotHasNoShowRisk(slot, referenceDatetime);
+    case "arrivals_due":
+      return slotHasArrivalsDue(slot, referenceDatetime);
     case "open":
       return slotIsOpen(slot);
     case "golf_day":
@@ -333,12 +360,92 @@ function slotMatchesTimeRange(slot: TeeSheetSlotView, timeFrom: string | null, t
 }
 
 // 5.5: Compound filter — all individual dimensions must pass.
-function slotMatchesFilters(slot: TeeSheetSlotView, f: TeeSheetFilterState): boolean {
+function slotMatchesFilters(
+  slot: TeeSheetSlotView,
+  f: TeeSheetFilterState,
+  referenceDatetime: string | null | undefined,
+): boolean {
   return (
-    slotMatchesFilter(slot, f.viewFilter) &&
+    slotMatchesFilter(slot, f.viewFilter, referenceDatetime) &&
     slotMatchesPartySize(slot, f.partySize) &&
     slotMatchesTimeRange(slot, f.timeFrom, f.timeTo)
   );
+}
+
+function initialViewFilterFromSearchParam(value: string | null): ViewFilter {
+  switch (value) {
+    case "unpaid":
+      return "unpaid";
+    case "no-shows":
+      return "no_shows";
+    case "arrivals-due":
+      return "arrivals_due";
+    case "open":
+      return "open";
+    case "golf_day":
+      return "golf_day";
+    case "closed":
+      return "closed";
+    default:
+      return "all";
+  }
+}
+
+export function deriveBookingNextAction(
+  booking: Pick<TeeSheetBookingView, "payment_status" | "slot_datetime" | "status">,
+  referenceDatetime: string | null | undefined,
+): BookingNextAction {
+  if (booking.status === "cancelled" || booking.status === "completed" || booking.status === "no_show") {
+    return "completed";
+  }
+  if (booking.payment_status === "pending") {
+    return "needs_payment";
+  }
+  if (booking.status === "reserved" && referenceDatetime && Date.parse(booking.slot_datetime) < Date.parse(referenceDatetime)) {
+    return "at_risk";
+  }
+  if (booking.status === "reserved") {
+    return "ready_to_check_in";
+  }
+  return "completed";
+}
+
+function minutesUntilSlot(slotDatetime: string, referenceDatetime: string | null | undefined): number | null {
+  if (!referenceDatetime) return null;
+  const slotMillis = Date.parse(slotDatetime);
+  const referenceMillis = Date.parse(referenceDatetime);
+  if (Number.isNaN(slotMillis) || Number.isNaN(referenceMillis)) return null;
+  return Math.floor((slotMillis - referenceMillis) / 60_000);
+}
+
+function slotHasArrivalsDue(slot: TeeSheetSlotView, referenceDatetime: string | null | undefined): boolean {
+  return slot.bookings.some((booking) => {
+    if (deriveBookingNextAction(booking, referenceDatetime) !== "ready_to_check_in") return false;
+    const minutes = minutesUntilSlot(booking.slot_datetime, referenceDatetime);
+    return minutes !== null && minutes >= 0 && minutes <= ARRIVALS_DUE_WINDOW_MINUTES;
+  });
+}
+
+function countBookings(
+  slotRows: LaneSlot[],
+  predicate: (booking: TeeSheetBookingView, slot: TeeSheetSlotView) => boolean,
+): number {
+  return slotRows.reduce(
+    (sum, item) => sum + item.slot.bookings.filter((booking) => predicate(booking, item.slot)).length,
+    0,
+  );
+}
+
+function summaryChipClass(tone: "neutral" | "warning" | "danger"): string {
+  if (tone === "danger") return "border-error/20 bg-error-container/40 text-on-error-container";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-slate-200 bg-white text-on-surface";
+}
+
+function filterChipClass(active: boolean): string {
+  return active
+    ? "border-primary bg-primary text-white"
+    : "border-slate-200 bg-white text-on-surface hover:border-primary/30 hover:bg-primary-container/10";
 }
 
 function laneGroupKey(startLane: StartLane | null): string {
@@ -511,6 +618,36 @@ function bookingFeedback(result: BookingCreateResult | BookingUpdateResult): { m
   };
 }
 
+function bookingFinanceBlockedMessage(
+  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult,
+): string {
+  return result.failures[0]?.message ?? "Finance action blocked.";
+}
+
+function bookingFinanceSuccessMessage(
+  action: FinanceAction,
+  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult,
+): string {
+  switch (action) {
+    case "post_charge":
+      return "posting_applied" in result && result.posting_applied
+        ? "Charge posted. Tee sheet refreshed from backend state."
+        : "Charge was already posted. Tee sheet refreshed from backend state.";
+    case "record_payment":
+      return "settlement_applied" in result && result.settlement_applied
+        ? "Payment recorded. Tee sheet refreshed from backend state."
+        : "Payment was already recorded. Tee sheet refreshed from backend state.";
+    case "mark_complimentary":
+      return "update_applied" in result && result.update_applied
+        ? "Booking marked complimentary. Tee sheet refreshed from backend state."
+        : "Booking was already marked complimentary.";
+    case "mark_waived":
+      return "update_applied" in result && result.update_applied
+        ? "Booking marked waived. Tee sheet refreshed from backend state."
+        : "Booking was already marked waived.";
+  }
+}
+
 function participantDraftsFromBooking(booking: BookingSummary): DraftParticipant[] {
   const drafts = booking.participants.map((participant, index) => ({
     key: participant.id ?? `participant-${index}`,
@@ -568,7 +705,9 @@ function SetupState({
 
 export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap, initialized, loading } = useSession();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const uxRebuildV1 = bootstrap?.feature_flags?.ux_rebuild_v1 === true;
   const [selectedDate, setSelectedDate] = useState(todayValue);
   const membershipType: BookingRuleAppliesTo = "staff";
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -585,7 +724,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
   const [searchInputValue, setSearchInputValue] = useState("");
   // 5.5: Compound filter state replaces single ViewFilter.
-  const [filters, setFilters] = useState<TeeSheetFilterState>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<TeeSheetFilterState>(() => ({
+    ...DEFAULT_FILTERS,
+    viewFilter: initialViewFilterFromSearchParam(searchParams.get("filter")),
+  }));
   const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [highlightedSlotKey, setHighlightedSlotKey] = useState<string | null>(null);
@@ -746,10 +888,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       buckets
         .map((bucket) => ({
           ...bucket,
-          slots: bucket.slots.filter((slot) => slotMatchesSearch(slot, debouncedSearchTerm) && slotMatchesFilters(slot.slot, filters)),
+          slots: bucket.slots.filter(
+            (slot) =>
+              slotMatchesSearch(slot, debouncedSearchTerm) &&
+              slotMatchesFilters(slot.slot, filters, teeSheetQuery.data?.reference_datetime ?? null),
+          ),
         }))
         .filter((bucket) => bucket.slots.length > 0),
-    [buckets, debouncedSearchTerm, filters],
+    [buckets, debouncedSearchTerm, filters, teeSheetQuery.data?.reference_datetime],
   );
 
   const statusCounts = useMemo(
@@ -986,6 +1132,76 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     },
   });
 
+  const paymentStatusMutation = useMutation({
+    mutationFn: ({ bookingId, paymentStatus }: { bookingId: string; paymentStatus: "complimentary" | "waived" }) =>
+      updateBookingPaymentStatus(
+        bookingId,
+        { payment_status: paymentStatus },
+        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
+      ),
+    onSuccess: async (result, variables) => {
+      if (result.decision === "blocked") {
+        setDrawerFeedbackTone("error");
+        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        return;
+      }
+      setDrawerFeedbackTone("info");
+      setDrawerFeedbackMessage(
+        bookingFinanceSuccessMessage(
+          variables.paymentStatus === "complimentary" ? "mark_complimentary" : "mark_waived",
+          result,
+        ),
+      );
+      await invalidate();
+    },
+    onError: (error) => {
+      setDrawerFeedbackTone("error");
+      setDrawerFeedbackMessage(asMessage(error));
+    },
+  });
+
+  const postChargeMutation = useMutation({
+    mutationFn: ({ bookingId, amount }: { bookingId: string; amount: string }) =>
+      postBookingCharge(
+        bookingId,
+        { amount },
+        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
+      ),
+    onSuccess: async (result) => {
+      if (result.decision === "blocked") {
+        setDrawerFeedbackTone("error");
+        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        return;
+      }
+      setDrawerFeedbackTone("info");
+      setDrawerFeedbackMessage(bookingFinanceSuccessMessage("post_charge", result));
+      await invalidate();
+    },
+    onError: (error) => {
+      setDrawerFeedbackTone("error");
+      setDrawerFeedbackMessage(asMessage(error));
+    },
+  });
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: (bookingId: string) =>
+      recordBookingPayment(bookingId, { accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
+    onSuccess: async (result) => {
+      if (result.decision === "blocked") {
+        setDrawerFeedbackTone("error");
+        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        return;
+      }
+      setDrawerFeedbackTone("info");
+      setDrawerFeedbackMessage(bookingFinanceSuccessMessage("record_payment", result));
+      await invalidate();
+    },
+    onError: (error) => {
+      setDrawerFeedbackTone("error");
+      setDrawerFeedbackMessage(asMessage(error));
+    },
+  });
+
   const moveMutation = useMutation({
     mutationFn: ({ bookingId, target }: { bookingId: string; target: LaneSlot }) =>
       moveBooking(
@@ -1053,10 +1269,44 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const openPlayerCapacity = slots.reduce((sum, item) => sum + slotRemainingCapacity(item.slot), 0);
   const alertSignals = (teeSheetQuery.data?.warnings.length ?? 0) + statusCounts.warning + statusCounts.blocked;
   const occupancyPct = totalSlots === 0 ? 0 : Math.round((occupiedSlots / totalSlots) * 100);
+  const unpaidBookingsCount = countBookings(
+    slots,
+    (booking) => deriveBookingNextAction(booking, teeSheetQuery.data?.reference_datetime ?? null) === "needs_payment",
+  );
+  const noShowRiskCount = countBookings(
+    slots,
+    (booking) =>
+      booking.status === "reserved" &&
+      teeSheetQuery.data?.reference_datetime != null &&
+      Date.parse(booking.slot_datetime) < Date.parse(teeSheetQuery.data.reference_datetime),
+  );
+  const arrivalsDueCount = countBookings(slots, (booking) => {
+    if (deriveBookingNextAction(booking, teeSheetQuery.data?.reference_datetime ?? null) !== "ready_to_check_in") return false;
+    const minutes = minutesUntilSlot(booking.slot_datetime, teeSheetQuery.data?.reference_datetime ?? null);
+    return minutes !== null && minutes >= 0 && minutes <= ARRIVALS_DUE_WINDOW_MINUTES;
+  });
+  const competitionCount = slots.filter((item) => slotHasGolfDayControl(item.slot)).length;
   const pendingAction = inlineActionState?.action ?? (cancelMutation.isPending ? "cancel" : checkInMutation.isPending ? "check_in" : completeMutation.isPending ? "complete" : noShowMutation.isPending ? "no_show" : null);
   const pendingBookingId =
     inlineActionState?.bookingId ??
     (cancelMutation.isPending ? cancelMutation.variables ?? null : checkInMutation.isPending ? checkInMutation.variables ?? null : completeMutation.isPending ? completeMutation.variables ?? null : noShowMutation.isPending ? noShowMutation.variables ?? null : null);
+  const pendingFinanceAction: FinanceAction | null = paymentStatusMutation.isPending
+    ? paymentStatusMutation.variables?.paymentStatus === "complimentary"
+      ? "mark_complimentary"
+      : "mark_waived"
+    : postChargeMutation.isPending
+      ? "post_charge"
+      : recordPaymentMutation.isPending
+        ? "record_payment"
+        : null;
+  const pendingFinanceBookingId =
+    paymentStatusMutation.isPending
+      ? paymentStatusMutation.variables?.bookingId ?? null
+      : postChargeMutation.isPending
+        ? postChargeMutation.variables?.bookingId ?? null
+        : recordPaymentMutation.isPending
+          ? recordPaymentMutation.variables ?? null
+          : null;
   const movingBookingId = moveMutation.isPending ? moveMutation.variables?.bookingId ?? null : null;
   const savingBookingId = updateMutation.isPending ? updateMutation.variables?.bookingId ?? null : null;
   const directory = directoryQuery.data ?? [];
@@ -1082,6 +1332,19 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     resetEditState();
     setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
   }, [resetCreateDrafts, resetEditState]);
+
+  const nextBookableSlot = useMemo(
+    () => filteredBuckets.flatMap((bucket) => bucket.slots).find((slot) => canCreate(slot.slot)) ?? slots.find((slot) => canCreate(slot.slot)) ?? null,
+    [filteredBuckets, slots],
+  );
+
+  const openNextBookableSlot = useCallback((): void => {
+    if (!nextBookableSlot) {
+      setNotice({ tone: "info", message: "No open booking slots are available with the current tee-sheet posture." });
+      return;
+    }
+    openCreate(nextBookableSlot);
+  }, [nextBookableSlot, openCreate]);
 
   const close = useCallback((): void => {
     setDrawerMode(null);
@@ -1283,6 +1546,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     teeSheetQuery.data?.date === selectedDate && selectedDate === todayValue()
       ? nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null)
       : null;
+  const cockpitPresets: Array<{ count: number; icon: string; label: string; value: ViewFilter }> = [
+    { count: unpaidBookingsCount, icon: "payments", label: "Unpaid", value: "unpaid" },
+    { count: noShowRiskCount, icon: "person_off", label: "No-shows", value: "no_shows" },
+    { count: arrivalsDueCount, icon: "schedule", label: "Arrivals Due", value: "arrivals_due" },
+    { count: competitionCount, icon: "emoji_events", label: "Competitions", value: "golf_day" },
+  ];
 
   useEffect(() => {
     if (layoutMode !== "classic") return;
@@ -1344,10 +1613,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   return (
     <>
       <AdminWorkspace
-        title="Daily Tee Sheet"
+        title={uxRebuildV1 ? "Tee Sheet" : "Daily Tee Sheet"}
         dateLabel={dateLabel(selectedDate)}
         description={description}
-        kpis={
+        kpis={uxRebuildV1 ? undefined : (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-surface-container-lowest px-5 py-3 shadow-sm">
             <div className="flex items-center gap-2">
               <MaterialSymbol className="text-sm text-primary" icon="golf_course" />
@@ -1383,7 +1652,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
               <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${statusCounts.blocked} blocked` : "Alerts"}</span>
             </button>
           </div>
-        }
+        )}
       >
         {notice ? <div className={notice.tone === "success" ? "rounded-2xl bg-primary-container/50 px-4 py-3 text-sm font-medium text-on-primary-container" : notice.tone === "error" ? "rounded-2xl bg-error-container/40 px-4 py-3 text-sm font-medium text-on-error-container" : "rounded-2xl bg-secondary-container px-4 py-3 text-sm font-medium text-on-secondary-container"}>{notice.message}</div> : null}
 
@@ -1423,6 +1692,210 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                   data-testid="tee-sheet-toolbar"
                 >
                   <div className="flex flex-col gap-4">
+                    {uxRebuildV1 ? (
+                      <>
+                        <div
+                          className="flex flex-col gap-4 rounded-[24px] border border-slate-200/70 bg-slate-950 px-5 py-4 text-white"
+                          data-testid="operate-header"
+                        >
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-300">Operate</p>
+                              <div className="space-y-1">
+                                <h2 className="font-headline text-2xl font-extrabold">Run Today&apos;s Tee Sheet</h2>
+                                <p className="text-sm text-slate-300">Action-first controls stay above the canvas while the existing slot lifecycle stays unchanged.</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100"
+                                onClick={openNextBookableSlot}
+                                type="button"
+                              >
+                                <MaterialSymbol className="text-sm" icon="add" />
+                                <span>+ Booking</span>
+                              </button>
+                              <Link
+                                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+                                to="/admin/finance"
+                              >
+                                <MaterialSymbol className="text-sm" icon="payments" />
+                                <span>Close Day &rarr;</span>
+                              </Link>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass("neutral")}`}>
+                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                                <MaterialSymbol className="text-sm text-emerald-600" icon="grid_view" />
+                                <span>Occupancy</span>
+                              </div>
+                              <div className="mt-2 flex items-end gap-2">
+                                <span className="font-headline text-2xl font-extrabold text-on-surface">{configuredForSheet ? `${occupancyPct}%` : "--"}</span>
+                                <span className="pb-1 text-xs text-slate-500">{configuredForSheet ? `${occupiedSlots}/${totalSlots} slots` : "No data"}</span>
+                              </div>
+                            </div>
+                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass(unpaidBookingsCount > 0 ? "warning" : "neutral")}`}>
+                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                                <MaterialSymbol className="text-sm text-amber-500" icon="payments" />
+                                <span>Unpaid</span>
+                              </div>
+                              <div className="mt-2 flex items-end gap-2">
+                                <span className="font-headline text-2xl font-extrabold text-on-surface">{unpaidBookingsCount}</span>
+                                <span className="pb-1 text-xs text-slate-500">Bookings needing payment</span>
+                              </div>
+                            </div>
+                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass(alertSignals > 0 ? "danger" : "neutral")}`}>
+                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                                <MaterialSymbol className="text-sm text-red-500" icon="warning" />
+                                <span>Warnings</span>
+                              </div>
+                              <div className="mt-2 flex items-end gap-2">
+                                <span className="font-headline text-2xl font-extrabold text-on-surface">{alertSignals}</span>
+                                <span className="pb-1 text-xs text-slate-500">Blocked, warning, and sheet alerts</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <DatePickerPopover
+                                clubId={guardedSelectedClubId}
+                                courseId={courseId}
+                                membershipType={membershipType}
+                                onChange={changeSelectedDate}
+                                onOpenChange={setCalendarOpen}
+                                open={calendarOpen}
+                                queryClient={queryClient}
+                                teeId={teeId}
+                                value={selectedDate}
+                              />
+                              <div className="flex gap-1">
+                                <button
+                                  aria-label="Previous day"
+                                  className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                                  onClick={() => changeSelectedDate((current) => addDays(current, -1))}
+                                  type="button"
+                                >
+                                  <MaterialSymbol icon="chevron_left" />
+                                </button>
+                                <button
+                                  aria-label="Today"
+                                  className="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container"
+                                  onClick={() => changeSelectedDate(todayValue())}
+                                  type="button"
+                                >
+                                  Today
+                                </button>
+                                <button
+                                  aria-label="Next day"
+                                  className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                                  onClick={() => changeSelectedDate((current) => addDays(current, 1))}
+                                  type="button"
+                                >
+                                  <MaterialSymbol icon="chevron_right" />
+                                </button>
+                              </div>
+                            </div>
+                            <label className="space-y-1">
+                              <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Search</span>
+                              <span className="relative flex items-center">
+                                <MaterialSymbol className="pointer-events-none absolute left-3 text-sm text-slate-400" icon="search" />
+                                <input
+                                  className="w-full rounded-2xl bg-surface-container-low px-10 py-2.5 pr-10 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72"
+                                  onChange={(event) => setSearchInputValue(event.target.value)}
+                                  placeholder="Search players, bookings, or time"
+                                  ref={searchInputRef}
+                                  type="search"
+                                  value={searchInputValue}
+                                />
+                                {showClearSearch ? (
+                                  <button
+                                    aria-label="Clear tee-sheet search"
+                                    className="absolute right-2 rounded-full p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+                                    onClick={() => {
+                                      setSearchInputValue("");
+                                      searchInputRef.current?.focus();
+                                    }}
+                                    type="button"
+                                  >
+                                    <MaterialSymbol className="text-sm" icon="close" />
+                                  </button>
+                                ) : null}
+                              </span>
+                            </label>
+                          </div>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <label className="space-y-1">
+                              <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To</span>
+                              <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
+                                <MaterialSymbol className="text-sm text-on-surface-variant" icon="schedule" />
+                                <select
+                                  className="border-none bg-transparent pr-5 text-sm font-medium focus:ring-0"
+                                  defaultValue=""
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    if (!value) return;
+                                    document.getElementById(`bucket-${value}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  }}
+                                >
+                                  <option value="">Select time</option>
+                                  {jumpTimes.map((value) => (
+                                    <option key={value} value={value}>
+                                      {value}
+                                    </option>
+                                  ))}
+                                </select>
+                              </span>
+                            </label>
+                            <button
+                              aria-expanded={filtersPanelOpen}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container"
+                              data-testid="filters-view-toggle"
+                              onClick={() => setFiltersPanelOpen((open) => !open)}
+                              type="button"
+                            >
+                              <MaterialSymbol className="text-sm" icon={filtersPanelOpen ? "expand_less" : "tune"} />
+                              <span>Filters</span>
+                              {hasActiveFilters ? (
+                                <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+                                  Active
+                                </span>
+                              ) : null}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {cockpitPresets.map((preset) => {
+                            const active = filters.viewFilter === preset.value;
+                            return (
+                              <button
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition-colors ${filterChipClass(active)}`}
+                                key={preset.value}
+                                onClick={() =>
+                                  setFilters((current) => ({
+                                    ...current,
+                                    viewFilter: current.viewFilter === preset.value ? "all" : preset.value,
+                                  }))
+                                }
+                                type="button"
+                              >
+                                <MaterialSymbol className="text-sm" icon={preset.icon} />
+                                <span>{preset.label}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                                  {preset.count}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <>
                     <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
                       <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1561,6 +2034,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                         ) : null}
                       </button>
                     </div>
+
+                      </>
+                    )}
 
                     {filtersPanelOpen ? (
                     <div className="space-y-4 rounded-2xl border border-slate-200 bg-surface-container-lowest p-4" data-testid="filters-view-panel">
@@ -2097,16 +2573,43 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 void updateMutation.mutateAsync({ bookingId, payload: updatePayload() });
               }}
               onEditStart={startEdit}
+              onMarkComplimentary={(bookingId) => {
+                setNotice(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+                paymentStatusMutation.mutate({ bookingId, paymentStatus: "complimentary" });
+              }}
+              onMarkWaived={(bookingId) => {
+                setNotice(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+                paymentStatusMutation.mutate({ bookingId, paymentStatus: "waived" });
+              }}
               onNoShow={(bookingId) => {
                 setNotice(null);
                 setDrawerFeedbackMessage(null);
                 setDrawerFeedbackTone(null);
                 noShowMutation.mutate(bookingId);
               }}
+              onPostCharge={(bookingId, amount) => {
+                setNotice(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+                postChargeMutation.mutate({ bookingId, amount });
+              }}
+              onRecordPayment={(bookingId) => {
+                setNotice(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+                recordPaymentMutation.mutate(bookingId);
+              }}
+              pendingFinanceAction={pendingFinanceAction}
+              pendingFinanceBookingId={pendingFinanceBookingId}
               pendingAction={pendingAction}
               pendingBookingId={pendingBookingId}
               savingBookingId={savingBookingId}
               selectedDate={selectedDate}
+              showFinanceActions={uxRebuildV1}
               slot={selectedSlot.slot}
               teeLabel={selectedSlot.rowLabel}
             />

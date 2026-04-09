@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.models import BookingParticipantType, BookingPaymentStatus, BookingSource, BookingStatus
 from app.models.enums import BookingRuleAppliesTo, StartLane
 from app.schemas.availability import AvailabilityPolicyResult
+from app.schemas.finance import FinanceTransactionResponse
 
 
 class BookingCreateParticipantInput(BaseModel):
@@ -371,3 +373,91 @@ class BookingMoveResult(BaseModel):
     transition_applied: bool = False
     booking: BookingSummary | None = None
     failures: list[BookingMoveFailureDetail] = Field(default_factory=list)
+
+
+class BookingPaymentStatusUpdateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payment_status: BookingPaymentStatus
+
+
+class BookingPaymentStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    acting_user_id: uuid.UUID
+    payment_status: BookingPaymentStatus
+
+
+class BookingFinanceMutationFailureDetail(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+    current_status: BookingStatus | None = None
+    current_payment_status: BookingPaymentStatus | None = None
+
+
+class BookingPaymentStatusUpdateDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingPaymentStatusUpdateResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingPaymentStatusUpdateDecision
+    update_applied: bool = False
+    booking: BookingSummary | None = None
+    failures: list[BookingFinanceMutationFailureDetail] = Field(default_factory=list)
+
+
+class BookingChargePostInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    description: str | None = Field(default=None, max_length=255)
+
+
+class BookingChargePostRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    acting_user_id: uuid.UUID
+    amount: Decimal
+    description: str | None = None
+
+
+class BookingChargePostDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingChargePostResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingChargePostDecision
+    posting_applied: bool = False
+    booking: BookingSummary | None = None
+    transaction: FinanceTransactionResponse | None = None
+    balance: Decimal | None = None
+    failures: list[BookingFinanceMutationFailureDetail] = Field(default_factory=list)
+
+
+class BookingPaymentRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    acting_user_id: uuid.UUID
+
+
+class BookingPaymentRecordDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingPaymentRecordResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingPaymentRecordDecision
+    settlement_applied: bool = False
+    booking: BookingSummary | None = None
+    transaction: FinanceTransactionResponse | None = None
+    balance: Decimal | None = None
+    failures: list[BookingFinanceMutationFailureDetail] = Field(default_factory=list)

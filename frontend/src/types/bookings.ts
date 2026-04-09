@@ -113,6 +113,63 @@ export interface BookingUpdateResult {
   failures: BookingUpdateFailureDetail[];
 }
 
+export interface BookingFinanceMutationFailureDetail {
+  code: string;
+  message: string;
+  field?: string | null;
+  current_status?: BookingStatus | null;
+  current_payment_status?: BookingPaymentStatus | null;
+}
+
+export interface BookingFinanceTransactionDetail {
+  id: string;
+  club_id: string;
+  account_id: string;
+  amount: string;
+  type: "charge" | "payment" | "adjustment";
+  source: "booking" | "order" | "pos" | "manual";
+  reference_id: string | null;
+  description: string;
+  created_at: string;
+}
+
+export interface BookingPaymentStatusUpdateInput {
+  payment_status: BookingPaymentStatus;
+}
+
+export interface BookingPaymentStatusUpdateResult {
+  booking_id: string;
+  decision: "allowed" | "blocked";
+  update_applied: boolean;
+  booking: BookingSummary | null;
+  failures: BookingFinanceMutationFailureDetail[];
+}
+
+export interface BookingChargePostInput {
+  amount: string;
+  description?: string | null;
+}
+
+export interface BookingChargePostResult {
+  booking_id: string;
+  decision: "allowed" | "blocked";
+  posting_applied: boolean;
+  booking: BookingSummary | null;
+  transaction: BookingFinanceTransactionDetail | null;
+  balance: string | null;
+  failures: BookingFinanceMutationFailureDetail[];
+}
+
+export interface BookingPaymentRecordResult {
+  booking_id: string;
+  decision: "allowed" | "blocked";
+  settlement_applied: boolean;
+  booking: BookingSummary | null;
+  transaction: BookingFinanceTransactionDetail | null;
+  balance: string | null;
+  failures: BookingFinanceMutationFailureDetail[];
+}
+
 export interface BookingLifecycleMutationFailureDetail {
   code: string;
   message: string;

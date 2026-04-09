@@ -96,7 +96,7 @@ class SessionBootstrapService:
             module_flags=module_flags,
             menu_items=self._build_menu_items(role_shell=role_shell, module_flags=module_flags),
             permissions=self._build_permissions(context, hydrated_user.user_type),
-            feature_flags={},
+            feature_flags={"ux_rebuild_v1": True},
         )
 
     def _build_available_clubs(

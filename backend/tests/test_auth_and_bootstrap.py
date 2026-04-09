@@ -226,6 +226,7 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
         "club_settings",
         "targets",
     ]
+    assert payload["feature_flags"].get("ux_rebuild_v1") is True
 
 
 def test_bootstrap_returns_backend_menu_contract_for_player_shell(

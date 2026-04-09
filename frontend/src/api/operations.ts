@@ -1,10 +1,15 @@
 import { apiRequest } from "./client";
 import type {
   BookingCancelResult,
+  BookingChargePostInput,
+  BookingChargePostResult,
   BookingCheckInResult,
   BookingCreateInput,
   BookingCreateResult,
   BookingCompleteResult,
+  BookingPaymentRecordResult,
+  BookingPaymentStatusUpdateInput,
+  BookingPaymentStatusUpdateResult,
   PlayerBookingReadModelResponse,
   BookingUpdateInput,
   BookingUpdateResult,
@@ -254,6 +259,44 @@ export function updateBooking(
     accessToken,
     selectedClubId,
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateBookingPaymentStatus(
+  bookingId: string,
+  payload: BookingPaymentStatusUpdateInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingPaymentStatusUpdateResult> {
+  return apiRequest<BookingPaymentStatusUpdateResult>(`/api/golf/bookings/${bookingId}/payment-status`, {
+    method: "PATCH",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postBookingCharge(
+  bookingId: string,
+  payload: BookingChargePostInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingChargePostResult> {
+  return apiRequest<BookingChargePostResult>(`/api/golf/bookings/${bookingId}/post-charge`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function recordBookingPayment(
+  bookingId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingPaymentRecordResult> {
+  return apiRequest<BookingPaymentRecordResult>(`/api/golf/bookings/${bookingId}/record-payment`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify({}),
   });
 }
 

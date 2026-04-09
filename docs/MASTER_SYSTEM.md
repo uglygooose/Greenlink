@@ -96,6 +96,11 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Booking creation, editing, and move UX are live.
 - Inline chip quick actions, per-time-bucket bulk check-in, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped drawers are live.
 - Feature-flagged timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
+- `feature_flags.ux_rebuild_v1` now gates the approved PR1-PR4 rebuild path:
+  - Today-first admin navigation and shell weighting
+  - Today dashboard as an operational work queue
+  - tee-sheet operational cockpit shell with operate header, presets, and reduced filter clutter
+  - finance actions inside the booking drawer for charges, payments, complimentary, and waived flows
 - `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance
@@ -111,6 +116,11 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Admin finance KPI surfaces (`admin-dashboard`, `admin-finance`, `admin-reports`, `admin-members`, `admin-halfway`, `admin-finance/dashboard`) use backend summary endpoints only. No finance math in React.
 - `AdminReportsPage` chart bar widths are driven entirely by backend-provided pct fields.
 - `AdminFinanceDashboardPage` at `/admin/finance/dashboard` is live: revenue, outstanding, transaction volume, and export batch status — all from backend read models.
+- Booking finance commands are now live through backend-owned golf booking endpoints:
+  - `PATCH /api/golf/bookings/{booking_id}/payment-status`
+  - `POST /api/golf/bookings/{booking_id}/post-charge`
+  - `POST /api/golf/bookings/{booking_id}/record-payment`
+- These commands are tenant-scoped, RBAC-protected, and surfaced in the feature-flagged tee-sheet booking drawer only.
 - No direct third-party push/pull accounting integration exists beyond tracked export handoff.
 
 ### Orders and POS
@@ -184,6 +194,10 @@ The approved direction is:
 - tee sheet as operational cockpit
 - finance as close-day and accounting-handoff engine
 - settings as structured configuration journey, not a monolithic CRUD/admin page
+
+Current landing status:
+- PR1-PR4 are landed behind `feature_flags.ux_rebuild_v1`
+- PR5 and later rebuild slices remain future work and must not be inferred as complete
 
 ## Current Route Surface
 

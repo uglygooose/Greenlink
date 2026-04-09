@@ -7,9 +7,12 @@ import {
   checkInBooking,
   createBooking,
   moveBooking,
+  postBookingCharge,
+  recordBookingPayment,
+  updateBookingPaymentStatus,
   updateBooking,
 } from "../api/operations";
-import { AdminGolfTeeSheetPage, nearestBucketTime, optimisticallyTransitionBooking } from "./admin-golf-tee-sheet-page";
+import { AdminGolfTeeSheetPage, deriveBookingNextAction, nearestBucketTime, optimisticallyTransitionBooking } from "./admin-golf-tee-sheet-page";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
@@ -55,18 +58,24 @@ vi.mock("../api/operations", () => ({
   createBooking: vi.fn(),
   markBookingNoShow: vi.fn(),
   moveBooking: vi.fn(),
+  postBookingCharge: vi.fn(),
+  recordBookingPayment: vi.fn(),
+  updateBookingPaymentStatus: vi.fn(),
   updateBooking: vi.fn(),
 }));
 
-function renderPage(queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: false },
-    mutations: { retry: false },
-  },
-})): QueryClient {
+function renderPage(
+  queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  }),
+  initialEntry = "/admin/golf/tee-sheet",
+): QueryClient {
 
   render(
-    <MemoryRouter initialEntries={["/admin/golf/tee-sheet"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={queryClient}>
         <AdminGolfTeeSheetPage />
       </QueryClientProvider>
@@ -500,6 +509,7 @@ describe("AdminGolfTeeSheetPage", () => {
       initialized: true,
       loading: false,
       bootstrap: {
+        feature_flags: { ux_rebuild_v1: true },
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
         user: { display_name: "Club Admin" },
@@ -550,6 +560,26 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getByText(/without at least one active tee definition/i)).toBeInTheDocument();
   });
 
+  test("applies the no-show risk URL filter from dashboard deep links", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.reference_datetime = "2026-03-30T04:15:00Z";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage(undefined, "/admin/golf/tee-sheet?filter=no-shows");
+
+    openFiltersView();
+    expect(screen.getByRole("button", { name: "No-Show Risk" })).toHaveClass("bg-primary", "text-white");
+    expect(screen.getByText("Member One")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create booking for 1st tee 06:30/i })).not.toBeInTheDocument();
+  });
+
+  test("derives a single operational next action from booking state", () => {
+    expect(deriveBookingNextAction({ payment_status: "pending", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T03:30:00Z")).toBe("needs_payment");
+    expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T03:30:00Z")).toBe("ready_to_check_in");
+    expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T04:15:00Z")).toBe("at_risk");
+    expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "completed" }, "2026-03-30T04:15:00Z")).toBe("completed");
+  });
+
   test("renders time-first lanes and commercial hooks from backend payload", async () => {
     renderPage();
 
@@ -596,19 +626,112 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.queryByText("White")).not.toBeInTheDocument();
   });
 
-  test("keeps the operational toolbar sticky with date controls in view", () => {
+  test("renders the cockpit operate header when the rebuild flag is enabled", () => {
     renderPage();
 
     expect(screen.getByTestId("tee-sheet-toolbar")).toHaveClass("sticky", "top-20");
+    expect(screen.getByTestId("operate-header")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous day" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next day" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Next Available/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ Booking/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Close Day/i })).toHaveAttribute("href", "/admin/finance");
     expect(screen.getByPlaceholderText("Search players, bookings, or time")).toBeInTheDocument();
     expect(screen.getByTestId("filters-view-toggle")).toBeInTheDocument();
-    expect(screen.queryByText("View As")).not.toBeInTheDocument();
-    expect(screen.queryByText("All Tees")).not.toBeInTheDocument();
-    expect(screen.queryByText("Filters")).not.toBeInTheDocument();
+    expect(screen.getByText("Occupancy")).toBeInTheDocument();
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
+    expect(screen.getByText("Warnings")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /No-shows/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Arrivals Due/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Competitions/i })).toBeInTheDocument();
+  });
+
+  test("keeps the legacy toolbar when the rebuild flag is disabled", () => {
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      initialized: true,
+      loading: false,
+      bootstrap: {
+        feature_flags: {},
+        selected_club_id: "club-1",
+        selected_club: { id: "club-1", name: "Club One" },
+        user: { display_name: "Club Admin" },
+      },
+    });
+
+    renderPage();
+
+    expect(screen.queryByTestId("operate-header")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Next Available/i })).toBeInTheDocument();
+    expect(screen.getByText("Filters & View")).toBeInTheDocument();
+  });
+
+  test("uses preset chips to drive the existing filter layer", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.reference_datetime = "2026-03-30T04:15:00Z";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /No-shows/i }));
+    openFiltersView();
+
+    expect(screen.getByRole("button", { name: "No-Show Risk" })).toHaveClass("bg-primary", "text-white");
+    expect(screen.getByText("Member One")).toBeInTheDocument();
+  });
+
+  test("opens the existing create drawer from the cockpit primary action", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Booking/i }));
+
+    const drawer = await screen.findByRole("heading", { name: "Create Booking" });
+    expect(drawer).toBeInTheDocument();
+  });
+
+  test("runs finance actions through the booking drawer and invalidates the tee sheet query", async () => {
+    vi.mocked(updateBookingPaymentStatus).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      update_applied: true,
+      booking: {
+        ...teeSheetPayload.rows[0].slots[0].bookings[0],
+        id: "booking-1",
+        club_id: "club-1",
+        course_id: "course-1",
+        slot_interval_minutes: 30,
+        source: "admin",
+        created_at: "2026-03-25T06:00:00Z",
+        updated_at: "2026-03-25T06:00:00Z",
+      },
+      failures: [],
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderPage(queryClient);
+
+    fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Mark Complimentary/i }));
+
+    await waitFor(() => {
+      expect(updateBookingPaymentStatus).toHaveBeenCalledWith(
+        "booking-1",
+        { payment_status: "complimentary" },
+        { accessToken: "token", selectedClubId: "club-1" },
+      );
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: teeSheetDayKey(testLocalDateString(new Date()), "staff", null),
+      });
+    });
   });
 
   test("opens secondary controls from the filters and view panel only", () => {

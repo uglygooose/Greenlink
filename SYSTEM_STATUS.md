@@ -34,9 +34,14 @@ Current issues include:
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
 - Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
+- Live: `feature_flags.ux_rebuild_v1` now covers the approved PR1-PR4 rebuild slices:
+  - Today-first admin navigation weighting
+  - Today dashboard operational work queue
+  - tee-sheet cockpit shell with operate header, presets, and collapsed filter controls
+  - booking-drawer finance actions for post charge, record payment, complimentary, and waived flows
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 - Gap: tee sheet is not yet the full operational command center GreenLink requires
-- Gap: payment/finance posture is not yet sufficiently native to tee-sheet flow
+- Gap: refunds, close-day reconciliation handoff, and deeper finance resolution still remain outside the tee-sheet flow
 
 ## FIN Status
 
@@ -48,6 +53,7 @@ Current issues include:
 - Live: mapped exports are blocked when batch reconciliation detects drift
 - Live: drift recovery uses backend-owned batch regeneration with typed supersede/regeneration lineage
 - Backend now returns pre-computed pct fields on each summary item (`revenue_share_pct`, `volume_share_pct`, `accounts_*_pct`); `AdminReportsPage` consumes these directly and no client-side finance math remains
+- Live: booking finance mutations are backend-owned and exposed through golf booking endpoints for payment-status changes, charge posting, and payment recording
 - Not built: direct third-party push/pull integration beyond tracked export handoff
 - Gap: finance is not yet sufficiently positioned as a first-class close-day operational workflow
 
@@ -188,8 +194,12 @@ Approved direction:
 - `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`4 passed`)
 - `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx src/features/tee-sheet/hooks.test.ts` - clean (`37 passed`)
 - `frontend`: `npm.cmd run typecheck` - clean after tee-sheet Phase 6 changes
+- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx src/pages/admin-golf-tee-sheet-page.test.tsx` - clean for PR2 (`55 passed`)
+- `frontend`: targeted Vitest `src/features/tee-sheet/booking-management-drawer.test.tsx src/pages/admin-golf-tee-sheet-page.test.tsx` - clean for PR4 (`49 passed`)
 - `backend`: `py -m py_compile backend/app/schemas/bookings.py backend/app/services/booking_service.py backend/app/services/booking_update_service.py` - clean
 - `backend`: targeted pytest `backend/tests/test_booking_creation_foundation.py backend/tests/test_booking_update_foundation.py -q` - clean (`8 passed`)
+- `backend`: targeted pytest `backend/tests/test_admin_dashboard_summary.py backend/tests/test_auth_and_bootstrap.py -q` - clean for PR2 (`11 passed`)
+- `backend`: targeted pytest `backend/tests/test_booking_finance_actions.py -q` - clean for PR4 (`4 passed`)
 - `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean (`5 passed`)
 - `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - clean
 - `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - clean

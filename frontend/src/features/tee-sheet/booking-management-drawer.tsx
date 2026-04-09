@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import { BookingExtrasControls } from "./booking-extras-controls";
@@ -33,10 +33,17 @@ interface BookingManagementDrawerProps {
   onEditSave: (bookingId: string) => void;
   onEditStart: (booking: BookingSummary) => void;
   onNoShow: (bookingId: string) => void;
+  onPostCharge: (bookingId: string, amount: string) => void;
+  onRecordPayment: (bookingId: string) => void;
+  onMarkComplimentary: (bookingId: string) => void;
+  onMarkWaived: (bookingId: string) => void;
+  pendingFinanceAction: "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived" | null;
+  pendingFinanceBookingId: string | null;
   pendingAction: "cancel" | "check_in" | "complete" | "no_show" | null;
   pendingBookingId: string | null;
   savingBookingId: string | null;
   selectedDate: string;
+  showFinanceActions: boolean;
   slot: TeeSheetSlotView;
   teeLabel: string;
 }
@@ -237,17 +244,29 @@ export function BookingManagementDrawer({
   onEditRemoveParticipant,
   onEditSave,
   onEditStart,
+  onMarkComplimentary,
+  onMarkWaived,
   onNoShow,
+  onPostCharge,
+  onRecordPayment,
+  pendingFinanceAction,
+  pendingFinanceBookingId,
   pendingAction,
   pendingBookingId,
   savingBookingId,
   selectedDate,
+  showFinanceActions,
   slot,
   teeLabel,
 }: BookingManagementDrawerProps): JSX.Element {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const [chargeDrafts, setChargeDrafts] = useState<Record<string, string>>({});
   useDrawerAccessibility({ containerRef: panelRef, initialFocusRef: closeButtonRef, onClose });
+
+  useEffect(() => {
+    setChargeDrafts({});
+  }, [slot.bookings.map((booking) => booking.id).join(":")]);
 
   return (
     <>
@@ -318,8 +337,23 @@ export function BookingManagementDrawer({
               const isCompletePending = isPending && pendingAction === "complete";
               const isNoShowPending = isPending && pendingAction === "no_show";
               const isCancelPending = isPending && pendingAction === "cancel";
+              const isFinancePending = pendingFinanceBookingId === booking.id;
+              const isPostChargePending = isFinancePending && pendingFinanceAction === "post_charge";
+              const isRecordPaymentPending = isFinancePending && pendingFinanceAction === "record_payment";
+              const isComplimentaryPending = isFinancePending && pendingFinanceAction === "mark_complimentary";
+              const isWaivedPending = isFinancePending && pendingFinanceAction === "mark_waived";
               const isEditing = editingBookingId === booking.id;
               const isSaving = savingBookingId === booking.id;
+              const chargeAmount = chargeDrafts[booking.id] ?? "";
+              const canPostCharge =
+                booking.payment_status !== "paid" &&
+                booking.payment_status !== "complimentary" &&
+                booking.payment_status !== "waived";
+              const canRecordPayment = booking.payment_status === "pending";
+              const canMarkComplimentary =
+                booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
+              const canMarkWaived =
+                booking.payment_status !== "waived" && booking.payment_status !== "paid";
 
               return (
                 <article className="space-y-4 rounded-2xl bg-surface-container-low p-4" key={booking.id}>
@@ -382,6 +416,86 @@ export function BookingManagementDrawer({
                       participants={editParticipants}
                       saving={isSaving}
                     />
+                  ) : null}
+
+                  {showFinanceActions ? (
+                    <section
+                      className={`space-y-3 rounded-2xl border p-4 ${booking.payment_status === "pending" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white/70"}`}
+                      data-testid={`booking-finance-panel-${booking.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Finance Actions</p>
+                          <p className="mt-1 text-sm text-on-surface">
+                            {booking.payment_status === "pending"
+                              ? "Payment is still outstanding for this booking."
+                              : "Finance state stays backend-owned. Use these actions to post or settle booking charges."}
+                          </p>
+                        </div>
+                        {booking.payment_status === "pending" ? (
+                          <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                            Unpaid
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <label className="space-y-1">
+                        <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Charge Amount</span>
+                        <input
+                          aria-label={`Charge amount for booking ${booking.id}`}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-on-surface focus:border-transparent focus:ring-2 focus:ring-primary/20"
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setChargeDrafts((current) => ({
+                              ...current,
+                              [booking.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="85.00"
+                          type="text"
+                          value={chargeAmount}
+                        />
+                      </label>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <ActionButton
+                          ariaLabel="Post Charge"
+                          disabled={!canPostCharge || chargeAmount.trim().length === 0 || isPending || isSaving || isFinancePending}
+                          icon="receipt_long"
+                          isPending={isPostChargePending}
+                          label="Post Charge"
+                          onClick={() => onPostCharge(booking.id, chargeAmount)}
+                          pendingLabel="Posting..."
+                        />
+                        <ActionButton
+                          ariaLabel="Record Payment"
+                          disabled={!canRecordPayment || isPending || isSaving || isFinancePending}
+                          icon="payments"
+                          isPending={isRecordPaymentPending}
+                          label="Record Payment"
+                          onClick={() => onRecordPayment(booking.id)}
+                          pendingLabel="Recording..."
+                        />
+                        <ActionButton
+                          ariaLabel="Mark Complimentary"
+                          disabled={!canMarkComplimentary || isPending || isSaving || isFinancePending}
+                          icon="redeem"
+                          isPending={isComplimentaryPending}
+                          label="Mark Complimentary"
+                          onClick={() => onMarkComplimentary(booking.id)}
+                          pendingLabel="Updating..."
+                        />
+                        <ActionButton
+                          ariaLabel="Mark Waived"
+                          disabled={!canMarkWaived || isPending || isSaving || isFinancePending}
+                          icon="remove_circle"
+                          isPending={isWaivedPending}
+                          label="Mark Waived"
+                          onClick={() => onMarkWaived(booking.id)}
+                          pendingLabel="Updating..."
+                        />
+                      </div>
+                    </section>
                   ) : null}
 
                   <div className="flex flex-wrap items-center justify-end gap-3">
