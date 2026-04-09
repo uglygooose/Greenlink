@@ -1,11 +1,11 @@
 # GreenLink - Master System File
 
-Last updated: 2026-04-07 (end of Phase 10)
+Last updated: 2026-04-09
 
 ## Canonical Role
 
 This file is the canonical current system definition.
-It reflects the locked completed baseline and is not used as a running work log.
+It reflects the locked completed baseline and the approved direction of the GreenLink UX Rebuild.
 
 The canonical authority set is:
 - `docs/MASTER_SYSTEM.md`
@@ -13,17 +13,66 @@ The canonical authority set is:
 - `CODEX-EXECUTION-RULES.txt`
 - `SYSTEM_STATUS.md`
 
+## Product Definition
+
+GreenLink is a multi-sport club operations OS.
+
+GreenLink is NOT:
+- a POS-first tool
+- an accounting software replacement
+- a disconnected dashboard bundle
+- an admin panel with club features bolted on
+
+GreenLink IS:
+- a day-to-day operational system for clubs
+- centered on tee-sheet-style operational control
+- paired with finance operations that reconcile into the club's accounting software
+- extensible across golf, tennis, bowls, pro shop, halfway house, and related club domains without losing a coherent system model
+
+## Core Operating Lifecycle
+
+All UX and information architecture should align to this lifecycle:
+
+1. Setup (Superadmin)
+2. Configure (Club Admin within controlled authority)
+3. Operate (Staff / Club Admin through operational surfaces)
+4. Close Day (Finance reconciliation and export)
+5. Report and Improve (targets, performance, trends, interventions)
+
+Lifecycle weighting takes precedence over domain grouping in UX structure.
+
 ## Non-Negotiable Rules
 
 - Backend owns logic.
 - Frontend sends intent only.
 - No duplicated business rules.
 - No hidden side effects.
-- No domain mixing.
+- No domain mixing at data/service boundaries.
 - Tee sheet is a read model.
 - Orders are not payments.
 - Admin and superadmin shells are router-owned persistent layouts.
 - Benchmark UI references remain the visual authority.
+
+## Product Hierarchy
+
+### Tier 1 - Core system pillars
+- Tee Sheet / operational booking control
+- Finance operations and export-to-accounting
+- Members / accounts / club people operations
+- Reporting, targets, and performance review
+
+### Tier 2 - Operational extensions
+- Pro Shop
+- Halfway House
+- Tennis
+- Bowls
+
+### Tier 3 - Add-on / adjunct surfaces
+- POS
+- Orders
+- Communications
+
+Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweigh or structurally distort Tier 1.
 
 ## Current System Definition
 
@@ -70,12 +119,14 @@ The canonical authority set is:
 - `AdminOrderQueuePage` now uses the normalized `AdminWorkspace` shell/content pattern.
 - `AdminGolfSettingsPage` and `AdminPosTerminalPage` now use the normalized `AdminWorkspace` shell/content pattern.
 - POS terminal (`/admin/pos-terminal`) is nested inside the router-owned `AdminLayout` alongside all other `/admin/*` routes. It renders no standalone navigation chrome.
+- These surfaces are operational extensions and not primary system pillars.
 
 ### Communications
 - Partial
 - Admin news-post CRUD exists.
 - Published posts are available to player-facing read flows.
 - Player home reads backend news posts.
+- Communications remains secondary to the core operational lifecycle.
 
 ### SA - Superadmin
 - Partial
@@ -103,12 +154,36 @@ The canonical authority set is:
 - Player profile route exists at `/player/profile` and consumes a dedicated backend self-profile contract.
 - Recently fixed: player home no longer shows fake upcoming bookings; it now renders backend booking truth when present and truthful empty states when none exist.
 
-## Admin Navigation
+## Admin Navigation - Current Baseline
 
+Current implementation baseline:
 - `AdminSidebar` is grouped by domain section: Overview · Golf · People · Finance · Operations · Communications · Club Settings.
 - Group membership is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`. Ungrouped items render below without a label.
 - Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry. Frontend sidebar resolves against it.
 - `pos` module is now labeled "Commerce" in the module catalog.
+
+This is factual current state, but not the approved target UX architecture.
+
+## Approved UX Rebuild Direction
+
+Target admin information architecture should trend toward:
+
+- Today
+- Tee Sheet
+- Members
+- Finance
+- Performance
+- Operations (conditional)
+- Settings
+
+Optional module grouping appears only when required by enabled modules.
+
+The approved direction is:
+- workflow-weighted navigation
+- module demotion for non-core surfaces
+- tee sheet as operational cockpit
+- finance as close-day and accounting-handoff engine
+- settings as structured configuration journey, not a monolithic CRUD/admin page
 
 ## Current Route Surface
 
@@ -150,57 +225,30 @@ The canonical authority set is:
   - `frontend/src/ui-benchmarks/`
   - `frontend/src/design-system/greenlink-design-system.md`
 
+## UX Rebuild Principles
+
+The UX rebuild exists to remove:
+- dead weight
+- duplicate or misleading surfaces
+- domain-grouped navigation that obscures operational flow
+- weak setup/configuration journeys
+- add-on surfaces that dominate the product hierarchy
+- logic that forces users to think like internal builders instead of club operators
+
+The rebuild must preserve:
+- backend ownership of logic
+- canonical read models
+- finance calculation boundaries
+- routing/shell correctness
+- tenant safety
+- validated live functionality that remains useful under the new structure
+
 ## Forward Plan
 
 Phases 11–17 are planned and partially in progress. See `GreenLink-Master-Build-Plan.txt` for full slice detail.
-
-| Phase | Focus | Status |
-|---|---|---|
-| 11 | Infrastructure hardening and test coverage | In progress |
-| 12 | Reporting aggregation — close last React math gap | Not started |
-| 13 | Communications expansion (blasts, scheduling, segments) | Not started |
-| 14 | Pro shop inventory and halfway kanban depth | Not started |
-| 15 | Player module completion (cancellation, waitlist, handicap) | Not started |
-| 16 | SA-3 superadmin authoring completion | Not started |
-| 17 | Third-party accounting sync adapters | Not started |
-
-## Known Gaps
-
-- Superadmin does not author golf rules or pricing directly; canonical authoring remains in admin golf settings (Phase 16).
-- No direct third-party push/pull accounting sync exists beyond tracked export handoff (Phase 17).
-- Order status breakdown and member breakdown charts in `AdminReportsPage` still compose chart widths in the frontend from backend records. A dedicated reporting aggregation endpoint is needed (Phase 12).
-- Communications is thin: admin news-post CRUD and player read feed exist but no broadcast, scheduling, or segment targeting (Phase 13).
-- Pro shop and halfway house are operational shells without inventory management or prep-status workflows (Phase 14).
-- Player module has no booking cancellation enforcement, no waitlist, and no handicap tracking (Phase 15).
-
-## Known Risks
-
-- Local development can drift if frontend API base and backend CORS origins are mismatched between `localhost` and `127.0.0.1` (Phase 11-C).
-- Some non-finance reporting visuals still compose charts in the frontend from backend records; eliminated in Phase 12.
-- `FALLBACK_NAV_ITEMS` in AdminSidebar must be kept in sync with `MENU_ITEMS` in `session_bootstrap_service.py` manually; systematic enforcement not yet built (Phase 11-D).
-
-## Validation State
-
-Latest validation:
-- `frontend`: `npm.cmd run typecheck` - passes clean
-- `frontend`: `npm.cmd run test` - passes
-- `backend`: `py -m uv run pytest -vv -s` - passes (`154 passed` in about `10m30s`)
-- `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - passes
-- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - passes
-- `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - passes
-- `frontend`: targeted Vitest `src/pages/player-profile-page.test.tsx` - passes
-- `frontend`: targeted Vitest `src/pages/invitation-accept-page.test.tsx` - passes
-- `frontend`: targeted Vitest `src/session/session-provider.test.tsx` - passes
-- `backend`: targeted pytest `backend/tests/test_superadmin_onboarding_foundation.py` - passes
-- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` - passes
-- `backend`: targeted pytest `backend/tests/test_player_booking_read_model.py` - passes
-- `backend`: targeted pytest `backend/tests/test_player_profile.py` - passes
-- `backend`: targeted pytest `backend/tests/test_superadmin_invitations.py` - passes
-- `backend`: targeted pytest `backend/tests/test_invitation_acceptance.py` - passes
-- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` for additive `menu_items` contract - passes
-- `backend`: targeted pytest `backend/tests/test_targets.py` - passes
-- `backend`: `py -m uv run pytest -q` - passes
+Phase 18 is the approved UX Rebuild phase.
 
 ## Final Rule
 
 If code and older notes disagree, code wins first and this file must be updated immediately after.
+If current UX structure disagrees with the approved GreenLink direction, the UX must be rebuilt in controlled slices without violating backend/system constraints.

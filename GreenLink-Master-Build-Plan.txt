@@ -1,9 +1,9 @@
 GREENLINK MASTER BUILD PLAN
-Last updated: 2026-04-08 (Tee Sheet UX Rebuild — Phases 1-6 complete; Phase 7 not started)
+Last updated: 2026-04-09
 
 Canonical role:
 - Canonical phase / slice plan and progress file.
-- This file now records the locked completed build baseline rather than active in-flight work.
+- This file records the locked completed build baseline and the approved forward rebuild plan.
 
 Phase 1 - Platform, Auth, Identity
 - Platform/auth/bootstrap/tenancy: COMPLETED
@@ -131,7 +131,7 @@ Phase 14 - Pro Shop & Halfway Depth: COMPLETED
 - 14-A Pro shop product CRUD: COMPLETED
   - PosProductCreateRequest, PosProductUpdateRequest schemas
   - PosService.create_product(), update_product() (toggle active included)
-  - POST /pos/products (201), PATCH /pos/products/{id} — club_admin required
+  - POST /pos/products (201), PATCH /pos/products/{id}` — club_admin required
   - AdminProShopPage: ProductEditorModal, New Product button, Edit/Activate/Deactivate per card
 - 14-B Halfway kanban with status transitions: COMPLETED
   - useMarkOrderPreparingMutation, useMarkOrderReadyMutation, useMarkOrderCollectedMutation, useCancelOrderMutation
@@ -140,200 +140,225 @@ Phase 14 - Pro Shop & Halfway Depth: COMPLETED
   - 30s auto-refresh already active via refetchInterval on halfway summary hook
 
 ─────────────────────────────────────────────────────────────────────────────
-TEE SHEET UX REBUILD (phased initiative, frontend-only unless noted)
-Audit baseline: 2026-04-08 — benchmarked against GolfManager and Lightspeed Golf
-Architecture constraint: frontend only consumes TeeSheetDayResponse; no backend
-  contract changes unless a phase explicitly states otherwise.
-NOTE: The tee sheet remains a partial operational surface. TS-2 (Phase 2 above)
-records the existing booking lifecycle and move UX as live, but the sheet still
-lacks swimlane layout, booking-type colour coding, waitlist, player flags, and
-real-time sync. The rebuild phases below close those gaps
-incrementally. Phase 1 is a correctness/bug-fix pass only — it does not add or
-complete any missing operational features.
+APPROVED UX REBUILD PROGRAM
+─────────────────────────────────────────────────────────────────────────────
+
+Purpose:
+- Preserve GreenLink visual identity
+- Preserve backend truth and logic boundaries
+- Remove dead weight, broken hierarchy, and low-value UX
+- Rebuild toward a premium club operations OS centered on:
+  - Tee Sheet
+  - Finance / Close Day / Accounting handoff
+  - Setup -> Configure -> Operate -> Close Day -> Report lifecycle
+
+Execution principle:
+- This is not a vanity new phase stack.
+- This is a controlled rebuild program over the current baseline.
+- Work should be tracked as rebuild slices, not as artificial long-range phase inflation.
+
+Rebuild Slice R1 - Canonical doc alignment
+- Merge repo truth with approved rebuild direction
+- Update canonical files:
+  - `CODEX-EXECUTION-RULES.txt`
+  - `docs/MASTER_SYSTEM.md`
+  - `SYSTEM_STATUS.md`
+  - `GreenLink-Master-Build-Plan.txt`
+- Success condition:
+  - no blocking legacy rules remain
+  - canonical docs preserve factual repo truth
+  - rebuild direction is explicit and enforceable
+
+Rebuild Slice R2 - Navigation and hierarchy reset
+- Replace domain-first admin navigation with lifecycle-weighted navigation
+- Target admin IA:
+  - Today
+  - Tee Sheet
+  - Members
+  - Finance
+  - Performance
+  - Operations (conditional)
+  - Settings
+- Remove or demote:
+  - top-level POS emphasis
+  - top-level Orders emphasis
+  - weak "My Club" grouping logic
+- Module/extension routes surface only when enabled and only where contextually justified
+- Success condition:
+  - top-level admin IA reflects product hierarchy
+  - Tier 2/3 modules no longer distort Tier 1 flow
+
+Rebuild Slice R3 - Today dashboard rebuild
+- Replace summary-first dashboard weighting with operational work-queue weighting
+- Today page must answer:
+  - what needs action now
+  - what blocks Close Day
+  - what is off target
+  - what requires tee-sheet or member intervention
+- Remove low-value KPI duplication already covered elsewhere
+- Success condition:
+  - dashboard behaves like a shift-start control surface, not a report collage
+
+Rebuild Slice R4 - Tee Sheet operational cockpit rebuild
+- Preserve current backend-owned booking model and existing move/check-in actions
+- Rebuild UX structure around:
+  - compact operational header
+  - virtualized canvas/grid
+  - single context drawer
+- Add native finance posture and actions into booking flow:
+  - charges
+  - payments
+  - refunds
+  - waivers / complimentary
+- Reduce filter clutter; move complexity into compact presets/drawers
+- Success condition:
+  - tee sheet becomes the real daily operating surface
+
+Rebuild Slice R5 - Settings / Golf setup rebuild
+- Replace monolithic Golf Settings CRUD surface with guided configuration system
+- Introduce:
+  - setup order
+  - validation state
+  - draft vs active
+  - publish / rollback
+  - authority boundaries
+- Preserve reusable editors where appropriate, but do not preserve weak page structure
+- Success condition:
+  - settings feel like controlled system setup, not technical admin clutter
+
+Rebuild Slice R6 - Finance Close Day rebuild
+- Finance default UX becomes Close Day-first
+- Sequence:
+  1. exceptions
+  2. settlement / corrections
+  3. batch generation
+  4. reconciliation
+  5. mapped export
+  6. close audit
+- Preserve existing batch/reconciliation backend foundations
+- Improve client-accounting alignment UX
+- Success condition:
+  - finance acts as an operational close process, not a disconnected admin surface
+
+Rebuild Slice R7 - Superadmin onboarding and accounting alignment
+- Extend onboarding to support:
+  - accounting export/template upload
+  - profile mapping
+  - readiness validation
+  - structural ownership controls
+- Superadmin owns:
+  - module enablement
+  - accounting structure alignment
+  - go-live readiness
+- Club admin owns:
+  - bounded operational config
+- Success condition:
+  - onboarding drives real go-live readiness, not just form completion
+
+Rebuild Slice R8 - Module demotion and extension model
+- Reposition:
+  - POS
+  - Orders
+  - Halfway
+  - Pro Shop
+  - Tennis
+  - Bowls
+as extensions, not system centerpieces
+- Operations grouping should be conditional and module-driven
+- Success condition:
+  - extension modules add value without hijacking the OS
+
+Rebuild Slice R9 - Performance and targets consolidation
+- Rework reports + targets into a coherent performance surface
+- Tie targets directly to:
+  - Today alerts
+  - Finance variances
+  - operational interventions
+- Remove isolated/weak target placement
+- Success condition:
+  - targets drive action rather than sit as a detached settings-like page
+
+Rebuild Slice R10 - AI-assisted interventions
+- Add AI-lite and rules-based assistance only where it improves actionability:
+  - no-show risk
+  - drift risk
+  - target risk
+  - gap-fill opportunities
+- Suggestions must end in a next action, not informational fluff
+- Success condition:
+  - AI adds operational value instead of dashboard noise
+
+─────────────────────────────────────────────────────────────────────────────
+TEE SHEET UX REBUILD BASELINE (CURRENTLY TRUE)
 ─────────────────────────────────────────────────────────────────────────────
 
 TS-UX Phase 1 - Critical Bug Fixes / Correctness (Frontend Only): COMPLETED 2026-04-08
-- 1.1 Prefetch cache key mismatch fixed:
-    isReady() no longer gates on teeId; page defaults to teeId=null (all-tees).
-    Auto-sync useEffect removed. Tee selector gains "All Tees" first option.
-    Prefetch key now matches the page query key — prefetch is no longer a no-op.
-- 1.2 Hardcoded membershipType="member" fixed:
-    membershipType lifted to useState("staff") — staff see the most permissive
-    availability view by default. "View As" dropdown added to toolbar (Staff /
-    Member / Guest) for troubleshooting availability rule perspectives.
-    Prefetch updated to use "staff". Draft participant type decoupled from view
-    mode — create form always initialises with participant_type="member".
-- 1.3 Color collision fixed:
-    bookingStatusClass("checked_in") and paymentClass("pending") both resolved
-    to bg-secondary-container — identical appearance. Fix: payment status on the
-    tee sheet chip is now a MaterialSymbol icon badge (check_circle / schedule /
-    remove_circle / card_giftcard) with distinct hue-class per status. paymentClass
-    function removed. Management drawer paymentStatusClassName("pending") changed
-    to bg-amber-100/text-amber-800 (was bg-secondary-container — collision with
-    checked_in booking status badge).
-- 1.4 staleTime: 60_000 added to tee sheet query (eliminates tab-switch refetches).
-- 1.5 refetchInterval: 30_000 added to tee sheet query (multi-terminal live sync).
-- 1.6 Close buttons: already present on both drawers — no change required.
-Test gate: tsc --noEmit clean; 18/18 Vitest tests pass.
+- 1.1 Prefetch cache key mismatch fixed
+- 1.2 Hardcoded membershipType="member" fixed
+- 1.3 Color collision fixed
+- 1.4 staleTime: 60_000 added to tee sheet query
+- 1.5 refetchInterval: 30_000 added to tee sheet query
+- 1.6 Close buttons already present
+- Test gate: clean
 
 TS-UX Phase 2 - Visual Hierarchy & Scannability (Frontend Only): COMPLETED 2026-04-08
-- 2.1 Booking-type left-border colour coding (member=blue, guest=amber, staff=grey)
-- 2.2 Status icon badges on chips (paid/unpaid/checked-in/no-show/completed/cancelled)
-- 2.3 tee.color_code surfaced as left border on lane cells
-- 2.4 cart_flag / caddie_flag icon overlays on booking chips
-- 2.5 Blocked slot visual contrast increase + diagonal stripe pattern
-- 2.6 Collapsible legend strip below sticky toolbar
-- 2.7 slot.warnings inline amber badge on bookable slots
-- 2.8 KPI alert count click → activates Closed/Holds filter
-Post-phase refinements (also completed 2026-04-08):
-- bookingPrimaryType() fallback: returns null (not "guest") when no usable participant data;
-  participantTypeBorderClass(null) → border-l-slate-200 (neutral; prevents type misread)
-- Alert KPI button: title="Filter to Closed / Holds view"; comment clarifies UI convenience
-  only — does NOT assert "alerts" == "closed" domain equivalence
+- Booking-type color coding
+- Status icon badges
+- Tee color coding
+- Cart/caddie overlays
+- Blocked slot contrast
+- Legend strip
+- Inline warnings
+- KPI alert shortcut
+- Test gate: clean
 
 TS-UX Phase 3 - Interaction Speed & Ergonomics: COMPLETED 2026-04-08
-- 3.1 Quick-action hover buttons on occupied chips
-  - Inline Check In / No-Show / Cancel buttons now render on hover with stopPropagation,
-    tooltip titles, and disabled states derived from backend booking status.
-- 3.2 "Check In All" per time bucket
-  - Time-bucket rail now exposes Check In All for reserved bookings in that bucket.
-  - Uses existing check-in endpoint calls in parallel and surfaces partial failures honestly.
-- 3.3 cart_flag / caddie_flag toggles in Create and Edit flows
-  - Backend: BookingCreateRequest and BookingUpdateRequest now accept cart_flag/caddie_flag.
-  - Backend: booking_service.py and booking_update_service.py now pass the fields through unchanged.
-  - Frontend: create and edit drawers now expose Cart/Caddie toggles and send them in payload intent.
-- 3.4 Drag/drop consistency
-  - All participant chips for the same booking are draggable as the same move intent.
-  - Primary chip now carries a visible grip icon.
-- 3.5 Keyboard shortcuts
-  - Left / Right = previous / next date
-  - T = today
-  - Escape = close drawer
-  - D = focus date input
-  - F and / = focus search
-  - Shortcuts do not fire while typing in inputs, textareas, or selects.
-- 3.6 Drawer operational completeness
-  - Create and management drawers now expose dialog semantics, focus trap, visible close button,
-    and Escape-close behavior without touching the admin shell layout.
+- Hover quick actions
+- Check In All
+- Cart/caddie toggles
+- Drag/drop consistency
+- Keyboard shortcuts
+- Drawer completeness
 
 TS-UX Phase 4 - Performance & Data Efficiency: COMPLETED 2026-04-08
-- 4.1 Optimistic updates for check-in, no-show, complete, cancel
-    optimisticallyTransitionBooking() uses LIFECYCLE_TRANSITIONS status map; onMutate
-    captures previousDay; onSettled always invalidates; blocked rolls back + surfaces
-    error to notice (inline action) or drawer feedback (drawer action).
-- 4.2 Prefetch ±1 adjacent days after current day load
-    prefetchedAdjacentSeedRef deduplicates; teeSheetDayQueryOptions reused for prev/next
-    prefetch triggered on teeSheetQuery.data change.
-- 4.3 Debounce search (200ms) + clear button + "No results" empty state
-    useDebouncedValue hook; raw searchInputValue / debounced debouncedSearchTerm;
-    showClearSearch clear ✕ button with focus-restore; filteredEmptyMessage contextual.
-- 4.4 React.memo on slot cell components
-    OccupiedBookingCell, BookingChipContent, BookingQuickActionPanel, OpenPlayerSlotContent
-    wrapped with memo + custom areEqual comparators; callbacks stabilised with useCallback.
+- Optimistic lifecycle updates
+- Adjacent-day prefetch
+- Debounced search
+- Memoized slot cells
 
-TS-UX Phase 5 - Filtering & Navigation Upgrades: COMPLETE 2026-04-08
-- 5.1 Booking-type filter pill (Member / Guest / Staff / All): DONE
-- 5.2 Time range filter (From / To) in toolbar: DONE
-- 5.3 Party size filter (1 / 2 / 3 / 4-ball / Any): DONE
-- 5.4 "Find Next Open Slot" button: DONE — scrolls to first open slot, 1.5s ring highlight
-- 5.5 Compound filter state object (TeeSheetFilterState) replaces single ViewFilter: DONE
-    TeeSheetFilterState = { viewFilter, participantType, partySize, timeFrom, timeTo }
-    slotMatchesFilters() composes all 4 filter functions; hasActiveFilters computed boolean
-- 5.6 Styled calendar popover replaces native <input type="date">; week strip with occupancy dots: DONE
-    date-picker-popover.tsx; occupancySignal() reads from React Query cache via getQueryData
-    Close on outside click (mousedown) + Escape (capture phase); D key toggles calendarOpen state
-- All 29 tests passing (fixed teeSheetPayload: occupied_player_count 2→0 for reserved status)
+TS-UX Phase 5 - Filtering & Navigation Upgrades: COMPLETED 2026-04-08
+- Booking-type filter
+- Time-range filter
+- Party-size filter
+- Find Next Open Slot
+- Compound filter state
+- Styled date-picker popover
 
 TS-UX Phase 6 - Swimlane Grid Layout (Frontend Only, Major): COMPLETED 2026-04-08
-- Validation: `npm.cmd run typecheck` clean; targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx src/features/tee-sheet/hooks.test.ts` clean (`37 passed`)
-- New TeeSheetSwimLaneGrid component alongside existing table (feature-flagged): DONE
-    Data pivot: tee rows × time columns. swimLaneRows = unique rowKeys sorted by laneOrder+rowLabel.
-    Columns from filteredBuckets. Cell lookup: Map<rowKey, Map<slotDatetime, LaneSlot>>.
-    Compact cell: status badge + participant names + left-border booking type + quick action panel on hover.
-    Drag-drop carried forward: same onDragStart/onDrop handlers, dropAllowed(), dropKey().
-    Sticky left tee column (w-36 min-w, colorCode as border-left inline style).
-    Sticky top time header row.
-- Current-time indicator (red vertical line, auto-scroll, updates every minute): DONE
-    Compute fractional column index from nowTimeKey() vs column localTimes array.
-    absolute div with left% = index/total * 100; useEffect interval 60s to force re-render.
-    Auto-scroll to current time on initial load (same pendingAutoScrollDateRef pattern).
-- Day Overview bar (compressed full-day strip above grid; click to scroll): DONE
-    One narrow div per bucket (2px wide), bg color from occupancySignal or slotSummaryClass.
-    onClick: scroll corresponding column into view.
-- Column virtualisation via @tanstack/react-virtual: DONE
-    useVirtualizer({ count: columns.length, getScrollElement, estimateSize: () => density === "compact" ? 120 : 160, horizontal: true })
-    Render only virtualItems; totalSize as container width.
-- Compact / comfortable density toggle: DONE
-    type Density = "compact" | "comfortable"; useState + localStorage "gl-tee-sheet-density"
-    compact: cell min-h-[3rem] text-xs; comfortable: cell min-h-[5rem] text-sm
-- Feature flag: "Layout: Classic | Timeline" in toolbar, stored in localStorage: DONE
-    type Layout = "classic" | "timeline"; useState + localStorage "gl-tee-sheet-layout"
-    Toggle button in toolbar; renders <TeeSheetSwimLaneGrid> vs existing <table> section.
-    Density toggle only visible when layout === "timeline".
-- All Phase 1–5 work (filters, optimistic updates, drawers, drag-drop) carries forward identically
+- TeeSheetSwimLaneGrid
+- Current-time indicator
+- Day overview strip
+- Column virtualization
+- Density toggle
+- Layout toggle
 
-TS-UX Phase 6.5 - UX Correction Pass (Frontend Only): COMPLETED 2026-04-08
-- Primary toolbar reduced to date navigation, search, jump-to-time, and Next Available only
-- Course selector, tee selector, View As, and participant-type filter removed from the tee-sheet UI
-- Secondary controls moved behind a closed-by-default "Filters & View" panel
-- Timeline/classic lane rendering now groups duplicate tee rows into one operational lane row per time bucket
-- Tee-colour cues removed from the tee-sheet surface; lane-first labels now anchor the page, grid, and drawers
-- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
+Not yet started:
+- TS-UX Phase 7 - Operational Depth
+- TS-UX Phase 8 - Advanced Features
 
-TS-UX Phase 6.6 - Operational Usability + Interaction Correction: COMPLETED 2026-04-08
-- Drag semantics corrected to booking-level only: explicit move handle starts drag, non-handle participant surfaces open details/manage
-- Timeline header/time rhythm strengthened; current time and immediate upcoming buckets visually anchored without changing the backend contract
-- Timeline cell clutter reduced so time structure remains dominant and operational scanability improves
-- Render lag reduced by throttling scroll-driven viewport state and mounting booking quick-action controls once per booking instead of once per participant chip
-- Classic remains the default operational fallback; layout toggle and Filters & View remain intact
-- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
-
-TS-UX Phase 6.7 - Booking Card Rebuild + Day-Switch Performance: COMPLETED 2026-04-09
-- Tee-sheet slot rendering rebuilt around booking-level cards instead of participant-level pseudo-cards
-- Classic rows now render booking spans and grouped open capacity, removing the false impression that each player slot is its own movable object
-- Timeline cells now render the same booking-level card model, reducing mounted controls and participant-level clutter
-- Booking cards are draggable from the card surface because the backend move command is booking-level; no participant-level move affordance is faked
-- Tee-sheet day query now keeps previous data during day transitions, disables refetch-on-focus churn, and date navigation runs inside a transition to reduce perceived lag
-- Validation target remains tee-sheet scoped; tee-sheet module status stays PARTIAL
-
-TS-UX Phase 7 - Operational Depth (Frontend + Backend): NOT STARTED
-- 7.1 Booking internal_note field (backend: add to Booking model + PATCH)
-- 7.2 Cancellation reason tracking (backend: cancellation_reason field + cancel body)
-- 7.3 No-show reason tracking (backend: no_show_reason field)
-- 7.4 Day-level staff notes (backend: TeeSheetDayNote model + CRUD)
-- 7.5 Bulk check-in with parallel requests + partial-failure handling
-- 7.6 booking.source badge ("P" for portal) + source filter option
-
-TS-UX Phase 8 - Advanced Features (Significant Backend): NOT STARTED
-- 8.1 Member typeahead in booking creation (backend: GET /api/members/search)
-- 8.2 Player flags / alerts (backend: is_vip, has_medical_alert, has_outstanding_balance)
-- 8.3 Event/competition name overlay + navigation link (backend: event_name in slot state)
-- 8.4 Waitlist system (backend: WaitlistEntry model, CRUD, auto-promotion)
-- 8.5 Real-time sync via SSE or WebSocket (backend: streaming endpoint)
+These remain valid baseline work, but must now be evaluated under the broader rebuild program rather than continued in isolation.
 
 ─────────────────────────────────────────────────────────────────────────────
+DEFERRED / FUTURE
+─────────────────────────────────────────────────────────────────────────────
 
-Phase 15 - Player Module Completion: NOT STARTED
-- 15-A Booking cancellation with policy enforcement (backend policy check)
-- 15-B Waitlist: TeeSheetWaitlist model, join/promote endpoints, player home surface, admin tee sheet slot indicator
-- 15-C Handicap reference: MemberHandicap model, manual set/update, admin and player profile display
+Still deferred until core rebuild slices are landed:
+- Player cancellation, waitlist, handicap completion
+- Superadmin-side direct authoring for golf rules/pricing
+- Third-party accounting sync adapters
+- Full real-time tee-sheet sync
+- Deep AI/forecasting beyond action-tied interventions
 
-Phase 16 - SA-3 Completion (Superadmin Authoring): NOT STARTED
-- Inline rule set and pricing matrix authoring in onboarding Rules step
-- Reuses existing RuleSetEditor and PricingMatrixEditor components from golf settings page
-
-Phase 17 - Third-Party Accounting Sync: NOT STARTED
-- AccountingSyncAdapter protocol with PastelAdapter, SageAdapter, GenericJournalAdapter implementations
-- POST /api/admin/finance/batches/{id}/sync; sync status badge on batch rows
-
-Cross-cutting corrections completed
-- Persistent admin shell (all `/admin/*` including POS now inside AdminLayout): COMPLETED
-- Persistent superadmin shell: COMPLETED
-- Superadmin onboarding progression ownership (backend-owned): COMPLETED
-- Player home booking truth cleanup: COMPLETED
-- Finance chart math moved to backend (pct fields on summary items): COMPLETED
-- Repo authority/status documentation: COMPLETED
-- Superadmin dead nav items replaced with live pages: COMPLETED
-- Superadmin route handoff into GreenLink admin workspaces: COMPLETED
-- Dashboard client-side stitching moved to backend aggregation: COMPLETED
-- Admin navigation grouped by domain; sidebar driven by backend menu_items registry: COMPLETED
+Final rule
+- Preserve factual baseline.
+- Remove or replace weak UX logic when rebuilding toward the approved GreenLink direction.

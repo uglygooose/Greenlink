@@ -1,11 +1,11 @@
 # GreenLink System Status
 
-Last updated: 2026-04-08 (Phase 14 complete, Phase 15 next)
+Last updated: 2026-04-09
 
 ## Canonical Snapshot Role
 
 This file is the canonical current snapshot of actual repo state.
-It reflects the locked completed baseline and no longer tracks active slice-by-slice work.
+It reflects the locked completed baseline and the approved UX rebuild direction.
 
 ## Current Phase State
 
@@ -14,6 +14,18 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Finance: Partial
 - Superadmin: Partial
 - Player: Partial
+- UX rebuild direction: Approved, not yet fully landed
+
+## Current Product Reality
+
+GreenLink currently has strong backend foundations and partial operational surfaces, but the product hierarchy and UX weighting are not yet aligned to the intended premium system.
+
+Current issues include:
+- domain-grouped admin navigation rather than lifecycle-driven navigation
+- tee sheet that is operationally useful but still cluttered and incomplete as the main cockpit
+- finance that is powerful in backend and reconciliation terms but not yet fully integrated into daily operational flow
+- settings/configuration that still behave more like admin/CRUD surfaces than guided setup systems
+- add-on operational modules that can feel too prominent relative to the core pillars
 
 ## TS Status
 
@@ -23,6 +35,8 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
 - Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
+- Gap: tee sheet is not yet the full operational command center GreenLink requires
+- Gap: payment/finance posture is not yet sufficiently native to tee-sheet flow
 
 ## FIN Status
 
@@ -35,6 +49,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: drift recovery uses backend-owned batch regeneration with typed supersede/regeneration lineage
 - Backend now returns pre-computed pct fields on each summary item (`revenue_share_pct`, `volume_share_pct`, `accounts_*_pct`); `AdminReportsPage` consumes these directly and no client-side finance math remains
 - Not built: direct third-party push/pull integration beyond tracked export handoff
+- Gap: finance is not yet sufficiently positioned as a first-class close-day operational workflow
 
 ## Orders and POS Status
 
@@ -44,6 +59,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: `AdminGolfSettingsPage` and `AdminPosTerminalPage` now use the normalized `AdminWorkspace` shell/content pattern
 - POS terminal is inside the router-owned AdminLayout; no standalone nav chrome
 - Not built: member account checkout in POS
+- Status note: these are extension surfaces, not the core product center of gravity
 
 ## SA Status
 
@@ -59,6 +75,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Default redirect is `/superadmin/overview`; sidebar has two real nav items (Overview, Clubs)
 - Live: superadmin invitation/provisioning flow with backend-owned invite creation, invitation listing, new-user acceptance, and logged-in activation for existing users
 - Not built: superadmin-side authoring for golf rules/pricing; canonical authoring remains in admin golf settings
+- Gap: onboarding is not yet sufficiently structured around true club go-live readiness
 
 ## Player Status
 
@@ -67,6 +84,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: player booking uses the tee-sheet read model and member-portal booking creation endpoint
 - Live: player home upcoming bookings and recent history render the backend player-booking read model
 - Live: `/player/profile` consumes the backend self-profile contract and refreshes session bootstrap after save
+- Gap: player remains secondary until core admin lifecycle is corrected
 
 ## Dashboard Status
 
@@ -85,10 +103,12 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: `active_targets` field on dashboard summary — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, and returns typed `DashboardTargetContext` items; no React math
 - Tee operational warnings (`no_courses_configured`, `tee_sheet_closed_today`) are backend-emitted
 - No React math or cross-query KPI stitching remains in any admin dashboard page
+- Gap: dashboard is still too close to a domain summary surface and not yet a true "Today" operational work queue
 
 ## Admin Navigation
 
-- Live: `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
+Current live state:
+- `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
 - Live: My Club group contains: Communications · Club Settings · Targets · Golf Settings
 - Live: Groups are collapsible; all start collapsed; labeled groups show nothing when closed
 - Live: Group structure is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`; ungrouped items are rendered below without a label
@@ -96,6 +116,12 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Live: `pos` module relabeled "Commerce" in module catalog
 - Live: `AdminGolfSettingsPage` redesigned — all old CSS class patterns replaced with `AdminWorkspace` + Tailwind utility classes; all mutation logic unchanged
 - Live: `AdminClubSettingsPage` rebuilt — shows live ClubConfig data, course/tee/ruleset/pricing counts, active target count, active export profile name
+
+Approved direction:
+- move to a lifecycle-weighted navigation model
+- keep top-level admin navigation minimal
+- demote or conditionally surface extension modules
+- remove dead weight and low-value grouping logic
 
 ## Admin Routes
 
@@ -133,6 +159,7 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Backend test suite runs in file-declaration order — `-p no:randomly` is enforced via `pyproject.toml addopts`. No longer tribal knowledge.
 - CORS: `allow_origin_regex` matches both `localhost` and `127.0.0.1` on any port. Vite proxy handles all local browser `/api/*` traffic. Effective CORS origins logged at startup. Risk is resolved.
 - FALLBACK_NAV_ITEMS coverage is enforced by an AdminSidebar.test.tsx test that asserts all known MENU_ITEMS admin keys expand to visible links.
+- The biggest product risk is preserving structurally bad UX because current implementation already exists.
 
 ## Known Gaps
 
@@ -143,6 +170,10 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - Player module: no booking cancellation enforcement, no waitlist, no handicap (Phase 15).
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
 - No third-party accounting sync beyond tracked handoff (Phase 17).
+- Golf settings still needs guided setup, draft/publish, and ownership clarity.
+- Today/dashboard still needs operational work-queue restructuring.
+- Tee sheet still needs deeper finance and operational integration.
+- Add-on modules still risk overexposure relative to core product pillars.
 
 ## Latest Validation
 
@@ -172,3 +203,8 @@ It reflects the locked completed baseline and no longer tracks active slice-by-s
 - `backend`: targeted pytest `backend/tests/test_superadmin_invitations.py` - clean
 - `backend`: targeted pytest `backend/tests/test_invitation_acceptance.py` - clean
 - `backend`: targeted pytest `backend/tests/test_targets.py` - clean
+
+## Final Direction Rule
+
+This file preserves factual current state.
+It does not require preserving dead weight, weak logic, or structurally bad UX during the approved rebuild.
