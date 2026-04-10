@@ -94,15 +94,16 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Booking lifecycle and admin lifecycle actions are live.
 - Admin tee-sheet route is live inside the router-owned persistent admin shell.
 - Booking creation, editing, and move UX are live.
+- Participant-level booking move is live: a single participant can be extracted from a multi-participant booking (splitting it) and moved independently; backend validates participant ownership and splits the source booking when needed.
 - Inline chip quick actions, per-time-bucket bulk check-in, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped drawers are live.
-- Feature-flagged timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
-- `feature_flags.ux_rebuild_v1` now gates the approved PR1-PR6 rebuild path:
-  - Today-first admin navigation and shell weighting
-  - Today dashboard as an operational work queue
-  - tee-sheet operational cockpit shell with operate header, presets, and reduced filter clutter
-  - finance actions inside the booking drawer for charges, payments, complimentary, and waived flows
-  - Settings hub at `/admin/settings` with a single Settings nav entry and read-only module visibility
-  - guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
+- Timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
+- `feature_flags.ux_rebuild_v1` is still emitted by the backend and gates the tee-sheet cockpit shell (operate header, presets, reduced filter controls). PR1–PR8 rebuild work has been committed and the flag now scopes only remaining tee-sheet-specific cockpit gating:
+  - Today-first admin navigation and shell weighting — landed and unconditional
+  - Finance actions inside the booking drawer — landed and unconditional
+  - Settings hub at `/admin/settings` with single Settings nav entry and read-only module visibility — landed and unconditional
+  - Guided golf settings setup with readiness, section locking, draft/live publish, rollback — landed and unconditional
+  - Finance Close Day wizard — landed and unconditional (PR7)
+  - Performance hub at `/admin/reports` — landed and unconditional (PR8)
 - `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance
@@ -147,10 +148,11 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Club registry, club creation, and onboarding workspace (Basic Info, Finance, Rules, Modules) are live.
 - Rules step reads real club-scoped rule sets and pricing matrices, including active counts and per-record summaries.
 - Modules step reads the canonical backend module catalog and persists validated club module configuration.
-- Superadmin nav has two live routes: Overview (`/superadmin/overview`) and Clubs (`/superadmin/clubs`).
+- Superadmin nav has three live routes: Overview (`/superadmin/overview`), Clubs (`/superadmin/clubs`), and Accounting Profiles (`/superadmin/accounting-profiles`).
 - Overview page: fleet KPIs, finance-readiness and team-assignment progress bars, needs-attention list, and clubs table, all derived from the club list endpoint.
 - Overview action items and club rows route into the targeted club detail using the clubs page with a `clubId` query parameter.
 - Club management: superadmin can pause (`PATCH /clubs/{id}/status`), reactivate, or permanently delete (`DELETE /clubs/{id}`) any non-live club. Delete is blocked for live clubs with a 409.
+- Accounting Profiles page (`/superadmin/accounting-profiles`): fleet-level view and management of accounting export profiles across clubs.
 - Superadmin can bridge into existing club-scoped admin workspaces after selecting a club:
   - Finance step -> `/admin/finance`
   - Rules step -> `/admin/golf/settings`
@@ -175,12 +177,17 @@ Superseding note as of 2026-04-10:
 - Access-only admin routes currently include `/admin/golf/dashboard`, `/admin/people/dashboard`, `/admin/finance/dashboard`, and `/admin/targets`.
 
 Current implementation baseline:
-- `AdminSidebar` is grouped by domain section: Overview · Golf · People · Finance · Operations · Communications · Club Settings.
+- `AdminSidebar` is lifecycle-weighted with collapsible groups.
+- Ungrouped (always visible): Today (`/admin/dashboard`), Members (`/admin/members`), Settings (`/admin/settings`).
+- Golf group (collapsible): Golf Summary, Tee Sheet.
+- Finance group (collapsible): Finance Summary, Close Day.
+- My Club group (collapsible): Performance, Communications.
+- Operations group (collapsible): Halfway, Pro Shop, POS Terminal, Order Queue.
+- Groups start open when the current route falls within them; they can be toggled closed.
 - Group membership is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`. Ungrouped items render below without a label.
 - Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry. Frontend sidebar resolves against it.
+- Access-only keys (`people_dashboard`, `targets`) are filtered from the sidebar but retained in bootstrap for `ProtectedRoute` access enforcement.
 - `pos` module is now labeled "Commerce" in the module catalog.
-
-This is factual current state, but not the approved target UX architecture.
 
 ## Approved UX Rebuild Direction
 
@@ -204,8 +211,9 @@ The approved direction is:
 - settings as structured configuration journey, not a monolithic CRUD/admin page
 
 Current landing status:
-- PR1-PR6 are landed behind `feature_flags.ux_rebuild_v1`
-- PR7 and later rebuild slices remain future work and must not be inferred as complete
+- PR1–PR9 are landed. PR7 (Finance Close Day), PR8 (Performance hub), PR9 (Superadmin Accounting Profiles) are unconditional.
+- UX rebuild cleanup slices 1–4 are landed: route truth fixes, settings consolidation, admin IA lifecycle reset, dead `ux_rebuild_v1` branch removal from sidebar/dashboard.
+- `feature_flags.ux_rebuild_v1` remains in backend bootstrap and gates tee-sheet cockpit shell specifics only. All other rebuilt surfaces are unconditional.
 
 ## Current Route Surface
 
@@ -230,7 +238,7 @@ Superseding route naming note as of 2026-04-10:
 - `/admin/pos-terminal` — POS terminal
 - `/admin/orders` — order queue
 - `/admin/settings` — settings hub
-- `/admin/settings/club` — legacy settings entry route redirected into the hub when `ux_rebuild_v1` is enabled
+- `/admin/settings/club` — legacy settings entry route; unconditional redirect to `/admin/settings`
 - `/admin/settings/profile` — club profile settings
 - `/admin/settings/modules` — read-only module visibility
 - `/admin/communications` — news posts and comms
@@ -239,6 +247,7 @@ Superseding route naming note as of 2026-04-10:
 ### Superadmin
 - `/superadmin/overview`
 - `/superadmin/clubs`
+- `/superadmin/accounting-profiles`
 
 ### Player
 - `/player/home`
@@ -277,7 +286,7 @@ The rebuild must preserve:
 ## Forward Plan
 
 Phases 11–17 are planned and partially in progress. See `GreenLink-Master-Build-Plan.txt` for full slice detail.
-Phase 18 is the approved UX Rebuild phase.
+Phase 18 (UX Rebuild) is in progress: PR1–PR9 and cleanup slices 1–4 are landed. Remaining rebuild work continues in controlled slices.
 
 ## Final Rule
 

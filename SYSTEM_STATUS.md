@@ -14,17 +14,15 @@ It reflects the locked completed baseline and the approved UX rebuild direction.
 - Finance: Partial
 - Superadmin: Partial
 - Player: Partial
-- UX rebuild direction: PR1–PR8 landed
+- UX rebuild direction: PR1–PR9 landed; cleanup slices 1–4 landed
 
 ## Current Product Reality
 
 GreenLink currently has strong backend foundations and partial operational surfaces, but the product hierarchy and UX weighting are not yet aligned to the intended premium system.
 
 Current issues include:
-- domain-grouped admin navigation rather than lifecycle-driven navigation
 - tee sheet that is operationally useful but still cluttered and incomplete as the main cockpit
 - finance that is powerful in backend and reconciliation terms but not yet fully integrated into daily operational flow
-- settings/configuration that still behave more like admin/CRUD surfaces than guided setup systems
 - add-on operational modules that can feel too prominent relative to the core pillars
 
 ## TS Status
@@ -32,17 +30,17 @@ Current issues include:
 - Status: Partial
 - Live: tee-sheet read model, booking lifecycle, admin tee-sheet route inside router-owned persistent admin shell
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
+- Live: participant-level booking move — single participant can be extracted from a multi-participant booking and moved independently; backend splits the source booking when needed and validates participant ownership
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
-- Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
-- Live: `feature_flags.ux_rebuild_v1` covers the approved PR1–PR8 rebuild slices:
-  - PR1: Today-first admin navigation weighting
-  - PR2: Today dashboard operational work queue
-  - PR3: tee-sheet cockpit shell with operate header, presets, and collapsed filter controls
-  - PR4: booking-drawer finance actions for post charge, record payment, complimentary, and waived flows
-  - PR5: settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
-  - PR6: guided golf settings setup with readiness, section locking, draft/live publish, and rollback
-  - PR7: Finance Close Day wizard — guided close-day reconciliation and export handoff surface
-  - PR8: Performance hub — targets and KPI performance surface at `/admin/reports`
+- Live: timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
+- `feature_flags.ux_rebuild_v1` is still emitted by backend and gates tee-sheet cockpit shell specifics (operate header, presets, collapsed filter controls). All other PR1–PR8 surfaces are now unconditional:
+  - PR1: Today-first admin navigation weighting — unconditional
+  - PR2: Today dashboard operational work queue — unconditional
+  - PR4: booking-drawer finance actions — unconditional
+  - PR5: settings hub — unconditional
+  - PR6: guided golf settings — unconditional
+  - PR7: Finance Close Day wizard — unconditional
+  - PR8: Performance hub — unconditional
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 - Gap: tee sheet is not yet the full operational command center GreenLink requires
 - Gap: refunds, close-day reconciliation handoff, and deeper finance resolution still remain outside the tee-sheet flow
@@ -82,9 +80,9 @@ Current issues include:
 - Live: club pause/reactivate (`PATCH /clubs/{id}/status`) and club delete (`DELETE /clubs/{id}`, blocked for live clubs)
 - Live: overview and clubs actions carry a concrete `clubId` route selection into the registry
 - Live: superadmin can hand off into club-scoped admin workspaces (`/admin/finance`, `/admin/golf/settings`, `/admin/dashboard`) after selecting a club
-- Default redirect is `/superadmin/overview`; sidebar has two real nav items (Overview, Clubs)
+- Default redirect is `/superadmin/overview`; sidebar has three real nav items (Overview, Clubs, Accounting Profiles)
 - Live: superadmin invitation/provisioning flow with backend-owned invite creation, invitation listing, new-user acceptance, and logged-in activation for existing users
-- In progress: Superadmin Accounting Profiles page at `/superadmin/accounting-profiles` — fleet-level view and management of accounting export profiles across clubs (backend routes, schemas, service layer, and frontend page in working tree, not yet committed as a PR)
+- Live: Superadmin Accounting Profiles page at `/superadmin/accounting-profiles` — fleet-level view and management of accounting export profiles across clubs
 - Not built: superadmin-side authoring for golf rules/pricing; canonical authoring remains in admin golf settings
 - Gap: onboarding is not yet sufficiently structured around true club go-live readiness
 
@@ -107,7 +105,7 @@ Current issues include:
 - Live: `AdminGolfDashboardPage` (`/admin/golf/dashboard`) - golf utilization, revenue posture, tee warnings, config readiness; all from backend read models
 - Live: `AdminPeopleDashboardPage` (`/admin/people/dashboard`) - member breakdown, outstanding account posture, directory size; all from backend read models
 - Live: `AdminFinanceDashboardPage` (`/admin/finance/dashboard`) - revenue, outstanding, transaction volume, export batch status; all from backend read models
-- Live: `AdminSettingsHubPage` (`/admin/settings`) - structured settings hub linking to Club Profile, Golf Configuration, Finance, Modules, Communications, and Targets
+- Live: `AdminSettingsHubPage` (`/admin/settings`) - structured settings hub linking to Golf Configuration, Finance, Modules, Communications, and Targets (Club Profile card removed)
 - Live: `AdminHalfwayPage` - 3 queries (halfway summary, finance revenue, finance transaction volume); no React math
 - Live: `AdminReportsPage` - 4 queries (reports summary, finance revenue, finance outstanding, finance transaction volume); no React math
 - Live: `AdminMembersPage` - no_account_count and new_member_count come from reports summary; no client-side date math or cross-query counting
@@ -126,20 +124,16 @@ Superseding note as of 2026-04-10:
 - `/admin/settings/profile` no longer acts as a separate settings destination; it redirects into `/admin/settings`.
 
 Current live state:
-- `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
-- Live: My Club group contains: Settings · Communications · Targets
-- Live: Groups are collapsible; all start collapsed; labeled groups show nothing when closed
-- Live: Group structure is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`; ungrouped items are rendered below without a label
-- Live: backend `MENU_ITEMS` in `session_bootstrap_service.py` is the canonical nav registry; sidebar resolves against it
-- Live: `pos` module relabeled "Commerce" in module catalog
-- Live: `AdminGolfSettingsPage` redesigned — all old CSS class patterns replaced with `AdminWorkspace` + Tailwind utility classes; all mutation logic unchanged
-- Live: `AdminClubSettingsPage` remains the profile detail surface at `/admin/settings/profile`
-
-Approved direction:
-- move to a lifecycle-weighted navigation model
-- keep top-level admin navigation minimal
-- demote or conditionally surface extension modules
-- remove dead weight and low-value grouping logic
+- `AdminSidebar` is lifecycle-weighted with collapsible groups.
+- Ungrouped (always visible): Today, Members, Settings.
+- Golf group (collapsible): Golf Summary, Tee Sheet.
+- Finance group (collapsible): Finance Summary, Close Day.
+- My Club group (collapsible): Performance, Communications.
+- Operations group (collapsible): Halfway, Pro Shop, POS Terminal, Order Queue.
+- Groups start open when the current route falls within them; toggle-able.
+- Access-only keys (`people_dashboard`, `targets`) are filtered from sidebar but retained in bootstrap for `ProtectedRoute` enforcement.
+- `PRIMARY_NAV_GROUPS` drives group membership against backend-provided or fallback `menu_items`; ungrouped items render below without a label.
+- `pos` module relabeled "Commerce" in module catalog.
 
 ## Admin Routes
 
@@ -163,11 +157,16 @@ Superseding route naming note as of 2026-04-10:
 - `/admin/pos-terminal` — POS terminal
 - `/admin/orders` — order queue
 - `/admin/settings` — settings hub
-- `/admin/settings/club` — legacy settings entry route redirected into the hub when `ux_rebuild_v1` is enabled
-- `/admin/settings/profile` — club profile settings
+- `/admin/settings/club` — legacy settings entry route; unconditional redirect to `/admin/settings`
+- `/admin/settings/profile` — legacy redirect to `/admin/settings`
 - `/admin/settings/modules` — read-only module visibility
 - `/admin/communications` — communications and news posts
 - `/admin/targets` — club targets
+
+### Superadmin Routes
+- `/superadmin/overview` — fleet KPIs, readiness bars, needs-attention list
+- `/superadmin/clubs` — club registry and management
+- `/superadmin/accounting-profiles` — fleet-level accounting export profiles
 
 ## Known Constraints
 
@@ -198,42 +197,15 @@ Superseding route naming note as of 2026-04-10:
 - Superadmin cannot author golf rules or pricing directly (Phase 16).
 - No third-party accounting sync beyond tracked handoff (Phase 17).
 
-- Today/dashboard still needs operational work-queue restructuring.
 - Tee sheet still needs deeper finance and operational integration.
 - Add-on modules still risk overexposure relative to core product pillars.
 
 ## Latest Validation
 
+Last full suite: UX rebuild cleanup slices 1–4 (2026-04-10)
+- `frontend`: `npm.cmd run test` - clean (35/35 test files, 200/200 tests)
 - `frontend`: `npm.cmd run typecheck` - clean
-- `frontend`: `npm.cmd run test` - clean (`126 passed`, 26 test files)
-- `backend`: `py -m uv run pytest` - clean (`161 passed`; conftest enum cleanup fix resolves pre-existing startlane duplicate-type drift)
-- `backend`: Phase 13 blast endpoints tested (7 new tests: create, list, send, RBAC, 404, tenant isolation)
-- `frontend`: targeted Vitest `src/pages/admin-golf-dashboard-page.test.tsx` - clean (Phase 11-A, new)
-- `frontend`: targeted Vitest `src/pages/admin-finance-dashboard-page.test.tsx` - clean (Phase 11-A, new)
-- `frontend`: targeted Vitest `src/pages/admin-people-dashboard-page.test.tsx` - clean (Phase 11-A, new)
-- `frontend`: targeted Vitest `src/pages/admin-club-settings-page.test.tsx` - clean (Phase 11-A, new)
-- `frontend`: targeted Vitest `src/components/shell/AdminSidebar.test.tsx` - clean (`4 passed`)
-- `frontend`: targeted Vitest `src/pages/admin-golf-tee-sheet-page.test.tsx src/features/tee-sheet/hooks.test.ts` - clean (`37 passed`)
-- `frontend`: `npm.cmd run typecheck` - clean after tee-sheet Phase 6 changes
-- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx src/pages/admin-golf-tee-sheet-page.test.tsx` - clean for PR2 (`55 passed`)
-- `frontend`: targeted Vitest `src/features/tee-sheet/booking-management-drawer.test.tsx src/pages/admin-golf-tee-sheet-page.test.tsx` - clean for PR4 (`49 passed`)
-- `backend`: `py -m py_compile backend/app/schemas/bookings.py backend/app/services/booking_service.py backend/app/services/booking_update_service.py` - clean
-- `backend`: targeted pytest `backend/tests/test_booking_creation_foundation.py backend/tests/test_booking_update_foundation.py -q` - clean (`8 passed`)
-- `backend`: targeted pytest `backend/tests/test_admin_dashboard_summary.py backend/tests/test_auth_and_bootstrap.py -q` - clean for PR2 (`11 passed`)
-- `backend`: targeted pytest `backend/tests/test_booking_finance_actions.py -q` - clean for PR4 (`4 passed`)
-- `frontend`: targeted Vitest `src/pages/admin-dashboard-page.test.tsx` - clean (`5 passed`)
-- `frontend`: targeted Vitest `src/pages/superadmin-clubs-page.test.tsx` - clean
-- `frontend`: targeted Vitest `src/pages/player-shell-page.test.tsx` - clean
-- `frontend`: targeted Vitest `src/pages/player-profile-page.test.tsx` - clean
-- `frontend`: targeted Vitest `src/pages/invitation-accept-page.test.tsx` - clean
-- `frontend`: targeted Vitest `src/session/session-provider.test.tsx` - clean
-- `backend`: targeted pytest `backend/tests/test_superadmin_onboarding_foundation.py` - clean
-- `backend`: targeted pytest `backend/tests/test_auth_and_bootstrap.py` - clean
-- `backend`: targeted pytest `backend/tests/test_player_booking_read_model.py` - clean
-- `backend`: targeted pytest `backend/tests/test_player_profile.py` - clean
-- `backend`: targeted pytest `backend/tests/test_superadmin_invitations.py` - clean
-- `backend`: targeted pytest `backend/tests/test_invitation_acceptance.py` - clean
-- `backend`: targeted pytest `backend/tests/test_targets.py` - clean
+- `backend`: `py -m uv run pytest` - clean (161 passed)
 
 ## Final Direction Rule
 
