@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { MaterialSymbol } from "../benchmark/material-symbol";
 import { useSession } from "../../session/session-context";
@@ -19,8 +19,10 @@ type NavGroup = {
 
 const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Today", icon: "dashboard", href: "/admin/dashboard" },
+  { key: "golf_dashboard", label: "Golf Summary", icon: "dashboard", href: "/admin/golf/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
+  { key: "finance_dashboard", label: "Finance Summary", icon: "dashboard", href: "/admin/finance/dashboard" },
   { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
   { key: "reports", label: "Performance", icon: "analytics", href: "/admin/reports" },
   { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
@@ -34,10 +36,12 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
 
 const BACKEND_ICON_BY_KEY: Record<string, string> = {
   dashboard: "dashboard",
+  golf_dashboard: "dashboard",
   golf_tee_sheet: "calendar_today",
   settings_hub: "settings",
   golf_settings: "settings",
   members: "group",
+  finance_dashboard: "dashboard",
   finance: "payments",
   reports: "analytics",
   halfway: "storefront",
@@ -49,21 +53,28 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
 };
 
 const PRIMARY_NAV_GROUPS: NavGroup[] = [
-  { id: "core", label: null, keys: ["dashboard", "golf_tee_sheet", "members"] },
-  { id: "finance", label: "Finance", keys: ["finance"] },
-  { id: "performance", label: null, keys: ["reports"] },
-  { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders", "communications"] },
+  { id: "core", label: null, keys: ["dashboard", "members"] },
+  { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet"] },
+  { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance"] },
+  { id: "club", label: "My Club", keys: ["reports", "communications"] },
+  { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
   { id: "settings", label: null, keys: ["settings_hub", "club_settings", "golf_settings"] },
 ];
 
 // These entries stay in backend menu truth so ProtectedRoute can keep direct-route access aligned
 // with the bootstrap contract, but they are intentionally not part of the primary sidebar IA.
-const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set(["finance_dashboard", "golf_dashboard", "people_dashboard", "targets"]);
+const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set(["people_dashboard", "targets"]);
 
 function navLinkClass(isActive: boolean): string {
   return isActive
     ? "flex items-center gap-3 rounded-l-xl border-r-4 border-emerald-600 bg-emerald-50/50 px-4 py-3 text-sm font-semibold text-emerald-800 transition-all duration-200"
     : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-600 transition-all duration-200 hover:bg-slate-100 hover:text-emerald-700";
+}
+
+function activeGroupIdsFor(pathname: string, navItems: NavItem[]): string[] {
+  return PRIMARY_NAV_GROUPS.filter(
+    (group) => group.label && group.keys.some((key) => navItems.some((item) => item.key === key && item.href === pathname)),
+  ).map((group) => group.id);
 }
 
 
@@ -137,6 +148,7 @@ function CollapsibleGroup({
 
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
+  const location = useLocation();
 
   const backendNavItems = (bootstrap?.menu_items ?? [])
     .filter((item) => item.shell === "admin" && !ACCESS_ONLY_ADMIN_MENU_KEYS.has(item.key))
@@ -159,9 +171,26 @@ export default function AdminSidebar(): JSX.Element {
   }).filter((group) => group.items.length > 0);
 
   const ungrouped = navItems.filter((item) => !assignedKeys.has(item.key));
+  const activeGroupIds = activeGroupIdsFor(location.pathname, navItems);
+  const activeGroupIdsKey = activeGroupIds.join("|");
 
-  // All labeled groups collapsed by default
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(activeGroupIds));
+
+  useEffect(() => {
+    if (!activeGroupIdsKey) return;
+    const ids = activeGroupIdsKey.split("|");
+    setOpenGroups((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [activeGroupIdsKey]);
 
   function toggleGroup(id: string): void {
     setOpenGroups((prev) => {

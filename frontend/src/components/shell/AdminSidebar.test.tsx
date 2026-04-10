@@ -32,7 +32,7 @@ const baseBootstrap: SessionBootstrap = {
   feature_flags: { ux_rebuild_v1: true },
 };
 
-function renderSidebar(bootstrap: SessionBootstrap): void {
+function renderSidebar(bootstrap: SessionBootstrap, initialEntry = "/admin/dashboard"): void {
   const sessionValue: SessionContextValue = {
     accessToken: "token",
     bootstrap,
@@ -55,7 +55,7 @@ function renderSidebar(bootstrap: SessionBootstrap): void {
 
   render(
     <SessionContext.Provider value={sessionValue}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AdminSidebar />
       </MemoryRouter>
     </SessionContext.Provider>,
@@ -66,21 +66,31 @@ describe("AdminSidebar", () => {
   test("falls back to the static admin menu when backend menu items are absent", () => {
     renderSidebar(baseBootstrap);
 
-    // Core items are always visible (unlabeled group)
-    expect(screen.getByRole("link", { name: /Today$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
-    // Finance group starts collapsed — expand to find Close Day
+    expect(screen.queryByRole("link", { name: /golf summary/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Golf$/i }));
+    expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+
+    expect(screen.queryByRole("link", { name: /finance summary/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
+    expect(screen.getByRole("link", { name: /finance summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
 
-    // Settings hub is visible directly (unlabeled settings group)
+    expect(screen.queryByRole("link", { name: /performance/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /communications/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
+    expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
+
     expect(screen.getByRole("link", { name: /settings/i })).toHaveAttribute("href", "/admin/settings");
   });
 
-  test("uses backend menu items to hide disabled admin domains during rollout", () => {
+  test("uses backend menu items to hide absent grouped sections during rollout", () => {
     renderSidebar({
       ...baseBootstrap,
       menu_items: [
@@ -111,20 +121,11 @@ describe("AdminSidebar", () => {
       ],
     });
 
-    // dashboard and members land in the core group — visible directly
-    expect(screen.getByRole("link", { name: /Today$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
-
-    // people_dashboard has no primary group — falls to ungrouped, visible directly
-    expect(screen.queryByRole("link", { name: /^Dashboard$/i })).not.toBeInTheDocument();
-
-    // No People group button in the new lifecycle-weighted nav
-    expect(screen.queryByRole("button", { name: /^People$/i })).not.toBeInTheDocument();
-
-    // Golf and Finance groups should not appear at all
     expect(screen.queryByRole("button", { name: /^Golf$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Finance$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^My Club$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
   });
 
@@ -159,48 +160,36 @@ describe("AdminSidebar", () => {
       ],
     });
 
-    // Operations group contains these items — expand it
     fireEvent.click(screen.getByRole("button", { name: /^Operations$/i }));
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /pro shop/i })).not.toBeInTheDocument();
   });
 
-  test("fallback nav covers all known backend MENU_ITEMS admin keys — none silently omitted", () => {
-    // Renders without menu_items to exercise FALLBACK_NAV_ITEMS.
-    // Only labeled groups need expanding; ungrouped and unlabeled groups render directly.
+  test("fallback nav covers the visible admin IA", () => {
     renderSidebar(baseBootstrap);
 
-    // Expand all labeled groups
-    for (const label of ["Finance", "Operations"]) {
+    for (const label of ["Golf", "Finance", "My Club", "Operations"]) {
       fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}$`, "i") }));
     }
 
-    // Core — always visible (unlabeled group)
     expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
-
-    // Finance
+    expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /finance summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
-
-    // Performance — visible directly (unlabeled group)
     expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
-
-    // Operations
+    expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /halfway/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pro shop/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
-
-    // Settings hub — visible directly (unlabeled settings group)
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
-    // Targets nav item filtered — accessible via Settings hub, not surfaced in sidebar
     expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^dashboard$/i })).not.toBeInTheDocument();
   });
 
-  test("keeps access-only admin routes out of the sidebar even when backend menu truth includes them", () => {
+  test("keeps access-only routes out of the sidebar while surfacing golf and club views", () => {
     renderSidebar({
       ...baseBootstrap,
       menu_items: [
@@ -211,6 +200,22 @@ describe("AdminSidebar", () => {
           shell: "admin",
           domain: "overview",
           module_key: null,
+        },
+        {
+          key: "golf_dashboard",
+          label: "Golf Summary",
+          path: "/admin/golf/dashboard",
+          shell: "admin",
+          domain: "golf",
+          module_key: "golf",
+        },
+        {
+          key: "golf_tee_sheet",
+          label: "Tee Sheet",
+          path: "/admin/golf/tee-sheet",
+          shell: "admin",
+          domain: "golf",
+          module_key: "golf",
         },
         {
           key: "finance_dashboard",
@@ -229,6 +234,22 @@ describe("AdminSidebar", () => {
           module_key: "finance",
         },
         {
+          key: "reports",
+          label: "Performance",
+          path: "/admin/reports",
+          shell: "admin",
+          domain: "performance",
+          module_key: null,
+        },
+        {
+          key: "communications",
+          label: "Communications",
+          path: "/admin/communications",
+          shell: "admin",
+          domain: "operations",
+          module_key: "communications",
+        },
+        {
           key: "targets",
           label: "Targets",
           path: "/admin/targets",
@@ -239,11 +260,124 @@ describe("AdminSidebar", () => {
       ],
     });
 
+    fireEvent.click(screen.getByRole("button", { name: /^Golf$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
 
-    expect(screen.getByRole("link", { name: /today/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /finance summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /finance summary/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
+  });
+
+  test("auto-expands the active grouped route", () => {
+    renderSidebar(
+      {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "dashboard",
+            label: "Today",
+            path: "/admin/dashboard",
+            shell: "admin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "golf_dashboard",
+            label: "Golf Summary",
+            path: "/admin/golf/dashboard",
+            shell: "admin",
+            domain: "golf",
+            module_key: "golf",
+          },
+          {
+            key: "golf_tee_sheet",
+            label: "Tee Sheet",
+            path: "/admin/golf/tee-sheet",
+            shell: "admin",
+            domain: "golf",
+            module_key: "golf",
+          },
+          {
+            key: "finance_dashboard",
+            label: "Finance Summary",
+            path: "/admin/finance/dashboard",
+            shell: "admin",
+            domain: "finance",
+            module_key: "finance",
+          },
+          {
+            key: "finance",
+            label: "Close Day",
+            path: "/admin/finance",
+            shell: "admin",
+            domain: "finance",
+            module_key: "finance",
+          },
+          {
+            key: "reports",
+            label: "Performance",
+            path: "/admin/reports",
+            shell: "admin",
+            domain: "performance",
+            module_key: null,
+          },
+          {
+            key: "communications",
+            label: "Communications",
+            path: "/admin/communications",
+            shell: "admin",
+            domain: "operations",
+            module_key: "communications",
+          },
+        ],
+      },
+      "/admin/golf/dashboard",
+    );
+
+    expect(screen.getByRole("button", { name: /^Golf$/i })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+
+    renderSidebar(
+      {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "dashboard",
+            label: "Today",
+            path: "/admin/dashboard",
+            shell: "admin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "reports",
+            label: "Performance",
+            path: "/admin/reports",
+            shell: "admin",
+            domain: "performance",
+            module_key: null,
+          },
+          {
+            key: "communications",
+            label: "Communications",
+            path: "/admin/communications",
+            shell: "admin",
+            domain: "operations",
+            module_key: "communications",
+          },
+        ],
+      },
+      "/admin/communications",
+    );
+
+    const myClubButtons = screen.getAllByRole("button", { name: /^My Club$/i });
+    expect(myClubButtons[myClubButtons.length - 1]).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
   });
 });

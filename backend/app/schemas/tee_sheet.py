@@ -60,6 +60,7 @@ class TeeSheetPolicySummary(BaseModel):
 
 
 class TeeSheetBookingParticipantSummary(BaseModel):
+    id: uuid.UUID
     display_name: str
     participant_type: BookingParticipantType
     is_primary: bool

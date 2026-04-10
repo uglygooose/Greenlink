@@ -169,6 +169,26 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
     )
     db_session.add(booking)
     db_session.flush()
+    primary_participant = BookingParticipant(
+        booking_id=booking.id,
+        person_id=user.person_id,
+        club_membership_id=None,
+        participant_type=BookingParticipantType.MEMBER,
+        display_name="Primary Member",
+        guest_name=None,
+        sort_order=0,
+        is_primary=True,
+    )
+    guest_participant = BookingParticipant(
+        booking_id=booking.id,
+        person_id=None,
+        club_membership_id=None,
+        participant_type=BookingParticipantType.GUEST,
+        display_name="Guest One",
+        guest_name="Guest One",
+        sort_order=1,
+        is_primary=False,
+    )
     db_session.add_all(
         [
             TeeSheetSlotState(
@@ -194,26 +214,8 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
                 reserved_state_active=True,
                 blocked_reason="Pending release",
             ),
-            BookingParticipant(
-                booking_id=booking.id,
-                person_id=user.person_id,
-                club_membership_id=None,
-                participant_type=BookingParticipantType.MEMBER,
-                display_name="Primary Member",
-                guest_name=None,
-                sort_order=0,
-                is_primary=True,
-            ),
-            BookingParticipant(
-                booking_id=booking.id,
-                person_id=None,
-                club_membership_id=None,
-                participant_type=BookingParticipantType.GUEST,
-                display_name="Guest One",
-                guest_name="Guest One",
-                sort_order=1,
-                is_primary=False,
-            ),
+            primary_participant,
+            guest_participant,
         ]
     )
     db_session.commit()
@@ -251,7 +253,9 @@ def test_tee_sheet_day_returns_generated_slots_and_persisted_state(
     assert first_view["bookings"][0]["id"] == str(booking.id)
     assert first_view["bookings"][0]["status"] == "reserved"
     assert first_view["bookings"][0]["party_size"] == 2
+    assert first_view["bookings"][0]["participants"][0]["id"] == str(primary_participant.id)
     assert first_view["bookings"][0]["participants"][0]["display_name"] == "Primary Member"
+    assert first_view["bookings"][0]["participants"][1]["id"] == str(guest_participant.id)
     assert first_view["display_status"] == "indeterminate"
     assert any(
         item["code"] == "live_concurrency_not_evaluated" for item in first_view["unresolved_checks"]

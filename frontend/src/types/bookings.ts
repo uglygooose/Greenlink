@@ -220,6 +220,7 @@ export interface BookingMoveInput {
   target_slot_datetime: string;
   target_start_lane?: StartLane | null;
   target_tee_id?: string | null;
+  participant_id?: string | null;
 }
 
 export interface BookingMoveResult {

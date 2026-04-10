@@ -164,6 +164,7 @@ class TeeSheetService:
                                 payment_status=booking.payment_status,
                                 participants=[
                                     TeeSheetBookingParticipantSummary(
+                                        id=participant.id,
                                         display_name=participant.display_name,
                                         participant_type=participant.participant_type,
                                         is_primary=participant.is_primary,

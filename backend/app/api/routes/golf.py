@@ -458,6 +458,7 @@ def move_booking(
             target_slot_datetime=payload.target_slot_datetime,
             target_start_lane=payload.target_start_lane,
             target_tee_id=payload.target_tee_id,
+            participant_id=payload.participant_id,
         ),
     )
 

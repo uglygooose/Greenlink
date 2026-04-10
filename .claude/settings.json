@@ -39,7 +39,13 @@
       "Bash(py -m uv run pytest tests/test_finance_exceptions.py tests/test_booking_finance_actions.py -q)",
       "Read(//tmp/**)",
       "Bash(py -m uv run pytest tests/test_finance_exceptions.py -q)",
-      "Bash(py -m uv run pytest tests/test_finance_exceptions.py -q -p no:randomly)"
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py -q -p no:randomly)",
+      "Bash(python -m pytest tests/test_auth_and_bootstrap.py -v)",
+      "Bash(python3 -)",
+      "Bash(python -c ':*)",
+      "Bash(echo \"backend PID: $!\")",
+      "Bash(npm run:*)",
+      "Bash(echo \"frontend PID: $!\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\athom\\.claude\\projects\\c--Users-athom-Documents-Projects-GreenLink\\memory"

@@ -330,6 +330,7 @@ class BookingMoveInput(BaseModel):
     target_slot_datetime: datetime
     target_start_lane: StartLane | None = None
     target_tee_id: uuid.UUID | None = None
+    participant_id: uuid.UUID | None = None
 
     @field_validator("target_slot_datetime")
     @classmethod
@@ -346,6 +347,7 @@ class BookingMoveRequest(BaseModel):
     target_slot_datetime: datetime
     target_start_lane: StartLane | None = None
     target_tee_id: uuid.UUID | None = None
+    participant_id: uuid.UUID | None = None
 
     @field_validator("target_slot_datetime")
     @classmethod

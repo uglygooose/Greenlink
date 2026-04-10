@@ -306,7 +306,7 @@ export function bookingParticipantNames(booking: TeeSheetBookingView): string[] 
 
 export function bookingLeadParticipant(
   booking: Pick<TeeSheetBookingView, "participants">,
-): { display_name: string; is_primary: boolean; participant_type: BookingParticipantType } | null {
+): { id?: string; display_name: string; is_primary: boolean; participant_type: BookingParticipantType } | null {
   return booking.participants.find((participant) => participant.is_primary) ?? booking.participants[0] ?? null;
 }
 
@@ -456,6 +456,8 @@ interface InlineBookingContextPanelProps {
   booking: TeeSheetBookingView;
   compact?: boolean;
   directoryEntry?: ClubPersonEntry | null;
+  focusedParticipantName?: string | null;
+  focusedParticipantType?: BookingParticipantType | null;
   onOpenFullView: () => void;
   onQuickAction: (action: QuickAction, bookingId: string) => void;
   panelRef?: ((node: HTMLDivElement | null) => void) | null;
@@ -468,6 +470,8 @@ export const InlineBookingContextPanel = memo(function InlineBookingContextPanel
   booking,
   compact = false,
   directoryEntry = null,
+  focusedParticipantName = null,
+  focusedParticipantType = null,
   onOpenFullView,
   onQuickAction,
   panelRef = null,
@@ -483,7 +487,8 @@ export const InlineBookingContextPanel = memo(function InlineBookingContextPanel
   const paymentText = paymentLabel(booking.payment_status);
   const roleText = directoryEntry ? membershipRoleLabel(directoryEntry.membership.role) : null;
   const statusText = directoryEntry ? membershipStatusLabel(directoryEntry.membership.status) : null;
-  const participantTypeText = leadParticipant?.participant_type ?? bookingPrimaryType(booking);
+  const participantTypeText = focusedParticipantType ?? leadParticipant?.participant_type ?? bookingPrimaryType(booking);
+  const participantHeading = focusedParticipantName ?? leadParticipant?.display_name ?? bookingParticipantNames(booking)[0] ?? "Booking";
 
   return (
     <div
@@ -496,9 +501,9 @@ export const InlineBookingContextPanel = memo(function InlineBookingContextPanel
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inline context</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Slot context</p>
           <p className={`truncate font-semibold text-on-surface ${compact ? "text-sm" : "text-base"}`}>
-            {leadParticipant?.display_name ?? bookingParticipantNames(booking)[0] ?? "Booking"}
+            {participantHeading}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             {participantTypeText ? (
@@ -578,6 +583,8 @@ export const InlineBookingContextPanel = memo(function InlineBookingContextPanel
   previousProps.booking.status === nextProps.booking.status &&
   previousProps.booking.payment_status === nextProps.booking.payment_status &&
   previousProps.booking.fee_label === nextProps.booking.fee_label &&
+  previousProps.focusedParticipantName === nextProps.focusedParticipantName &&
+  previousProps.focusedParticipantType === nextProps.focusedParticipantType &&
   previousProps.pendingBookingId === nextProps.pendingBookingId &&
   previousProps.pendingAction === nextProps.pendingAction &&
   previousProps.referenceDatetime === nextProps.referenceDatetime &&

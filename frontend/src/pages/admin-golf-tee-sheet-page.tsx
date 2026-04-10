@@ -77,8 +77,20 @@ import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView }
 type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
-type ExpandedBookingContext = SelectedSlotKey & { bookingId: string };
-type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
+type ExpandedBookingContext = SelectedSlotKey & {
+  bookingId: string;
+  cellKey: string;
+  participantId?: string | null;
+  focusedParticipantName?: string | null;
+  focusedParticipantType?: BookingParticipantType | null;
+};
+type Dragged = {
+  bookingId: string;
+  cellKey: string;
+  participantId?: string | null;
+  rowKey: string;
+  slotDatetime: string;
+};
 type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid" | "no_shows" | "arrivals_due" | "unresolved" | "warnings";
 type FinanceAction = "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived";
 type CommandPaletteItem =
@@ -502,13 +514,21 @@ function matchesExpandedBooking(
   );
 }
 
-function findDirectoryEntryForBooking(
-  booking: TeeSheetBookingView,
+function matchesExpandedBookingCell(
+  context: ExpandedBookingContext | null,
+  slot: Pick<LaneSlot, "rowKey" | "slot">,
+  bookingId: string,
+  cellKey: string,
+): boolean {
+  return matchesExpandedBooking(context, slot, bookingId) && context?.cellKey === cellKey;
+}
+
+function findDirectoryEntryByDisplayName(
+  displayName: string | null | undefined,
   directoryByName: Map<string, ClubPersonEntry>,
 ): ClubPersonEntry | null {
-  const leadParticipant = bookingLeadParticipant(booking);
-  if (!leadParticipant) return null;
-  return directoryByName.get(leadParticipant.display_name) ?? null;
+  if (!displayName) return null;
+  return directoryByName.get(displayName) ?? null;
 }
 
 function slotHasOperationalWarnings(slot: TeeSheetSlotView): boolean {
@@ -531,9 +551,9 @@ function countBookings(
 }
 
 function summaryChipClass(tone: "neutral" | "warning" | "danger"): string {
-  if (tone === "danger") return "border-error/20 bg-error-container/40 text-on-error-container";
-  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
-  return "border-slate-200 bg-white text-on-surface";
+  if (tone === "danger") return "border-rose-200 bg-rose-50/90 text-rose-900";
+  if (tone === "warning") return "border-amber-200 bg-amber-50/90 text-amber-900";
+  return "border-emerald-100 bg-white/90 text-on-surface";
 }
 
 function filterChipClass(active: boolean): string {
@@ -825,6 +845,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [highlightedSlotKey, setHighlightedSlotKey] = useState<string | null>(null);
+  const [toolbarCompact, setToolbarCompact] = useState(false);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     try {
       const stored = localStorage.getItem("gl-tee-sheet-layout");
@@ -848,7 +869,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const pendingAutoScrollDateRef = useRef<string | null>(selectedDate);
   const prefetchedAdjacentSeedRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const expandedBookingCardRef = useRef<HTMLDivElement | null>(null);
+  const expandedBookingCardRef = useRef<HTMLElement | null>(null);
   const expandedBookingPanelRef = useRef<HTMLDivElement | null>(null);
   const batchNoShowDialogRef = useRef<HTMLDivElement | null>(null);
   const batchNoShowCancelRef = useRef<HTMLButtonElement | null>(null);
@@ -1330,17 +1351,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ bookingId, target }: { bookingId: string; target: LaneSlot }) =>
+    mutationFn: ({ bookingId, participantId, target }: { bookingId: string; participantId?: string | null; target: LaneSlot }) =>
       moveBooking(
         bookingId,
-        { target_slot_datetime: target.slot.slot_datetime, target_start_lane: target.startLane, target_tee_id: target.teeId },
+        {
+          target_slot_datetime: target.slot.slot_datetime,
+          target_start_lane: target.startLane,
+          target_tee_id: target.teeId,
+          participant_id: participantId ?? null,
+        },
         { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
       ),
-    onMutate: async ({ bookingId, target }) => {
+    onMutate: async ({ bookingId, participantId, target }) => {
       if (!currentDayKey) return { previousDay: undefined };
       await queryClient.cancelQueries({ queryKey: currentDayKey });
       const previousDay = queryClient.getQueryData<TeeSheetDayResponse>(currentDayKey);
-      queryClient.setQueryData<TeeSheetDayResponse>(currentDayKey, (current) => optimisticallyMoveBooking(current, bookingId, target));
+      if (!participantId) {
+        queryClient.setQueryData<TeeSheetDayResponse>(currentDayKey, (current) => optimisticallyMoveBooking(current, bookingId, target));
+      }
       setDragged(null);
       setActiveDropKey(null);
       return { previousDay };
@@ -1360,13 +1388,11 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       setDrawerFeedbackTone(null);
       setSelectedSlotKey(null);
       setDrawerMode(null);
-      if (expandedBookingContext?.bookingId === result.booking_id) {
-        setExpandedBookingContext(null);
-      }
+      setExpandedBookingContext(null);
       resetEditState();
       setNotice({
         tone: result.transition_applied ? "success" : "info",
-        message: result.transition_applied ? "Booking moved." : "Booking was already at the requested slot.",
+        message: result.transition_applied ? "Slot moved." : "Slot was already at the requested time.",
       });
       void invalidate();
     },
@@ -1390,6 +1416,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   // A specific tee is optional — null means "all tees". The sheet can render as long
   // as a course is selected and at least one active tee exists for it.
   const configuredForSheet = Boolean(activeCourse);
+
+  useEffect(() => {
+    if (!configuredForSheet) {
+      setToolbarCompact(false);
+      return;
+    }
+
+    const compactThreshold = 88;
+    const syncToolbarCompact = (): void => {
+      setToolbarCompact(window.scrollY > compactThreshold);
+    };
+
+    syncToolbarCompact();
+    window.addEventListener("scroll", syncToolbarCompact, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", syncToolbarCompact);
+    };
+  }, [configuredForSheet]);
 
   const totalSlots = slots.length;
   const occupiedSlots = slots.filter((item) => item.slot.bookings.length > 0).length;
@@ -1458,7 +1502,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setCommandPaletteQuery("");
     setCommandPaletteActiveIndex(0);
   }, []);
-  const setExpandedBookingCardElement = useCallback((node: HTMLDivElement | null): void => {
+  const setExpandedBookingCardElement = useCallback((node: HTMLElement | null): void => {
     expandedBookingCardRef.current = node;
   }, []);
   const setExpandedBookingPanelElement = useCallback((node: HTMLDivElement | null): void => {
@@ -1489,24 +1533,48 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
   }, [resetCreateDrafts, resetEditState]);
 
-  const toggleBookingExpansion = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): void => {
+  const toggleBookingExpansion = useCallback((
+    slot: LaneSlot,
+    booking: TeeSheetBookingView,
+    cellKey = `${booking.id}:lead`,
+    participantId?: string | null,
+    focusedParticipantName?: string | null,
+    focusedParticipantType?: BookingParticipantType | null,
+  ): void => {
     setExpandedBookingContext((current) => (
-      matchesExpandedBooking(current, slot, booking.id)
+      matchesExpandedBookingCell(current, slot, booking.id, cellKey)
         ? null
-        : { bookingId: booking.id, rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime }
+        : {
+            bookingId: booking.id,
+            cellKey,
+            participantId: participantId ?? null,
+            focusedParticipantName: focusedParticipantName ?? null,
+            focusedParticipantType: focusedParticipantType ?? null,
+            rowKey: slot.rowKey,
+            slotDatetime: slot.slot.slot_datetime,
+          }
     ));
   }, []);
 
   const navigateToBookingContext = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): void => {
     const key = dropKey(slot);
     const targetTime = timeKey(slot.slot.local_time);
+    const leadParticipant = bookingLeadParticipant(booking);
     setSearchInputValue("");
     setFilters(DEFAULT_FILTERS);
     setFiltersPanelOpen(false);
     setSelectedSlotKey(null);
     setDrawerMode(null);
     setHighlightedSlotKey(key);
-    setExpandedBookingContext({ bookingId: booking.id, rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+    setExpandedBookingContext({
+      bookingId: booking.id,
+      cellKey: `${booking.id}:lead`,
+      participantId: leadParticipant?.id ?? null,
+      focusedParticipantName: leadParticipant?.display_name ?? null,
+      focusedParticipantType: leadParticipant?.participant_type ?? null,
+      rowKey: slot.rowKey,
+      slotDatetime: slot.slot.slot_datetime,
+    });
     window.setTimeout(() => setHighlightedSlotKey(null), 1500);
     document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
   }, [dropKey]);
@@ -1631,12 +1699,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return Boolean(dragged && canDrop(target.slot) && !(dragged.rowKey === target.rowKey && dragged.slotDatetime === target.slot.slot_datetime));
   }
 
-  const startDrag = useCallback((event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot): void => {
+  const startDrag = useCallback((
+    event: DragEvent<HTMLElement>,
+    bookingId: string,
+    slot: LaneSlot,
+    cellKey = bookingId,
+    participantId?: string | null,
+  ): void => {
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", bookingId);
     }
-    setDragged({ bookingId, rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+    setDragged({
+      bookingId,
+      cellKey,
+      participantId: participantId ?? null,
+      rowKey: slot.rowKey,
+      slotDatetime: slot.slot.slot_datetime,
+    });
     setNotice(null);
   }, []);
 
@@ -1669,12 +1749,26 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   }, [runInlineQuickAction]);
 
   const renderExpandedBookingPanel = useCallback((slot: LaneSlot, booking: TeeSheetBookingView, compact = false): JSX.Element => {
-    const directoryEntry = findDirectoryEntryForBooking(booking, directoryByName);
+    const focusedParticipantName =
+      matchesExpandedBooking(expandedBookingContext, slot, booking.id)
+        ? expandedBookingContext?.focusedParticipantName ?? null
+        : null;
+    const focusedParticipantType =
+      matchesExpandedBooking(expandedBookingContext, slot, booking.id)
+        ? expandedBookingContext?.focusedParticipantType ?? null
+        : null;
+    const directoryEntry =
+      findDirectoryEntryByDisplayName(
+        focusedParticipantName ?? bookingLeadParticipant(booking)?.display_name ?? null,
+        directoryByName,
+      );
     return (
       <InlineBookingContextPanel
         booking={booking}
         compact={compact}
         directoryEntry={directoryEntry}
+        focusedParticipantName={focusedParticipantName}
+        focusedParticipantType={focusedParticipantType}
         onOpenFullView={() => {
           openManage(slot);
         }}
@@ -1686,6 +1780,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       />
     );
   }, [
+    expandedBookingContext,
     directoryByName,
     handleInlineQuickAction,
     openManage,
@@ -1979,11 +2074,18 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     if (layoutMode !== "classic") return;
     if (pendingAutoScrollDateRef.current !== selectedDate) return;
     if (teeSheetQuery.isLoading || teeSheetQuery.error || filteredBuckets.length === 0) return;
-
-    const targetTime = nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null);
+    if (teeSheetQuery.data?.date !== selectedDate) return;
+    const today = todayValue();
+    const targetTime =
+      selectedDate === today
+        ? nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null)
+        : timeKey(filteredBuckets[0]?.localTime ?? "");
     if (!targetTime) return;
 
-    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: selectedDate === today ? "center" : "start",
+    });
     pendingAutoScrollDateRef.current = null;
   }, [filteredBuckets, layoutMode, selectedDate, teeSheetQuery.data?.timezone, teeSheetQuery.error, teeSheetQuery.isLoading]);
 
@@ -2139,79 +2241,92 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             {!teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 ? (
               <div className={`space-y-4 transition-opacity ${showingTransitionDay ? "opacity-70" : "opacity-100"}`}>
                 <section
-                  className="sticky top-20 z-20 rounded-[28px] border border-slate-200/70 bg-white/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80"
+                  className={`sticky top-20 z-20 rounded-[28px] border border-slate-200/70 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80 ${toolbarCompact ? "p-3" : "p-4"}`}
+                  data-compact={toolbarCompact ? "true" : "false"}
                   data-testid="tee-sheet-toolbar"
                 >
-                  <div className="flex flex-col gap-4">
+                  <div className={`flex flex-col ${toolbarCompact ? "gap-3" : "gap-4"}`}>
                     {uxRebuildV1 ? (
                       <>
+                        {!toolbarCompact ? (
                         <div
-                          className="flex flex-col gap-4 rounded-[24px] border border-slate-200/70 bg-slate-950 px-5 py-4 text-white"
+                          className={`grid rounded-[24px] border border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-on-surface shadow-[0_20px_45px_-32px_rgba(5,150,105,0.45)] transition-all duration-200 ${toolbarCompact ? "gap-2 px-4 py-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]" : "gap-3 px-5 py-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]"}`}
+                          data-compact={toolbarCompact ? "true" : "false"}
                           data-testid="operate-header"
                         >
-                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-300">Operate</p>
-                              <div className="space-y-1">
-                                <h2 className="font-headline text-2xl font-extrabold">Run Today&apos;s Tee Sheet</h2>
-                                <p className="text-sm text-slate-300">Action-first controls stay above the canvas while the existing slot lifecycle stays unchanged.</p>
+                          <div className={`flex flex-col ${toolbarCompact ? "gap-2" : "gap-3"}`}>
+                            <div className={`flex flex-col ${toolbarCompact ? "gap-2 xl:flex-row xl:items-center xl:justify-between" : "gap-3 xl:flex-row xl:items-start xl:justify-between"}`}>
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Tee Sheet Control</p>
+                                <div className="space-y-1">
+                                  <h2 className={`font-headline font-extrabold text-emerald-950 ${toolbarCompact ? "text-xl" : "text-2xl"}`}>Run Today&apos;s Tee Sheet</h2>
+                                  <p className={`max-w-2xl text-slate-600 ${toolbarCompact ? "text-xs" : "text-sm"}`}>
+                                    {toolbarCompact
+                                      ? "Controls stay pinned while the live sheet takes priority."
+                                      : "Keep booking actions close to the live sheet and escalate only the exceptions that need intervention."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  className={`inline-flex items-center gap-2 rounded-2xl bg-emerald-700 font-bold text-white transition-colors hover:bg-emerald-800 ${toolbarCompact ? "px-3.5 py-2 text-xs" : "px-4 py-2.5 text-sm"}`}
+                                  onClick={openNextBookableSlot}
+                                  type="button"
+                                >
+                                  <MaterialSymbol className="text-sm" icon="add" />
+                                  <span>+ Booking</span>
+                                </button>
+                                <Link
+                                  className={`inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white font-semibold text-emerald-900 transition-colors hover:bg-emerald-50 ${toolbarCompact ? "px-3.5 py-2 text-xs" : "px-4 py-2.5 text-sm"}`}
+                                  to="/admin/finance"
+                                >
+                                  <MaterialSymbol className="text-sm" icon="payments" />
+                                  <span>Close Day &rarr;</span>
+                                </Link>
                               </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100"
-                                onClick={openNextBookableSlot}
-                                type="button"
-                              >
-                                <MaterialSymbol className="text-sm" icon="add" />
-                                <span>+ Booking</span>
-                              </button>
-                              <Link
-                                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-                                to="/admin/finance"
-                              >
-                                <MaterialSymbol className="text-sm" icon="payments" />
-                                <span>Close Day &rarr;</span>
-                              </Link>
+                            <div className={`rounded-2xl border border-emerald-100 bg-white/75 text-slate-600 transition-all duration-200 ${toolbarCompact ? "hidden" : "px-4 py-3 text-sm"}`}>
+                              The live booking canvas stays primary. Filters, day movement, and exception handling remain above the sheet without overpowering it.
                             </div>
                           </div>
 
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass("neutral")}`}>
-                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          <div className="grid gap-3 sm:grid-cols-3 xl:content-start">
+                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass("neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                              <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
                                 <MaterialSymbol className="text-sm text-emerald-600" icon="grid_view" />
                                 <span>Occupancy</span>
                               </div>
                               <div className="mt-2 flex items-end gap-2">
-                                <span className="font-headline text-2xl font-extrabold text-on-surface">{configuredForSheet ? `${occupancyPct}%` : "--"}</span>
+                                <span className={`font-headline font-extrabold text-on-surface ${toolbarCompact ? "text-xl" : "text-2xl"}`}>{configuredForSheet ? `${occupancyPct}%` : "--"}</span>
                                 <span className="pb-1 text-xs text-slate-500">{configuredForSheet ? `${occupiedSlots}/${totalSlots} slots` : "No data"}</span>
                               </div>
                             </div>
-                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass(unpaidBookingsCount > 0 ? "warning" : "neutral")}`}>
-                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass(unpaidBookingsCount > 0 ? "warning" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                              <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
                                 <MaterialSymbol className="text-sm text-amber-500" icon="payments" />
                                 <span>Unpaid</span>
                               </div>
                               <div className="mt-2 flex items-end gap-2">
-                                <span className="font-headline text-2xl font-extrabold text-on-surface">{unpaidBookingsCount}</span>
+                                <span className={`font-headline font-extrabold text-on-surface ${toolbarCompact ? "text-xl" : "text-2xl"}`}>{unpaidBookingsCount}</span>
                                 <span className="pb-1 text-xs text-slate-500">Bookings needing payment</span>
                               </div>
                             </div>
-                            <div className={`rounded-2xl border px-4 py-3 ${summaryChipClass(alertSignals > 0 ? "danger" : "neutral")}`}>
-                              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                                <MaterialSymbol className="text-sm text-red-500" icon="warning" />
+                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass(alertSignals > 0 ? "danger" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                              <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
+                                <MaterialSymbol className="text-sm text-rose-500" icon="warning" />
                                 <span>Warnings</span>
                               </div>
                               <div className="mt-2 flex items-end gap-2">
-                                <span className="font-headline text-2xl font-extrabold text-on-surface">{alertSignals}</span>
+                                <span className={`font-headline font-extrabold text-on-surface ${toolbarCompact ? "text-xl" : "text-2xl"}`}>{alertSignals}</span>
                                 <span className="pb-1 text-xs text-slate-500">Blocked, warning, and sheet alerts</span>
                               </div>
                             </div>
                           </div>
                         </div>
+                        ) : null}
 
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                        <div className={`flex flex-col ${toolbarCompact ? "gap-2 xl:flex-row xl:items-center xl:justify-between" : "gap-3 xl:flex-row xl:items-end xl:justify-between"}`}>
+                          <div className={`flex flex-col ${toolbarCompact ? "gap-2 xl:flex-row xl:items-center" : "gap-3 xl:flex-row xl:items-center"}`}>
                             <div className="flex flex-wrap items-center gap-2">
                               <DatePickerPopover
                                 clubId={guardedSelectedClubId}
@@ -2227,7 +2342,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               <div className="flex gap-1">
                                 <button
                                   aria-label="Previous day"
-                                  className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                                  className={`rounded-2xl bg-surface-container-low text-slate-500 transition-colors hover:bg-surface-container ${toolbarCompact ? "p-1.5" : "p-2"}`}
                                   onClick={() => changeSelectedDate((current) => addDays(current, -1))}
                                   type="button"
                                 >
@@ -2235,7 +2350,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 </button>
                                 <button
                                   aria-label="Today"
-                                  className="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container"
+                                  className={`rounded-2xl bg-surface-container-low text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container ${toolbarCompact ? "px-2.5 py-1.5" : "px-3 py-2"}`}
                                   onClick={() => changeSelectedDate(todayValue())}
                                   type="button"
                                 >
@@ -2243,7 +2358,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 </button>
                                 <button
                                   aria-label="Next day"
-                                  className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
+                                  className={`rounded-2xl bg-surface-container-low text-slate-500 transition-colors hover:bg-surface-container ${toolbarCompact ? "p-1.5" : "p-2"}`}
                                   onClick={() => changeSelectedDate((current) => addDays(current, 1))}
                                   type="button"
                                 >
@@ -2256,7 +2371,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               <span className="relative flex items-center">
                                 <MaterialSymbol className="pointer-events-none absolute left-3 text-sm text-slate-400" icon="search" />
                                 <input
-                                  className="w-full rounded-2xl bg-surface-container-low px-10 py-2.5 pr-10 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72"
+                                  className={`w-full rounded-2xl bg-surface-container-low px-10 pr-10 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72 ${toolbarCompact ? "py-2" : "py-2.5"}`}
                                   onChange={(event) => setSearchInputValue(event.target.value)}
                                   placeholder="Search players, bookings, or time"
                                   ref={searchInputRef}
@@ -2279,10 +2394,29 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               </span>
                             </label>
                           </div>
-                          <div className="flex flex-wrap items-end gap-3">
+                          <div className={`flex flex-wrap items-end ${toolbarCompact ? "gap-2" : "gap-3"}`}>
+                            {toolbarCompact ? (
+                              <>
+                                <button
+                                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-emerald-800"
+                                  onClick={openNextBookableSlot}
+                                  type="button"
+                                >
+                                  <MaterialSymbol className="text-sm" icon="add" />
+                                  <span>+ Booking</span>
+                                </button>
+                                <Link
+                                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-900 transition-colors hover:bg-emerald-50"
+                                  to="/admin/finance"
+                                >
+                                  <MaterialSymbol className="text-sm" icon="payments" />
+                                  <span>Close Day &rarr;</span>
+                                </Link>
+                              </>
+                            ) : null}
                             <label className="space-y-1">
                               <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To</span>
-                              <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
+                              <span className={`flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 text-sm text-on-surface ${toolbarCompact ? "py-2" : "py-2.5"}`}>
                                 <MaterialSymbol className="text-sm text-on-surface-variant" icon="schedule" />
                                 <select
                                   className="border-none bg-transparent pr-5 text-sm font-medium focus:ring-0"
@@ -2304,7 +2438,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             </label>
                             <button
                               aria-expanded={filtersPanelOpen}
-                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container"
+                              className={`inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-surface-container-low font-semibold text-on-surface transition-colors hover:bg-surface-container ${toolbarCompact ? "px-3 py-2 text-xs" : "px-4 py-2.5 text-sm"}`}
                               data-testid="filters-view-toggle"
                               onClick={() => setFiltersPanelOpen((open) => !open)}
                               type="button"
@@ -2320,12 +2454,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className={`flex flex-wrap ${toolbarCompact ? "gap-1.5" : "gap-2"}`}>
                           {cockpitPresets.map((preset) => {
                             const active = filters.viewFilter === preset.value;
                             return (
                               <button
-                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition-colors ${filterChipClass(active)}`}
+                                className={`inline-flex items-center gap-2 rounded-full border font-semibold transition-colors ${filterChipClass(active)} ${toolbarCompact ? "px-2.5 py-1.5 text-xs" : "px-3 py-2 text-sm"}`}
                                 key={preset.value}
                                 onClick={() =>
                                   setFilters((current) => ({
@@ -2666,7 +2800,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 </section>
 
                 {layoutMode === "classic" ? (
-                <section className="overflow-hidden rounded-[28px] bg-surface-container-lowest shadow-sm">
+                <section className="overflow-hidden rounded-[28px] border border-emerald-100/80 bg-white shadow-[0_24px_55px_-34px_rgba(15,23,42,0.35)]">
                   <div className="overflow-x-auto">
                     <div className="min-w-[1120px] px-4 py-3">
                       <table className="w-full min-w-[1120px] table-fixed border-separate [border-spacing:0_6px]" data-testid="classic-tee-sheet-grid">
@@ -2714,7 +2848,15 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               // Build individual player cells — one <td> per slot position, never merged
                               const capacity = slotCapacity(displaySlot);
                               const playerCells: Array<
-                                | { kind: "player"; name: string; participantType: BookingParticipantType | null; booking: TeeSheetBookingView; isFirst: boolean }
+                                | {
+                                    kind: "player";
+                                    booking: TeeSheetBookingView;
+                                    cellKey: string;
+                                    isFirst: boolean;
+                                    name: string;
+                                    participantId: string | null;
+                                    participantType: BookingParticipantType | null;
+                                  }
                                 | { kind: "open" }
                                 | { kind: "unavailable" }
                               > = [];
@@ -2722,12 +2864,16 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 const names = bookingParticipantNames(booking);
                                 const count = Math.max(names.length, bookingPlayerCount(booking));
                                 for (let pi = 0; pi < count && playerCells.length < capacity; pi++) {
+                                  const participant = booking.participants[pi];
+                                  const participantId = participant?.id ?? null;
                                   playerCells.push({
                                     kind: "player",
-                                    name: names[pi] ?? `Player ${pi + 1}`,
-                                    participantType: booking.participants[pi]?.participant_type ?? null,
                                     booking,
+                                    cellKey: participantId ? `${booking.id}:participant:${participantId}` : `${booking.id}:participant:${pi}`,
                                     isFirst: pi === 0,
+                                    name: names[pi] ?? `Player ${pi + 1}`,
+                                    participantId,
+                                    participantType: participant?.participant_type ?? null,
                                   });
                                 }
                               }
@@ -2755,7 +2901,13 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   }}
                                   onDrop={(event) => {
                                     event.preventDefault();
-                                    if (allowedDrop && dragged) moveMutation.mutate({ bookingId: dragged.bookingId, target: item });
+                                    if (allowedDrop && dragged) {
+                                      moveMutation.mutate({
+                                        bookingId: dragged.bookingId,
+                                        participantId: dragged.participantId ?? null,
+                                        target: item,
+                                      });
+                                    }
                                   }}
                                 >
                                   {index === 0 ? (
@@ -2861,77 +3013,98 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                         }
                                       >
                                         {cell.kind === "player" ? (
-                                          cell.isFirst ? (
-                                            // First cell: draggable button with quick actions panel
-                                            <div
-                                              className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}
-                                              ref={matchesExpandedBooking(expandedBookingContext, item, cell.booking.id) ? setExpandedBookingCardElement : undefined}
-                                            >
-                                              {(() => {
-                                                const nextAction = deriveBookingNextAction(
-                                                  cell.booking,
-                                                  teeSheetQuery.data?.reference_datetime ?? null,
-                                                );
-                                                const badge = nextActionBadgeProps(nextAction);
-                                                const isExpanded = matchesExpandedBooking(expandedBookingContext, item, cell.booking.id);
-                                                return (
-                                              <button
-                                                aria-controls={`inline-booking-panel-${cell.booking.id}`}
-                                                aria-expanded={isExpanded}
-                                                aria-label={`Open booking ${cell.booking.id}`}
-                                                className={`${bookingChipClass(cell.booking, false, nextAction)} border border-slate-100 shadow-sm transition-opacity hover:opacity-90 ${participantTypeBorderClass(cell.participantType)}`}
-                                                draggable
-                                                onClick={() => toggleBookingExpansion(item, cell.booking)}
-                                                onDragEnd={endDrag}
-                                                onDragStart={(e) => startDrag(e, cell.booking.id, item)}
-                                                title="Drag to move booking"
-                                                type="button"
-                                              >
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <div className="min-w-0">
-                                                    <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
-                                                    <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${bookingStatusIconClass(cell.booking.status)}`}>
-                                                      <MaterialSymbol className="text-[10px]" icon={bookingStatusIconName(cell.booking.status)} />
-                                                      {cell.booking.status.replace(/_/g, " ")}
-                                                    </span>
-                                                  </div>
-                                                  {badge ? (
-                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] ${badge.className}`}>
-                                                      {badge.label}
-                                                    </span>
-                                                  ) : null}
-                                                </div>
-                                                <div className="mt-1 flex items-center gap-1">
-                                                  <span
-                                                    aria-label={paymentTooltip(cell.booking.payment_status)}
-                                                    className={paymentDotClass(cell.booking.payment_status)}
-                                                    title={paymentTooltip(cell.booking.payment_status)}
+                                          <div
+                                            className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}
+                                            ref={matchesExpandedBookingCell(expandedBookingContext, item, cell.booking.id, cell.cellKey) ? setExpandedBookingCardElement : undefined}
+                                          >
+                                            {(() => {
+                                              const nextAction = deriveBookingNextAction(
+                                                cell.booking,
+                                                teeSheetQuery.data?.reference_datetime ?? null,
+                                              );
+                                              const badge = nextActionBadgeProps(nextAction);
+                                              const isExpanded = matchesExpandedBookingCell(
+                                                expandedBookingContext,
+                                                item,
+                                                cell.booking.id,
+                                                cell.cellKey,
+                                              );
+                                              const canDragParticipant = Boolean(cell.participantId);
+                                              return (
+                                                <>
+                                                  <button
+                                                    aria-controls={`inline-booking-panel-${cell.booking.id}`}
+                                                    aria-expanded={isExpanded}
+                                                    aria-label={
+                                                      cell.isFirst
+                                                        ? `Open booking ${cell.booking.id}`
+                                                        : `Open slot for ${cell.name}`
+                                                    }
+                                                    className={`${
+                                                      cell.isFirst
+                                                        ? bookingChipClass(cell.booking, false, nextAction)
+                                                        : "flex min-h-[3.5rem] w-full flex-col justify-center rounded-[14px] border border-slate-100 bg-white px-2 py-1.5 text-left shadow-sm transition-colors hover:bg-slate-50"
+                                                    } border border-slate-100 shadow-sm transition-opacity hover:opacity-90 ${participantTypeBorderClass(cell.participantType)} ${isExpanded ? "ring-2 ring-primary/30 ring-offset-1 bg-primary-container/15" : ""}`}
+                                                    draggable={canDragParticipant}
+                                                    onClick={() => toggleBookingExpansion(
+                                                      item,
+                                                      cell.booking,
+                                                      cell.cellKey,
+                                                      cell.participantId ?? null,
+                                                      cell.name,
+                                                      cell.participantType,
+                                                    )}
+                                                    onDragEnd={endDrag}
+                                                    onDragStart={(event) => {
+                                                      if (!canDragParticipant) return;
+                                                      startDrag(
+                                                        event,
+                                                        cell.booking.id,
+                                                        item,
+                                                        cell.cellKey,
+                                                        cell.participantId,
+                                                      );
+                                                    }}
+                                                    title={canDragParticipant ? `Drag to move ${cell.name}` : `${cell.name} is not moveable yet`}
+                                                    type="button"
                                                   >
-                                                    <span className="sr-only">{paymentTooltip(cell.booking.payment_status)}</span>
-                                                  </span>
-                                                  {cell.booking.cart_flag ? (
-                                                    <span title="Cart"><MaterialSymbol className="text-[11px] text-slate-400" icon="shopping_cart" /></span>
-                                                  ) : null}
-                                                </div>
-                                              </button>
-                                                );
-                                              })()}
-                                              <BookingQuickActionPanel
-                                                booking={cell.booking}
-                                                onQuickAction={handleInlineQuickAction}
-                                                pendingAction={pendingAction}
-                                                pendingBookingId={pendingBookingId}
-                                              />
-                                            </div>
-                                          ) : (
-                                            // Subsequent cells: non-draggable, just shows the player name with type color
-                                            <div
-                                              className={`flex min-h-[3.5rem] w-full flex-col justify-center rounded-[14px] border border-slate-100 bg-white px-2 py-1.5 shadow-sm ${participantTypeBorderClass(cell.participantType)}`}
-                                            >
-                                              <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
-                                              <span className="mt-0.5 text-[9px] capitalize text-slate-400">{cell.participantType ?? "player"}</span>
-                                            </div>
-                                          )
+                                                    <div className="flex items-center justify-between gap-2">
+                                                      <div className="min-w-0">
+                                                        <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
+                                                        <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${bookingStatusIconClass(cell.booking.status)}`}>
+                                                          <MaterialSymbol className="text-[10px]" icon={bookingStatusIconName(cell.booking.status)} />
+                                                          {cell.isFirst ? cell.booking.status.replace(/_/g, " ") : (cell.participantType ?? "player")}
+                                                        </span>
+                                                      </div>
+                                                      {cell.isFirst && badge ? (
+                                                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] ${badge.className}`}>
+                                                          {badge.label}
+                                                        </span>
+                                                      ) : null}
+                                                    </div>
+                                                    <div className="mt-1 flex items-center gap-1">
+                                                      <span
+                                                        aria-label={paymentTooltip(cell.booking.payment_status)}
+                                                        className={paymentDotClass(cell.booking.payment_status)}
+                                                        title={paymentTooltip(cell.booking.payment_status)}
+                                                      >
+                                                        <span className="sr-only">{paymentTooltip(cell.booking.payment_status)}</span>
+                                                      </span>
+                                                      {cell.booking.cart_flag ? (
+                                                        <span title="Cart"><MaterialSymbol className="text-[11px] text-slate-400" icon="shopping_cart" /></span>
+                                                      ) : null}
+                                                    </div>
+                                                  </button>
+                                                  <BookingQuickActionPanel
+                                                    booking={cell.booking}
+                                                    onQuickAction={handleInlineQuickAction}
+                                                    pendingAction={pendingAction}
+                                                    pendingBookingId={pendingBookingId}
+                                                  />
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
                                         ) : cell.kind === "open" ? (
                                           <button
                                             aria-label={`Create booking for ${item.laneLabel} ${bucket.localTime.slice(0, 5)}`}

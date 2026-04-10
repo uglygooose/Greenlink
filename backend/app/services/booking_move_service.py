@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Booking,
+    BookingParticipant,
     BookingStatus,
     ClubConfig,
     Course,
@@ -87,6 +88,21 @@ class BookingMoveService:
                 ],
             )
 
+        participant = self._resolve_requested_participant(booking=booking, payload=payload)
+        if payload.participant_id is not None and participant is None:
+            return BookingMoveResult(
+                booking_id=booking.id,
+                decision=BookingMoveDecision.BLOCKED,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingMoveFailureDetail(
+                        code="participant_not_found",
+                        message="participant_id does not belong to the selected booking",
+                        field="participant_id",
+                    )
+                ],
+            )
+
         club_config = self.db.scalar(
             select(ClubConfig).where(ClubConfig.club_id == club_id)
         )
@@ -116,6 +132,7 @@ class BookingMoveService:
             else booking.tee_id
         )
         target_slot_datetime = payload.target_slot_datetime.astimezone(UTC)
+        moving_party_size = self._moving_party_size(booking=booking, participant=participant)
 
         # No-op guard
         if (
@@ -269,7 +286,7 @@ class BookingMoveService:
             tee_id=target_tee_id,
             start_lane=target_start_lane,
             slot_datetime=target_slot_datetime,
-            party_size=booking.party_size,
+            party_size=moving_party_size,
             exclude_booking_id=booking.id,
             slot_state=slot_state,
         )
@@ -281,14 +298,21 @@ class BookingMoveService:
                 failures=[capacity_failure],
             )
 
+        moved_booking = booking
+        if participant is not None and len(booking.participants) > 1:
+            moved_booking = self._split_booking_for_participant(
+                booking=booking,
+                participant=participant,
+            )
+
         # Apply the move
-        booking.slot_datetime = target_slot_datetime
-        booking.start_lane = target_start_lane
-        booking.tee_id = target_tee_id
-        self.db.add(booking)
+        moved_booking.slot_datetime = target_slot_datetime
+        moved_booking.start_lane = target_start_lane
+        moved_booking.tee_id = target_tee_id
+        self.db.add(moved_booking)
         self.db.commit()
 
-        hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)
+        hydrated = self._load_booking(club_id=club_id, booking_id=moved_booking.id)
         assert hydrated is not None
         return BookingMoveResult(
             booking_id=hydrated.id,
@@ -297,6 +321,84 @@ class BookingMoveService:
             booking=BookingSummary.model_validate(hydrated),
             failures=[],
         )
+
+    def _resolve_requested_participant(
+        self,
+        *,
+        booking: Booking,
+        payload: BookingMoveRequest,
+    ) -> BookingParticipant | None:
+        if payload.participant_id is None:
+            return None
+        return next(
+            (participant for participant in booking.participants if participant.id == payload.participant_id),
+            None,
+        )
+
+    def _moving_party_size(
+        self,
+        *,
+        booking: Booking,
+        participant: BookingParticipant | None,
+    ) -> int:
+        if participant is not None and len(booking.participants) > 1:
+            return 1
+        return booking.party_size
+
+    def _split_booking_for_participant(
+        self,
+        *,
+        booking: Booking,
+        participant: BookingParticipant,
+    ) -> Booking:
+        moved_booking = Booking(
+            club_id=booking.club_id,
+            course_id=booking.course_id,
+            tee_id=booking.tee_id,
+            start_lane=booking.start_lane,
+            slot_datetime=booking.slot_datetime,
+            slot_interval_minutes=booking.slot_interval_minutes,
+            status=booking.status,
+            source=booking.source,
+            party_size=1,
+            primary_person_id=participant.person_id,
+            primary_membership_id=participant.club_membership_id,
+            cart_flag=booking.cart_flag,
+            caddie_flag=booking.caddie_flag,
+            fee_label=booking.fee_label,
+            payment_status=booking.payment_status,
+        )
+        self.db.add(moved_booking)
+        self.db.flush()
+
+        participant.booking = moved_booking
+        participant.sort_order = 0
+        participant.is_primary = True
+
+        self._normalize_booking_participants(booking)
+        self.db.add(booking)
+        self.db.add(participant)
+        return moved_booking
+
+    def _normalize_booking_participants(self, booking: Booking) -> None:
+        participants = sorted(
+            booking.participants,
+            key=lambda participant: (
+                participant.sort_order,
+                participant.display_name.lower(),
+            ),
+        )
+        if not participants:
+            return
+
+        for index, participant in enumerate(participants):
+            participant.sort_order = index
+            participant.is_primary = index == 0
+
+        lead = participants[0]
+        booking.party_size = len(participants)
+        booking.primary_person_id = lead.person_id
+        booking.primary_membership_id = lead.club_membership_id
 
     def _load_booking(
         self,

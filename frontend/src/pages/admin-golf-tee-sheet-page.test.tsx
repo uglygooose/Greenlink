@@ -231,8 +231,8 @@ const teeSheetPayload = {
               cart_flag: true,
               caddie_flag: false,
               participants: [
-                { display_name: "Member One", participant_type: "member" as const, is_primary: true },
-                { display_name: "Guest One", participant_type: "guest" as const, is_primary: false },
+                { id: "participant-1", display_name: "Member One", participant_type: "member" as const, is_primary: true },
+                { id: "participant-2", display_name: "Guest One", participant_type: "guest" as const, is_primary: false },
               ],
             },
           ],
@@ -279,10 +279,10 @@ const teeSheetPayload = {
               cart_flag: true,
               caddie_flag: false,
               participants: [
-                { display_name: "Event One", participant_type: "member" as const, is_primary: true },
-                { display_name: "Event Two", participant_type: "member" as const, is_primary: false },
-                { display_name: "Event Three", participant_type: "member" as const, is_primary: false },
-                { display_name: "Event Four", participant_type: "member" as const, is_primary: false },
+                { id: "participant-3", display_name: "Event One", participant_type: "member" as const, is_primary: true },
+                { id: "participant-4", display_name: "Event Two", participant_type: "member" as const, is_primary: false },
+                { id: "participant-5", display_name: "Event Three", participant_type: "member" as const, is_primary: false },
+                { id: "participant-6", display_name: "Event Four", participant_type: "member" as const, is_primary: false },
               ],
             },
           ],
@@ -702,6 +702,35 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getAllByText("Warnings").length).toBeGreaterThan(0);
   });
 
+  test("compacts the sticky tee-sheet control surface after scroll so the live sheet gets more room", async () => {
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+      writable: true,
+    });
+
+    renderPage();
+
+    expect(screen.getByTestId("tee-sheet-toolbar")).toHaveAttribute("data-compact", "false");
+    expect(screen.getByText(/the live booking canvas stays primary/i)).toBeInTheDocument();
+
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 160,
+      writable: true,
+    });
+    fireEvent.scroll(window);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tee-sheet-toolbar")).toHaveAttribute("data-compact", "true");
+      expect(screen.queryByTestId("operate-header")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /\+ Booking/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Close Day/i })).toHaveAttribute("href", "/admin/finance");
+    expect(screen.queryByText(/the live booking canvas stays primary/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/controls stay pinned while the live sheet takes priority/i)).not.toBeInTheDocument();
+  });
+
   test("keeps the legacy toolbar when the rebuild flag is disabled", () => {
     mockUseSession.mockReturnValue({
       accessToken: "token",
@@ -1007,6 +1036,37 @@ describe("AdminGolfTeeSheetPage", () => {
       expect(moveBooking).toHaveBeenCalledWith(
         "booking-1",
         expect.objectContaining({
+          target_slot_datetime: "2026-03-30T04:00:00Z",
+          target_start_lane: "hole_10",
+          target_tee_id: "tee-1",
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("dispatches participant-aware move payloads when a secondary slot is dragged", async () => {
+    vi.mocked(moveBooking).mockResolvedValue({
+      booking_id: "booking-9",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.dragStart(screen.getByRole("button", { name: /open slot for Guest One/i }));
+    const targetRow = screen.getByLabelText(/10th tee lane row 06:00/i);
+    fireEvent.dragEnter(targetRow);
+    fireEvent.dragOver(targetRow);
+    fireEvent.drop(targetRow);
+
+    await waitFor(() => {
+      expect(moveBooking).toHaveBeenCalledWith(
+        "booking-1",
+        expect.objectContaining({
+          participant_id: "participant-2",
           target_slot_datetime: "2026-03-30T04:00:00Z",
           target_start_lane: "hole_10",
           target_tee_id: "tee-1",
@@ -1512,6 +1572,22 @@ describe("AdminGolfTeeSheetPage", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: /open booking booking-1/i })).toHaveAttribute("draggable", "true");
+  });
+
+  test("secondary participant cells focus the clicked participant and expose the same slot controls", async () => {
+    renderPage();
+
+    const secondaryCell = screen.getByRole("button", { name: /open slot for Guest One/i });
+    expect(secondaryCell).toHaveAttribute("draggable", "true");
+
+    fireEvent.click(secondaryCell);
+
+    const panel = await screen.findByTestId("inline-booking-panel-booking-1");
+    expect(secondaryCell).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /open booking booking-1/i })).toHaveAttribute("aria-expanded", "false");
+    expect(within(panel).getByText("Guest One")).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/check in booking booking-1/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /open full view/i })).toBeInTheDocument();
   });
 
   test("clicking a booking card toggles the inline context panel instead of opening the drawer", async () => {

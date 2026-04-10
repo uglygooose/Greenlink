@@ -167,6 +167,29 @@ def _create_booking(
     return booking
 
 
+def _add_booking_participant(
+    db: Session,
+    *,
+    booking: Booking,
+    display_name: str,
+    participant_type: BookingParticipantType,
+    is_primary: bool = False,
+    person_id: object | None = None,
+) -> BookingParticipant:
+    participant = BookingParticipant(
+        booking_id=booking.id,
+        person_id=person_id,
+        participant_type=participant_type,
+        display_name=display_name,
+        sort_order=len(booking.participants),
+        is_primary=is_primary,
+    )
+    db.add(participant)
+    db.commit()
+    db.refresh(booking)
+    return participant
+
+
 def _auth_headers(client: TestClient, email: str, club_id: str) -> dict[str, str]:
     login = client.post("/api/auth/login", json={"email": email, "password": "password123"})
     assert login.status_code == 200
@@ -380,6 +403,105 @@ def test_move_checked_in_booking_is_allowed(client: TestClient, db_session: Sess
     payload = response.json()
     assert payload["decision"] == "allowed"
     assert payload["transition_applied"] is True
+
+
+def test_move_selected_participant_creates_independent_booking(client: TestClient, db_session: Session) -> None:
+    club, course, tee = _setup_club(db_session, name="Move Club Split", slug="move-club-split")
+    admin = _create_admin(db_session, email="move-admin-split@example.com", club=club)
+    booking = _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=2,
+    )
+    guest = _add_booking_participant(
+        db_session,
+        booking=booking,
+        display_name="Guest One",
+        participant_type=BookingParticipantType.GUEST,
+    )
+    db_session.add(
+        TeeSheetSlotState(
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            slot_datetime=SLOT_0630,
+            player_capacity=4,
+        )
+    )
+    db_session.commit()
+
+    headers = _auth_headers(client, admin.email, str(club.id))
+    response = client.post(
+        f"/api/golf/bookings/{booking.id}/move",
+        json={
+            "target_slot_datetime": SLOT_0630.isoformat(),
+            "participant_id": str(guest.id),
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"] == "allowed"
+    assert payload["transition_applied"] is True
+    assert payload["booking_id"] != str(booking.id)
+    assert payload["booking"]["party_size"] == 1
+    assert payload["booking"]["slot_datetime"] == SLOT_0630.isoformat().replace("+00:00", "Z")
+    assert payload["booking"]["participants"][0]["display_name"] == "Guest One"
+
+    source = db_session.scalar(
+        select(Booking)
+        .where(Booking.id == booking.id)
+    )
+    moved = db_session.scalar(
+        select(Booking)
+        .where(Booking.id == payload["booking_id"])
+    )
+    assert source is not None
+    assert moved is not None
+    db_session.refresh(source)
+    db_session.refresh(moved)
+    assert source.party_size == 1
+    assert source.slot_datetime == SLOT_0600
+    assert [participant.display_name for participant in source.participants] == ["Test Member"]
+    assert moved.party_size == 1
+    assert moved.slot_datetime == SLOT_0630
+    assert [participant.display_name for participant in moved.participants] == ["Guest One"]
+
+
+def test_move_selected_participant_rejects_unknown_participant_id(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, tee = _setup_club(db_session, name="Move Club Participant", slug="move-club-participant")
+    admin = _create_admin(db_session, email="move-admin-participant@example.com", club=club)
+    booking = _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=1,
+    )
+
+    headers = _auth_headers(client, admin.email, str(club.id))
+    response = client.post(
+        f"/api/golf/bookings/{booking.id}/move",
+        json={
+            "target_slot_datetime": SLOT_0630.isoformat(),
+            "participant_id": "11111111-1111-1111-1111-111111111111",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"] == "blocked"
+    assert payload["failures"][0]["code"] == "participant_not_found"
 
 
 # ---------------------------------------------------------------------------
