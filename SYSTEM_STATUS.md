@@ -33,14 +33,7 @@ Current issues include:
 - Live: participant-level booking move — single participant can be extracted from a multi-participant booking and moved independently; backend splits the source booking when needed and validates participant ownership
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
 - Live: timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
-- `feature_flags.ux_rebuild_v1` is still emitted by backend and gates tee-sheet cockpit shell specifics (operate header, presets, collapsed filter controls). All other PR1–PR8 surfaces are now unconditional:
-  - PR1: Today-first admin navigation weighting — unconditional
-  - PR2: Today dashboard operational work queue — unconditional
-  - PR4: booking-drawer finance actions — unconditional
-  - PR5: settings hub — unconditional
-  - PR6: guided golf settings — unconditional
-  - PR7: Finance Close Day wizard — unconditional
-  - PR8: Performance hub — unconditional
+- Live: tee-sheet cockpit shell is now the unconditional baseline; the old `ux_rebuild_v1` client branch has been removed
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 - Gap: tee sheet is not yet the full operational command center GreenLink requires
 - Gap: refunds, close-day reconciliation handoff, and deeper finance resolution still remain outside the tee-sheet flow
@@ -120,7 +113,7 @@ Superseding note as of 2026-04-10:
 - `AdminSidebar` now follows lifecycle weighting: Today · Tee Sheet · Members · Finance · Performance · Operations · Settings.
 - Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
 - The sidebar is the visible primary-nav contract and intentionally hides some access-valid admin routes.
-- Access-only admin routes retained in bootstrap truth include `/admin/golf/dashboard`, `/admin/people/dashboard`, `/admin/finance/dashboard`, and `/admin/targets`.
+- Access-only admin routes retained in bootstrap truth include `/admin/people/dashboard` and `/admin/targets`.
 - `/admin/settings/profile` no longer acts as a separate settings destination; it redirects into `/admin/settings`.
 
 Current live state:
@@ -139,7 +132,9 @@ Current live state:
 
 Superseding route naming note as of 2026-04-10:
 - `/admin/dashboard` is Today.
-- `/admin/golf/dashboard`, `/admin/people/dashboard`, and `/admin/finance/dashboard` are summary routes.
+- Legacy /admin/select-club now redirects to canonical /select-club.
+- `/admin/golf/dashboard` and `/admin/finance/dashboard` are grouped summary routes that remain visible in admin navigation.
+- `/admin/people/dashboard` remains a direct-link summary route.
 - `/admin/reports` is the Performance hub.
 - `/admin/settings/profile` is a legacy redirect route into `/admin/settings`.
 

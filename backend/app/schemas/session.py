@@ -57,4 +57,3 @@ class SessionBootstrapResponse(BaseModel):
     module_flags: dict[str, bool]
     menu_items: list[SessionMenuItem]
     permissions: list[str]
-    feature_flags: dict[str, bool]

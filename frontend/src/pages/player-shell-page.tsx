@@ -6,6 +6,7 @@ import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
 import { usePlayerBookingReadModelQuery } from "../features/bookings/hooks";
 import { usePublishedNewsFeedQuery } from "../features/comms/hooks";
+import { buildPlayerTabItems } from "./player-tab-items";
 import { useSession } from "../session/session-context";
 import type { BookingPaymentStatus, StartLane } from "../types/bookings";
 
@@ -83,29 +84,7 @@ export function PlayerShellPage(): JSX.Element {
   const playerMenuKeys = new Set(backendPlayerMenu.map((item) => item.key));
   const canBook = !usesBackendPlayerMenu || playerMenuKeys.has("book");
   const canOrder = !usesBackendPlayerMenu || playerMenuKeys.has("order");
-  const mobileTabItems = usesBackendPlayerMenu
-    ? backendPlayerMenu.flatMap((item) => {
-        if (item.key === "home") {
-          return [{ label: "Home", icon: "home", to: item.path, isActive: true }];
-        }
-        if (item.key === "book") {
-          return [{ label: "Book", icon: "golf_course", to: item.path }];
-        }
-        if (item.key === "order") {
-          return [{ label: "Order", icon: "local_cafe", to: item.path }];
-        }
-        if (item.key === "profile") {
-          return [{ label: "Profile", icon: "person", to: item.path }];
-        }
-        return [];
-      })
-    : [
-        { label: "Home", icon: "home", to: "/player/home", isActive: true },
-        { label: "Book", icon: "golf_course", to: "/player/book" },
-        { label: "Order", icon: "local_cafe", to: "/player/order" },
-        { label: "Club/News", icon: "article" },
-        { label: "Profile", icon: "person", to: "/player/profile" },
-      ];
+  const mobileTabItems = buildPlayerTabItems(bootstrap?.menu_items, "home");
   const { data: publishedNews, isLoading: isNewsLoading } = usePublishedNewsFeedQuery({
     accessToken,
     selectedClubId,

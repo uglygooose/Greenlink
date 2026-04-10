@@ -106,7 +106,6 @@ beforeEach(() => {
         branding: { logo_object_key: null, name: "Test Club" },
       },
       user: { display_name: "Admin" },
-      feature_flags: {},
     },
   });
 

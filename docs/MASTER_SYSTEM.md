@@ -97,13 +97,7 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 - Participant-level booking move is live: a single participant can be extracted from a multi-participant booking (splitting it) and moved independently; backend validates participant ownership and splits the source booking when needed.
 - Inline chip quick actions, per-time-bucket bulk check-in, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped drawers are live.
 - Timeline swimlane layout is live alongside the classic tee-sheet table; both layouts consume the same tee-sheet read model and existing mutation flows, and the frontend-only layout/density preference is stored in localStorage.
-- `feature_flags.ux_rebuild_v1` is still emitted by the backend and gates the tee-sheet cockpit shell (operate header, presets, reduced filter controls). PR1–PR8 rebuild work has been committed and the flag now scopes only remaining tee-sheet-specific cockpit gating:
-  - Today-first admin navigation and shell weighting — landed and unconditional
-  - Finance actions inside the booking drawer — landed and unconditional
-  - Settings hub at `/admin/settings` with single Settings nav entry and read-only module visibility — landed and unconditional
-  - Guided golf settings setup with readiness, section locking, draft/live publish, rollback — landed and unconditional
-  - Finance Close Day wizard — landed and unconditional (PR7)
-  - Performance hub at `/admin/reports` — landed and unconditional (PR8)
+- Tee-sheet cockpit shell is now unconditional. The old `ux_rebuild_v1` client branch has been removed, and PR1–PR9 now describe the live baseline rather than a staged rollout path.
 - `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live: golf utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions.
 
 ### FIN - Finance
@@ -174,7 +168,7 @@ Superseding note as of 2026-04-10:
 - Primary admin navigation is lifecycle-weighted: Today · Tee Sheet · Members · Finance · Performance · Operations · Settings.
 - Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
 - `AdminSidebar` is the visible primary-nav contract and may intentionally hide valid direct-link admin routes that remain in bootstrap `menu_items` for access control.
-- Access-only admin routes currently include `/admin/golf/dashboard`, `/admin/people/dashboard`, `/admin/finance/dashboard`, and `/admin/targets`.
+- Access-only admin routes currently include `/admin/people/dashboard` and `/admin/targets`.
 
 Current implementation baseline:
 - `AdminSidebar` is lifecycle-weighted with collapsible groups.
@@ -211,15 +205,16 @@ The approved direction is:
 - settings as structured configuration journey, not a monolithic CRUD/admin page
 
 Current landing status:
-- PR1–PR9 are landed. PR7 (Finance Close Day), PR8 (Performance hub), PR9 (Superadmin Accounting Profiles) are unconditional.
-- UX rebuild cleanup slices 1–4 are landed: route truth fixes, settings consolidation, admin IA lifecycle reset, dead `ux_rebuild_v1` branch removal from sidebar/dashboard.
-- `feature_flags.ux_rebuild_v1` remains in backend bootstrap and gates tee-sheet cockpit shell specifics only. All other rebuilt surfaces are unconditional.
+- PR1–PR9 are landed and live.
+- UX rebuild cleanup slices 1–4 are landed: route truth fixes, settings consolidation, admin IA lifecycle reset, and dead branch removal from sidebar/dashboard.
 
 ## Current Route Surface
 
 Superseding route naming note as of 2026-04-10:
 - `/admin/dashboard` is the Today workspace.
-- `/admin/golf/dashboard`, `/admin/people/dashboard`, and `/admin/finance/dashboard` are retained summary routes, not primary-nav destinations.
+- Legacy /admin/select-club now redirects to canonical /select-club.
+- `/admin/golf/dashboard` and `/admin/finance/dashboard` are retained summary routes that remain visible in grouped admin navigation.
+- `/admin/people/dashboard` remains a direct-link summary route and is not shown in the primary sidebar.
 - `/admin/reports` is the Performance hub.
 - `/admin/settings/profile` is a legacy route redirected into `/admin/settings`.
 
@@ -239,7 +234,7 @@ Superseding route naming note as of 2026-04-10:
 - `/admin/orders` — order queue
 - `/admin/settings` — settings hub
 - `/admin/settings/club` — legacy settings entry route; unconditional redirect to `/admin/settings`
-- `/admin/settings/profile` — club profile settings
+- `/admin/settings/profile` — legacy redirect to `/admin/settings`
 - `/admin/settings/modules` — read-only module visibility
 - `/admin/communications` — news posts and comms
 - `/admin/targets` — club targets

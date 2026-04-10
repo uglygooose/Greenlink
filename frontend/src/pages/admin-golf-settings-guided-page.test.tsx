@@ -82,7 +82,6 @@ describe("AdminGolfSettingsGuidedPage", () => {
           branding: { logo_object_key: null, name: "GreenLink Development Club" },
         },
         available_clubs: [{ club_id: "club-1", membership_role: "club_admin" }],
-        feature_flags: { ux_rebuild_v1: true },
       },
     });
 

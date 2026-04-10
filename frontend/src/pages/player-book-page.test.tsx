@@ -232,4 +232,69 @@ describe("Player booking flow", () => {
       await screen.findByText("Booking confirmed. Admin tee sheet reflects backend state immediately."),
     ).toBeInTheDocument();
   });
+
+  test("uses backend menu truth for the mobile tab bar on the booking page", () => {
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      bootstrap: {
+        user: {
+          id: "user-1",
+          email: "member@example.com",
+          display_name: "Jordan Member",
+          user_type: "user",
+        },
+        available_clubs: [],
+        selected_club_id: "club-1",
+        selected_club: {
+          id: "club-1",
+          name: "GreenLink Club",
+          slug: "greenlink-club",
+          location: "Durban",
+          timezone: "Africa/Johannesburg",
+          branding: { logo_object_key: null, name: null },
+        },
+        club_selection_required: false,
+        role_shell: "player",
+        default_workspace: "player",
+        landing_path: "/player/home",
+        module_flags: {},
+        permissions: [],
+        feature_flags: {},
+        menu_items: [
+          {
+            key: "home",
+            label: "Home",
+            path: "/player/home",
+            shell: "player",
+            domain: "home",
+            module_key: null,
+          },
+          {
+            key: "book",
+            label: "Book",
+            path: "/player/book",
+            shell: "player",
+            domain: "bookings",
+            module_key: "golf",
+          },
+          {
+            key: "profile",
+            label: "Profile",
+            path: "/player/profile",
+            shell: "player",
+            domain: "profile",
+            module_key: null,
+          },
+        ],
+      },
+    });
+
+    renderPlayerBookPage();
+
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Book")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
+    expect(screen.queryByText("Order")).not.toBeInTheDocument();
+    expect(screen.queryByText("Club/News")).not.toBeInTheDocument();
+  });
 });

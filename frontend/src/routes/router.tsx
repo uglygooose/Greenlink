@@ -48,6 +48,7 @@ const router = createBrowserRouter([
   { path: "/", element: <RootRedirect /> },
   { path: "/login", element: <LoginPage /> },
   { path: "/accept-invitation", element: <InvitationAcceptPage /> },
+  { path: "/admin/select-club", element: <Navigate to="/select-club" replace /> },
   {
     path: "/select-club",
     element: <ProtectedRoute />,
@@ -57,7 +58,6 @@ const router = createBrowserRouter([
     path: "/admin",
     element: <ProtectedRoute shell="admin" />,
     children: [
-      { path: "select-club", element: <SelectClubPage /> },
       {
         element: <AdminLayout />,
         children: [

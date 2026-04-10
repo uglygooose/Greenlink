@@ -821,7 +821,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap, initialized, loading } = useSession();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const uxRebuildV1 = bootstrap?.feature_flags?.ux_rebuild_v1 === true;
   const [selectedDate, setSelectedDate] = useState(todayValue);
   const membershipType: BookingRuleAppliesTo = "staff";
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -2166,46 +2165,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   return (
     <>
       <AdminWorkspace
-        title={uxRebuildV1 ? "Tee Sheet" : "Daily Tee Sheet"}
+        title="Tee Sheet"
         dateLabel={dateLabel(selectedDate)}
         description={description}
-        kpis={uxRebuildV1 ? undefined : (
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-surface-container-lowest px-5 py-3 shadow-sm">
-            <div className="flex items-center gap-2">
-              <MaterialSymbol className="text-sm text-primary" icon="golf_course" />
-              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? `${occupancyPct}%` : "–"}</span>
-              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${occupiedSlots}/${totalSlots} slots` : "Occupancy"}</span>
-            </div>
-            <div className="h-4 w-px bg-outline-variant/30" />
-            <div className="flex items-center gap-2">
-              <MaterialSymbol className="text-sm text-secondary" icon="how_to_reg" />
-              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? checkedInBookings : "–"}</span>
-              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${checkedInPlayers} players` : "Checked In"}</span>
-            </div>
-            <div className="h-4 w-px bg-outline-variant/30" />
-            <div className="flex items-center gap-2">
-              <MaterialSymbol className="text-sm text-emerald-600" icon="grid_view" />
-              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? openSlots : "–"}</span>
-              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${openPlayerCapacity} open` : "Open Capacity"}</span>
-            </div>
-            <div className="h-4 w-px bg-outline-variant/30" />
-            {/* 2.8: UI convenience only — clicking here applies the "Closed/Holds"
-                 filter lens so staff can quickly find problem slots. It does NOT
-                 assert that "alerts" and "closed" are the same domain concept;
-                 alertSignals may include holds and overrides that aren't closed. */}
-            <button
-              className="flex items-center gap-2 rounded-xl px-2 py-1 transition-colors hover:bg-amber-50 disabled:cursor-default"
-              disabled={!configuredForSheet || alertSignals === 0}
-              onClick={() => setFilters((f) => ({ ...f, viewFilter: "closed" }))}
-              title="Filter to Closed / Holds view"
-              type="button"
-            >
-              <MaterialSymbol className="text-sm text-amber-500" icon="warning" />
-              <span className="font-headline text-lg font-extrabold text-on-surface">{configuredForSheet ? alertSignals : "–"}</span>
-              <span className="text-xs text-on-surface-variant">{configuredForSheet ? `${statusCounts.blocked} blocked` : "Alerts"}</span>
-            </button>
-          </div>
-        )}
       >
         {notice ? <div className={notice.tone === "success" ? "rounded-2xl bg-primary-container/50 px-4 py-3 text-sm font-medium text-on-primary-container" : notice.tone === "error" ? "rounded-2xl bg-error-container/40 px-4 py-3 text-sm font-medium text-on-error-container" : "rounded-2xl bg-secondary-container px-4 py-3 text-sm font-medium text-on-secondary-container"}>{notice.message}</div> : null}
 
@@ -2246,8 +2208,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                   data-testid="tee-sheet-toolbar"
                 >
                   <div className={`flex flex-col ${toolbarCompact ? "gap-3" : "gap-4"}`}>
-                    {uxRebuildV1 ? (
-                      <>
+                     <>
                         {!toolbarCompact ? (
                         <div
                           className={`grid rounded-[24px] border border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-on-surface shadow-[0_20px_45px_-32px_rgba(5,150,105,0.45)] transition-all duration-200 ${toolbarCompact ? "gap-2 px-4 py-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]" : "gap-3 px-5 py-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]"}`}
@@ -2479,149 +2440,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           })}
                         </div>
                       </>
-                    ) : (
-                      <>
-                    <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* 5.6: Custom week-strip calendar popover replaces native <input type="date"> */}
-                          <DatePickerPopover
-                            clubId={guardedSelectedClubId}
-                            courseId={courseId}
-                            membershipType={membershipType}
-                            onChange={changeSelectedDate}
-                            onOpenChange={setCalendarOpen}
-                            open={calendarOpen}
-                            queryClient={queryClient}
-                            teeId={teeId}
-                            value={selectedDate}
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              aria-label="Previous day"
-                              className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => changeSelectedDate((current) => addDays(current, -1))}
-                              type="button"
-                            >
-                              <MaterialSymbol icon="chevron_left" />
-                            </button>
-                            <button
-                              aria-label="Today"
-                              className="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => changeSelectedDate(todayValue())}
-                              type="button"
-                            >
-                              Today
-                            </button>
-                            <button
-                              aria-label="Next day"
-                              className="rounded-2xl bg-surface-container-low p-2 text-slate-500 transition-colors hover:bg-surface-container"
-                              onClick={() => changeSelectedDate((current) => addDays(current, 1))}
-                              type="button"
-                            >
-                              <MaterialSymbol icon="chevron_right" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {/* 5.4: Find Next Open Slot — scrolls to the first available slot in the current view */}
-                          {configuredForSheet && openSlots > 0 ? (
-                            <button
-                              className="flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-dim"
-                              onClick={() => {
-                                const firstOpen = filteredBuckets.flatMap((b) => b.slots).find((s) => canCreate(s.slot));
-                                if (!firstOpen) {
-                                  setNotice({ tone: "info", message: "No open slots found with the current filters." });
-                                  return;
-                                }
-                                const targetTime = timeKey(firstOpen.slot.local_time);
-                                document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                const key = `${firstOpen.rowKey}:${firstOpen.slot.slot_datetime}`;
-                                setHighlightedSlotKey(key);
-                                setTimeout(() => setHighlightedSlotKey(null), 1500);
-                              }}
-                              title="Jump to the next available slot"
-                              type="button"
-                            >
-                              <MaterialSymbol className="text-sm" icon="my_location" />
-                              <span>Next Available</span>
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <label className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Search</span>
-                          <span className="relative flex items-center">
-                            <MaterialSymbol className="pointer-events-none absolute left-3 text-sm text-slate-400" icon="search" />
-                            <input
-                              className="w-full rounded-2xl bg-surface-container-low px-10 py-2.5 pr-10 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 sm:w-72"
-                              onChange={(event) => setSearchInputValue(event.target.value)}
-                              placeholder="Search players, bookings, or time"
-                              ref={searchInputRef}
-                              type="search"
-                              value={searchInputValue}
-                            />
-                            {showClearSearch ? (
-                              <button
-                                aria-label="Clear tee-sheet search"
-                                className="absolute right-2 rounded-full p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
-                                onClick={() => {
-                                  setSearchInputValue("");
-                                  searchInputRef.current?.focus();
-                                }}
-                                type="button"
-                              >
-                                <MaterialSymbol className="text-sm" icon="close" />
-                              </button>
-                            ) : null}
-                          </span>
-                        </label>
-                        <label className="space-y-1">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Jump To</span>
-                          <span className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2.5 text-sm text-on-surface">
-                            <MaterialSymbol className="text-sm text-on-surface-variant" icon="schedule" />
-                            <select
-                              className="border-none bg-transparent pr-5 text-sm font-medium focus:ring-0"
-                              defaultValue=""
-                              onChange={(event) => {
-                                const value = event.target.value;
-                                if (!value) return;
-                                document.getElementById(`bucket-${value}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                              }}
-                            >
-                              <option value="">Select time</option>
-                              {jumpTimes.map((value) => (
-                                <option key={value} value={value}>
-                                  {value}
-                                </option>
-                              ))}
-                            </select>
-                          </span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end">
-                      <button
-                        aria-expanded={filtersPanelOpen}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-surface-container-low px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container"
-                        data-testid="filters-view-toggle"
-                        onClick={() => setFiltersPanelOpen((open) => !open)}
-                        type="button"
-                      >
-                        <MaterialSymbol className="text-sm" icon={filtersPanelOpen ? "expand_less" : "tune"} />
-                        <span>Filters &amp; View</span>
-                        {hasActiveFilters ? (
-                          <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
-                            Active
-                          </span>
-                        ) : null}
-                      </button>
-                    </div>
-
-                      </>
-                    )}
 
                     {filtersPanelOpen ? (
                     <div className="space-y-4 rounded-2xl border border-slate-200 bg-surface-container-lowest p-4" data-testid="filters-view-panel">
@@ -3432,7 +3250,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
               pendingBookingId={pendingBookingId}
               savingBookingId={savingBookingId}
               selectedDate={selectedDate}
-              showFinanceActions={uxRebuildV1}
+              showFinanceActions={true}
               slot={selectedSlot.slot}
               teeLabel={selectedSlot.rowLabel}
             />

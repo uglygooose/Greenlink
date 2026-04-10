@@ -6,6 +6,10 @@ interface Props {
   shell?: "admin" | "player" | "superadmin";
 }
 
+const ACCESS_ROUTE_ALIASES: Record<string, string[]> = {
+  settings_hub: ["/admin/golf/settings", "/admin/settings/modules"],
+};
+
 export function ProtectedRoute({ shell }: Props): JSX.Element {
   const location = useLocation();
   const { accessToken, bootstrap, initialized, loading } = useSession();
@@ -43,7 +47,16 @@ export function ProtectedRoute({ shell }: Props): JSX.Element {
     const routeAllowed =
       isShellRoot ||
       shellMenuItems.length === 0 ||
-      shellMenuItems.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
+      shellMenuItems.some((item) => {
+        if (location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)) {
+          return true;
+        }
+
+        const aliases = ACCESS_ROUTE_ALIASES[item.key] ?? [];
+        return aliases.some(
+          (alias) => location.pathname === alias || location.pathname.startsWith(`${alias}/`),
+        );
+      });
 
     if (!routeAllowed) {
       return <Navigate to={bootstrap.landing_path} replace />;

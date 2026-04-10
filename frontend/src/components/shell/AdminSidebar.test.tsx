@@ -257,6 +257,22 @@ describe("AdminSidebar", () => {
           domain: "performance",
           module_key: null,
         },
+        {
+          key: "golf_settings",
+          label: "Golf Settings",
+          path: "/admin/golf/settings",
+          shell: "admin",
+          domain: "settings",
+          module_key: null,
+        },
+        {
+          key: "settings_modules",
+          label: "Modules",
+          path: "/admin/settings/modules",
+          shell: "admin",
+          domain: "settings",
+          module_key: null,
+        },
       ],
     });
 
@@ -271,6 +287,8 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /golf settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^modules$/i })).not.toBeInTheDocument();
   });
 
   test("auto-expands the active grouped route", () => {

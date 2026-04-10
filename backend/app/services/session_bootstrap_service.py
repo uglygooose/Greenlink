@@ -41,6 +41,8 @@ MENU_ITEMS: tuple[dict[str, str | None], ...] = (
     {"key": "people_dashboard", "label": "People Summary", "path": "/admin/people/dashboard", "shell": "admin", "domain": "people", "module_key": None},
     # Admin — settings (bottom anchor)
     {"key": "settings_hub", "label": "Settings", "path": "/admin/settings", "shell": "admin", "domain": "settings", "module_key": None},
+    {"key": "golf_settings", "label": "Golf Settings", "path": "/admin/golf/settings", "shell": "admin", "domain": "settings", "module_key": None},
+    {"key": "settings_modules", "label": "Modules", "path": "/admin/settings/modules", "shell": "admin", "domain": "settings", "module_key": None},
     # Player
     {"key": "home", "label": "Home", "path": "/player/home", "shell": "player", "domain": "home", "module_key": None},
     {"key": "book", "label": "Book", "path": "/player/book", "shell": "player", "domain": "bookings", "module_key": "golf"},
@@ -104,7 +106,6 @@ class SessionBootstrapService:
             module_flags=module_flags,
             menu_items=self._build_menu_items(role_shell=role_shell, module_flags=module_flags),
             permissions=self._build_permissions(context, hydrated_user.user_type),
-            feature_flags={"ux_rebuild_v1": True},
         )
 
     def _build_available_clubs(

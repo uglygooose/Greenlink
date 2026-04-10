@@ -40,6 +40,7 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
   golf_tee_sheet: "calendar_today",
   settings_hub: "settings",
   golf_settings: "settings",
+  settings_modules: "apps",
   members: "group",
   finance_dashboard: "dashboard",
   finance: "payments",
@@ -63,7 +64,12 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
 
 // These entries stay in backend menu truth so ProtectedRoute can keep direct-route access aligned
 // with the bootstrap contract, but they are intentionally not part of the primary sidebar IA.
-const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set(["people_dashboard", "targets"]);
+const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set([
+  "people_dashboard",
+  "targets",
+  "golf_settings",
+  "settings_modules",
+]);
 
 function navLinkClass(isActive: boolean): string {
   return isActive

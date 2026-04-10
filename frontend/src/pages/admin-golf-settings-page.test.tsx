@@ -41,7 +41,6 @@ describe("AdminGolfSettingsPage", () => {
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
         available_clubs: [],
-        feature_flags: {},
       },
     });
 

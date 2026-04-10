@@ -512,7 +512,6 @@ describe("AdminGolfTeeSheetPage", () => {
       initialized: true,
       loading: false,
       bootstrap: {
-        feature_flags: { ux_rebuild_v1: true },
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
         user: { display_name: "Club Admin" },
@@ -682,7 +681,7 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.queryByText("White")).not.toBeInTheDocument();
   });
 
-  test("renders the cockpit operate header when the rebuild flag is enabled", () => {
+  test("renders the cockpit operate header as the live tee-sheet baseline", () => {
     renderPage();
 
     expect(screen.getByTestId("tee-sheet-toolbar")).toHaveClass("sticky", "top-20");
@@ -731,13 +730,18 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.queryByText(/controls stay pinned while the live sheet takes priority/i)).not.toBeInTheDocument();
   });
 
-  test("keeps the legacy toolbar when the rebuild flag is disabled", () => {
+  test("renders the live cockpit toolbar even when bootstrap omits legacy feature flags", () => {
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+      writable: true,
+    });
+
     mockUseSession.mockReturnValue({
       accessToken: "token",
       initialized: true,
       loading: false,
       bootstrap: {
-        feature_flags: {},
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
         user: { display_name: "Club Admin" },
@@ -746,9 +750,9 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage();
 
-    expect(screen.queryByTestId("operate-header")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Next Available/i })).toBeInTheDocument();
-    expect(screen.getByText("Filters & View")).toBeInTheDocument();
+    expect(screen.getByTestId("operate-header")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Next Available/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Filters")).toBeInTheDocument();
   });
 
   test("uses preset chips to drive the existing filter layer", () => {

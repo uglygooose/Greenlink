@@ -224,8 +224,30 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
         ("golf_dashboard", "Golf Summary"),
         ("people_dashboard", "People Summary"),
         ("settings_hub", "Settings"),
+        ("golf_settings", "Golf Settings"),
+        ("settings_modules", "Modules"),
     ]
-    assert payload["feature_flags"].get("ux_rebuild_v1") is True
+    assert "feature_flags" not in payload
+
+
+def test_bootstrap_keeps_golf_settings_access_even_when_golf_module_is_disabled(
+    client: TestClient, db_session: Session
+) -> None:
+    user = _create_user(db_session, email="golf-settings-admin@example.com")
+    club = _create_club(db_session, name="Setup Club", slug="setup-club")
+    _assign_membership(
+        db_session, user=user, club=club, role=ClubMembershipRole.CLUB_ADMIN, is_primary=True
+    )
+    _set_modules(db_session, club=club, module_keys=["finance"])
+
+    login = _login(client, "golf-settings-admin@example.com")
+    response = client.get(
+        "/api/session/bootstrap", headers={"Authorization": f"Bearer {login['access_token']}"}
+    )
+
+    assert response.status_code == 200
+    menu_keys = [item["key"] for item in response.json()["menu_items"]]
+    assert "golf_settings" in menu_keys
 
 
 def test_bootstrap_returns_backend_menu_contract_for_player_shell(

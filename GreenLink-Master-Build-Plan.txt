@@ -86,13 +86,13 @@ Phase 10 - Domain Dashboards and Admin Navigation: COMPLETED
 - `AdminGolfDashboardPage` (`/admin/golf/dashboard`): utilization, revenue posture, tee warnings, config readiness; all from backend read models
 - `AdminPeopleDashboardPage` (`/admin/people/dashboard`): member breakdown, account posture, directory size; all from backend read models
 - `AdminFinanceDashboardPage` (`/admin/finance/dashboard`): revenue, outstanding, transaction volume, export batch status; all from backend read models
-- `AdminClubSettingsPage` (`/admin/settings/club`): configuration hub linking to golf settings and module config without duplicating superadmin ownership
+- `AdminSettingsHubPage` (`/admin/settings`): configuration hub linking to golf settings, finance, modules, communications, and targets without duplicating superadmin ownership
 - `GET /api/admin/dashboard/summary` now includes `active_targets` — backend reads live `ClubTarget` rows whose period spans today, joins domain/metric registry, returns typed `DashboardTargetContext` list; no React math
 - Full test gate: npm run typecheck clean, 96 Vitest tests passed, 154 pytest passed
 
 Phase 11 - Infrastructure Hardening & Test Coverage: COMPLETED
 - 11-A Test coverage for four uncovered Phase 10 pages: COMPLETED
-  - Live: Vitest suites for AdminGolfDashboardPage, AdminFinanceDashboardPage, AdminPeopleDashboardPage, AdminClubSettingsPage
+  - Live: Vitest suites for AdminGolfDashboardPage, AdminFinanceDashboardPage, AdminPeopleDashboardPage, AdminSettingsHubPage
   - 126 tests pass across 26 test files
 - 11-B Pytest ordering enforced by config: COMPLETED
   - Live: `-p no:randomly` added to `addopts` in pyproject.toml; no longer tribal knowledge
@@ -101,8 +101,8 @@ Phase 11 - Infrastructure Hardening & Test Coverage: COMPLETED
   - Vite dev proxy handles all local browser CORS for /api/* traffic
   - Startup logging added to main.py to surface effective CORS origins on boot
 - 11-D Menu items fallback drift: COMPLETED
-  - golf_settings added to FALLBACK_NAV_ITEMS and My Club group
-  - Vitest coverage test added to AdminSidebar.test.tsx asserting all known MENU_ITEMS admin keys are present in fallback nav
+  - Fallback admin navigation aligned to the visible admin IA only
+  - Vitest coverage in `AdminSidebar.test.tsx` asserts the visible grouped routes remain present while access-only routes stay hidden
 
 Phase 12 - Reporting Aggregation (close React math gap): RESOLVED (already done)
 - AdminReportsPage already uses backend-provided pct fields for all charts:
@@ -289,15 +289,15 @@ Rebuild Slice R10 - AI-assisted interventions
   - AI adds operational value instead of dashboard noise
 
 Landing status as of 2026-04-10:
-- PR1 landed behind `feature_flags.ux_rebuild_v1`: navigation and shell weighting path
-- PR2 landed behind `feature_flags.ux_rebuild_v1`: Today dashboard operational work queue
-- PR3 landed behind `feature_flags.ux_rebuild_v1`: tee-sheet operational cockpit shell
-- PR4 landed behind `feature_flags.ux_rebuild_v1`: booking-drawer finance actions backed by new booking finance endpoints
-- PR5 landed behind `feature_flags.ux_rebuild_v1`: Settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
-- PR6 landed behind `feature_flags.ux_rebuild_v1`: guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
-- PR7 landed behind `feature_flags.ux_rebuild_v1`: Finance Close Day wizard — guided close-day reconciliation and export handoff surface (R6)
-- PR8 landed behind `feature_flags.ux_rebuild_v1`: Performance hub — targets and KPI performance surface at `/admin/reports` (R9)
-- PR9 (Superadmin Accounting Profiles): in progress — fleet-level accounting profile management for superadmin
+- PR1 live: navigation and shell weighting baseline
+- PR2 live: Today dashboard operational work queue
+- PR3 live: tee-sheet operational cockpit shell
+- PR4 live: booking-drawer finance actions backed by booking finance endpoints
+- PR5 live: Settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
+- PR6 live: guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
+- PR7 live: Finance Close Day wizard — guided close-day reconciliation and export handoff surface (R6)
+- PR8 live: Performance hub — targets and KPI performance surface at `/admin/reports` (R9)
+- PR9 live: Superadmin Accounting Profiles — fleet-level accounting profile management for superadmin
 
 ─────────────────────────────────────────────────────────────────────────────
 TEE SHEET UX REBUILD BASELINE (CURRENTLY TRUE)

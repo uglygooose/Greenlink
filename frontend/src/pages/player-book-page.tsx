@@ -8,6 +8,7 @@ import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
+import { buildPlayerTabItems } from "./player-tab-items";
 import { useSession } from "../session/session-context";
 import type { BookingCreateResult, StartLane } from "../types/bookings";
 import type { TeeSheetSlotView } from "../types/tee-sheet";
@@ -443,12 +444,7 @@ export function PlayerBookPage(): JSX.Element {
         activeClassName="rounded-xl bg-emerald-100 text-emerald-800 scale-95"
         className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around border-t border-slate-200 bg-white/90 px-4 pb-6 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden"
         inactiveClassName="text-slate-500 active:bg-slate-100 scale-95"
-        items={[
-          { label: "Home", icon: "home", to: "/player/home" },
-          { label: "Book", icon: "golf_course", to: "/player/book", isActive: true },
-          { label: "Order", icon: "local_cafe", to: "/player/order" },
-          { label: "Profile", icon: "person", to: "/player/profile" },
-        ]}
+        items={buildPlayerTabItems(bootstrap?.menu_items, "book")}
         labelClassName="font-label font-medium text-[10px]"
       />
     </div>

@@ -54,7 +54,7 @@ export interface SessionBootstrap {
   module_flags: Record<string, boolean>;
   menu_items?: SessionMenuItem[];
   permissions: string[];
-  feature_flags: Record<string, boolean>;
+  feature_flags?: Record<string, boolean>;
 }
 
 export interface TokenResponse {

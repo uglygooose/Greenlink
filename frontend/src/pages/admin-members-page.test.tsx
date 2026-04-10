@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -7,10 +7,21 @@ import { AdminMembersPage } from "./admin-members-page";
 
 const mockUseSession = vi.fn();
 const mockUseClubDirectoryQuery = vi.fn();
+const mockUseCreateAccountCustomerMutation = vi.fn();
+const mockUseCreateMembershipMutation = vi.fn();
+const mockUseCreatePersonMutation = vi.fn();
+const mockUseUpdateMembershipMutation = vi.fn();
+const mockUseUpdatePersonMutation = vi.fn();
 const mockUseFinanceAccountsQuery = vi.fn();
 const mockUseFinanceOutstandingSummaryQuery = vi.fn();
 const mockUseFinanceAccountLedgerQuery = vi.fn();
 const mockUseReportsSummaryQuery = vi.fn();
+
+const createPersonMutateAsync = vi.fn();
+const updatePersonMutateAsync = vi.fn();
+const createMembershipMutateAsync = vi.fn();
+const updateMembershipMutateAsync = vi.fn();
+const createAccountCustomerMutateAsync = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -18,6 +29,11 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/people/hooks", () => ({
   useClubDirectoryQuery: () => mockUseClubDirectoryQuery(),
+  useCreateAccountCustomerMutation: () => mockUseCreateAccountCustomerMutation(),
+  useCreateMembershipMutation: () => mockUseCreateMembershipMutation(),
+  useCreatePersonMutation: () => mockUseCreatePersonMutation(),
+  useUpdateMembershipMutation: () => mockUseUpdateMembershipMutation(),
+  useUpdatePersonMutation: () => mockUseUpdatePersonMutation(),
 }));
 
 vi.mock("../features/finance/hooks", () => ({
@@ -39,7 +55,10 @@ function renderPage(): void {
   });
 
   render(
-    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }} initialEntries={["/admin/members"]}>
+    <MemoryRouter
+      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      initialEntries={["/admin/members"]}
+    >
       <QueryClientProvider client={queryClient}>
         <AdminMembersPage />
       </QueryClientProvider>
@@ -55,6 +74,7 @@ describe("AdminMembersPage", () => {
       accessToken: "token",
       bootstrap: {
         selected_club_id: "club-1",
+        permissions: ["people:write", "memberships:manage", "account_customers:manage"],
         user: { display_name: "Club Admin" },
       },
     });
@@ -62,15 +82,42 @@ describe("AdminMembersPage", () => {
     mockUseClubDirectoryQuery.mockReturnValue({
       data: [
         {
-          person: { id: "person-1", full_name: "Avery Green", email: "avery@example.com" },
-          membership: { role: "MEMBER", status: "ACTIVE", membership_number: "M-001", joined_at: "2026-03-15T00:00:00Z" },
+          person: {
+            id: "person-1",
+            first_name: "Avery",
+            last_name: "Green",
+            full_name: "Avery Green",
+            email: "avery@example.com",
+            phone: "0820000001",
+          },
+          membership: {
+            id: "membership-1",
+            role: "MEMBER",
+            status: "ACTIVE",
+            membership_number: "M-001",
+            joined_at: "2026-03-15T00:00:00Z",
+          },
         },
         {
-          person: { id: "person-2", full_name: "Jamie Reed", email: "jamie@example.com" },
-          membership: { role: "CLUB_ADMIN", status: "ACTIVE", membership_number: "A-002", joined_at: "2025-12-01T00:00:00Z" },
+          person: {
+            id: "person-2",
+            first_name: "Jamie",
+            last_name: "Reed",
+            full_name: "Jamie Reed",
+            email: "jamie@example.com",
+            phone: null,
+          },
+          membership: {
+            id: "membership-2",
+            role: "CLUB_ADMIN",
+            status: "ACTIVE",
+            membership_number: "A-002",
+            joined_at: "2025-12-01T00:00:00Z",
+          },
         },
       ],
       isLoading: false,
+      isError: false,
     });
 
     mockUseFinanceAccountsQuery.mockReturnValue({
@@ -125,6 +172,33 @@ describe("AdminMembersPage", () => {
       },
       isLoading: false,
     });
+
+    mockUseCreatePersonMutation.mockReturnValue({
+      mutateAsync: createPersonMutateAsync,
+      isPending: false,
+    });
+    mockUseUpdatePersonMutation.mockReturnValue({
+      mutateAsync: updatePersonMutateAsync,
+      isPending: false,
+    });
+    mockUseCreateMembershipMutation.mockReturnValue({
+      mutateAsync: createMembershipMutateAsync,
+      isPending: false,
+    });
+    mockUseUpdateMembershipMutation.mockReturnValue({
+      mutateAsync: updateMembershipMutateAsync,
+      isPending: false,
+    });
+    mockUseCreateAccountCustomerMutation.mockReturnValue({
+      mutateAsync: createAccountCustomerMutateAsync,
+      isPending: false,
+    });
+
+    createPersonMutateAsync.mockResolvedValue({ id: "person-new" });
+    updatePersonMutateAsync.mockResolvedValue({});
+    createMembershipMutateAsync.mockResolvedValue({});
+    updateMembershipMutateAsync.mockResolvedValue({});
+    createAccountCustomerMutateAsync.mockResolvedValue({});
   });
 
   test("renders member finance KPIs from the outstanding summary instead of account aggregation", () => {
@@ -136,5 +210,72 @@ describe("AdminMembersPage", () => {
     expect(normalizedText).toContain("R41000");
     expect(screen.getByText("2 accounts")).toBeInTheDocument();
     expect(screen.queryByText("R25.00")).not.toBeInTheDocument();
+  });
+
+  test("creates a member and optional finance account from the members workspace", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "New Member" }));
+
+    fireEvent.change(screen.getByLabelText("First Name"), { target: { value: "Casey" } });
+    fireEvent.change(screen.getByLabelText("Last Name"), { target: { value: "Stone" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "casey@example.com" } });
+    fireEvent.change(screen.getByLabelText("Membership Number"), { target: { value: "M-777" } });
+    fireEvent.click(screen.getByLabelText("Create now"));
+    fireEvent.change(screen.getByLabelText("Account Code"), { target: { value: "GL-777" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Member" }));
+
+    await waitFor(() => {
+      expect(createPersonMutateAsync).toHaveBeenCalledWith({
+        first_name: "Casey",
+        last_name: "Stone",
+        email: "casey@example.com",
+        phone: null,
+      });
+      expect(createMembershipMutateAsync).toHaveBeenCalledWith({
+        person_id: "person-new",
+        role: "MEMBER",
+        status: "ACTIVE",
+        joined_at: expect.any(String),
+        membership_number: "M-777",
+      });
+      expect(createAccountCustomerMutateAsync).toHaveBeenCalledWith({
+        person_id: "person-new",
+        account_code: "GL-777",
+        billing_email: "casey@example.com",
+        billing_phone: null,
+      });
+    });
+  });
+
+  test("updates an existing member from the detail panel", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByText("Jamie Reed"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Member" }));
+    fireEvent.change(screen.getByLabelText("Last Name"), { target: { value: "Reed-Smith" } });
+    fireEvent.change(screen.getByLabelText("Membership Number"), { target: { value: "A-900" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Member" }));
+
+    await waitFor(() => {
+      expect(updatePersonMutateAsync).toHaveBeenCalledWith({
+        personId: "person-2",
+        payload: {
+          first_name: "Jamie",
+          last_name: "Reed-Smith",
+          email: "jamie@example.com",
+          phone: null,
+        },
+      });
+      expect(updateMembershipMutateAsync).toHaveBeenCalledWith({
+        membershipId: "membership-2",
+        payload: {
+          role: "CLUB_ADMIN",
+          status: "ACTIVE",
+          joined_at: expect.any(String),
+          membership_number: "A-900",
+        },
+      });
+    });
   });
 });

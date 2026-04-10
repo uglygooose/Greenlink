@@ -5,7 +5,7 @@ This document is the implementation companion for the admin restructure.
 ## Summary
 - [x] Preserve router-owned persistent admin and superadmin shells.
 - [x] Preserve backend-owned logic and current route foundations.
-- [x] Reposition admin IA around `Overview`, `Golf`, `People`, `Finance`, `Operations`, `Communications`, and `Club Settings`.
+- [x] Reposition admin IA around the live grouped admin surface with Today, Golf, Finance, Operations, and settings anchors.
 - [x] Keep `Sports` and `Golf > Bookings` deferred until backend truth exists.
 
 ## Stop-And-Fix Rule
@@ -28,7 +28,7 @@ This document is the implementation companion for the admin restructure.
 | `/admin/pos-terminal` | Operations > POS Terminal | Keep | [x] |
 | `/admin/orders` | Operations > Order Queue | Keep, secondary access | [x] |
 | `/admin/communications` | Communications | Keep | [x] |
-| `/admin/settings/club` | Club Settings | Add | [x] |
+| `/admin/settings/club` | Legacy redirect to Settings hub | Keep as redirect only | [x] |
 | `/admin/targets` | Club Settings > Targets | Keep, secondary access | [x] |
 | `/admin/golf/bookings` | Golf > Bookings | Defer until backend read model exists | [ ] |
 | `/admin/sports/*` | Sports | Defer until backend evolves | [ ] |

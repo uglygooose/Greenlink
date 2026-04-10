@@ -23,7 +23,6 @@ The raw selected club input is validated only by the tenancy service.
 - `menu_items`
 - `module_flags`
 - `permissions`
-- `feature_flags`
 
 ## Resolution rules
 

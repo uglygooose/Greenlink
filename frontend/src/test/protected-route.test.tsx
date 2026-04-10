@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ProtectedRoute } from "../components/protected-route";
 import { SessionContext, type SessionContextValue } from "../session/session-context";
@@ -14,12 +14,17 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
       >
         <Routes>
           <Route path="/login" element={<div>Login</div>} />
-          <Route path="/select-club" element={<div>Select Club</div>} />
+          <Route path="/admin/select-club" element={<Navigate replace to="/select-club" />} />
+          <Route path="/select-club" element={<ProtectedRoute />}>
+            <Route index element={<div>Select Club</div>} />
+          </Route>
           <Route path="/admin" element={<ProtectedRoute shell="admin" />}>
             <Route index element={<div>Admin Shell</div>} />
             <Route path="dashboard" element={<div>Admin Dashboard</div>} />
+            <Route path="golf/settings" element={<div>Admin Golf Settings</div>} />
             <Route path="finance/dashboard" element={<div>Admin Finance Summary</div>} />
             <Route path="finance" element={<div>Admin Finance</div>} />
+            <Route path="settings/modules" element={<div>Admin Settings Modules</div>} />
           </Route>
           <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
             <Route index element={<div>Superadmin Shell</div>} />
@@ -93,6 +98,11 @@ test("redirects to select-club when bootstrap requires club selection", async ()
     },
     ["/admin"],
   );
+  expect(await screen.findByText("Select Club")).toBeInTheDocument();
+});
+
+test("redirects legacy /admin/select-club to the canonical select-club route", async () => {
+  renderWithSession(sessionValue, ["/admin/select-club"]);
   expect(await screen.findByText("Select Club")).toBeInTheDocument();
 });
 
@@ -235,4 +245,100 @@ test("allows demoted admin routes when backend menu truth still carries them for
   );
 
   expect(await screen.findByText("Admin Finance Summary")).toBeInTheDocument();
+});
+
+test("allows admin settings routes that are only reachable through the settings hub", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "settings_hub",
+            label: "Settings",
+            path: "/admin/settings",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+          {
+            key: "golf_settings",
+            label: "Golf Settings",
+            path: "/admin/golf/settings",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+          {
+            key: "settings_modules",
+            label: "Modules",
+            path: "/admin/settings/modules",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+        ],
+      },
+    },
+    ["/admin/golf/settings"],
+  );
+
+  expect(await screen.findByText("Admin Golf Settings")).toBeInTheDocument();
+});
+
+test("allows the settings modules route when backend menu truth carries the access path", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "settings_hub",
+            label: "Settings",
+            path: "/admin/settings",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+          {
+            key: "settings_modules",
+            label: "Modules",
+            path: "/admin/settings/modules",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+        ],
+      },
+    },
+    ["/admin/settings/modules"],
+  );
+
+  expect(await screen.findByText("Admin Settings Modules")).toBeInTheDocument();
+});
+
+test("allows golf settings when settings hub is present but the secondary golf route is missing from loaded bootstrap", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "settings_hub",
+            label: "Settings",
+            path: "/admin/settings",
+            shell: "admin",
+            domain: "settings",
+            module_key: null,
+          },
+        ],
+      },
+    },
+    ["/admin/golf/settings"],
+  );
+
+  expect(await screen.findByText("Admin Golf Settings")).toBeInTheDocument();
 });

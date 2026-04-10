@@ -119,4 +119,41 @@ describe("PlayerProfilePage", () => {
 
     expect(await screen.findByText("Profile updated from backend truth.")).toBeInTheDocument();
   });
+
+  test("uses backend menu truth for the mobile tab bar on the profile page", () => {
+    mockUseSession.mockReturnValue({
+      accessToken: "token",
+      bootstrap: {
+        selected_club_id: "club-1",
+        selected_club: { name: "Club One" },
+        user: { display_name: "Avery Green", email: "avery@example.com" },
+        menu_items: [
+          {
+            key: "home",
+            label: "Home",
+            path: "/player/home",
+            shell: "player",
+            domain: "home",
+            module_key: null,
+          },
+          {
+            key: "profile",
+            label: "Profile",
+            path: "/player/profile",
+            shell: "player",
+            domain: "profile",
+            module_key: null,
+          },
+        ],
+      },
+      reloadBootstrap: vi.fn().mockResolvedValue(null),
+    });
+
+    renderPage();
+
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
+    expect(screen.queryByText("Book")).not.toBeInTheDocument();
+    expect(screen.queryByText("Order")).not.toBeInTheDocument();
+  });
 });
