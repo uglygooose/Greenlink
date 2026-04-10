@@ -118,6 +118,13 @@ Current issues include:
 
 ## Admin Navigation
 
+Superseding note as of 2026-04-10:
+- `AdminSidebar` now follows lifecycle weighting: Today · Tee Sheet · Members · Finance · Performance · Operations · Settings.
+- Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
+- The sidebar is the visible primary-nav contract and intentionally hides some access-valid admin routes.
+- Access-only admin routes retained in bootstrap truth include `/admin/golf/dashboard`, `/admin/people/dashboard`, `/admin/finance/dashboard`, and `/admin/targets`.
+- `/admin/settings/profile` no longer acts as a separate settings destination; it redirects into `/admin/settings`.
+
 Current live state:
 - `AdminSidebar` is grouped by domain: Overview · Golf · People · Finance · Operations · My Club
 - Live: My Club group contains: Settings · Communications · Targets
@@ -135,6 +142,12 @@ Approved direction:
 - remove dead weight and low-value grouping logic
 
 ## Admin Routes
+
+Superseding route naming note as of 2026-04-10:
+- `/admin/dashboard` is Today.
+- `/admin/golf/dashboard`, `/admin/people/dashboard`, and `/admin/finance/dashboard` are summary routes.
+- `/admin/reports` is the Performance hub.
+- `/admin/settings/profile` is a legacy redirect route into `/admin/settings`.
 
 - `/admin/dashboard` — overview with action alerts, quick actions, targets, recent activity
 - `/admin/golf/dashboard` — golf domain: utilization, revenue, warnings, config readiness

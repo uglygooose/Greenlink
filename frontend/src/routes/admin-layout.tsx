@@ -10,11 +10,11 @@ type AdminRouteMeta = {
 const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: AdminRouteMeta }> = [
   {
     match: (pathname) => pathname === "/admin/dashboard",
-    meta: { title: "Overview", searchPlaceholder: "Search actions..." },
+    meta: { title: "Today", searchPlaceholder: "Search today..." },
   },
   {
     match: (pathname) => pathname === "/admin/golf/dashboard",
-    meta: { title: "Golf Dashboard", searchPlaceholder: "Search golf operations..." },
+    meta: { title: "Golf Summary", searchPlaceholder: "Search golf summary..." },
   },
   {
     match: (pathname) => pathname === "/admin/golf/tee-sheet",
@@ -34,7 +34,7 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   },
   {
     match: (pathname) => pathname === "/admin/people/dashboard",
-    meta: { title: "People Dashboard", searchPlaceholder: "Search people insights..." },
+    meta: { title: "People Summary", searchPlaceholder: "Search people summary..." },
   },
   {
     match: (pathname) => pathname === "/admin/members",
@@ -42,7 +42,7 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   },
   {
     match: (pathname) => pathname === "/admin/finance/dashboard",
-    meta: { title: "Finance Dashboard", searchPlaceholder: "Search finance insights..." },
+    meta: { title: "Finance Summary", searchPlaceholder: "Search finance summary..." },
   },
   {
     match: (pathname) => pathname === "/admin/finance",
@@ -63,6 +63,10 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   {
     match: (pathname) => pathname === "/admin/reports",
     meta: { title: "Performance", searchPlaceholder: "Search performance..." },
+  },
+  {
+    match: (pathname) => pathname === "/admin/targets",
+    meta: { title: "Targets", searchPlaceholder: "Search targets..." },
   },
   {
     match: (pathname) => pathname === "/admin/pos-terminal",

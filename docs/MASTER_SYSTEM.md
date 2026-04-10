@@ -168,6 +168,12 @@ Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweig
 
 ## Admin Navigation - Current Baseline
 
+Superseding note as of 2026-04-10:
+- Primary admin navigation is lifecycle-weighted: Today · Tee Sheet · Members · Finance · Performance · Operations · Settings.
+- Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
+- `AdminSidebar` is the visible primary-nav contract and may intentionally hide valid direct-link admin routes that remain in bootstrap `menu_items` for access control.
+- Access-only admin routes currently include `/admin/golf/dashboard`, `/admin/people/dashboard`, `/admin/finance/dashboard`, and `/admin/targets`.
+
 Current implementation baseline:
 - `AdminSidebar` is grouped by domain section: Overview · Golf · People · Finance · Operations · Communications · Club Settings.
 - Group membership is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`. Ungrouped items render below without a label.
@@ -202,6 +208,12 @@ Current landing status:
 - PR7 and later rebuild slices remain future work and must not be inferred as complete
 
 ## Current Route Surface
+
+Superseding route naming note as of 2026-04-10:
+- `/admin/dashboard` is the Today workspace.
+- `/admin/golf/dashboard`, `/admin/people/dashboard`, and `/admin/finance/dashboard` are retained summary routes, not primary-nav destinations.
+- `/admin/reports` is the Performance hub.
+- `/admin/settings/profile` is a legacy route redirected into `/admin/settings`.
 
 ### Admin
 - `/admin/dashboard` — overview: action alerts, quick actions, targets, recent activity

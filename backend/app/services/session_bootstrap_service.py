@@ -21,14 +21,14 @@ MENU_ITEMS: tuple[dict[str, str | None], ...] = (
     {"key": "clubs", "label": "Clubs", "path": "/superadmin/clubs", "shell": "superadmin", "domain": "clubs", "module_key": None},
     {"key": "accounting_profiles", "label": "Accounting Profiles", "path": "/superadmin/accounting-profiles", "shell": "superadmin", "domain": "finance", "module_key": None},
     # Admin — core lifecycle
-    {"key": "dashboard", "label": "Overview", "path": "/admin/dashboard", "shell": "admin", "domain": "overview", "module_key": None},
+    {"key": "dashboard", "label": "Today", "path": "/admin/dashboard", "shell": "admin", "domain": "overview", "module_key": None},
     {"key": "golf_tee_sheet", "label": "Tee Sheet", "path": "/admin/golf/tee-sheet", "shell": "admin", "domain": "golf", "module_key": "golf"},
     {"key": "members", "label": "Members", "path": "/admin/members", "shell": "admin", "domain": "members", "module_key": None},
     # Admin — finance
-    {"key": "finance_dashboard", "label": "Dashboard", "path": "/admin/finance/dashboard", "shell": "admin", "domain": "finance", "module_key": "finance"},
+    {"key": "finance_dashboard", "label": "Finance Summary", "path": "/admin/finance/dashboard", "shell": "admin", "domain": "finance", "module_key": "finance"},
     {"key": "finance", "label": "Close Day", "path": "/admin/finance", "shell": "admin", "domain": "finance", "module_key": "finance"},
     # Admin — performance
-    {"key": "reports", "label": "Reports", "path": "/admin/reports", "shell": "admin", "domain": "performance", "module_key": None},
+    {"key": "reports", "label": "Performance", "path": "/admin/reports", "shell": "admin", "domain": "performance", "module_key": None},
     {"key": "targets", "label": "Targets", "path": "/admin/targets", "shell": "admin", "domain": "performance", "module_key": None},
     # Admin — operations (module-conditional)
     {"key": "communications", "label": "Communications", "path": "/admin/communications", "shell": "admin", "domain": "operations", "module_key": "communications"},
@@ -37,8 +37,8 @@ MENU_ITEMS: tuple[dict[str, str | None], ...] = (
     {"key": "orders", "label": "Order Queue", "path": "/admin/orders", "shell": "admin", "domain": "operations", "module_key": "pos"},
     {"key": "pos_terminal", "label": "POS Terminal", "path": "/admin/pos-terminal", "shell": "admin", "domain": "operations", "module_key": "pos"},
     # Admin — demoted domain dashboards
-    {"key": "golf_dashboard", "label": "Dashboard", "path": "/admin/golf/dashboard", "shell": "admin", "domain": "golf", "module_key": "golf"},
-    {"key": "people_dashboard", "label": "Dashboard", "path": "/admin/people/dashboard", "shell": "admin", "domain": "people", "module_key": None},
+    {"key": "golf_dashboard", "label": "Golf Summary", "path": "/admin/golf/dashboard", "shell": "admin", "domain": "golf", "module_key": "golf"},
+    {"key": "people_dashboard", "label": "People Summary", "path": "/admin/people/dashboard", "shell": "admin", "domain": "people", "module_key": None},
     # Admin — settings (bottom anchor)
     {"key": "settings_hub", "label": "Settings", "path": "/admin/settings", "shell": "admin", "domain": "settings", "module_key": None},
     # Player

@@ -53,7 +53,7 @@ export function AdminGolfDashboardPage(): JSX.Element {
 
   return (
     <AdminWorkspace
-      title="Golf Dashboard"
+      title="Golf Summary"
       description="Demand, utilization, revenue posture, and golf configuration readiness."
       actions={
         <>

@@ -20,6 +20,7 @@ The raw selected club input is validated only by the tenancy service.
 - `role_shell`
 - `default_workspace`
 - `landing_path`
+- `menu_items`
 - `module_flags`
 - `permissions`
 - `feature_flags`
@@ -43,6 +44,9 @@ The raw selected club input is validated only by the tenancy service.
 
 - `selected_club` remains nullable for superadmin because the superadmin workspace is not club-scoped in the same way as admin and player shells.
 - Superadmin may still inspect and set selected club context for cross-workspace preview flows, but club selection is not required to bootstrap the shell.
+- `menu_items` is the shell/access contract returned by backend bootstrap.
+- Frontend route access checks align to `menu_items`; visible sidebar navigation may intentionally expose a smaller primary-nav subset.
+- Demoted but still valid admin routes can remain in `menu_items` for access control and direct-link use without appearing in the sidebar.
 
 ## Related auth routes
 

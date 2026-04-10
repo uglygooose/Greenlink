@@ -18,10 +18,9 @@ type NavGroup = {
 };
 
 const FALLBACK_NAV_ITEMS: NavItem[] = [
-  { key: "dashboard", label: "Overview", icon: "dashboard", href: "/admin/dashboard" },
+  { key: "dashboard", label: "Today", icon: "dashboard", href: "/admin/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
-  { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
   { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
   { key: "reports", label: "Performance", icon: "analytics", href: "/admin/reports" },
   { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
@@ -29,21 +28,16 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
   { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
   { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
-  { key: "golf_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/golf/dashboard" },
-  { key: "people_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/people/dashboard" },
   { key: "settings_hub", label: "Settings", icon: "settings", href: "/admin/settings" },
 ];
 
 
 const BACKEND_ICON_BY_KEY: Record<string, string> = {
   dashboard: "dashboard",
-  golf_dashboard: "dashboard",
   golf_tee_sheet: "calendar_today",
   settings_hub: "settings",
   golf_settings: "settings",
-  people_dashboard: "dashboard",
   members: "group",
-  finance_dashboard: "dashboard",
   finance: "payments",
   reports: "analytics",
   halfway: "storefront",
@@ -56,13 +50,15 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
 
 const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "core", label: null, keys: ["dashboard", "golf_tee_sheet", "members"] },
-  { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance"] },
+  { id: "finance", label: "Finance", keys: ["finance"] },
   { id: "performance", label: null, keys: ["reports"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders", "communications"] },
   { id: "settings", label: null, keys: ["settings_hub", "club_settings", "golf_settings"] },
 ];
 
-const SECONDARY_NAV_KEYS: string[] = [];
+// These entries stay in backend menu truth so ProtectedRoute can keep direct-route access aligned
+// with the bootstrap contract, but they are intentionally not part of the primary sidebar IA.
+const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set(["finance_dashboard", "golf_dashboard", "people_dashboard", "targets"]);
 
 function navLinkClass(isActive: boolean): string {
   return isActive
@@ -141,15 +137,12 @@ function CollapsibleGroup({
 
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
-  const LABEL_OVERRIDES: Record<string, string> = {
-    reports: "Performance",
-  };
 
   const backendNavItems = (bootstrap?.menu_items ?? [])
-    .filter((item) => item.shell === "admin" && item.key !== "targets")
+    .filter((item) => item.shell === "admin" && !ACCESS_ONLY_ADMIN_MENU_KEYS.has(item.key))
     .map((item) => ({
       key: item.key,
-      label: LABEL_OVERRIDES[item.key] ?? item.label,
+      label: item.label,
       icon: BACKEND_ICON_BY_KEY[item.key] ?? "apps",
       href: item.path,
     }));

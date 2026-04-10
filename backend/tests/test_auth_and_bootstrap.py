@@ -212,18 +212,18 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
 
     assert response.status_code == 200
     payload = response.json()
-    menu_keys = [item["key"] for item in payload["menu_items"]]
-    assert menu_keys == [
-        "dashboard",
-        "golf_tee_sheet",
-        "members",
-        "finance_dashboard",
-        "finance",
-        "reports",
-        "targets",
-        "golf_dashboard",
-        "people_dashboard",
-        "settings_hub",
+    menu_items = [(item["key"], item["label"]) for item in payload["menu_items"]]
+    assert menu_items == [
+        ("dashboard", "Today"),
+        ("golf_tee_sheet", "Tee Sheet"),
+        ("members", "Members"),
+        ("finance_dashboard", "Finance Summary"),
+        ("finance", "Close Day"),
+        ("reports", "Performance"),
+        ("targets", "Targets"),
+        ("golf_dashboard", "Golf Summary"),
+        ("people_dashboard", "People Summary"),
+        ("settings_hub", "Settings"),
     ]
     assert payload["feature_flags"].get("ux_rebuild_v1") is True
 

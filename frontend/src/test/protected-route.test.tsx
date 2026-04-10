@@ -18,6 +18,7 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
           <Route path="/admin" element={<ProtectedRoute shell="admin" />}>
             <Route index element={<div>Admin Shell</div>} />
             <Route path="dashboard" element={<div>Admin Dashboard</div>} />
+            <Route path="finance/dashboard" element={<div>Admin Finance Summary</div>} />
             <Route path="finance" element={<div>Admin Finance</div>} />
           </Route>
           <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
@@ -188,7 +189,7 @@ test("redirects blocked admin routes to the backend landing path when menu items
         menu_items: [
           {
             key: "dashboard",
-            label: "Dashboard",
+            label: "Today",
             path: "/admin/dashboard",
             shell: "admin",
             domain: "dashboard",
@@ -201,4 +202,37 @@ test("redirects blocked admin routes to the backend landing path when menu items
   );
 
   expect(await screen.findByText("Admin Dashboard")).toBeInTheDocument();
+});
+
+test("allows demoted admin routes when backend menu truth still carries them for access control", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        landing_path: "/admin/dashboard",
+        menu_items: [
+          {
+            key: "dashboard",
+            label: "Today",
+            path: "/admin/dashboard",
+            shell: "admin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "finance_dashboard",
+            label: "Finance Summary",
+            path: "/admin/finance/dashboard",
+            shell: "admin",
+            domain: "finance",
+            module_key: "finance",
+          },
+        ],
+      },
+    },
+    ["/admin/finance/dashboard"],
+  );
+
+  expect(await screen.findByText("Admin Finance Summary")).toBeInTheDocument();
 });

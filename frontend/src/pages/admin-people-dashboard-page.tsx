@@ -28,7 +28,7 @@ export function AdminPeopleDashboardPage(): JSX.Element {
 
   return (
     <AdminWorkspace
-      title="People Dashboard"
+      title="People Summary"
       description="CRM-lite visibility across member coverage, account health, and future engagement structure."
       actions={
         <>

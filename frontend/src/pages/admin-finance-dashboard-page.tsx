@@ -46,7 +46,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
 
   return (
     <AdminWorkspace
-      title="Finance Dashboard"
+      title="Finance Summary"
       description="Finance posture, operational close workflow, and export readiness using backend summaries only."
       actions={
         <>

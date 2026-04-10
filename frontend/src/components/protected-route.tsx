@@ -36,12 +36,14 @@ export function ProtectedRoute({ shell }: Props): JSX.Element {
   }
 
   if (shell && shell === bootstrap.role_shell) {
-    const menuItems = (bootstrap.menu_items ?? []).filter((item) => item.shell === shell);
+    // bootstrap.menu_items is the shell access contract. Some admin routes remain direct-link valid
+    // for access control even when the sidebar intentionally hides them from primary navigation.
+    const shellMenuItems = (bootstrap.menu_items ?? []).filter((item) => item.shell === shell);
     const isShellRoot = location.pathname === `/${shell}`;
     const routeAllowed =
       isShellRoot ||
-      menuItems.length === 0 ||
-      menuItems.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
+      shellMenuItems.length === 0 ||
+      shellMenuItems.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
 
     if (!routeAllowed) {
       return <Navigate to={bootstrap.landing_path} replace />;

@@ -67,7 +67,7 @@ describe("AdminSidebar", () => {
     renderSidebar(baseBootstrap);
 
     // Core items are always visible (unlabeled group)
-    expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Today$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
@@ -86,7 +86,7 @@ describe("AdminSidebar", () => {
       menu_items: [
         {
           key: "dashboard",
-          label: "Overview",
+          label: "Today",
           path: "/admin/dashboard",
           shell: "admin",
           domain: "overview",
@@ -94,7 +94,7 @@ describe("AdminSidebar", () => {
         },
         {
           key: "people_dashboard",
-          label: "Dashboard",
+          label: "People Summary",
           path: "/admin/people/dashboard",
           shell: "admin",
           domain: "people",
@@ -112,11 +112,11 @@ describe("AdminSidebar", () => {
     });
 
     // dashboard and members land in the core group — visible directly
-    expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Today$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
     // people_dashboard has no primary group — falls to ungrouped, visible directly
-    expect(screen.getAllByRole("link", { name: /Dashboard$/i })).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: /^Dashboard$/i })).not.toBeInTheDocument();
 
     // No People group button in the new lifecycle-weighted nav
     expect(screen.queryByRole("button", { name: /^People$/i })).not.toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("AdminSidebar", () => {
       menu_items: [
         {
           key: "dashboard",
-          label: "Overview",
+          label: "Today",
           path: "/admin/dashboard",
           shell: "admin",
           domain: "overview",
@@ -177,7 +177,7 @@ describe("AdminSidebar", () => {
     }
 
     // Core — always visible (unlabeled group)
-    expect(screen.getByRole("link", { name: /overview$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
@@ -197,6 +197,53 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
     // Targets nav item filtered — accessible via Settings hub, not surfaced in sidebar
     expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^dashboard$/i })).not.toBeInTheDocument();
   });
 
+  test("keeps access-only admin routes out of the sidebar even when backend menu truth includes them", () => {
+    renderSidebar({
+      ...baseBootstrap,
+      menu_items: [
+        {
+          key: "dashboard",
+          label: "Today",
+          path: "/admin/dashboard",
+          shell: "admin",
+          domain: "overview",
+          module_key: null,
+        },
+        {
+          key: "finance_dashboard",
+          label: "Finance Summary",
+          path: "/admin/finance/dashboard",
+          shell: "admin",
+          domain: "finance",
+          module_key: "finance",
+        },
+        {
+          key: "finance",
+          label: "Close Day",
+          path: "/admin/finance",
+          shell: "admin",
+          domain: "finance",
+          module_key: "finance",
+        },
+        {
+          key: "targets",
+          label: "Targets",
+          path: "/admin/targets",
+          shell: "admin",
+          domain: "performance",
+          module_key: null,
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
+
+    expect(screen.getByRole("link", { name: /today/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /finance summary/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
+  });
 });
