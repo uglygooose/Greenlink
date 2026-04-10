@@ -32,3 +32,6 @@ test.db
 
 .DS_Store
 Thumbs.db
+
+# Claude Code session-specific settings (permission allowlists accumulate per machine).
+.claude/settings.json
