@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -25,6 +25,7 @@ from app.schemas.finance import (
     FinanceAccountLedgerResponse,
     FinanceAccountSummaryResponse,
     FinanceClubJournalResponse,
+    FinanceExceptionsResponse,
     FinanceExportBatchCreateRequest,
     FinanceExportBatchCreateResult,
     FinanceExportBatchDetailResponse,
@@ -131,6 +132,20 @@ def get_finance_transaction_volume_summary(
         club_id=context.selected_club.id,
         reference_datetime=reference_datetime,
     )
+
+
+@router.get("/exceptions", response_model=FinanceExceptionsResponse)
+def get_finance_exceptions(
+    date: date = Query(...),  # noqa: B008
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FinanceExceptionsResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_read(current_user, context)
+    assert context.selected_club is not None
+    service = FinanceReadModelService(db)
+    return service.get_exceptions(club_id=context.selected_club.id, target_date=date)
 
 
 @router.get("/accounts/{account_id}/ledger", response_model=FinanceAccountLedgerResponse)

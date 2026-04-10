@@ -12,6 +12,7 @@ import type {
   FinanceAccountLedger,
   FinanceAccountSummary,
   FinanceClubJournal,
+  FinanceExceptions,
   FinanceOutstandingSummary,
   FinanceRevenueSummary,
   FinanceExportBatchCreateInput,
@@ -48,6 +49,7 @@ export const financeKeys = {
     ["finance", clubId, "export-batch-reconciliation", batchId] as const,
   mappedExportPreview: (clubId: string, batchId: string, profileId: string) =>
     ["finance", clubId, "mapped-export-preview", batchId, profileId] as const,
+  exceptions: (clubId: string, date: string) => ["finance", clubId, "exceptions", date] as const,
 };
 
 export function useFinanceAccountsQuery({ accessToken, selectedClubId }: FinanceQueryOptions) {
@@ -112,6 +114,23 @@ export function useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedC
         selectedClubId: selectedClubId as string,
       }),
     enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+interface ExceptionsQueryOptions extends FinanceQueryOptions {
+  date: string;
+}
+
+export function useFinanceExceptionsQuery({ accessToken, selectedClubId, date }: ExceptionsQueryOptions) {
+  return useQuery<FinanceExceptions>({
+    queryKey: financeKeys.exceptions(selectedClubId ?? "none", date),
+    queryFn: () =>
+      apiRequest<FinanceExceptions>(`/api/finance/exceptions?date=${encodeURIComponent(date)}`, {
+        method: "GET",
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    enabled: isReady(accessToken, selectedClubId) && Boolean(date),
   });
 }
 

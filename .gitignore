@@ -24,6 +24,7 @@ frontend/.env
 .logs/
 .tmp_local/
 *.log
+.tmp-*
 
 # Legacy SQLite local artifacts from the scaffold period. PostgreSQL is the canonical dev database.
 alembic.sqlite

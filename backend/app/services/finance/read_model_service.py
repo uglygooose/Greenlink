@@ -7,12 +7,24 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import cast, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.models import Club, FinanceAccount, FinanceTransaction, FinanceTransactionSource, FinanceTransactionType
+from app.models import (
+    Booking,
+    BookingPaymentStatus,
+    BookingStatus,
+    Club,
+    FinanceAccount,
+    FinanceTransaction,
+    FinanceTransactionSource,
+    FinanceTransactionType,
+    Order,
+    OrderStatus,
+)
 from app.schemas.finance import (
+    FinanceExceptionsResponse,
     FinanceOutstandingSummaryResponse,
     FinanceRevenuePeriodSummaryResponse,
     FinanceRevenueSourceSummaryResponse,
@@ -21,6 +33,8 @@ from app.schemas.finance import (
     FinanceTransactionVolumePeriodSummaryResponse,
     FinanceTransactionVolumeSummaryResponse,
     FinanceTransactionVolumeTypeSummaryResponse,
+    FinanceUnpaidBookingSummary,
+    FinanceUnresolvedOrderSummary,
 )
 
 ZERO = Decimal("0.00")
@@ -260,6 +274,57 @@ class FinanceReadModelService:
             end_local_date=exclusive_end_local_date - timedelta(days=1),
             start_utc=start_utc,
             end_utc=end_utc,
+        )
+
+    def get_exceptions(
+        self,
+        *,
+        club_id: uuid.UUID,
+        target_date: date,
+    ) -> FinanceExceptionsResponse:
+        """Return unpaid bookings and unresolved orders for a given date."""
+        club = self.db.get(Club, club_id)
+        if club is None:
+            raise NotFoundError("Club not found")
+        zone = ZoneInfo(club.timezone)
+
+        # Day window in club local time → UTC bounds for slot_datetime comparison.
+        day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        day_end_utc = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(UTC)
+
+        unpaid_bookings_stmt = (
+            select(Booking)
+            .where(
+                Booking.club_id == club_id,
+                Booking.payment_status == BookingPaymentStatus.PENDING,
+                Booking.status.notin_([BookingStatus.CANCELLED, BookingStatus.NO_SHOW]),
+                Booking.slot_datetime >= day_start_utc,
+                Booking.slot_datetime < day_end_utc,
+            )
+            .order_by(Booking.slot_datetime)
+        )
+        unpaid_bookings = list(self.db.execute(unpaid_bookings_stmt).scalars().all())
+
+        # Unresolved orders: not collected and not cancelled, created on the target date.
+        order_day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        order_day_end_utc = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        unresolved_orders_stmt = (
+            select(Order)
+            .where(
+                Order.club_id == club_id,
+                Order.status.notin_([OrderStatus.COLLECTED, OrderStatus.CANCELLED]),
+                Order.created_at >= order_day_start_utc,
+                Order.created_at < order_day_end_utc,
+            )
+            .order_by(Order.created_at)
+        )
+        unresolved_orders = list(self.db.execute(unresolved_orders_stmt).scalars().all())
+
+        return FinanceExceptionsResponse(
+            date=target_date,
+            unpaid_bookings=[FinanceUnpaidBookingSummary.model_validate(b) for b in unpaid_bookings],
+            unresolved_orders=[FinanceUnresolvedOrderSummary.model_validate(o) for o in unresolved_orders],
+            total_exception_count=len(unpaid_bookings) + len(unresolved_orders),
         )
 
     def _to_revenue_period_summary(

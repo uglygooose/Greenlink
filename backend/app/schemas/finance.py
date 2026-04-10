@@ -426,3 +426,28 @@ class AccountingMappedExportPreviewResponse(BaseModel):
 class AccountingMappedExportDownloadResult(BaseModel):
     file_name: str
     content: str
+
+
+class FinanceUnpaidBookingSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    slot_datetime: datetime
+    party_size: int
+    fee_label: str | None = None
+    primary_person_id: uuid.UUID | None = None
+
+
+class FinanceUnresolvedOrderSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: str
+    created_at: datetime
+
+
+class FinanceExceptionsResponse(BaseModel):
+    date: date
+    unpaid_bookings: list[FinanceUnpaidBookingSummary]
+    unresolved_orders: list[FinanceUnresolvedOrderSummary]
+    total_exception_count: int

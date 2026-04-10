@@ -324,3 +324,24 @@ export interface AccountingMappedExportPreview {
   validation_errors: AccountingMappedExportValidationError[];
   rows: AccountingMappedExportPreviewRow[];
 }
+
+export interface FinanceUnpaidBooking {
+  id: string;
+  slot_datetime: string;
+  party_size: number;
+  fee_label: string | null;
+  primary_person_id: string | null;
+}
+
+export interface FinanceUnresolvedOrder {
+  id: string;
+  status: string;
+  created_at: string;
+}
+
+export interface FinanceExceptions {
+  date: string;
+  unpaid_bookings: FinanceUnpaidBooking[];
+  unresolved_orders: FinanceUnresolvedOrder[];
+  total_exception_count: number;
+}

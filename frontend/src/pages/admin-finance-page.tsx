@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
+import { AdminFinanceCloseDayPage } from "./admin-finance-close-day-page";
 import {
   downloadFinanceExportBatch,
   downloadMappedFinanceExport,
@@ -155,6 +156,9 @@ function isRegeneratedBatch(batch: { metadata_json: { regenerated_event?: { rege
 
 export function AdminFinancePage(): JSX.Element {
   const { bootstrap, accessToken } = useSession();
+  if (bootstrap?.feature_flags?.ux_rebuild_v1) {
+    return <AdminFinanceCloseDayPage />;
+  }
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const [dateFrom, setDateFrom] = useState(firstDayOfMonthInputValue);
   const [dateTo, setDateTo] = useState(todayInputValue);
