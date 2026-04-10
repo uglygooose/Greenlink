@@ -189,7 +189,6 @@ describe("AdminSidebar", () => {
 
     // Finance
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /reports/i })).toBeInTheDocument();
 
     // Operations
     expect(screen.getByRole("link", { name: /halfway/i })).toBeInTheDocument();
@@ -197,9 +196,11 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
 
-    // My Club
+    // My Club — Performance lives here
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /targets/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
+    // Targets nav item removed — merged into Performance page
+    expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
   });
 
   test("preserves the older static settings links when the rebuild flag is disabled", () => {

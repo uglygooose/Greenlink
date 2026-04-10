@@ -20,7 +20,15 @@
       "Bash(find /c/Users/athom/Documents/Projects/GreenLink/.claude/worktrees/agent-ab068919 -name admin-*.tsx)",
       "Bash(node_modules/.bin/vitest run:*)",
       "Bash(grep -v \"^$\")",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(wc -l /c/Users/athom/Documents/Projects/GreenLink/backend/app/api/routes/*.py)",
+      "Bash(py -m uv run pytest backend/tests/test_auth_and_bootstrap.py -q)",
+      "Bash(py -m uv run pytest backend/tests/test_auth_and_bootstrap.py -v)",
+      "Bash(py -m uv run pytest backend/tests/test_auth_and_bootstrap.py backend/tests/test_superadmin_onboarding_foundation.py -q)",
+      "Bash(py -m uv run pytest backend/tests/test_superadmin_onboarding_foundation.py -q)",
+      "Bash(py -m uv run pytest -q --ignore=backend/tests/test_superadmin_onboarding_foundation.py)",
+      "Bash(timeout 240 py -m uv run pytest -p no:randomly --tb=no -q)",
+      "Bash(timeout 60 py -m uv run pytest backend/tests/test_auth_and_bootstrap.py backend/tests/test_booking_creation_foundation.py backend/tests/test_booking_update_foundation.py backend/tests/test_targets.py -p no:randomly --tb=short -q)"
     ]
   }
 }

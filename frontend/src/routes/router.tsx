@@ -14,7 +14,6 @@ import { AdminSettingsModulesPage } from "../pages/admin-settings-modules-page";
 import { AdminProShopPage } from "../pages/admin-pro-shop-page";
 import { AdminPeopleDashboardPage } from "../pages/admin-people-dashboard-page";
 import { AdminReportsPage } from "../pages/admin-reports-page";
-import { AdminTargetsPage } from "../pages/admin-targets-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
@@ -69,7 +68,7 @@ const router = createBrowserRouter([
           { path: "orders", element: <AdminOrderQueuePage /> },
           { path: "people/dashboard", element: <AdminPeopleDashboardPage /> },
           { path: "members", element: <AdminMembersPage /> },
-          { path: "targets", element: <AdminTargetsPage /> },
+          { path: "targets", element: <Navigate to="/admin/reports" replace /> },
           { path: "finance/dashboard", element: <AdminFinanceDashboardPage /> },
           { path: "finance", element: <AdminFinancePage /> },
           { path: "communications", element: <AdminCommunicationsPage /> },

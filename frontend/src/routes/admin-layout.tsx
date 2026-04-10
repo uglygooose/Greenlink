@@ -62,7 +62,7 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   },
   {
     match: (pathname) => pathname === "/admin/reports",
-    meta: { title: "Reports", searchPlaceholder: "Search reports..." },
+    meta: { title: "Performance", searchPlaceholder: "Search performance..." },
   },
   {
     match: (pathname) => pathname === "/admin/pos-terminal",

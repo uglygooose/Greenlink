@@ -32,7 +32,17 @@
       "Bash(tasklist /fi \"imagename eq python.exe\")",
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Bash(./node_modules/.bin/vitest run:*)"
+      "Bash(./node_modules/.bin/vitest run:*)",
+      "Bash(py -m py_compile app/schemas/finance.py app/services/finance/read_model_service.py app/api/finance/routes.py)",
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py -v)",
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py tests/test_finance_export_batches.py tests/test_finance_read_models.py -q)",
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py tests/test_booking_finance_actions.py -q)",
+      "Read(//tmp/**)",
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py -q)",
+      "Bash(py -m uv run pytest tests/test_finance_exceptions.py -q -p no:randomly)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\athom\\.claude\\projects\\c--Users-athom-Documents-Projects-GreenLink\\memory"
     ]
   }
 }

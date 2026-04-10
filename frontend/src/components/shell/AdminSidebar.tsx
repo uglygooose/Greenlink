@@ -26,13 +26,12 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
   { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
   { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
-  { key: "reports", label: "Reports", icon: "analytics", href: "/admin/reports" },
+  { key: "reports", label: "Performance", icon: "analytics", href: "/admin/reports" },
   { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
   { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
   { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
   { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
   { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
-  { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
 ];
 
 const LEGACY_FALLBACK_NAV_ITEMS: NavItem[] = [
@@ -43,14 +42,13 @@ const LEGACY_FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
   { key: "finance_dashboard", label: "Dashboard", icon: "dashboard", href: "/admin/finance/dashboard" },
   { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
-  { key: "reports", label: "Reports", icon: "analytics", href: "/admin/reports" },
+  { key: "reports", label: "Performance", icon: "analytics", href: "/admin/reports" },
   { key: "halfway", label: "Halfway", icon: "storefront", href: "/admin/halfway" },
   { key: "pro_shop", label: "Pro Shop", icon: "store", href: "/admin/pro-shop" },
   { key: "pos_terminal", label: "POS Terminal", icon: "point_of_sale", href: "/admin/pos-terminal" },
   { key: "orders", label: "Order Queue", icon: "receipt_long", href: "/admin/orders" },
   { key: "communications", label: "Communications", icon: "chat_bubble", href: "/admin/communications" },
   { key: "club_settings", label: "Club Settings", icon: "settings_applications", href: "/admin/settings/club" },
-  { key: "targets", label: "Targets", icon: "flag", href: "/admin/targets" },
   { key: "golf_settings", label: "Golf Settings", icon: "settings", href: "/admin/golf/settings" },
 ];
 
@@ -71,16 +69,15 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
   communications: "chat_bubble",
   club_settings: "settings_applications",
   orders: "receipt_long",
-  targets: "flag",
 };
 
 const PRIMARY_NAV_GROUPS: NavGroup[] = [
   { id: "overview", label: null, keys: ["dashboard"] },
   { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet"] },
   { id: "people", label: "People", keys: ["people_dashboard", "members"] },
-  { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance", "reports"] },
+  { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
-  { id: "my_club", label: "My Club", keys: ["settings_hub", "communications", "targets", "club_settings", "golf_settings"] },
+  { id: "my_club", label: "My Club", keys: ["settings_hub", "communications", "reports", "club_settings", "golf_settings"] },
 ];
 
 const SECONDARY_NAV_KEYS: string[] = [];
@@ -163,11 +160,15 @@ function CollapsibleGroup({
 export default function AdminSidebar(): JSX.Element {
   const { bootstrap } = useSession();
   const uxRebuildV1 = bootstrap?.feature_flags?.ux_rebuild_v1 === true;
+  const LABEL_OVERRIDES: Record<string, string> = {
+    reports: "Performance",
+  };
+
   const backendNavItems = (bootstrap?.menu_items ?? [])
-    .filter((item) => item.shell === "admin")
+    .filter((item) => item.shell === "admin" && item.key !== "targets")
     .map((item) => ({
       key: item.key,
-      label: item.label,
+      label: LABEL_OVERRIDES[item.key] ?? item.label,
       icon: BACKEND_ICON_BY_KEY[item.key] ?? "apps",
       href: item.path,
     }));
