@@ -75,6 +75,8 @@ class AccountingProfileMappingService:
             mapping_config_json=payload.mapping_config.model_dump(mode="json"),
             created_by_person_id=created_by_person_id,
         )
+        if payload.is_active:
+            self._deactivate_other_profiles(club_id=club_id)
         self.db.add(profile)
         try:
             self.db.commit()
@@ -101,6 +103,8 @@ class AccountingProfileMappingService:
         profile.target_system = self._normalize_target_system(payload.target_system)
         profile.is_active = payload.is_active
         profile.mapping_config_json = payload.mapping_config.model_dump(mode="json")
+        if payload.is_active:
+            self._deactivate_other_profiles(club_id=club_id, excluded_profile_id=profile.id)
         self.db.add(profile)
         try:
             self.db.commit()
@@ -678,3 +682,18 @@ class AccountingProfileMappingService:
 
     def _decimal_string(self, value: Decimal) -> str:
         return f"{value.quantize(Decimal('0.01'))}"
+
+    def _deactivate_other_profiles(
+        self,
+        *,
+        club_id: uuid.UUID,
+        excluded_profile_id: uuid.UUID | None = None,
+    ) -> None:
+        profiles = self.db.scalars(
+            select(AccountingExportProfile).where(AccountingExportProfile.club_id == club_id)
+        ).all()
+        for profile in profiles:
+            if excluded_profile_id is not None and profile.id == excluded_profile_id:
+                continue
+            profile.is_active = False
+            self.db.add(profile)

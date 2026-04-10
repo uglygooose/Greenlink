@@ -13,6 +13,7 @@ from app.models import (
     ClubOnboardingState,
     ClubOnboardingStep,
 )
+from app.schemas.finance import AccountingExportProfileMappingConfig
 
 
 class SuperadminClubCreateRequest(BaseModel):
@@ -193,3 +194,64 @@ class SuperadminClubInvitationResponse(BaseModel):
 class SuperadminClubInvitationListResponse(BaseModel):
     items: list[SuperadminClubInvitationResponse]
     total_count: int
+
+
+class SuperadminAccountingProfileSummary(BaseModel):
+    id: uuid.UUID
+    club_id: uuid.UUID
+    club_name: str
+    club_slug: str
+    code: str
+    name: str
+    target_system: str
+    is_active: bool
+    mapping_config: AccountingExportProfileMappingConfig
+    created_by_person_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class SuperadminAccountingProfileListResponse(BaseModel):
+    profiles: list[SuperadminAccountingProfileSummary]
+    total_count: int
+
+
+class SuperadminAccountingProfileCreateRequest(BaseModel):
+    club_id: uuid.UUID
+    code: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=128)
+    target_system: str = Field(min_length=1, max_length=64)
+    is_active: bool = True
+    mapping_config: AccountingExportProfileMappingConfig
+
+
+class SuperadminAccountingProfileActivationRequest(BaseModel):
+    is_active: bool
+
+
+class SuperadminAccountingProfileBindRequest(BaseModel):
+    profile_id: uuid.UUID
+
+
+class SuperadminAccountingTemplateColumnSample(BaseModel):
+    values: list[str]
+
+
+class SuperadminAccountingTemplateParseResponse(BaseModel):
+    file_name: str
+    headers_detected: list[str]
+    headerless: bool
+    suggested_target_system: str
+    suggested_mapping: dict[str, str]
+    sample_rows: list[SuperadminAccountingTemplateColumnSample]
+    warnings: list[str]
+
+
+class SuperadminAccountingSampleLayoutResponse(BaseModel):
+    target_system: str
+    file_name: str
+    headerless: bool
+    delimiter: str
+    headers: list[str]
+    sample_csv: str
+    notes: list[str]

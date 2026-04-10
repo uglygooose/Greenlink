@@ -1,4 +1,5 @@
 import type { MembershipRole, MembershipStatus } from "./session";
+import type { AccountingExportProfileMappingConfig } from "./finance";
 
 export type ClubOnboardingState =
   | "onboarding_started"
@@ -186,4 +187,65 @@ export interface SuperadminClubInvitationResponse {
 export interface SuperadminClubInvitationListResponse {
   items: SuperadminClubInvitationResponse[];
   total_count: number;
+}
+
+export interface SuperadminAccountingProfileSummary {
+  id: string;
+  club_id: string;
+  club_name: string;
+  club_slug: string;
+  code: string;
+  name: string;
+  target_system: string;
+  is_active: boolean;
+  mapping_config: AccountingExportProfileMappingConfig;
+  created_by_person_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SuperadminAccountingProfileListResponse {
+  profiles: SuperadminAccountingProfileSummary[];
+  total_count: number;
+}
+
+export interface SuperadminAccountingProfileCreateInput {
+  club_id: string;
+  code: string;
+  name: string;
+  target_system: string;
+  is_active: boolean;
+  mapping_config: AccountingExportProfileMappingConfig;
+}
+
+export interface SuperadminAccountingProfileActivationInput {
+  is_active: boolean;
+}
+
+export interface SuperadminAccountingProfileBindInput {
+  profile_id: string;
+}
+
+export interface SuperadminAccountingTemplateColumnSample {
+  values: string[];
+}
+
+export interface SuperadminAccountingTemplateParseResult {
+  file_name: string;
+  headers_detected: string[];
+  headerless: boolean;
+  suggested_target_system: string;
+  suggested_mapping: Record<string, string>;
+  sample_rows: SuperadminAccountingTemplateColumnSample[];
+  warnings: string[];
+}
+
+export interface SuperadminAccountingSampleLayout {
+  target_system: string;
+  file_name: string;
+  headerless: boolean;
+  delimiter: string;
+  headers: string[];
+  sample_csv: string;
+  notes: string[];
 }

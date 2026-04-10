@@ -19,6 +19,10 @@ const ROUTE_META: Array<{ match: (p: string) => boolean; meta: RouteMeta }> = [
     match: (p) => p === "/superadmin/clubs",
     meta: { title: "Club Onboarding", searchPlaceholder: "Search clubs..." },
   },
+  {
+    match: (p) => p === "/superadmin/accounting-profiles",
+    meta: { title: "Accounting Profiles", searchPlaceholder: "Search profiles or clubs..." },
+  },
 ];
 
 function routeMetaFor(pathname: string): RouteMeta {

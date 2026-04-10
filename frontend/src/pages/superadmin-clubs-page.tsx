@@ -509,7 +509,16 @@ export function SuperadminClubsPage(): JSX.Element {
               No accounting profiles exist for this club yet. Build them in Finance, then return here to select the live mapping profile.
             </div>
           ) : null}
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
+              onClick={() => {
+                navigate("/superadmin/accounting-profiles");
+              }}
+              type="button"
+            >
+              Open Accounting Profiles
+            </button>
             <button
               className="rounded-2xl bg-surface-container px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high"
               onClick={() => {

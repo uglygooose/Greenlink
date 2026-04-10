@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_superadmin, get_db
+from app.core.exceptions import AppError
 from app.models import User
 from app.schemas.superadmin import (
+    SuperadminAccountingProfileActivationRequest,
+    SuperadminAccountingProfileBindRequest,
+    SuperadminAccountingProfileCreateRequest,
+    SuperadminAccountingProfileListResponse,
+    SuperadminAccountingSampleLayoutResponse,
+    SuperadminAccountingProfileSummary,
+    SuperadminAccountingTemplateParseResponse,
     SuperadminAssignmentCandidateListResponse,
     SuperadminClubAssignmentResponse,
     SuperadminClubAssignmentUpsertRequest,
@@ -21,6 +29,7 @@ from app.schemas.superadmin import (
     SuperadminClubStatusUpdateRequest,
     SuperadminClubSummary,
 )
+from app.services.accounting_template_service import AccountingTemplateService
 from app.services.superadmin_onboarding_service import SuperadminOnboardingService
 
 router = APIRouter()
@@ -36,6 +45,71 @@ def list_superadmin_clubs(
     db: Session = Depends(get_db),
 ) -> SuperadminClubListResponse:
     return SuperadminOnboardingService(db).list_clubs()
+
+
+@router.get("/accounting-profiles", response_model=SuperadminAccountingProfileListResponse)
+def list_superadmin_accounting_profiles(
+    club_id: uuid.UUID | None = Query(default=None),
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminAccountingProfileListResponse:
+    return AccountingTemplateService(db).list_profiles(club_id=club_id)
+
+
+@router.get("/accounting-profiles/sample-layout", response_model=SuperadminAccountingSampleLayoutResponse)
+def get_superadmin_accounting_sample_layout(
+    target_system: str = Query(...),
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminAccountingSampleLayoutResponse:
+    return AccountingTemplateService(db).get_sample_layout(target_system=target_system)
+
+
+@router.post("/accounting-profiles/parse-template", response_model=SuperadminAccountingTemplateParseResponse)
+async def parse_superadmin_accounting_template(
+    file: UploadFile = File(...),
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminAccountingTemplateParseResponse:
+    return AccountingTemplateService(db).parse_csv_template(
+        file_bytes=await file.read(),
+        file_name=file.filename or "template.csv",
+    )
+
+
+@router.post(
+    "/accounting-profiles",
+    response_model=SuperadminAccountingProfileSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_superadmin_accounting_profile(
+    payload: SuperadminAccountingProfileCreateRequest,
+    current_user: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminAccountingProfileSummary:
+    if current_user.person_id is None:
+        raise AppError(
+            code="superadmin_accounting_profile_person_required",
+            message="Superadmin accounting profile creation requires a resolved person context",
+            status_code=400,
+        )
+    return AccountingTemplateService(db).create_profile(
+        payload=payload,
+        created_by_person_id=current_user.person_id,
+    )
+
+
+@router.patch("/accounting-profiles/{profile_id}/active", response_model=SuperadminAccountingProfileSummary)
+def update_superadmin_accounting_profile_active(
+    profile_id: uuid.UUID,
+    payload: SuperadminAccountingProfileActivationRequest,
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminAccountingProfileSummary:
+    return AccountingTemplateService(db).set_profile_active_status(
+        profile_id=profile_id,
+        is_active=payload.is_active,
+    )
 
 
 @router.post("/clubs", response_model=SuperadminClubSummary, status_code=status.HTTP_201_CREATED)
@@ -105,6 +179,21 @@ def update_superadmin_club_onboarding(
         actor_user_id=current_user.id,
         correlation_id=_correlation_id(request),
     )
+
+
+@router.post(
+    "/clubs/{club_id}/onboarding/finance/bind-profile",
+    response_model=SuperadminClubOnboardingDetailResponse,
+)
+def bind_superadmin_club_accounting_profile(
+    club_id: uuid.UUID,
+    payload: SuperadminAccountingProfileBindRequest,
+    _: User = Depends(get_current_superadmin),
+    db: Session = Depends(get_db),
+) -> SuperadminClubOnboardingDetailResponse:
+    template_service = AccountingTemplateService(db)
+    template_service.bind_profile(club_id=club_id, profile_id=payload.profile_id)
+    return SuperadminOnboardingService(db).get_onboarding_detail(club_id=club_id)
 
 
 @router.get(

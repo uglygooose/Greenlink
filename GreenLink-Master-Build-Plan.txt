@@ -295,7 +295,9 @@ Landing status as of 2026-04-10:
 - PR4 landed behind `feature_flags.ux_rebuild_v1`: booking-drawer finance actions backed by new booking finance endpoints
 - PR5 landed behind `feature_flags.ux_rebuild_v1`: Settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
 - PR6 landed behind `feature_flags.ux_rebuild_v1`: guided golf settings setup with readiness, ordered section locking, draft/live publish control, and rollback safety
-- PR7+ remain future work
+- PR7 landed behind `feature_flags.ux_rebuild_v1`: Finance Close Day wizard — guided close-day reconciliation and export handoff surface (R6)
+- PR8 landed behind `feature_flags.ux_rebuild_v1`: Performance hub — targets and KPI performance surface at `/admin/reports` (R9)
+- PR9 (Superadmin Accounting Profiles): in progress — fleet-level accounting profile management for superadmin
 
 ─────────────────────────────────────────────────────────────────────────────
 TEE SHEET UX REBUILD BASELINE (CURRENTLY TRUE)

@@ -14,7 +14,7 @@ It reflects the locked completed baseline and the approved UX rebuild direction.
 - Finance: Partial
 - Superadmin: Partial
 - Player: Partial
-- UX rebuild direction: Approved, not yet fully landed
+- UX rebuild direction: PR1–PR8 landed
 
 ## Current Product Reality
 
@@ -34,13 +34,15 @@ Current issues include:
 - Live: booking creation, editing, and move UX through backend-owned commands and the tee-sheet read model
 - Live: inline chip quick actions (check in / no-show / cancel), per-bucket check-in-all, create/edit cart-caddie toggles, keyboard shortcuts, and focus-trapped operational drawers
 - Live: feature-flagged timeline swimlane layout alongside the classic table, reusing the same tee-sheet read model, mutations, drag/drop, quick actions, and localStorage-backed layout/density UI state
-- Live: `feature_flags.ux_rebuild_v1` now covers the approved PR1-PR6 rebuild slices:
-  - Today-first admin navigation weighting
-  - Today dashboard operational work queue
-  - tee-sheet cockpit shell with operate header, presets, and collapsed filter controls
-  - booking-drawer finance actions for post charge, record payment, complimentary, and waived flows
-  - settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
-  - guided golf settings setup with readiness, section locking, draft/live publish, and rollback
+- Live: `feature_flags.ux_rebuild_v1` covers the approved PR1–PR8 rebuild slices:
+  - PR1: Today-first admin navigation weighting
+  - PR2: Today dashboard operational work queue
+  - PR3: tee-sheet cockpit shell with operate header, presets, and collapsed filter controls
+  - PR4: booking-drawer finance actions for post charge, record payment, complimentary, and waived flows
+  - PR5: settings hub at `/admin/settings` with a single Settings nav item and read-only Modules surface
+  - PR6: guided golf settings setup with readiness, section locking, draft/live publish, and rollback
+  - PR7: Finance Close Day wizard — guided close-day reconciliation and export handoff surface
+  - PR8: Performance hub — targets and KPI performance surface at `/admin/reports`
 - Live: `AdminGolfDashboardPage` at `/admin/golf/dashboard` — utilization KPIs, revenue posture, tee warnings, config readiness (courses, tees, rulesets, pricing matrices), primary golf actions
 - Gap: tee sheet is not yet the full operational command center GreenLink requires
 - Gap: refunds, close-day reconciliation handoff, and deeper finance resolution still remain outside the tee-sheet flow
@@ -82,6 +84,7 @@ Current issues include:
 - Live: superadmin can hand off into club-scoped admin workspaces (`/admin/finance`, `/admin/golf/settings`, `/admin/dashboard`) after selecting a club
 - Default redirect is `/superadmin/overview`; sidebar has two real nav items (Overview, Clubs)
 - Live: superadmin invitation/provisioning flow with backend-owned invite creation, invitation listing, new-user acceptance, and logged-in activation for existing users
+- In progress: Superadmin Accounting Profiles page at `/superadmin/accounting-profiles` — fleet-level view and management of accounting export profiles across clubs (backend routes, schemas, service layer, and frontend page in working tree, not yet committed as a PR)
 - Not built: superadmin-side authoring for golf rules/pricing; canonical authoring remains in admin golf settings
 - Gap: onboarding is not yet sufficiently structured around true club go-live readiness
 

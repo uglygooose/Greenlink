@@ -139,7 +139,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}, 
   const token = getAccessToken() ?? options.accessToken ?? null;
   const selectedClubId = options.selectedClubId ?? getSelectedClubId();
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
