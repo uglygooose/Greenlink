@@ -16,23 +16,32 @@ from app.schemas.session import (
 from app.tenancy.service import TenancyContext, TenancyService
 
 MENU_ITEMS: tuple[dict[str, str | None], ...] = (
+    # Superadmin
     {"key": "overview", "label": "Overview", "path": "/superadmin/overview", "shell": "superadmin", "domain": "overview", "module_key": None},
     {"key": "clubs", "label": "Clubs", "path": "/superadmin/clubs", "shell": "superadmin", "domain": "clubs", "module_key": None},
+    {"key": "accounting_profiles", "label": "Accounting Profiles", "path": "/superadmin/accounting-profiles", "shell": "superadmin", "domain": "finance", "module_key": None},
+    # Admin — core lifecycle
     {"key": "dashboard", "label": "Overview", "path": "/admin/dashboard", "shell": "admin", "domain": "overview", "module_key": None},
-    {"key": "golf_dashboard", "label": "Dashboard", "path": "/admin/golf/dashboard", "shell": "admin", "domain": "golf", "module_key": "golf"},
     {"key": "golf_tee_sheet", "label": "Tee Sheet", "path": "/admin/golf/tee-sheet", "shell": "admin", "domain": "golf", "module_key": "golf"},
-    {"key": "settings_hub", "label": "Settings", "path": "/admin/settings", "shell": "admin", "domain": "settings", "module_key": None},
-    {"key": "people_dashboard", "label": "Dashboard", "path": "/admin/people/dashboard", "shell": "admin", "domain": "people", "module_key": None},
     {"key": "members", "label": "Members", "path": "/admin/members", "shell": "admin", "domain": "members", "module_key": None},
+    # Admin — finance
     {"key": "finance_dashboard", "label": "Dashboard", "path": "/admin/finance/dashboard", "shell": "admin", "domain": "finance", "module_key": "finance"},
     {"key": "finance", "label": "Close Day", "path": "/admin/finance", "shell": "admin", "domain": "finance", "module_key": "finance"},
-    {"key": "reports", "label": "Reports", "path": "/admin/reports", "shell": "admin", "domain": "reports", "module_key": None},
-    {"key": "communications", "label": "Communications", "path": "/admin/communications", "shell": "admin", "domain": "communications", "module_key": "communications"},
+    # Admin — performance
+    {"key": "reports", "label": "Reports", "path": "/admin/reports", "shell": "admin", "domain": "performance", "module_key": None},
+    {"key": "targets", "label": "Targets", "path": "/admin/targets", "shell": "admin", "domain": "performance", "module_key": None},
+    # Admin — operations (module-conditional)
+    {"key": "communications", "label": "Communications", "path": "/admin/communications", "shell": "admin", "domain": "operations", "module_key": "communications"},
     {"key": "halfway", "label": "Halfway", "path": "/admin/halfway", "shell": "admin", "domain": "operations", "module_key": "pos"},
     {"key": "pro_shop", "label": "Pro Shop", "path": "/admin/pro-shop", "shell": "admin", "domain": "operations", "module_key": "pos"},
     {"key": "orders", "label": "Order Queue", "path": "/admin/orders", "shell": "admin", "domain": "operations", "module_key": "pos"},
     {"key": "pos_terminal", "label": "POS Terminal", "path": "/admin/pos-terminal", "shell": "admin", "domain": "operations", "module_key": "pos"},
-    {"key": "targets", "label": "Targets", "path": "/admin/targets", "shell": "admin", "domain": "targets", "module_key": None},
+    # Admin — demoted domain dashboards
+    {"key": "golf_dashboard", "label": "Dashboard", "path": "/admin/golf/dashboard", "shell": "admin", "domain": "golf", "module_key": "golf"},
+    {"key": "people_dashboard", "label": "Dashboard", "path": "/admin/people/dashboard", "shell": "admin", "domain": "people", "module_key": None},
+    # Admin — settings (bottom anchor)
+    {"key": "settings_hub", "label": "Settings", "path": "/admin/settings", "shell": "admin", "domain": "settings", "module_key": None},
+    # Player
     {"key": "home", "label": "Home", "path": "/player/home", "shell": "player", "domain": "home", "module_key": None},
     {"key": "book", "label": "Book", "path": "/player/book", "shell": "player", "domain": "bookings", "module_key": "golf"},
     {"key": "order", "label": "Order", "path": "/player/order", "shell": "player", "domain": "orders", "module_key": "pos"},

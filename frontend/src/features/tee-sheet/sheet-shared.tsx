@@ -1,4 +1,4 @@
-import { memo, type DragEvent } from "react";
+import { memo, type DragEvent, type ReactNode } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type {
@@ -7,12 +7,14 @@ import type {
   StartLane,
 } from "../../types/bookings";
 import type { BookingRuleAppliesTo } from "../../types/operations";
+import type { ClubPersonEntry, ClubMembershipRole, ClubMembershipStatus } from "../../types/people";
 import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../types/tee-sheet";
 
 export type Action = "cancel" | "check_in" | "complete" | "no_show";
-export type QuickAction = Exclude<Action, "complete">;
+export type QuickAction = Action;
 export type LayoutMode = "classic" | "timeline";
 export type TeeSheetBookingView = TeeSheetSlotView["bookings"][number];
+export type BookingNextAction = "needs_payment" | "ready_to_check_in" | "at_risk" | "completed";
 
 export type LaneSlot = {
   colorCode: string | null;
@@ -46,6 +48,7 @@ export type SlotBookingSegment =
 
 export const QUICK_ACTIONS: Array<{ action: QuickAction; icon: string; label: string }> = [
   { action: "check_in", icon: "how_to_reg", label: "Check In" },
+  { action: "complete", icon: "task_alt", label: "Complete" },
   { action: "no_show", icon: "person_off", label: "No-Show" },
   { action: "cancel", icon: "event_busy", label: "Cancel" },
 ];
@@ -217,6 +220,62 @@ export function paymentIconClass(value: BookingPaymentStatus | null | undefined)
   }
 }
 
+export function paymentDotClass(value: BookingPaymentStatus | null | undefined, compact = false): string {
+  const sizeClass = compact ? "h-2 w-2" : "h-2.5 w-2.5";
+  switch (value) {
+    case "paid":
+      return `${sizeClass} inline-block rounded-full bg-emerald-600 ring-1 ring-emerald-100`;
+    case "pending":
+      return `${sizeClass} inline-block rounded-full bg-amber-500 ring-1 ring-amber-100`;
+    case "waived":
+      return `${sizeClass} inline-block rounded-full bg-slate-400 ring-1 ring-slate-200`;
+    case "complimentary":
+      return `${sizeClass} inline-block rounded-full bg-secondary ring-1 ring-secondary-container`;
+    default:
+      return `${sizeClass} inline-block rounded-full bg-slate-300 ring-1 ring-slate-200`;
+  }
+}
+
+export function paymentTooltip(value: BookingPaymentStatus | null | undefined): string {
+  const label = paymentLabel(value);
+  if (value === "pending") {
+    return `Payment status: ${label}. Blocks close-day.`;
+  }
+  return `Payment status: ${label}.`;
+}
+
+export function deriveBookingNextAction(
+  booking: Pick<TeeSheetBookingView, "payment_status" | "slot_datetime" | "status">,
+  referenceDatetime: string | null | undefined,
+): BookingNextAction {
+  if (booking.status === "cancelled" || booking.status === "completed" || booking.status === "no_show") {
+    return "completed";
+  }
+  if (booking.payment_status === "pending") {
+    return "needs_payment";
+  }
+  if (booking.status === "reserved" && referenceDatetime && Date.parse(booking.slot_datetime) < Date.parse(referenceDatetime)) {
+    return "at_risk";
+  }
+  if (booking.status === "reserved") {
+    return "ready_to_check_in";
+  }
+  return "completed";
+}
+
+export function nextActionBadgeProps(action: BookingNextAction): { className: string; label: string } | null {
+  switch (action) {
+    case "needs_payment":
+      return { className: "bg-amber-100 text-amber-900", label: "Pay" };
+    case "at_risk":
+      return { className: "bg-red-100 text-red-700", label: "Late" };
+    case "ready_to_check_in":
+      return { className: "bg-slate-200 text-slate-700", label: "Arriving" };
+    default:
+      return null;
+  }
+}
+
 export function detail(slot: TeeSheetSlotView): string {
   return slot.blockers[0]?.reason ?? slot.unresolved_checks[0]?.reason ?? slot.warnings[0]?.message ?? "Open for booking";
 }
@@ -243,6 +302,45 @@ export function bookingParticipantNames(booking: TeeSheetBookingView): string[] 
     return booking.participants.map((participant) => participant.display_name);
   }
   return Array.from({ length: booking.party_size }, (_, index) => `Player ${index + 1}`);
+}
+
+export function bookingLeadParticipant(
+  booking: Pick<TeeSheetBookingView, "participants">,
+): { display_name: string; is_primary: boolean; participant_type: BookingParticipantType } | null {
+  return booking.participants.find((participant) => participant.is_primary) ?? booking.participants[0] ?? null;
+}
+
+function membershipRoleLabel(role: ClubMembershipRole): string {
+  return role.replace("CLUB_", "").replace(/_/g, " ");
+}
+
+function membershipStatusLabel(status?: ClubMembershipStatus | null): string | null {
+  if (!status) return null;
+  return status.replace(/_/g, " ");
+}
+
+function quickActionDefinition(action: QuickAction): { action: QuickAction; icon: string; label: string } {
+  return QUICK_ACTIONS.find((quickAction) => quickAction.action === action) ?? QUICK_ACTIONS[0];
+}
+
+function inlinePanelPrimaryAction(booking: TeeSheetBookingView): QuickAction | null {
+  if (canQuickAction(booking, "complete")) return "complete";
+  if (canQuickAction(booking, "check_in")) return "check_in";
+  return null;
+}
+
+function inlinePanelDestructiveAction(
+  booking: TeeSheetBookingView,
+  referenceDatetime: string | null | undefined,
+): QuickAction | null {
+  if (
+    canQuickAction(booking, "no_show") &&
+    deriveBookingNextAction(booking, referenceDatetime) === "at_risk"
+  ) {
+    return "no_show";
+  }
+  if (canQuickAction(booking, "cancel")) return "cancel";
+  return null;
 }
 
 export function slotBookingSegments(slot: TeeSheetSlotView): SlotBookingSegment[] {
@@ -277,10 +375,14 @@ export function slotBookingSegments(slot: TeeSheetSlotView): SlotBookingSegment[
 export function bookingChipClass(
   booking: TeeSheetBookingView,
   compact = false,
+  nextAction?: BookingNextAction | null,
 ): string {
   const base = compact
     ? "flex min-h-[2.75rem] w-full flex-col justify-between overflow-hidden rounded-[14px] px-2.5 py-2 text-left transition-all select-none"
     : "flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-all select-none";
+  if (nextAction === "at_risk") {
+    return `${base} cursor-pointer bg-error-container/20 hover:bg-error-container/30`;
+  }
   if (booking.status === "checked_in") {
     return `${base} cursor-pointer bg-secondary-container/70 hover:bg-secondary-container`;
   }
@@ -336,13 +438,156 @@ export function canDrop(slot: TeeSheetSlotView): boolean {
 export function canQuickAction(booking: TeeSheetBookingView, action: QuickAction): boolean {
   if (action === "cancel") return booking.status === "reserved";
   if (action === "check_in") return booking.status === "reserved";
+  if (action === "complete") return booking.status === "checked_in";
   return booking.status === "reserved";
+}
+
+export function shouldRenderQuickAction(booking: TeeSheetBookingView, action: QuickAction): boolean {
+  if (action === "complete") return canQuickAction(booking, action);
+  return true;
 }
 
 export function quickActionTooltip(booking: TeeSheetBookingView, action: QuickAction, label: string): string {
   if (canQuickAction(booking, action)) return label;
   return `${label} unavailable for ${booking.status.replace(/_/g, " ")}`;
 }
+
+interface InlineBookingContextPanelProps {
+  booking: TeeSheetBookingView;
+  compact?: boolean;
+  directoryEntry?: ClubPersonEntry | null;
+  onOpenFullView: () => void;
+  onQuickAction: (action: QuickAction, bookingId: string) => void;
+  panelRef?: ((node: HTMLDivElement | null) => void) | null;
+  pendingAction: Action | null;
+  pendingBookingId: string | null;
+  referenceDatetime?: string | null;
+}
+
+export const InlineBookingContextPanel = memo(function InlineBookingContextPanel({
+  booking,
+  compact = false,
+  directoryEntry = null,
+  onOpenFullView,
+  onQuickAction,
+  panelRef = null,
+  pendingAction,
+  pendingBookingId,
+  referenceDatetime = null,
+}: InlineBookingContextPanelProps): JSX.Element {
+  const leadParticipant = bookingLeadParticipant(booking);
+  const primaryAction = inlinePanelPrimaryAction(booking);
+  const destructiveAction = inlinePanelDestructiveAction(booking, referenceDatetime);
+  const primaryActionMeta = primaryAction ? quickActionDefinition(primaryAction) : null;
+  const destructiveActionMeta = destructiveAction ? quickActionDefinition(destructiveAction) : null;
+  const paymentText = paymentLabel(booking.payment_status);
+  const roleText = directoryEntry ? membershipRoleLabel(directoryEntry.membership.role) : null;
+  const statusText = directoryEntry ? membershipStatusLabel(directoryEntry.membership.status) : null;
+  const participantTypeText = leadParticipant?.participant_type ?? bookingPrimaryType(booking);
+
+  return (
+    <div
+      className={`rounded-[20px] border border-slate-200 bg-white/95 p-4 shadow-sm ${compact ? "space-y-3" : "space-y-4"}`}
+      data-testid={`inline-booking-panel-${booking.id}`}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      ref={panelRef ?? undefined}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inline context</p>
+          <p className={`truncate font-semibold text-on-surface ${compact ? "text-sm" : "text-base"}`}>
+            {leadParticipant?.display_name ?? bookingParticipantNames(booking)[0] ?? "Booking"}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            {participantTypeText ? (
+              <span className="rounded-full bg-surface-container px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-slate-600">
+                {participantTypeText}
+              </span>
+            ) : null}
+            {roleText ? (
+              <span>{roleText}{statusText ? ` · ${statusText}` : ""}</span>
+            ) : statusText ? (
+              <span>{statusText}</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="min-w-[140px] space-y-1 rounded-2xl bg-surface-container px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment posture</p>
+          <div className="flex items-center gap-2">
+            <span
+              aria-label={paymentTooltip(booking.payment_status)}
+              className={paymentDotClass(booking.payment_status)}
+              title={paymentTooltip(booking.payment_status)}
+            >
+              <span className="sr-only">{paymentTooltip(booking.payment_status)}</span>
+            </span>
+            <span className="text-sm font-semibold capitalize text-on-surface">{paymentText}</span>
+          </div>
+          {booking.fee_label ? (
+            <p className="truncate text-[11px] text-slate-500">{booking.fee_label}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {primaryActionMeta ? (
+          <button
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-primary-dim disabled:opacity-50"
+            disabled={pendingBookingId === booking.id}
+            onClick={() => {
+              if (pendingBookingId === booking.id) return;
+              onQuickAction(primaryActionMeta.action, booking.id);
+            }}
+            title={quickActionTooltip(booking, primaryActionMeta.action, primaryActionMeta.label)}
+            type="button"
+          >
+            <MaterialSymbol className="text-sm" icon={pendingBookingId === booking.id && pendingAction === primaryActionMeta.action ? "progress_activity" : primaryActionMeta.icon} />
+            <span>{primaryActionMeta.label}</span>
+          </button>
+        ) : null}
+        {destructiveActionMeta ? (
+          <button
+            className="inline-flex items-center gap-2 rounded-xl border border-error-container bg-error-container/30 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-on-error-container transition-colors hover:bg-error-container/50 disabled:opacity-50"
+            disabled={pendingBookingId === booking.id}
+            onClick={() => {
+              if (pendingBookingId === booking.id) return;
+              onQuickAction(destructiveActionMeta.action, booking.id);
+            }}
+            title={quickActionTooltip(booking, destructiveActionMeta.action, destructiveActionMeta.label)}
+            type="button"
+          >
+            <MaterialSymbol className="text-sm" icon={pendingBookingId === booking.id && pendingAction === destructiveActionMeta.action ? "progress_activity" : destructiveActionMeta.icon} />
+            <span>{destructiveActionMeta.label}</span>
+          </button>
+        ) : null}
+        <button
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
+          onClick={onOpenFullView}
+          type="button"
+        >
+          <MaterialSymbol className="text-sm" icon="open_in_new" />
+          <span>Open full view</span>
+        </button>
+      </div>
+    </div>
+  );
+}, (previousProps, nextProps) => (
+  previousProps.booking.id === nextProps.booking.id &&
+  previousProps.booking.status === nextProps.booking.status &&
+  previousProps.booking.payment_status === nextProps.booking.payment_status &&
+  previousProps.booking.fee_label === nextProps.booking.fee_label &&
+  previousProps.pendingBookingId === nextProps.pendingBookingId &&
+  previousProps.pendingAction === nextProps.pendingAction &&
+  previousProps.referenceDatetime === nextProps.referenceDatetime &&
+  previousProps.directoryEntry?.person.id === nextProps.directoryEntry?.person.id &&
+  previousProps.directoryEntry?.membership.role === nextProps.directoryEntry?.membership.role &&
+  previousProps.directoryEntry?.membership.status === nextProps.directoryEntry?.membership.status &&
+  previousProps.onOpenFullView === nextProps.onOpenFullView &&
+  previousProps.onQuickAction === nextProps.onQuickAction &&
+  previousProps.compact === nextProps.compact
+));
 
 function bookingCoverageLabel(startColumn: number, span: number): string {
   if (span <= 1) return `P${startColumn}`;
@@ -358,6 +603,7 @@ function bookingSecondaryText(names: string[]): string | null {
 interface BookingCardContentProps {
   booking: TeeSheetBookingView;
   compact?: boolean;
+  nextAction?: BookingNextAction | null;
   participantNames: string[];
   startColumn: number;
   span: number;
@@ -366,30 +612,38 @@ interface BookingCardContentProps {
 export const BookingCardContent = memo(function BookingCardContent({
   booking,
   compact = false,
+  nextAction = null,
   participantNames,
   startColumn,
   span,
 }: BookingCardContentProps): JSX.Element {
   const primaryName = participantNames[0] ?? "Booking";
   const secondaryText = bookingSecondaryText(participantNames);
+  const badge = nextAction ? nextActionBadgeProps(nextAction) : null;
   return (
     <>
       <div className="flex items-center justify-between gap-2">
         <span className={`font-bold uppercase tracking-[0.18em] text-slate-400 ${compact ? "text-[8px]" : "text-[9px]"}`}>
           {bookingCoverageLabel(startColumn, span)}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {badge ? (
+            <span className={`rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] ${badge.className}`}>
+              {badge.label}
+            </span>
+          ) : null}
           <span title={booking.status.replace(/_/g, " ")}>
             <MaterialSymbol
               className={`${compact ? "text-xs" : "text-sm"} ${bookingStatusIconClass(booking.status)}`}
               icon={bookingStatusIconName(booking.status)}
             />
           </span>
-          <span title={paymentLabel(booking.payment_status)}>
-            <MaterialSymbol
-              className={`${compact ? "text-xs" : "text-sm"} ${paymentIconClass(booking.payment_status)}`}
-              icon={paymentIcon(booking.payment_status)}
-            />
+          <span
+            aria-label={paymentTooltip(booking.payment_status)}
+            className={paymentDotClass(booking.payment_status, compact)}
+            title={paymentTooltip(booking.payment_status)}
+          >
+            <span className="sr-only">{paymentTooltip(booking.payment_status)}</span>
           </span>
         </div>
       </div>
@@ -429,6 +683,7 @@ export const BookingCardContent = memo(function BookingCardContent({
     previousProps.booking.id === nextProps.booking.id &&
     previousProps.booking.status === nextProps.booking.status &&
     previousProps.booking.payment_status === nextProps.booking.payment_status &&
+    previousProps.nextAction === nextProps.nextAction &&
     previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
     previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
     previousPrimaryType === nextPrimaryType &&
@@ -456,7 +711,7 @@ export const BookingQuickActionPanel = memo(function BookingQuickActionPanel({
 }: BookingQuickActionPanelProps): JSX.Element {
   return (
     <div className="pointer-events-none absolute right-1 top-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover/chip:pointer-events-auto group-hover/chip:opacity-100 group-focus-within/chip:pointer-events-auto group-focus-within/chip:opacity-100">
-      {QUICK_ACTIONS.map((quickAction) => {
+      {QUICK_ACTIONS.filter((quickAction) => shouldRenderQuickAction(booking, quickAction.action)).map((quickAction) => {
         const disabled = !canQuickAction(booking, quickAction.action) || pendingBookingId === booking.id;
         const isPending = pendingBookingId === booking.id && pendingAction === quickAction.action;
         return (
@@ -493,14 +748,18 @@ export const BookingQuickActionPanel = memo(function BookingQuickActionPanel({
 interface OccupiedBookingCardProps {
   booking: TeeSheetBookingView;
   compact?: boolean;
+  expanded?: boolean;
+  expandedContent?: ReactNode;
+  expandedContainerRef?: ((node: HTMLDivElement | null) => void) | null;
   movingBookingId: string | null;
   onEndDrag: () => void;
-  onOpenManage: (slot: LaneSlot) => void;
+  onToggleExpand: (slot: LaneSlot, booking: TeeSheetBookingView) => void;
   onQuickAction: (action: QuickAction, bookingId: string) => void;
   onStartDrag: (event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot) => void;
   participantNames: string[];
   pendingAction: Action | null;
   pendingBookingId: string | null;
+  referenceDatetime?: string | null;
   startColumn: number;
   span: number;
   slot: LaneSlot;
@@ -509,30 +768,37 @@ interface OccupiedBookingCardProps {
 export const OccupiedBookingCard = memo(function OccupiedBookingCard({
   booking,
   compact = false,
+  expanded = false,
+  expandedContent = null,
+  expandedContainerRef = null,
   movingBookingId,
   onEndDrag,
-  onOpenManage,
+  onToggleExpand,
   onQuickAction,
   onStartDrag,
   participantNames,
   pendingAction,
   pendingBookingId,
+  referenceDatetime = null,
   startColumn,
   span,
   slot,
 }: OccupiedBookingCardProps): JSX.Element {
+  const nextAction = deriveBookingNextAction(booking, referenceDatetime);
   return (
-    <div className="relative group/chip">
+    <div className="relative space-y-2 group/chip" ref={expanded ? expandedContainerRef ?? undefined : undefined}>
       <button
         aria-label={`Open booking ${booking.id}`}
+        aria-controls={expanded ? `inline-booking-panel-${booking.id}` : undefined}
+        aria-expanded={expanded}
         className={[
-          bookingChipClass(booking, compact),
+          bookingChipClass(booking, compact, nextAction),
           participantTypeBorderClass(bookingPrimaryType(booking)),
           movingBookingId === booking.id ? "opacity-50" : "",
           "w-full",
         ].join(" ")}
         draggable
-        onClick={() => onOpenManage(slot)}
+        onClick={() => onToggleExpand(slot, booking)}
         onDragEnd={onEndDrag}
         onDragStart={(event) => onStartDrag(event, booking.id, slot)}
         title="Drag to move booking"
@@ -541,6 +807,7 @@ export const OccupiedBookingCard = memo(function OccupiedBookingCard({
         <BookingCardContent
           booking={booking}
           compact={compact}
+          nextAction={nextAction}
           participantNames={participantNames}
           span={span}
           startColumn={startColumn}
@@ -553,6 +820,7 @@ export const OccupiedBookingCard = memo(function OccupiedBookingCard({
         pendingAction={pendingAction}
         pendingBookingId={pendingBookingId}
       />
+      {expandedContent}
     </div>
   );
 }, (previousProps, nextProps) => {
@@ -562,6 +830,7 @@ export const OccupiedBookingCard = memo(function OccupiedBookingCard({
     previousProps.booking.id === nextProps.booking.id &&
     previousProps.booking.status === nextProps.booking.status &&
     previousProps.booking.payment_status === nextProps.booking.payment_status &&
+    previousProps.referenceDatetime === nextProps.referenceDatetime &&
     previousProps.booking.cart_flag === nextProps.booking.cart_flag &&
     previousProps.booking.caddie_flag === nextProps.booking.caddie_flag &&
     previousPrimaryType === nextPrimaryType &&
@@ -571,10 +840,12 @@ export const OccupiedBookingCard = memo(function OccupiedBookingCard({
     previousProps.movingBookingId === nextProps.movingBookingId &&
     previousProps.pendingBookingId === nextProps.pendingBookingId &&
     previousProps.pendingAction === nextProps.pendingAction &&
+    previousProps.expanded === nextProps.expanded &&
+    previousProps.expandedContent === nextProps.expandedContent &&
     previousProps.slot.rowKey === nextProps.slot.rowKey &&
     previousProps.slot.slot.slot_datetime === nextProps.slot.slot.slot_datetime &&
     previousProps.onEndDrag === nextProps.onEndDrag &&
-    previousProps.onOpenManage === nextProps.onOpenManage &&
+    previousProps.onToggleExpand === nextProps.onToggleExpand &&
     previousProps.onQuickAction === nextProps.onQuickAction &&
     previousProps.onStartDrag === nextProps.onStartDrag &&
     previousProps.compact === nextProps.compact

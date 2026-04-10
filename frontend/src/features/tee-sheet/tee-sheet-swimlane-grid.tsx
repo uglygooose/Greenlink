@@ -25,6 +25,7 @@ import {
   type Action,
   type LaneSlot,
   type QuickAction,
+  type TeeSheetBookingView,
   type TeeSheetBucket,
 } from "./sheet-shared";
 
@@ -55,8 +56,13 @@ type TeeSheetSwimLaneGridProps = {
   onQuickAction: (action: QuickAction, bookingId: string) => void;
   onSetActiveDropKey: (value: string | null) => void;
   onStartDrag: (event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot) => void;
+  onToggleBookingExpansion: (slot: LaneSlot, booking: TeeSheetBookingView) => void;
   pendingAction: Action | null;
   pendingBookingId: string | null;
+  isBookingExpanded: (slot: LaneSlot, booking: TeeSheetBookingView) => boolean;
+  renderExpandedBookingPanel: (slot: LaneSlot, booking: TeeSheetBookingView, compact?: boolean) => JSX.Element;
+  referenceDatetime?: string | null;
+  setExpandedBookingCardElement: (node: HTMLDivElement | null) => void;
   selectedDate: string;
   timezone?: string | null;
 };
@@ -110,8 +116,13 @@ export function TeeSheetSwimLaneGrid({
   onQuickAction,
   onSetActiveDropKey,
   onStartDrag,
+  onToggleBookingExpansion,
   pendingAction,
   pendingBookingId,
+  isBookingExpanded,
+  renderExpandedBookingPanel,
+  referenceDatetime = null,
+  setExpandedBookingCardElement,
   selectedDate,
   timezone,
 }: TeeSheetSwimLaneGridProps): JSX.Element {
@@ -531,24 +542,31 @@ export function TeeSheetSwimLaneGrid({
 
                             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                               {bookingCards.map((segment) =>
-                                segment.kind === "booking" ? (
-                                  <OccupiedBookingCard
-                                    booking={segment.booking}
-                                    compact={false}
-                                    key={`${segment.booking.id}-${segment.startColumn}-${segment.span}`}
-                                    movingBookingId={movingBookingId}
-                                    onEndDrag={onEndDrag}
-                                    onOpenManage={onOpenManage}
-                                    onQuickAction={onQuickAction}
-                                    onStartDrag={onStartDrag}
-                                    participantNames={segment.participantNames}
-                                    pendingAction={pendingAction}
-                                    pendingBookingId={pendingBookingId}
-                                    slot={slot}
-                                    span={segment.span}
-                                    startColumn={segment.startColumn}
-                                  />
-                                ) : null,
+                                segment.kind === "booking" ? (() => {
+                                  const isExpanded = isBookingExpanded(slot, segment.booking);
+                                  return (
+                                    <OccupiedBookingCard
+                                      booking={segment.booking}
+                                      compact={false}
+                                      expanded={isExpanded}
+                                      expandedContainerRef={isExpanded ? setExpandedBookingCardElement : null}
+                                      expandedContent={isExpanded ? renderExpandedBookingPanel(slot, segment.booking, false) : null}
+                                      key={`${segment.booking.id}-${segment.startColumn}-${segment.span}`}
+                                      movingBookingId={movingBookingId}
+                                      onEndDrag={onEndDrag}
+                                      onQuickAction={onQuickAction}
+                                      onStartDrag={onStartDrag}
+                                      onToggleExpand={onToggleBookingExpansion}
+                                      participantNames={segment.participantNames}
+                                      pendingAction={pendingAction}
+                                      pendingBookingId={pendingBookingId}
+                                      referenceDatetime={referenceDatetime}
+                                      slot={slot}
+                                      span={segment.span}
+                                      startColumn={segment.startColumn}
+                                    />
+                                  );
+                                })() : null,
                               )}
 
                               {bookingCards.length === 0 && createAllowed ? (

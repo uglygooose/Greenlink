@@ -69,14 +69,6 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
     meta: { title: "POS Terminal", searchPlaceholder: "Search products..." },
   },
   {
-    match: (pathname) => pathname === "/admin/settings/club",
-    meta: { title: "Club Settings", searchPlaceholder: "Search settings..." },
-  },
-  {
-    match: (pathname) => pathname === "/admin/settings/profile",
-    meta: { title: "Club Settings", searchPlaceholder: "Search settings..." },
-  },
-  {
     match: (pathname) => pathname === "/admin/settings/modules",
     meta: { title: "Modules", searchPlaceholder: "Search settings..." },
   },

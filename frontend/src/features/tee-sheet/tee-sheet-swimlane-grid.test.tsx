@@ -127,8 +127,12 @@ describe("TeeSheetSwimLaneGrid", () => {
           onQuickAction={vi.fn()}
           onSetActiveDropKey={vi.fn()}
           onStartDrag={vi.fn()}
+          onToggleBookingExpansion={vi.fn()}
           pendingAction={null}
           pendingBookingId={null}
+          isBookingExpanded={() => false}
+          renderExpandedBookingPanel={() => <div>Expanded booking</div>}
+          setExpandedBookingCardElement={vi.fn()}
           selectedDate="2026-03-30"
           timezone="Africa/Johannesburg"
         />,
@@ -163,8 +167,12 @@ describe("TeeSheetSwimLaneGrid", () => {
         onQuickAction={vi.fn()}
         onSetActiveDropKey={vi.fn()}
         onStartDrag={vi.fn()}
+        onToggleBookingExpansion={vi.fn()}
         pendingAction={null}
         pendingBookingId={null}
+        isBookingExpanded={() => false}
+        renderExpandedBookingPanel={() => <div>Expanded booking</div>}
+        setExpandedBookingCardElement={vi.fn()}
         selectedDate="2026-03-30"
         timezone="Africa/Johannesburg"
       />,

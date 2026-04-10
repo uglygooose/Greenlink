@@ -120,11 +120,11 @@ describe("AdminSettingsHubPage", () => {
     });
   });
 
-  test("renders the six settings destinations with backend-backed status details", () => {
+  test("renders the five settings destinations with backend-backed status details", () => {
     renderPage();
 
     const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
-    expect(hrefs).toContain("/admin/settings/profile");
+    expect(hrefs).not.toContain("/admin/settings/profile");
     expect(hrefs).toContain("/admin/golf/settings");
     expect(hrefs).toContain("/admin/finance");
     expect(hrefs).toContain("/admin/settings/modules");

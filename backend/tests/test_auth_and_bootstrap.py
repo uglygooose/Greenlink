@@ -215,15 +215,15 @@ def test_bootstrap_returns_backend_menu_contract_for_admin_shell(
     menu_keys = [item["key"] for item in payload["menu_items"]]
     assert menu_keys == [
         "dashboard",
-        "golf_dashboard",
         "golf_tee_sheet",
-        "settings_hub",
-        "people_dashboard",
         "members",
         "finance_dashboard",
         "finance",
         "reports",
         "targets",
+        "golf_dashboard",
+        "people_dashboard",
+        "settings_hub",
     ]
     assert payload["feature_flags"].get("ux_rebuild_v1") is True
 
@@ -319,7 +319,11 @@ def test_superadmin_can_preview_without_default_club(
     assert response.json()["landing_path"] == "/superadmin/clubs"
     assert response.json()["role_shell"] == "superadmin"
     assert response.json()["available_clubs"][0]["club_id"] == str(club.id)
-    assert [item["key"] for item in response.json()["menu_items"]] == ["overview", "clubs"]
+    assert [item["key"] for item in response.json()["menu_items"]] == [
+        "overview",
+        "clubs",
+        "accounting_profiles",
+    ]
 
     selected = client.get(
         f"/api/session/bootstrap?selected_club_id={club.id}",

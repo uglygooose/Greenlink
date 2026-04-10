@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import {
@@ -25,6 +25,8 @@ import type { DraftParticipant } from "../features/tee-sheet/booking-party-edito
 import { DatePickerPopover } from "../features/tee-sheet/date-picker-popover";
 import { teeSheetDayQueryOptions, teeSheetKeys, useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import {
+  bookingChipClass,
+  bookingLeadParticipant,
   bookingParticipantNames,
   bookingPlayerCount,
   bookingStatusIconClass,
@@ -33,9 +35,14 @@ import {
   canCreate,
   canDrop,
   canManage,
+  canQuickAction,
+  deriveBookingNextAction,
+  InlineBookingContextPanel,
+  nextActionBadgeProps,
   participantTypeBorderClass,
-  paymentIcon,
-  paymentIconClass,
+  paymentDotClass,
+  paymentLabel,
+  paymentTooltip,
   slotCapacity,
   slotPlayerCount,
   slotRemainingCapacity,
@@ -46,6 +53,7 @@ import {
   type TeeSheetBookingView,
 } from "../features/tee-sheet/sheet-shared";
 import { TeeSheetSwimLaneGrid } from "../features/tee-sheet/tee-sheet-swimlane-grid";
+import { useDrawerAccessibility } from "../features/tee-sheet/use-drawer-accessibility";
 import { useSession } from "../session/session-context";
 import type {
   BookingCreateInput,
@@ -62,16 +70,36 @@ import type {
   StartLane,
 } from "../types/bookings";
 import type { BookingRuleAppliesTo, Tee } from "../types/operations";
+import type { ClubPersonEntry } from "../types/people";
 import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../types/tee-sheet";
 
 
 type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
 type SelectedSlotKey = { rowKey: string; slotDatetime: string };
+type ExpandedBookingContext = SelectedSlotKey & { bookingId: string };
 type Dragged = { bookingId: string; rowKey: string; slotDatetime: string };
-type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid" | "no_shows" | "arrivals_due";
+type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid" | "no_shows" | "arrivals_due" | "unresolved" | "warnings";
 type FinanceAction = "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived";
-export type BookingNextAction = "needs_payment" | "ready_to_check_in" | "at_risk" | "completed";
+type CommandPaletteItem =
+  | {
+      id: string;
+      kind: "command";
+      label: string;
+      searchText: string;
+      subtitle: string;
+      viewFilter: ViewFilter;
+    }
+  | {
+      booking: TeeSheetBookingView;
+      id: string;
+      kind: "booking";
+      label: string;
+      searchText: string;
+      slot: LaneSlot;
+      subtitle: string;
+    };
+export { deriveBookingNextAction };
 
 const COPY: Record<Action, { already: string; blocked: string; success: string }> = {
   cancel: {
@@ -98,9 +126,11 @@ const COPY: Record<Action, { already: string; blocked: string; success: string }
 
 const VIEW_FILTERS: Array<{ label: string; value: ViewFilter }> = [
   { label: "All", value: "all" },
-  { label: "Unpaid", value: "unpaid" },
-  { label: "No-Show Risk", value: "no_shows" },
   { label: "Arrivals Due", value: "arrivals_due" },
+  { label: "Late / At Risk", value: "no_shows" },
+  { label: "Unpaid", value: "unpaid" },
+  { label: "Unresolved", value: "unresolved" },
+  { label: "Warnings", value: "warnings" },
   { label: "Open Slots", value: "open" },
   { label: "Golf Day", value: "golf_day" },
   { label: "Closed / Holds", value: "closed" },
@@ -333,6 +363,10 @@ function slotMatchesFilter(
       return slotHasNoShowRisk(slot, referenceDatetime);
     case "arrivals_due":
       return slotHasArrivalsDue(slot, referenceDatetime);
+    case "unresolved":
+      return slot.bookings.some((booking) => bookingIsUnresolved(booking));
+    case "warnings":
+      return slotHasOperationalWarnings(slot);
     case "open":
       return slotIsOpen(slot);
     case "golf_day":
@@ -380,6 +414,10 @@ function initialViewFilterFromSearchParam(value: string | null): ViewFilter {
       return "no_shows";
     case "arrivals-due":
       return "arrivals_due";
+    case "unresolved":
+      return "unresolved";
+    case "warnings":
+      return "warnings";
     case "open":
       return "open";
     case "golf_day":
@@ -391,23 +429,44 @@ function initialViewFilterFromSearchParam(value: string | null): ViewFilter {
   }
 }
 
-export function deriveBookingNextAction(
-  booking: Pick<TeeSheetBookingView, "payment_status" | "slot_datetime" | "status">,
+function viewFilterLabel(value: ViewFilter): string {
+  switch (value) {
+    case "arrivals_due":
+      return "Arrivals Due";
+    case "no_shows":
+      return "Late / At Risk";
+    case "unpaid":
+      return "Unpaid";
+    case "unresolved":
+      return "Unresolved";
+    case "warnings":
+      return "Warnings";
+    case "open":
+      return "Open Slots";
+    case "golf_day":
+      return "Golf Day";
+    case "closed":
+      return "Closed / Holds";
+    default:
+      return "All";
+  }
+}
+
+function bookingStatusLabel(status: TeeSheetBookingView["status"]): string {
+  return status.replace(/_/g, " ");
+}
+
+function bookingCommandTerms(
+  booking: TeeSheetBookingView,
   referenceDatetime: string | null | undefined,
-): BookingNextAction {
-  if (booking.status === "cancelled" || booking.status === "completed" || booking.status === "no_show") {
-    return "completed";
-  }
-  if (booking.payment_status === "pending") {
-    return "needs_payment";
-  }
-  if (booking.status === "reserved" && referenceDatetime && Date.parse(booking.slot_datetime) < Date.parse(referenceDatetime)) {
-    return "at_risk";
-  }
-  if (booking.status === "reserved") {
-    return "ready_to_check_in";
-  }
-  return "completed";
+): string[] {
+  const nextAction = deriveBookingNextAction(booking, referenceDatetime);
+  const terms = [bookingStatusLabel(booking.status), paymentLabel(booking.payment_status)];
+  if (nextAction === "at_risk") terms.push("Late / At Risk");
+  if (nextAction === "ready_to_check_in") terms.push("Arrivals Due");
+  if (booking.payment_status === "pending") terms.push("Unpaid");
+  if (bookingIsUnresolved(booking)) terms.push("Unresolved");
+  return terms;
 }
 
 function minutesUntilSlot(slotDatetime: string, referenceDatetime: string | null | undefined): number | null {
@@ -424,6 +483,41 @@ function slotHasArrivalsDue(slot: TeeSheetSlotView, referenceDatetime: string | 
     const minutes = minutesUntilSlot(booking.slot_datetime, referenceDatetime);
     return minutes !== null && minutes >= 0 && minutes <= ARRIVALS_DUE_WINDOW_MINUTES;
   });
+}
+
+function bookingIsUnresolved(booking: Pick<TeeSheetBookingView, "payment_status" | "status">): boolean {
+  return booking.payment_status === "pending" && (booking.status === "checked_in" || booking.status === "completed");
+}
+
+function matchesExpandedBooking(
+  context: ExpandedBookingContext | null,
+  slot: Pick<LaneSlot, "rowKey" | "slot">,
+  bookingId: string,
+): boolean {
+  return Boolean(
+    context &&
+    context.bookingId === bookingId &&
+    context.rowKey === slot.rowKey &&
+    context.slotDatetime === slot.slot.slot_datetime,
+  );
+}
+
+function findDirectoryEntryForBooking(
+  booking: TeeSheetBookingView,
+  directoryByName: Map<string, ClubPersonEntry>,
+): ClubPersonEntry | null {
+  const leadParticipant = bookingLeadParticipant(booking);
+  if (!leadParticipant) return null;
+  return directoryByName.get(leadParticipant.display_name) ?? null;
+}
+
+function slotHasOperationalWarnings(slot: TeeSheetSlotView): boolean {
+  return (
+    slot.display_status === "blocked" ||
+    slot.display_status === "warning" ||
+    slot.unresolved_checks.length > 0 ||
+    slot.warnings.length > 0
+  );
 }
 
 function countBookings(
@@ -745,9 +839,21 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [editCaddieFlag, setEditCaddieFlag] = useState(false);
   const [inlineActionState, setInlineActionState] = useState<{ action: QuickAction; bookingId: string } | null>(null);
   const [checkingInAllBucket, setCheckingInAllBucket] = useState<string | null>(null);
+  const [expandedBookingContext, setExpandedBookingContext] = useState<ExpandedBookingContext | null>(null);
+  const [batchNoShowConfirmOpen, setBatchNoShowConfirmOpen] = useState(false);
+  const [batchNoShowPending, setBatchNoShowPending] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteActiveIndex, setCommandPaletteActiveIndex] = useState(0);
   const pendingAutoScrollDateRef = useRef<string | null>(selectedDate);
   const prefetchedAdjacentSeedRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const expandedBookingCardRef = useRef<HTMLDivElement | null>(null);
+  const expandedBookingPanelRef = useRef<HTMLDivElement | null>(null);
+  const batchNoShowDialogRef = useRef<HTMLDivElement | null>(null);
+  const batchNoShowCancelRef = useRef<HTMLButtonElement | null>(null);
+  const commandPaletteDialogRef = useRef<HTMLDivElement | null>(null);
+  const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
   const debouncedSearchTerm = useDebouncedValue(searchInputValue, 200);
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
@@ -898,6 +1004,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     [buckets, debouncedSearchTerm, filters, teeSheetQuery.data?.reference_datetime],
   );
 
+  const batchNoShowBookings = useMemo(() => {
+    if (filters.viewFilter !== "no_shows") return [];
+
+    const seen = new Set<string>();
+    return filteredBuckets.flatMap((bucket) =>
+      bucket.slots.flatMap((slot) =>
+        slot.slot.bookings.filter((booking) => {
+          if (seen.has(booking.id)) return false;
+          const qualifies =
+            deriveBookingNextAction(booking, teeSheetQuery.data?.reference_datetime ?? null) === "at_risk" &&
+            canQuickAction(booking, "no_show");
+          if (qualifies) seen.add(booking.id);
+          return qualifies;
+        }),
+      ),
+    );
+  }, [filteredBuckets, filters.viewFilter, teeSheetQuery.data?.reference_datetime]);
+
   const statusCounts = useMemo(
     () =>
       slots.reduce(
@@ -1010,6 +1134,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
     setDrawerMode(null);
+    if (expandedBookingContext?.bookingId === result.booking_id) {
+      setExpandedBookingContext(null);
+    }
     resetEditState();
     setNotice({ tone: result.transition_applied ? "success" : "info", message: result.transition_applied ? COPY[action].success : COPY[action].already });
   }
@@ -1233,6 +1360,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       setDrawerFeedbackTone(null);
       setSelectedSlotKey(null);
       setDrawerMode(null);
+      if (expandedBookingContext?.bookingId === result.booking_id) {
+        setExpandedBookingContext(null);
+      }
       resetEditState();
       setNotice({
         tone: result.transition_applied ? "success" : "info",
@@ -1285,7 +1415,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     const minutes = minutesUntilSlot(booking.slot_datetime, teeSheetQuery.data?.reference_datetime ?? null);
     return minutes !== null && minutes >= 0 && minutes <= ARRIVALS_DUE_WINDOW_MINUTES;
   });
-  const competitionCount = slots.filter((item) => slotHasGolfDayControl(item.slot)).length;
+  const unresolvedBookingsCount = countBookings(slots, (booking) => bookingIsUnresolved(booking));
+  const warningSlotsCount = slots.filter((item) => slotHasOperationalWarnings(item.slot)).length;
   const pendingAction = inlineActionState?.action ?? (cancelMutation.isPending ? "cancel" : checkInMutation.isPending ? "check_in" : completeMutation.isPending ? "complete" : noShowMutation.isPending ? "no_show" : null);
   const pendingBookingId =
     inlineActionState?.bookingId ??
@@ -1310,12 +1441,36 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const movingBookingId = moveMutation.isPending ? moveMutation.variables?.bookingId ?? null : null;
   const savingBookingId = updateMutation.isPending ? updateMutation.variables?.bookingId ?? null : null;
   const directory = directoryQuery.data ?? [];
+  const directoryByName = useMemo(
+    () => new Map(directory.map((entry) => [entry.person.full_name, entry])),
+    [directory],
+  );
+  const closeExpandedBookingContext = useCallback((): void => {
+    setExpandedBookingContext(null);
+  }, []);
+  const closeCommandPalette = useCallback((): void => {
+    setCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+    setCommandPaletteActiveIndex(0);
+  }, []);
+  const openCommandPalette = useCallback((): void => {
+    setCommandPaletteOpen(true);
+    setCommandPaletteQuery("");
+    setCommandPaletteActiveIndex(0);
+  }, []);
+  const setExpandedBookingCardElement = useCallback((node: HTMLDivElement | null): void => {
+    expandedBookingCardRef.current = node;
+  }, []);
+  const setExpandedBookingPanelElement = useCallback((node: HTMLDivElement | null): void => {
+    expandedBookingPanelRef.current = node;
+  }, []);
 
   const openManage = useCallback((slot: LaneSlot): void => {
     if (!canManage(slot.slot)) return;
     setNotice(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
+    setExpandedBookingContext(null);
     resetCreateDrafts();
     setDrawerMode("manage");
     resetEditState();
@@ -1327,11 +1482,38 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setNotice(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
+    setExpandedBookingContext(null);
     resetCreateDrafts();
     setDrawerMode("create");
     resetEditState();
     setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
   }, [resetCreateDrafts, resetEditState]);
+
+  const toggleBookingExpansion = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): void => {
+    setExpandedBookingContext((current) => (
+      matchesExpandedBooking(current, slot, booking.id)
+        ? null
+        : { bookingId: booking.id, rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime }
+    ));
+  }, []);
+
+  const navigateToBookingContext = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): void => {
+    const key = dropKey(slot);
+    const targetTime = timeKey(slot.slot.local_time);
+    setSearchInputValue("");
+    setFilters(DEFAULT_FILTERS);
+    setFiltersPanelOpen(false);
+    setSelectedSlotKey(null);
+    setDrawerMode(null);
+    setHighlightedSlotKey(key);
+    setExpandedBookingContext({ bookingId: booking.id, rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+    window.setTimeout(() => setHighlightedSlotKey(null), 1500);
+    document.getElementById(`bucket-${targetTime}`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+  }, [dropKey]);
+
+  const isBookingExpanded = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): boolean => (
+    matchesExpandedBooking(expandedBookingContext, slot, booking.id)
+  ), [expandedBookingContext]);
 
   const nextBookableSlot = useMemo(
     () => filteredBuckets.flatMap((bucket) => bucket.slots).find((slot) => canCreate(slot.slot)) ?? slots.find((slot) => canCreate(slot.slot)) ?? null,
@@ -1345,6 +1527,23 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
     openCreate(nextBookableSlot);
   }, [nextBookableSlot, openCreate]);
+
+  const closeBatchNoShowConfirm = useCallback((): void => {
+    if (batchNoShowPending) return;
+    setBatchNoShowConfirmOpen(false);
+  }, [batchNoShowPending]);
+
+  useDrawerAccessibility({
+    containerRef: batchNoShowDialogRef,
+    initialFocusRef: batchNoShowCancelRef,
+    onClose: closeBatchNoShowConfirm,
+  });
+
+  useDrawerAccessibility({
+    containerRef: commandPaletteDialogRef,
+    initialFocusRef: commandPaletteInputRef,
+    onClose: closeCommandPalette,
+  });
 
   const close = useCallback((): void => {
     setDrawerMode(null);
@@ -1456,17 +1655,62 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     try {
       if (action === "cancel") await cancelMutation.mutateAsync(bookingId);
       else if (action === "check_in") await checkInMutation.mutateAsync(bookingId);
+      else if (action === "complete") await completeMutation.mutateAsync(bookingId);
       else await noShowMutation.mutateAsync(bookingId);
     } catch {
       // Mutation callbacks already handle rollback and staff feedback.
     } finally {
       setInlineActionState(null);
     }
-  }, [accessToken, cancelMutation, checkInMutation, noShowMutation, selectedClubId]);
+  }, [accessToken, cancelMutation, checkInMutation, completeMutation, noShowMutation, selectedClubId]);
 
   const handleInlineQuickAction = useCallback((action: QuickAction, bookingId: string): void => {
     void runInlineQuickAction(action, bookingId);
   }, [runInlineQuickAction]);
+
+  const renderExpandedBookingPanel = useCallback((slot: LaneSlot, booking: TeeSheetBookingView, compact = false): JSX.Element => {
+    const directoryEntry = findDirectoryEntryForBooking(booking, directoryByName);
+    return (
+      <InlineBookingContextPanel
+        booking={booking}
+        compact={compact}
+        directoryEntry={directoryEntry}
+        onOpenFullView={() => {
+          openManage(slot);
+        }}
+        onQuickAction={handleInlineQuickAction}
+        panelRef={setExpandedBookingPanelElement}
+        pendingAction={pendingAction}
+        pendingBookingId={pendingBookingId}
+        referenceDatetime={teeSheetQuery.data?.reference_datetime ?? null}
+      />
+    );
+  }, [
+    directoryByName,
+    handleInlineQuickAction,
+    openManage,
+    pendingAction,
+    pendingBookingId,
+    setExpandedBookingPanelElement,
+    teeSheetQuery.data?.reference_datetime,
+  ]);
+
+  const handleCommandPaletteSelect = useCallback((item: CommandPaletteItem): void => {
+    if (item.kind === "command") {
+      if (item.viewFilter === "all") {
+        setFilters(DEFAULT_FILTERS);
+      } else {
+        setFilters((current) => ({ ...current, viewFilter: item.viewFilter }));
+      }
+      setSearchInputValue("");
+      setFiltersPanelOpen(false);
+      closeCommandPalette();
+      return;
+    }
+
+    navigateToBookingContext(item.slot, item.booking);
+    closeCommandPalette();
+  }, [closeCommandPalette, navigateToBookingContext]);
 
   const changeSelectedDate = useCallback((updater: string | ((current: string) => string)): void => {
     startTransition(() => {
@@ -1517,6 +1761,70 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     }
   }
 
+  async function handleBatchNoShow(): Promise<void> {
+    if (!accessToken || !selectedClubId) return;
+    if (batchNoShowBookings.length === 0) {
+      setBatchNoShowConfirmOpen(false);
+      setNotice({ tone: "info", message: "No late / at-risk bookings are currently eligible for batch no-show." });
+      return;
+    }
+
+    setNotice(null);
+    setDrawerFeedbackMessage(null);
+    setDrawerFeedbackTone(null);
+    setBatchNoShowPending(true);
+
+    try {
+      const settled = await Promise.allSettled(
+        batchNoShowBookings.map((booking) => markBookingNoShow(booking.id, { accessToken, selectedClubId })),
+      );
+      const failures = settled.flatMap((result) => {
+        if (result.status === "rejected") return [asMessage(result.reason)];
+        if (result.value.decision === "blocked") return [result.value.failures[0]?.message ?? COPY.no_show.blocked];
+        return [];
+      });
+      const successes = settled.filter((result) => result.status === "fulfilled" && result.value.decision === "allowed" && result.value.transition_applied).length;
+      const alreadyProcessed = settled.filter((result) => result.status === "fulfilled" && result.value.decision === "allowed" && !result.value.transition_applied).length;
+
+      setNotice({
+        tone: failures.length > 0 ? "error" : successes > 0 ? "success" : "info",
+        message: failures.length > 0
+          ? `Batch No-Show finished. ${successes} updated, ${failures.length} failed, ${alreadyProcessed} already processed. ${failures[0]}`
+          : `Batch No-Show finished. ${successes} updated, 0 failed, ${alreadyProcessed} already processed.`,
+      });
+
+      await invalidate();
+    } finally {
+      setBatchNoShowPending(false);
+      setBatchNoShowConfirmOpen(false);
+    }
+  }
+
+  useEffect(() => {
+    setExpandedBookingContext(null);
+  }, [filters.partySize, filters.timeFrom, filters.timeTo, filters.viewFilter, selectedDate]);
+
+  useEffect(() => {
+    if (!expandedBookingContext) return;
+
+    function handlePointerDown(event: MouseEvent): void {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (expandedBookingCardRef.current?.contains(target) || expandedBookingPanelRef.current?.contains(target)) return;
+      setExpandedBookingContext(null);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [expandedBookingContext]);
+
+  useEffect(() => {
+    if (!commandPaletteOpen) return;
+    setCommandPaletteActiveIndex(0);
+  }, [commandPaletteOpen, commandPaletteQuery]);
+
   const description = `Course: ${activeCourse?.name ?? "Course setup required"}`;
   const teeSheetErrorMessage =
     teeSheetQuery.error instanceof ApiError && teeSheetQuery.error.status === 401
@@ -1547,11 +1855,125 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       ? nearestBucketTime(filteredBuckets, teeSheetQuery.data?.timezone ?? null)
       : null;
   const cockpitPresets: Array<{ count: number; icon: string; label: string; value: ViewFilter }> = [
-    { count: unpaidBookingsCount, icon: "payments", label: "Unpaid", value: "unpaid" },
-    { count: noShowRiskCount, icon: "person_off", label: "No-shows", value: "no_shows" },
     { count: arrivalsDueCount, icon: "schedule", label: "Arrivals Due", value: "arrivals_due" },
-    { count: competitionCount, icon: "emoji_events", label: "Competitions", value: "golf_day" },
+    { count: noShowRiskCount, icon: "person_off", label: "Late / At Risk", value: "no_shows" },
+    { count: unpaidBookingsCount, icon: "payments", label: "Unpaid", value: "unpaid" },
+    { count: unresolvedBookingsCount, icon: "task_alt", label: "Unresolved", value: "unresolved" },
+    { count: warningSlotsCount, icon: "warning", label: "Warnings", value: "warnings" },
   ];
+  const commandPaletteCommands = useMemo<CommandPaletteItem[]>(() => [
+    {
+      id: "command-filter-arrivals_due",
+      kind: "command",
+      label: "Show arrivals due",
+      searchText: "show arrivals due arriving ready to check in",
+      subtitle: "Apply the existing Arrivals Due filter",
+      viewFilter: "arrivals_due",
+    },
+    {
+      id: "command-filter-no_shows",
+      kind: "command",
+      label: "Show late / at risk",
+      searchText: "show late at risk no show overdue",
+      subtitle: "Apply the existing Late / At Risk filter",
+      viewFilter: "no_shows",
+    },
+    {
+      id: "command-filter-unpaid",
+      kind: "command",
+      label: "Show unpaid",
+      searchText: "show unpaid payment pending",
+      subtitle: "Apply the existing Unpaid filter",
+      viewFilter: "unpaid",
+    },
+    {
+      id: "command-filter-unresolved",
+      kind: "command",
+      label: "Show unresolved",
+      searchText: "show unresolved close day blockers pending checked in completed",
+      subtitle: "Apply the existing Unresolved filter",
+      viewFilter: "unresolved",
+    },
+    {
+      id: "command-filter-warnings",
+      kind: "command",
+      label: "Show warnings",
+      searchText: "show warnings blocked warning slots",
+      subtitle: "Apply the existing Warnings filter",
+      viewFilter: "warnings",
+    },
+    {
+      id: "command-filter-all",
+      kind: "command",
+      label: "Clear filters / show all",
+      searchText: "clear filters show all reset tee sheet",
+      subtitle: "Reset the current tee-sheet filters",
+      viewFilter: "all",
+    },
+  ], []);
+  const commandPaletteBookingItems = useMemo<CommandPaletteItem[]>(() => {
+    const seen = new Set<string>();
+    return slots.flatMap((slot) =>
+      slot.slot.bookings.flatMap((booking) => {
+        if (seen.has(booking.id)) return [];
+        seen.add(booking.id);
+        const participantNames = bookingParticipantNames(booking);
+        const leadParticipant = bookingLeadParticipant(booking)?.display_name ?? participantNames[0] ?? booking.id;
+        const terms = [
+          leadParticipant,
+          ...participantNames,
+          timeKey(slot.slot.local_time),
+          slot.laneLabel,
+          slot.rowLabel,
+          ...bookingCommandTerms(booking, teeSheetQuery.data?.reference_datetime ?? null),
+        ];
+        return [{
+          booking,
+          id: `booking-${booking.id}`,
+          kind: "booking" as const,
+          label: leadParticipant,
+          searchText: terms.join(" ").toLowerCase(),
+          slot,
+          subtitle: `${timeKey(slot.slot.local_time)} · ${slot.laneLabel} · ${bookingStatusLabel(booking.status)} · ${paymentLabel(booking.payment_status)}`,
+        }];
+      }),
+    );
+  }, [slots, teeSheetQuery.data?.reference_datetime]);
+  const commandPaletteItems = useMemo<CommandPaletteItem[]>(() => (
+    [...commandPaletteCommands, ...commandPaletteBookingItems]
+  ), [commandPaletteBookingItems, commandPaletteCommands]);
+  const filteredCommandPaletteItems = useMemo<CommandPaletteItem[]>(() => {
+    const query = commandPaletteQuery.trim().toLowerCase();
+    if (!query) return commandPaletteItems.slice(0, 12);
+    return commandPaletteItems.filter((item) => {
+      const text = `${item.label} ${item.subtitle} ${item.searchText}`.toLowerCase();
+      return text.includes(query);
+    }).slice(0, 12);
+  }, [commandPaletteItems, commandPaletteQuery]);
+  const handleCommandPaletteKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (filteredCommandPaletteItems.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setCommandPaletteActiveIndex((current) => (
+        current >= filteredCommandPaletteItems.length - 1 ? 0 : current + 1
+      ));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setCommandPaletteActiveIndex((current) => (
+        current <= 0 ? filteredCommandPaletteItems.length - 1 : current - 1
+      ));
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleCommandPaletteSelect(filteredCommandPaletteItems[Math.min(commandPaletteActiveIndex, filteredCommandPaletteItems.length - 1)]);
+    }
+  }, [commandPaletteActiveIndex, filteredCommandPaletteItems, handleCommandPaletteSelect]);
 
   useEffect(() => {
     if (layoutMode !== "classic") return;
@@ -1567,7 +1989,26 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
+      if (batchNoShowConfirmOpen) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        if (drawerMode) return;
+        event.preventDefault();
+        openCommandPalette();
+        return;
+      }
       if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      if (event.key === "Escape" && commandPaletteOpen) {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+
+      if (event.key === "Escape" && expandedBookingContext) {
+        event.preventDefault();
+        closeExpandedBookingContext();
+        return;
+      }
 
       if (event.key === "Escape" && drawerMode) {
         event.preventDefault();
@@ -1608,7 +2049,17 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [changeSelectedDate, drawerMode]);
+  }, [
+    batchNoShowConfirmOpen,
+    changeSelectedDate,
+    close,
+    closeCommandPalette,
+    closeExpandedBookingContext,
+    commandPaletteOpen,
+    drawerMode,
+    expandedBookingContext,
+    openCommandPalette,
+  ]);
 
   return (
     <>
@@ -2154,6 +2605,32 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     </div>
                     ) : null}
 
+                    {filters.viewFilter === "no_shows" && batchNoShowBookings.length > 0 ? (
+                      <div
+                        className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                        data-testid="batch-no-show-bar"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">Late / At Risk</p>
+                          <p className="text-sm font-semibold text-amber-950">
+                            {batchNoShowBookings.length} booking{batchNoShowBookings.length === 1 ? "" : "s"} ready for batch no-show handling.
+                          </p>
+                          <p className="text-xs text-amber-800">Uses the existing backend no-show intent for each eligible booking in the current filtered result set.</p>
+                        </div>
+                        <button
+                          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-700"
+                          onClick={() => {
+                            setNotice(null);
+                            setBatchNoShowConfirmOpen(true);
+                          }}
+                          type="button"
+                        >
+                          <MaterialSymbol className="text-sm" icon="person_off" />
+                          <span>Batch No-Show</span>
+                        </button>
+                      </div>
+                    ) : null}
+
                     {/* Legend — always visible inside the sticky toolbar */}
                     <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-200/60 pt-3">
                       <div className="flex items-center gap-3">
@@ -2218,6 +2695,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                             bucket.slots.map((item, index) => {
                               const targetKey = dropKey(item);
                               const allowedDrop = dropAllowed(item);
+                              const bucketExpandedRowCount = expandedBookingContext && bucket.slots.some((slot) => (
+                                slot.rowKey === expandedBookingContext.rowKey &&
+                                slot.slot.slot_datetime === expandedBookingContext.slotDatetime
+                              )) ? 1 : 0;
                               const isMultiLane = bucket.slots.length > 1;
                               const reservedBookings = reservedBookingsByBucket.get(bucket.slotDatetime) ?? [];
                               const displaySlot = isMultiLane
@@ -2229,6 +2710,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   }
                                 : item.slot;
                               const reservedBlock = (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") && displaySlot.bookings.length === 0;
+                              const expandedBooking = displaySlot.bookings.find((booking) => matchesExpandedBooking(expandedBookingContext, item, booking.id)) ?? null;
                               // Build individual player cells — one <td> per slot position, never merged
                               const capacity = slotCapacity(displaySlot);
                               const playerCells: Array<
@@ -2253,11 +2735,11 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 playerCells.push(canCreate(displaySlot) ? { kind: "open" } : { kind: "unavailable" });
                               }
                               return (
+                                <Fragment key={targetKey}>
                                 <tr
                                   aria-label={`${item.laneLabel} lane row ${bucket.localTime.slice(0, 5)}`}
                                   className={`group transition-all duration-300 ${highlightedSlotKey === targetKey ? "ring-2 ring-primary ring-offset-1 rounded-[18px]" : ""}`}
                                   data-testid={`lane-row-${item.rowKey}`}
-                                  key={targetKey}
                                   onDragEnter={() => {
                                     if (allowedDrop) setActiveDropKey(targetKey);
                                   }}
@@ -2277,7 +2759,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   }}
                                 >
                                   {index === 0 ? (
-                                    <td className="w-[96px] px-2 align-top" rowSpan={bucket.slots.length}>
+                                    <td className="w-[96px] px-2 align-top" rowSpan={bucket.slots.length + bucketExpandedRowCount}>
                                       <div className="scroll-mt-44 rounded-[18px] bg-surface-container px-3 py-2 shadow-sm" id={`bucket-${bucket.localTime.slice(0, 5)}`}>
                                         <div className="flex items-center gap-2">
                                           <p className="font-headline text-lg font-extrabold text-on-surface">{bucket.localTime.slice(0, 5)}</p>
@@ -2381,36 +2863,59 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                         {cell.kind === "player" ? (
                                           cell.isFirst ? (
                                             // First cell: draggable button with quick actions panel
-                                            <div className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}>
+                                            <div
+                                              className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}
+                                              ref={matchesExpandedBooking(expandedBookingContext, item, cell.booking.id) ? setExpandedBookingCardElement : undefined}
+                                            >
+                                              {(() => {
+                                                const nextAction = deriveBookingNextAction(
+                                                  cell.booking,
+                                                  teeSheetQuery.data?.reference_datetime ?? null,
+                                                );
+                                                const badge = nextActionBadgeProps(nextAction);
+                                                const isExpanded = matchesExpandedBooking(expandedBookingContext, item, cell.booking.id);
+                                                return (
                                               <button
+                                                aria-controls={`inline-booking-panel-${cell.booking.id}`}
+                                                aria-expanded={isExpanded}
                                                 aria-label={`Open booking ${cell.booking.id}`}
-                                                className={`flex min-h-[3.5rem] w-full flex-col justify-between rounded-[14px] border border-slate-100 bg-white px-2 py-1.5 text-left shadow-sm transition-opacity hover:opacity-90 ${participantTypeBorderClass(cell.participantType)}`}
+                                                className={`${bookingChipClass(cell.booking, false, nextAction)} border border-slate-100 shadow-sm transition-opacity hover:opacity-90 ${participantTypeBorderClass(cell.participantType)}`}
                                                 draggable
-                                                onClick={() => openManage(item)}
+                                                onClick={() => toggleBookingExpansion(item, cell.booking)}
                                                 onDragEnd={endDrag}
                                                 onDragStart={(e) => startDrag(e, cell.booking.id, item)}
                                                 title="Drag to move booking"
                                                 type="button"
                                               >
-                                                <div className="min-w-0">
-                                                  <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
-                                                  <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${bookingStatusIconClass(cell.booking.status)}`}>
-                                                    <MaterialSymbol className="text-[10px]" icon={bookingStatusIconName(cell.booking.status)} />
-                                                    {cell.booking.status.replace(/_/g, " ")}
-                                                  </span>
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <div className="min-w-0">
+                                                    <p className="truncate text-[11px] font-semibold leading-tight text-on-surface">{cell.name}</p>
+                                                    <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${bookingStatusIconClass(cell.booking.status)}`}>
+                                                      <MaterialSymbol className="text-[10px]" icon={bookingStatusIconName(cell.booking.status)} />
+                                                      {cell.booking.status.replace(/_/g, " ")}
+                                                    </span>
+                                                  </div>
+                                                  {badge ? (
+                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] ${badge.className}`}>
+                                                      {badge.label}
+                                                    </span>
+                                                  ) : null}
                                                 </div>
                                                 <div className="mt-1 flex items-center gap-1">
-                                                  <span title={cell.booking.payment_status ?? ""}>
-                                                    <MaterialSymbol
-                                                      className={`text-[11px] ${paymentIconClass(cell.booking.payment_status)}`}
-                                                      icon={paymentIcon(cell.booking.payment_status)}
-                                                    />
+                                                  <span
+                                                    aria-label={paymentTooltip(cell.booking.payment_status)}
+                                                    className={paymentDotClass(cell.booking.payment_status)}
+                                                    title={paymentTooltip(cell.booking.payment_status)}
+                                                  >
+                                                    <span className="sr-only">{paymentTooltip(cell.booking.payment_status)}</span>
                                                   </span>
                                                   {cell.booking.cart_flag ? (
                                                     <span title="Cart"><MaterialSymbol className="text-[11px] text-slate-400" icon="shopping_cart" /></span>
                                                   ) : null}
                                                 </div>
                                               </button>
+                                                );
+                                              })()}
                                               <BookingQuickActionPanel
                                                 booking={cell.booking}
                                                 onQuickAction={handleInlineQuickAction}
@@ -2485,6 +2990,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                     </div>
                                   </td>
                                 </tr>
+                                {expandedBooking ? (
+                                  <tr data-testid={`inline-booking-row-${expandedBooking.id}`}>
+                                    <td className="px-2 pb-2 pt-1 align-top" colSpan={6}>
+                                      {renderExpandedBookingPanel(item, expandedBooking)}
+                                    </td>
+                                  </tr>
+                                ) : null}
+                                </Fragment>
                               );
                             }),
                           )}
@@ -2517,8 +3030,13 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     onQuickAction={handleInlineQuickAction}
                     onSetActiveDropKey={setActiveDropKey}
                     onStartDrag={startDrag}
+                    onToggleBookingExpansion={toggleBookingExpansion}
                     pendingAction={pendingAction}
                     pendingBookingId={pendingBookingId}
+                    isBookingExpanded={isBookingExpanded}
+                    renderExpandedBookingPanel={renderExpandedBookingPanel}
+                    referenceDatetime={teeSheetQuery.data?.reference_datetime ?? null}
+                    setExpandedBookingCardElement={setExpandedBookingCardElement}
                     selectedDate={selectedDate}
                     timezone={teeSheetQuery.data?.timezone ?? null}
                   />
@@ -2528,6 +3046,138 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
           </div>
         ) : null}
       </AdminWorkspace>
+
+      {commandPaletteOpen ? (
+        <>
+          <button
+            aria-label="Close command palette"
+            className="fixed inset-0 z-40 bg-slate-900/40"
+            onClick={closeCommandPalette}
+            type="button"
+          />
+          <div
+            aria-labelledby="tee-sheet-command-palette-heading"
+            aria-modal="true"
+            className="fixed left-1/2 top-[20vh] z-50 w-full max-w-2xl -translate-x-1/2 rounded-3xl bg-white p-4 shadow-2xl"
+            onKeyDown={handleCommandPaletteKeyDown}
+            ref={commandPaletteDialogRef}
+            role="dialog"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3 px-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Tee Sheet</p>
+                <h2 className="font-headline text-xl font-extrabold text-on-surface" id="tee-sheet-command-palette-heading">
+                  Command Palette
+                </h2>
+              </div>
+              <span className="rounded-full bg-surface-container px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                {filteredCommandPaletteItems.length} result{filteredCommandPaletteItems.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <label className="relative block">
+              <MaterialSymbol className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400" icon="search" />
+              <input
+                aria-label="Command palette search"
+                className="w-full rounded-2xl border border-slate-200 bg-surface-container-low px-11 py-3 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20"
+                onChange={(event) => setCommandPaletteQuery(event.target.value)}
+                placeholder="Jump to bookings, times, payment posture, or operational views"
+                ref={commandPaletteInputRef}
+                type="search"
+                value={commandPaletteQuery}
+              />
+            </label>
+            <div className="mt-3 max-h-[24rem] overflow-y-auto">
+              {filteredCommandPaletteItems.length > 0 ? (
+                <div className="space-y-2">
+                  {filteredCommandPaletteItems.map((item, index) => {
+                    const active = index === commandPaletteActiveIndex;
+                    return (
+                      <button
+                        aria-label={item.label}
+                        className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                          active
+                            ? "border-primary/30 bg-primary-container/20"
+                            : "border-slate-200 bg-white hover:bg-surface-container-low"
+                        }`}
+                        key={item.id}
+                        onClick={() => handleCommandPaletteSelect(item)}
+                        onMouseEnter={() => setCommandPaletteActiveIndex(index)}
+                        type="button"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-on-surface">{item.label}</p>
+                          <p className="mt-1 truncate text-xs text-slate-500">{item.subtitle}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
+                          item.kind === "command"
+                            ? "bg-primary/10 text-primary"
+                            : "bg-surface-container text-slate-600"
+                        }`}>
+                          {item.kind === "command" ? viewFilterLabel(item.viewFilter) : "Booking"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-surface-container-low px-4 py-6 text-sm text-slate-500">
+                  No tee-sheet commands or bookings match "{commandPaletteQuery.trim()}".
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {batchNoShowConfirmOpen ? (
+        <>
+          <button
+            aria-label="Close batch no-show confirm"
+            className="fixed inset-0 z-40 bg-slate-900/40"
+            disabled={batchNoShowPending}
+            onClick={closeBatchNoShowConfirm}
+            type="button"
+          />
+          <div
+            aria-labelledby="batch-no-show-heading"
+            aria-modal="true"
+            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-8 shadow-2xl"
+            ref={batchNoShowDialogRef}
+            role="dialog"
+          >
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100">
+              <MaterialSymbol className="text-amber-700" icon="person_off" />
+            </div>
+            <h2 className="mt-4 font-headline text-xl font-bold text-on-surface" id="batch-no-show-heading">
+              Mark {batchNoShowBookings.length} late booking{batchNoShowBookings.length === 1 ? "" : "s"} as no-show?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              This runs the existing backend no-show intent once per eligible booking in the current Late / At Risk filtered result set.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-surface-container-low disabled:opacity-50"
+                disabled={batchNoShowPending}
+                onClick={closeBatchNoShowConfirm}
+                ref={batchNoShowCancelRef}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-amber-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-700 disabled:opacity-50"
+                disabled={batchNoShowPending}
+                onClick={() => {
+                  void handleBatchNoShow();
+                }}
+                type="button"
+              >
+                {batchNoShowPending ? "Running..." : "Confirm Batch No-Show"}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {selectedSlot && drawerMode === "manage"
         ? (

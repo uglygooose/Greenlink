@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   checkInBooking,
+  completeBooking,
   createBooking,
+  markBookingNoShow,
   moveBooking,
   postBookingCharge,
   recordBookingPayment,
@@ -13,6 +15,7 @@ import {
   updateBooking,
 } from "../api/operations";
 import { AdminGolfTeeSheetPage, deriveBookingNextAction, nearestBucketTime, optimisticallyTransitionBooking } from "./admin-golf-tee-sheet-page";
+import { nextActionBadgeProps, paymentTooltip } from "../features/tee-sheet/sheet-shared";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
@@ -568,7 +571,7 @@ describe("AdminGolfTeeSheetPage", () => {
     renderPage(undefined, "/admin/golf/tee-sheet?filter=no-shows");
 
     openFiltersView();
-    expect(screen.getByRole("button", { name: "No-Show Risk" })).toHaveClass("bg-primary", "text-white");
+    expect(screen.getAllByRole("button", { name: "Late / At Risk" }).slice(-1)[0]).toHaveClass("bg-primary", "text-white");
     expect(screen.getByText("Member One")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /create booking for 1st tee 06:30/i })).not.toBeInTheDocument();
   });
@@ -578,6 +581,59 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T03:30:00Z")).toBe("ready_to_check_in");
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T04:15:00Z")).toBe("at_risk");
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "completed" }, "2026-03-30T04:15:00Z")).toBe("completed");
+  });
+
+  test("maps next-action badges for booking chips", () => {
+    expect(nextActionBadgeProps("needs_payment")).toEqual(expect.objectContaining({ label: "Pay" }));
+    expect(nextActionBadgeProps("ready_to_check_in")).toEqual(expect.objectContaining({ label: "Arriving" }));
+    expect(nextActionBadgeProps("at_risk")).toEqual(expect.objectContaining({ label: "Late" }));
+    expect(nextActionBadgeProps("completed")).toBeNull();
+  });
+
+  test("renders next-action badges in classic layout from existing booking state", () => {
+    renderPage();
+
+    expect(screen.getByText("Pay")).toBeInTheDocument();
+    expect(screen.getByText("Arriving")).toBeInTheDocument();
+  });
+
+  test("renders the at-risk chip treatment in both classic and timeline layouts", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.reference_datetime = "2026-03-30T04:15:00Z";
+    payload.rows[0].slots[0].bookings[0].payment_status = "paid";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    const classicCard = screen.getByRole("button", { name: /open booking booking-1/i });
+    expect(classicCard).toHaveClass("bg-error-container/20");
+    expect(screen.getAllByText("Late").length).toBeGreaterThan(0);
+
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    const timelineCard = screen.getByRole("button", { name: /open booking booking-1/i });
+    expect(timelineCard).toHaveClass("bg-error-container/20");
+    expect(screen.getAllByText("Late").length).toBeGreaterThan(0);
+  });
+
+  test("renders compact payment dots with accessible tooltip text in both classic and timeline layouts", () => {
+    renderPage();
+
+    const pendingClassic = screen.getAllByLabelText(paymentTooltip("pending"))[0];
+    const paidClassic = screen.getAllByLabelText(paymentTooltip("paid"))[0];
+    expect(pendingClassic).toHaveClass("bg-amber-500");
+    expect(paidClassic).toHaveClass("bg-emerald-600");
+    expect(pendingClassic).toHaveAttribute("title", "Payment status: pending. Blocks close-day.");
+
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    const pendingTimeline = screen.getAllByLabelText(paymentTooltip("pending"))[0];
+    const paidTimeline = screen.getAllByLabelText(paymentTooltip("paid"))[0];
+    expect(pendingTimeline).toHaveClass("bg-amber-500");
+    expect(paidTimeline).toHaveClass("bg-emerald-600");
+    expect(pendingTimeline).toHaveAttribute("title", "Payment status: pending. Blocks close-day.");
   });
 
   test("renders time-first lanes and commercial hooks from backend payload", async () => {
@@ -639,11 +695,11 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getByPlaceholderText("Search players, bookings, or time")).toBeInTheDocument();
     expect(screen.getByTestId("filters-view-toggle")).toBeInTheDocument();
     expect(screen.getByText("Occupancy")).toBeInTheDocument();
-    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
-    expect(screen.getByText("Warnings")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /No-shows/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Arrivals Due/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Competitions/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Late \/ At Risk/i })).toBeInTheDocument();
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /Unresolved/i })).toBeInTheDocument();
+    expect(screen.getAllByText("Warnings").length).toBeGreaterThan(0);
   });
 
   test("keeps the legacy toolbar when the rebuild flag is disabled", () => {
@@ -673,11 +729,142 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /No-shows/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Late \/ At Risk/i }));
     openFiltersView();
 
-    expect(screen.getByRole("button", { name: "No-Show Risk" })).toHaveClass("bg-primary", "text-white");
+    expect(screen.getAllByRole("button", { name: "Late / At Risk" }).slice(-1)[0]).toHaveClass("bg-primary", "text-white");
     expect(screen.getByText("Member One")).toBeInTheDocument();
+  });
+
+  test("shows the batch no-show action bar only for the Late / At Risk filter with eligible bookings", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.reference_datetime = "2026-03-30T04:15:00Z";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    expect(screen.queryByTestId("batch-no-show-bar")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Late \/ At Risk/i }));
+    expect(screen.getByTestId("batch-no-show-bar")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Unpaid/i }));
+    expect(screen.queryByTestId("batch-no-show-bar")).not.toBeInTheDocument();
+  });
+
+  test("confirms and executes batch no-show through the existing backend intent with one refresh", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.reference_datetime = "2026-03-30T04:15:00Z";
+    payload.rows[1].slots[0].bookings = [
+      {
+        id: "booking-3",
+        status: "reserved",
+        party_size: 1,
+        slot_datetime: "2026-03-30T04:00:00Z",
+        start_lane: "hole_10",
+        fee_label: "Member Rate",
+        payment_status: "paid",
+        cart_flag: false,
+        caddie_flag: false,
+        participants: [{ display_name: "Member Three", participant_type: "member", is_primary: true }],
+      },
+    ];
+    payload.rows[1].slots[0].occupancy.reserved_player_count = 1;
+    payload.rows[1].slots[0].occupancy.reserved_booking_count = 1;
+    payload.rows[1].slots[0].party_summary.member_count = 1;
+    payload.rows[1].slots[0].party_summary.total_players = 1;
+    payload.rows[1].slots[0].party_summary.has_activity = true;
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+    vi.mocked(markBookingNoShow)
+      .mockResolvedValueOnce({
+        booking_id: "booking-2",
+        decision: "allowed",
+        transition_applied: true,
+        booking: null,
+        failures: [],
+      })
+      .mockResolvedValueOnce({
+        booking_id: "booking-3",
+        decision: "blocked",
+        transition_applied: false,
+        booking: null,
+        failures: [{ code: "booking_status_not_eligible", message: "Only reserved bookings may be marked no-show." }],
+      });
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderPage(queryClient);
+
+    fireEvent.click(screen.getByRole("button", { name: /Late \/ At Risk/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Batch No-Show/i }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Confirm Batch No-Show/i }));
+
+    await waitFor(() => {
+      expect(markBookingNoShow).toHaveBeenCalledTimes(2);
+    });
+    expect(markBookingNoShow).toHaveBeenCalledWith("booking-2", { accessToken: "token", selectedClubId: "club-1" });
+    expect(markBookingNoShow).toHaveBeenCalledWith("booking-3", { accessToken: "token", selectedClubId: "club-1" });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: teeSheetDayKey(testLocalDateString(new Date()), "staff", null),
+      });
+    });
+    expect(await screen.findByText("Batch No-Show finished. 1 updated, 1 failed, 0 already processed. Only reserved bookings may be marked no-show.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("uses preset chips to surface unresolved close-day bookings", () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[1].slots[0].bookings = [
+      {
+        id: "booking-unresolved",
+        status: "checked_in",
+        party_size: 1,
+        slot_datetime: "2026-03-30T04:00:00Z",
+        start_lane: "hole_10",
+        fee_label: "Member Weekday Rate",
+        payment_status: "pending",
+        cart_flag: false,
+        caddie_flag: false,
+        participants: [{ display_name: "Late Payer", participant_type: "member", is_primary: true }],
+      },
+    ];
+    payload.rows[1].slots[0].occupancy.occupied_player_count = 1;
+    payload.rows[1].slots[0].occupancy.confirmed_booking_count = 1;
+    payload.rows[1].slots[0].occupancy.remaining_player_capacity = 3;
+    payload.rows[1].slots[0].party_summary.member_count = 1;
+    payload.rows[1].slots[0].party_summary.total_players = 1;
+    payload.rows[1].slots[0].party_summary.has_activity = true;
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button").find((button) => button.textContent?.includes("Unresolved"))!);
+    openFiltersView();
+
+    expect(screen.getAllByRole("button").filter((button) => button.textContent?.includes("Unresolved")).slice(-1)[0]).toHaveClass("bg-primary", "text-white");
+    expect(screen.getByText("Late Payer")).toBeInTheDocument();
+    expect(screen.queryByText("Event One")).not.toBeInTheDocument();
+  });
+
+  test("uses preset chips to focus warning lanes without opening new workflows", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /Warnings/i }));
+    openFiltersView();
+
+    expect(screen.getAllByRole("button", { name: "Warnings" }).slice(-1)[0]).toHaveClass("bg-primary", "text-white");
+    expect(screen.getByLabelText(/1st tee lane row 06:20/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/1st tee lane row 06:30/i)).not.toBeInTheDocument();
   });
 
   test("opens the existing create drawer from the cockpit primary action", async () => {
@@ -873,6 +1060,29 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(await screen.findByText("Booking checked in. Tee sheet refreshed from backend state.")).toBeInTheDocument();
   });
 
+  test("fires complete as a quick chip action for checked-in bookings without opening the management drawer", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[0].slots[0].bookings[0].status = "checked_in";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+    vi.mocked(completeBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /complete booking booking-1/i })[0]);
+
+    await waitFor(() => {
+      expect(completeBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+    expect(screen.queryByRole("heading", { name: /booking management/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("Booking completed. Tee sheet refreshed from backend state.")).toBeInTheDocument();
+  });
+
   test("disables invalid quick chip actions from the current backend booking state", () => {
     const payload = cloneTeeSheetPayload();
     payload.rows[0].slots[0].bookings[0].status = "checked_in";
@@ -880,9 +1090,12 @@ describe("AdminGolfTeeSheetPage", () => {
 
     renderPage();
 
+    expect(screen.queryByRole("button", { name: /complete booking booking-2/i })).not.toBeInTheDocument();
+    screen.getAllByRole("button", { name: /complete booking booking-1/i }).forEach((button) => expect(button).toBeEnabled());
     screen.getAllByRole("button", { name: /check in booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
     screen.getAllByRole("button", { name: /no-show booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
     screen.getAllByRole("button", { name: /cancel booking booking-1/i }).forEach((button) => expect(button).toBeDisabled());
+    expect(screen.queryByRole("button", { name: /complete booking booking-2/i })).not.toBeInTheDocument();
   });
 
   test("checks in all reserved bookings in a time bucket and surfaces partial failures", async () => {
@@ -1070,6 +1283,60 @@ describe("AdminGolfTeeSheetPage", () => {
     }
   });
 
+  test("opens the tee-sheet command palette with Ctrl+K and closes it with Escape", async () => {
+    renderPage();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/command palette search/i)).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
+    });
+  });
+
+  test("command palette applies existing operational filters without creating a new filter model", async () => {
+    renderPage();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const search = await screen.findByLabelText(/command palette search/i);
+    fireEvent.change(search, { target: { value: "unresolved" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
+    });
+    openFiltersView();
+    expect(screen.getAllByRole("button", { name: "Unresolved" }).slice(-1)[0]).toHaveClass("bg-primary", "text-white");
+  });
+
+  test("command palette jumps to a booking, scrolls to the slot, and opens the inline context panel", async () => {
+    renderPage();
+    scrollIntoViewMock.mockClear();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const search = await screen.findByLabelText(/command palette search/i);
+    fireEvent.change(search, { target: { value: "member one" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    expect(scrollIntoViewMock).toHaveBeenCalled();
+  });
+
+  test("command palette does not open while the drawer is already active", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /create booking for 1st tee 06:00/i })[0]);
+    await screen.findByRole("dialog");
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
+  });
+
   test("closes the topmost drawer on Escape and traps focus within the drawer", async () => {
     renderPage();
 
@@ -1247,13 +1514,110 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.getByRole("button", { name: /open booking booking-1/i })).toHaveAttribute("draggable", "true");
   });
 
-  test("clicking a booking card opens details instead of moving the booking", async () => {
+  test("clicking a booking card toggles the inline context panel instead of opening the drawer", async () => {
+    renderPage();
+
+    const card = screen.getByRole("button", { name: /open booking booking-1/i });
+    fireEvent.click(card);
+
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open full view/i })).toBeInTheDocument();
+    expect(screen.getByText("Member Weekend Rate")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /booking management/i })).not.toBeInTheDocument();
+
+    fireEvent.click(card);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+    expect(moveBooking).not.toHaveBeenCalled();
+  });
+
+  test("inline context hands off to the existing drawer when full view is opened", async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: /open booking booking-1/i }));
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open full view/i }));
 
     expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
-    expect(moveBooking).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+  });
+
+  test("inline context collapses on escape, click outside, filter change, and date change", async () => {
+    renderPage();
+
+    const card = screen.getByRole("button", { name: /open booking booking-1/i });
+
+    fireEvent.click(card);
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(card);
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(card);
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Arrivals Due" }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("button", { name: /open booking booking-1/i }));
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+  });
+
+  test("inline context collapses after a successful lifecycle mutation", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[0].slots[0].bookings[0].status = "checked_in";
+    payload.rows[0].slots[0].bookings[0].payment_status = "paid";
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+    vi.mocked(completeBooking).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      transition_applied: true,
+      booking: null,
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /open booking booking-1/i }));
+    const panel = await screen.findByTestId("inline-booking-panel-booking-1");
+
+    fireEvent.click(within(panel).getByRole("button", { name: /complete/i }));
+
+    await waitFor(() => {
+      expect(completeBooking).toHaveBeenCalledWith("booking-1", expect.anything());
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+    });
+  });
+
+  test("timeline layout renders the same inline context panel without opening the drawer", async () => {
+    renderPage();
+
+    openFiltersView();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    fireEvent.click(screen.getByRole("button", { name: /open booking booking-1/i }));
+
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /booking management/i })).not.toBeInTheDocument();
   });
 
   test("toggles timeline layout and persists the feature flag", () => {

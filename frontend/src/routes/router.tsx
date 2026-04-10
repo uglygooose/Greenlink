@@ -3,8 +3,6 @@ import { Navigate, RouterProvider, createBrowserRouter } from "react-router-dom"
 import { ProtectedRoute } from "../components/protected-route";
 import { AdminLayout } from "./admin-layout";
 import { AdminCommunicationsPage } from "../pages/admin-communications-page";
-import { AdminClubSettingsEntryPage } from "../pages/admin-club-settings-entry-page";
-import { AdminClubSettingsPage } from "../pages/admin-club-settings-page";
 import { AdminDashboardPage } from "../pages/admin-dashboard-page";
 import { AdminFinanceDashboardPage } from "../pages/admin-finance-dashboard-page";
 import { AdminHalfwayPage } from "../pages/admin-halfway-page";
@@ -14,6 +12,7 @@ import { AdminSettingsModulesPage } from "../pages/admin-settings-modules-page";
 import { AdminProShopPage } from "../pages/admin-pro-shop-page";
 import { AdminPeopleDashboardPage } from "../pages/admin-people-dashboard-page";
 import { AdminReportsPage } from "../pages/admin-reports-page";
+import { AdminTargetsPage } from "../pages/admin-targets-page";
 import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
@@ -27,6 +26,7 @@ import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerProfilePage } from "../pages/player-profile-page";
 import { PlayerShellPage } from "../pages/player-shell-page";
 import { SelectClubPage } from "../pages/select-club-page";
+import { SuperadminAccountingProfilesPage } from "../pages/superadmin-accounting-profiles-page";
 import { SuperadminClubsPage } from "../pages/superadmin-clubs-page";
 import { SuperadminOverviewPage } from "../pages/superadmin-overview-page";
 import { SuperadminLayout } from "./superadmin-layout";
@@ -68,7 +68,7 @@ const router = createBrowserRouter([
           { path: "orders", element: <AdminOrderQueuePage /> },
           { path: "people/dashboard", element: <AdminPeopleDashboardPage /> },
           { path: "members", element: <AdminMembersPage /> },
-          { path: "targets", element: <Navigate to="/admin/reports" replace /> },
+          { path: "targets", element: <AdminTargetsPage /> },
           { path: "finance/dashboard", element: <AdminFinanceDashboardPage /> },
           { path: "finance", element: <AdminFinancePage /> },
           { path: "communications", element: <AdminCommunicationsPage /> },
@@ -77,8 +77,8 @@ const router = createBrowserRouter([
           { path: "reports", element: <AdminReportsPage /> },
           { path: "pos-terminal", element: <AdminPosTerminalPage /> },
           { path: "settings", element: <AdminSettingsHubPage /> },
-          { path: "settings/club", element: <AdminClubSettingsEntryPage /> },
-          { path: "settings/profile", element: <AdminClubSettingsPage /> },
+          { path: "settings/club", element: <Navigate to="/admin/settings" replace /> },
+          { path: "settings/profile", element: <Navigate to="/admin/settings" replace /> },
           { path: "settings/modules", element: <AdminSettingsModulesPage /> },
         ],
       },
@@ -94,6 +94,7 @@ const router = createBrowserRouter([
         children: [
           { path: "overview", element: <SuperadminOverviewPage /> },
           { path: "clubs", element: <SuperadminClubsPage /> },
+          { path: "accounting-profiles", element: <SuperadminAccountingProfilesPage /> },
         ],
       },
       { path: "*", element: <Navigate to="/superadmin/overview" replace /> },

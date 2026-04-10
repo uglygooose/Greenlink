@@ -66,22 +66,17 @@ describe("AdminSidebar", () => {
   test("falls back to the static admin menu when backend menu items are absent", () => {
     renderSidebar(baseBootstrap);
 
-    // Only Overview is always visible (unlabeled group)
+    // Core items are always visible (unlabeled group)
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
-
-    // Labeled groups start collapsed — expand Golf to find its links
-    expect(screen.queryByRole("link", { name: /tee sheet/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Golf$/i }));
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
-    // Expand Finance to find Close Day
+    // Finance group starts collapsed — expand to find Close Day
     expect(screen.queryByRole("link", { name: /close day/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
 
-    // Expand My Club to find the single Settings hub entry
-    expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
+    // Settings hub is visible directly (unlabeled settings group)
     expect(screen.getByRole("link", { name: /settings/i })).toHaveAttribute("href", "/admin/settings");
   });
 
@@ -116,12 +111,15 @@ describe("AdminSidebar", () => {
       ],
     });
 
+    // dashboard and members land in the core group — visible directly
     expect(screen.getByRole("link", { name: /Overview$/i })).toBeInTheDocument();
-
-    // People group exists — expand it to see its links
-    fireEvent.click(screen.getByRole("button", { name: /^People$/i }));
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
+
+    // people_dashboard has no primary group — falls to ungrouped, visible directly
     expect(screen.getAllByRole("link", { name: /Dashboard$/i })).toHaveLength(1);
+
+    // No People group button in the new lifecycle-weighted nav
+    expect(screen.queryByRole("button", { name: /^People$/i })).not.toBeInTheDocument();
 
     // Golf and Finance groups should not appear at all
     expect(screen.queryByRole("button", { name: /^Golf$/i })).not.toBeInTheDocument();
@@ -170,25 +168,24 @@ describe("AdminSidebar", () => {
 
   test("fallback nav covers all known backend MENU_ITEMS admin keys — none silently omitted", () => {
     // Renders without menu_items to exercise FALLBACK_NAV_ITEMS.
-    // Expands every collapsible group so all links are visible.
+    // Only labeled groups need expanding; ungrouped and unlabeled groups render directly.
     renderSidebar(baseBootstrap);
 
     // Expand all labeled groups
-    for (const label of ["Golf", "People", "Finance", "Operations", "My Club"]) {
+    for (const label of ["Finance", "Operations"]) {
       fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}$`, "i") }));
     }
 
-    // Overview (unlabeled, always visible)
+    // Core — always visible (unlabeled group)
     expect(screen.getByRole("link", { name: /overview$/i })).toBeInTheDocument();
-
-    // Golf
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
-
-    // People
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
     // Finance
     expect(screen.getByRole("link", { name: /close day/i })).toBeInTheDocument();
+
+    // Performance — visible directly (unlabeled group)
+    expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
 
     // Operations
     expect(screen.getByRole("link", { name: /halfway/i })).toBeInTheDocument();
@@ -196,22 +193,10 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /pos terminal/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /order queue/i })).toBeInTheDocument();
 
-    // My Club — Performance lives here
+    // Settings hub — visible directly (unlabeled settings group)
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /performance/i })).toBeInTheDocument();
-    // Targets nav item removed — merged into Performance page
+    // Targets nav item filtered — accessible via Settings hub, not surfaced in sidebar
     expect(screen.queryByRole("link", { name: /^targets$/i })).not.toBeInTheDocument();
   });
 
-  test("preserves the older static settings links when the rebuild flag is disabled", () => {
-    renderSidebar({
-      ...baseBootstrap,
-      feature_flags: {},
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
-
-    expect(screen.getByRole("link", { name: /club settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /golf settings/i })).toBeInTheDocument();
-  });
 });

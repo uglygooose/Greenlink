@@ -22,6 +22,7 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
           </Route>
           <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
             <Route index element={<div>Superadmin Shell</div>} />
+            <Route path="accounting-profiles" element={<div>Accounting Profiles</div>} />
           </Route>
           <Route path="/player" element={<ProtectedRoute shell="player" />}>
             <Route index element={<div>Player Shell</div>} />
@@ -114,6 +115,50 @@ test("renders superadmin shell when session is aligned with the superadmin route
     ["/superadmin"],
   );
   expect(await screen.findByText("Superadmin Shell")).toBeInTheDocument();
+});
+
+test("allows superadmin routes that are present in backend menu truth", async () => {
+  renderWithSession(
+    {
+      ...sessionValue,
+      bootstrap: {
+        ...baseBootstrap,
+        user: { ...baseBootstrap.user, user_type: "superadmin" },
+        role_shell: "superadmin",
+        landing_path: "/superadmin/clubs",
+        default_workspace: "clubs",
+        menu_items: [
+          {
+            key: "overview",
+            label: "Overview",
+            path: "/superadmin/overview",
+            shell: "superadmin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "clubs",
+            label: "Clubs",
+            path: "/superadmin/clubs",
+            shell: "superadmin",
+            domain: "clubs",
+            module_key: null,
+          },
+          {
+            key: "accounting_profiles",
+            label: "Accounting Profiles",
+            path: "/superadmin/accounting-profiles",
+            shell: "superadmin",
+            domain: "finance",
+            module_key: null,
+          },
+        ],
+      },
+    },
+    ["/superadmin/accounting-profiles"],
+  );
+
+  expect(await screen.findByText("Accounting Profiles")).toBeInTheDocument();
 });
 
 test("allows a superadmin with a selected club into admin routes", async () => {

@@ -34,14 +34,14 @@ describe("AdminGolfSettingsPage", () => {
     vi.clearAllMocks();
   });
 
-  test("switches to the guided rebuild page when ux_rebuild_v1 is enabled", () => {
+  test("renders the guided golf settings page", () => {
     mockUseSession.mockReturnValue({
       accessToken: "token",
       bootstrap: {
         selected_club_id: "club-1",
         selected_club: { id: "club-1", name: "Club One" },
         available_clubs: [],
-        feature_flags: { ux_rebuild_v1: true },
+        feature_flags: {},
       },
     });
 

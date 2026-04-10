@@ -37,15 +37,6 @@ vi.mock("../features/finance/hooks", () => ({
   useRegenerateFinanceExportBatchMutation: () => mockUseRegenerateFinanceExportBatchMutation(),
   downloadFinanceExportBatch: (args: unknown) => mockDownloadFinanceExportBatch(args),
   downloadMappedFinanceExport: (args: unknown) => mockDownloadMappedFinanceExport(args),
-  // Hooks used by legacy finance page (not used by close-day page, but imported by admin-finance-page.tsx)
-  useFinanceAccountsQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
-  useFinanceJournalQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
-  useFinanceOutstandingSummaryQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
-  useFinanceRevenueSummaryQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
-  useFinanceTransactionVolumeSummaryQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
-  useCreateAccountingExportProfileMutation: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateAccountingExportProfileMutation: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
-  useFinanceLedgerQuery: vi.fn().mockReturnValue({ data: undefined, isLoading: false, isError: false }),
 }));
 
 // --- Helpers ---
@@ -115,7 +106,7 @@ beforeEach(() => {
         branding: { logo_object_key: null, name: "Test Club" },
       },
       user: { display_name: "Admin" },
-      feature_flags: { ux_rebuild_v1: true },
+      feature_flags: {},
     },
   });
 
@@ -202,7 +193,7 @@ beforeEach(() => {
 
 // --- Tests ---
 
-describe("AdminFinancePage (ux_rebuild_v1 = true) — Close Day wizard", () => {
+describe("AdminFinancePage — Close Day wizard", () => {
   test("renders the wizard with Exceptions step active by default", () => {
     renderPage();
     expect(screen.getByRole("heading", { name: "Resolve Exceptions", level: 2 })).toBeInTheDocument();
@@ -348,29 +339,4 @@ describe("AdminFinancePage (ux_rebuild_v1 = true) — Close Day wizard", () => {
     expect(screen.getByText(/1 Apr 2026 to 10 Apr 2026/i)).toBeInTheDocument();
   });
 
-  test("falls back to legacy finance page when ux_rebuild_v1 flag is false", () => {
-    mockUseSession.mockReturnValue({
-      accessToken: "token",
-      bootstrap: {
-        selected_club_id: "club-1",
-        selected_club: {
-          id: "club-1",
-          name: "Test Club",
-          slug: "test-club",
-          location: "Durban",
-          timezone: "Africa/Johannesburg",
-          branding: { logo_object_key: null, name: "Test Club" },
-        },
-        user: { display_name: "Admin" },
-        feature_flags: { ux_rebuild_v1: false },
-      },
-    });
-
-    renderPage();
-
-    // Legacy page renders the "Generate Canonical Journal Batches" heading
-    expect(screen.getByRole("heading", { name: /generate canonical journal batches/i, level: 2 })).toBeInTheDocument();
-    // Close Day wizard heading should NOT appear
-    expect(screen.queryByRole("heading", { name: /resolve exceptions/i, level: 2 })).not.toBeInTheDocument();
-  });
 });

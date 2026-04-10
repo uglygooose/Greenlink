@@ -132,8 +132,6 @@ export function AdminSettingsHubPage(): JSX.Element {
   const livePosts = publishedFeedQuery.data?.posts.length ?? 0;
   const blastCount = blastsQuery.data?.blasts.length ?? 0;
   const golfConfigured = Boolean(config) && courseCount > 0 && teeCount > 0;
-  const clubProfileStatus = selectedClub ? "live" : "missing";
-  const clubProfileTone: StatusTone = selectedClub ? "good" : "warn";
   const golfStatus = golfConfigured ? "configured" : clubConfigQuery.isLoading ? "syncing" : "needs setup";
   const golfTone: StatusTone = golfConfigured ? "good" : clubConfigQuery.isLoading ? "muted" : "warn";
   const financeStatus = activeProfile ? "ready" : profilesQuery.isLoading ? "syncing" : "needs profile";
@@ -192,19 +190,6 @@ export function AdminSettingsHubPage(): JSX.Element {
       }
     >
       <section className="grid gap-5 xl:grid-cols-2">
-        <SettingsCard
-          title="Club Profile"
-          description="Identity, location context, and club-level operating details for the selected club."
-          href="/admin/settings/profile"
-          icon="location_city"
-          statusLabel={clubProfileStatus}
-          statusTone={clubProfileTone}
-        >
-          <StatRow label="Club" value={selectedClub?.name ?? "Not selected"} />
-          <StatRow label="Location" value={selectedClub?.location ?? "--"} />
-          <StatRow label="Timezone" value={selectedClub?.timezone ?? "--"} />
-        </SettingsCard>
-
         <SettingsCard
           title="Golf Configuration"
           description="Courses, tees, pricing matrices, rule sets, and booking controls live in the existing golf settings workspace."

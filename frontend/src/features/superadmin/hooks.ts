@@ -3,6 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../api/client";
 import { useSession } from "../../session/session-context";
 import type {
+  SuperadminAccountingProfileSummary,
+  SuperadminAccountingProfileActivationInput,
+  SuperadminAccountingProfileBindInput,
+  SuperadminAccountingProfileCreateInput,
+  SuperadminAccountingProfileListResponse,
+  SuperadminAccountingSampleLayout,
+  SuperadminAccountingTemplateParseResult,
   SuperadminAssignmentCandidateListResponse,
   SuperadminClubAssignmentInput,
   SuperadminClubCreateInput,
@@ -26,6 +33,10 @@ interface SuperadminOptions {
 
 export const superadminKeys = {
   clubs: ["superadmin", "clubs"] as const,
+  accountingProfiles: (clubId: string | null) =>
+    ["superadmin", "accounting-profiles", clubId ?? "all"] as const,
+  accountingSampleLayout: (targetSystem: string) =>
+    ["superadmin", "accounting-profiles", "sample-layout", targetSystem] as const,
   onboarding: (clubId: string) => ["superadmin", "clubs", clubId, "onboarding"] as const,
   invitations: (clubId: string) => ["superadmin", "clubs", clubId, "invitations"] as const,
   assignmentCandidates: (clubId: string, query: string) =>
@@ -41,6 +52,50 @@ export function useSuperadminClubsQuery({ accessToken }: SuperadminOptions) {
         accessToken: accessToken as string,
       }),
     enabled: isReady(accessToken),
+  });
+}
+
+interface AccountingProfilesOptions extends SuperadminOptions {
+  clubId: string | null;
+}
+
+export function useSuperadminAccountingProfilesQuery({
+  accessToken,
+  clubId,
+}: AccountingProfilesOptions) {
+  return useQuery<SuperadminAccountingProfileListResponse>({
+    queryKey: superadminKeys.accountingProfiles(clubId),
+    queryFn: () =>
+      apiRequest<SuperadminAccountingProfileListResponse>(
+        `/api/superadmin/accounting-profiles${clubId ? `?club_id=${encodeURIComponent(clubId)}` : ""}`,
+        {
+          method: "GET",
+          accessToken: accessToken as string,
+        },
+      ),
+    enabled: isReady(accessToken),
+  });
+}
+
+interface AccountingSampleLayoutOptions extends SuperadminOptions {
+  targetSystem: string;
+}
+
+export function useSuperadminAccountingSampleLayoutQuery({
+  accessToken,
+  targetSystem,
+}: AccountingSampleLayoutOptions) {
+  return useQuery<SuperadminAccountingSampleLayout>({
+    queryKey: superadminKeys.accountingSampleLayout(targetSystem),
+    queryFn: () =>
+      apiRequest<SuperadminAccountingSampleLayout>(
+        `/api/superadmin/accounting-profiles/sample-layout?target_system=${encodeURIComponent(targetSystem)}`,
+        {
+          method: "GET",
+          accessToken: accessToken as string,
+        },
+      ),
+    enabled: isReady(accessToken) && targetSystem.trim().length > 0,
   });
 }
 
@@ -108,6 +163,94 @@ export function useCreateSuperadminClubMutation() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+    },
+  });
+}
+
+export function useCreateSuperadminAccountingProfileMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: (payload: SuperadminAccountingProfileCreateInput) =>
+      apiRequest<SuperadminAccountingProfileSummary>(
+        "/api/superadmin/accounting-profiles",
+        {
+          method: "POST",
+          accessToken: accessToken as string,
+          body: JSON.stringify(payload),
+        },
+      ),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(null) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(result.club_id) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.onboarding(result.club_id) });
+    },
+  });
+}
+
+export function useUpdateSuperadminAccountingProfileActiveMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: ({
+      profileId,
+      payload,
+    }: {
+      profileId: string;
+      payload: SuperadminAccountingProfileActivationInput;
+    }) =>
+      apiRequest<SuperadminAccountingProfileSummary>(
+        `/api/superadmin/accounting-profiles/${profileId}/active`,
+        {
+          method: "PATCH",
+          accessToken: accessToken as string,
+          body: JSON.stringify(payload),
+        },
+      ),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(null) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(result.club_id) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.onboarding(result.club_id) });
+    },
+  });
+}
+
+export function useBindSuperadminAccountingProfileMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: ({ clubId, payload }: { clubId: string; payload: SuperadminAccountingProfileBindInput }) =>
+      apiRequest<SuperadminClubOnboardingDetail>(`/api/superadmin/clubs/${clubId}/onboarding/finance/bind-profile`, {
+        method: "POST",
+        accessToken: accessToken as string,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async (result, variables) => {
+      queryClient.setQueryData(superadminKeys.onboarding(variables.clubId), result);
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(null) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.accountingProfiles(variables.clubId) });
+      await queryClient.invalidateQueries({ queryKey: superadminKeys.clubs });
+    },
+  });
+}
+
+export function useParseSuperadminAccountingTemplateMutation() {
+  const { accessToken } = useSession();
+
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return apiRequest<SuperadminAccountingTemplateParseResult>("/api/superadmin/accounting-profiles/parse-template", {
+        method: "POST",
+        accessToken: accessToken as string,
+        body: formData,
+      });
     },
   });
 }
