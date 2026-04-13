@@ -47,7 +47,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
   return (
     <AdminWorkspace
       title="Finance Summary"
-      description="Finance posture, operational close workflow, and export readiness using backend summaries only."
+      description="Finance posture, operational close workflow, and export readiness."
       actions={
         <>
           <NavLink
@@ -204,7 +204,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
                   {exportBatchesQuery.isLoading
                     ? "Loading export posture..."
                     : latestBatch
-                      ? `Latest batch covers ${formatDate(latestBatch.date_from)} to ${formatDate(latestBatch.date_to)} with ${latestBatch.transaction_count} persisted rows.`
+                      ? `Latest batch covers ${formatDate(latestBatch.date_from)} to ${formatDate(latestBatch.date_to)} with ${latestBatch.transaction_count} rows.`
                       : "No export batch has been generated yet."}
                 </p>
                 <NavLink className="mt-3 inline-flex text-xs font-bold uppercase tracking-wide text-primary" to="/admin/finance">
@@ -220,7 +220,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
-                  Reports provide the end-state read surface today. A persisted close snapshot is still a backend evolution item.
+                  Reports provide today's summary view. Saved close snapshots are not yet available.
                 </p>
                 <NavLink className="mt-3 inline-flex text-xs font-bold uppercase tracking-wide text-primary" to="/admin/reports">
                   Open reports
@@ -232,7 +232,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
           <div className="rounded-2xl bg-surface-container-lowest shadow-sm">
             <div className="border-b border-slate-100 px-6 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Finance Summary</p>
-              <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Current backend posture</h3>
+              <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Current finance position</h3>
             </div>
             <div className="grid gap-4 p-4 md:grid-cols-2">
               <div className="rounded-2xl bg-surface-container-low p-4">
@@ -257,7 +257,7 @@ export function AdminFinanceDashboardPage(): JSX.Element {
 
         <section className="space-y-6">
           <div className="rounded-2xl bg-surface-container-low p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Separation of Concerns</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Workflow Coverage</p>
             <div className="mt-4 space-y-3">
               <div className="rounded-2xl bg-white p-4">
                 <p className="text-sm font-semibold text-on-surface">Reports</p>

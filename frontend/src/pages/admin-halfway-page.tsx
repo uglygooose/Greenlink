@@ -45,10 +45,9 @@ function transactionIcon(entry: DashboardActivityItem): string {
 
 interface OrderKanbanCardProps {
   order: OrderSummary;
-  onUpdate: () => void;
 }
 
-function OrderKanbanCard({ order, onUpdate }: OrderKanbanCardProps): JSX.Element {
+function OrderKanbanCard({ order }: OrderKanbanCardProps): JSX.Element {
   const markPreparing = useMarkOrderPreparingMutation();
   const markReady = useMarkOrderReadyMutation();
   const markCollected = useMarkOrderCollectedMutation();
@@ -59,13 +58,11 @@ function OrderKanbanCard({ order, onUpdate }: OrderKanbanCardProps): JSX.Element
     if (order.status === "placed") await markPreparing.mutateAsync(order.id);
     else if (order.status === "preparing") await markReady.mutateAsync(order.id);
     else if (order.status === "ready") await markCollected.mutateAsync(order.id);
-    onUpdate();
   }
 
   async function cancel(): Promise<void> {
     if (!confirm(`Cancel order for ${order.person.full_name}?`)) return;
     await cancelOrder.mutateAsync(order.id);
-    onUpdate();
   }
 
   const advanceLabel =
@@ -119,10 +116,6 @@ export function AdminHalfwayPage(): JSX.Element {
   const placed = queueOrders.filter((o) => o.status === "placed");
   const preparing = queueOrders.filter((o) => o.status === "preparing");
   const ready = queueOrders.filter((o) => o.status === "ready");
-
-  function onOrderUpdate(): void {
-    summaryQuery.refetch();
-  }
 
   return (
     <AdminWorkspace
@@ -274,7 +267,7 @@ export function AdminHalfwayPage(): JSX.Element {
                 ) : (
                   <div className="space-y-2">
                     {col.map((order) => (
-                      <OrderKanbanCard key={order.id} onUpdate={onOrderUpdate} order={order} />
+                      <OrderKanbanCard key={order.id} order={order} />
                     ))}
                   </div>
                 )}

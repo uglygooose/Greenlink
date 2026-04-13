@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { apiRequest } from "../../api/client";
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
-import { useSession } from "../../session/session-context";
+import { useRecordPaymentMutation } from "./hooks";
 import type { OrderDetail, OrderSettlementResult, OrderStatus, TenderType } from "../../types/orders";
 
 type FeedbackTone = "error" | "info";
@@ -138,30 +136,7 @@ export function OrderManagementDrawer({
   onCancel,
   onClose,
 }: OrderManagementDrawerProps): JSX.Element {
-  const queryClient = useQueryClient();
-  const { accessToken, bootstrap } = useSession();
-  const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const recordPaymentMutation = useMutation<
-    OrderSettlementResult,
-    Error,
-    { orderId: string; tenderType: TenderType }
-  >({
-    mutationFn: ({ orderId, tenderType }) =>
-      apiRequest<OrderSettlementResult>(`/api/orders/${orderId}/record-payment`, {
-        method: "POST",
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-        body: JSON.stringify({ tender_type: tenderType }),
-      }),
-    onSuccess: async () => {
-      if (!selectedClubId) {
-        return;
-      }
-      await queryClient.invalidateQueries({
-        queryKey: ["orders", selectedClubId],
-      });
-    },
-  });
+  const recordPaymentMutation = useRecordPaymentMutation();
   const [selectedTender, setSelectedTender] = useState<TenderType | null>(null);
   const [settlementFeedbackMessage, setSettlementFeedbackMessage] = useState<string | null>(null);
   const [settlementFeedbackTone, setSettlementFeedbackTone] = useState<FeedbackTone | null>(null);

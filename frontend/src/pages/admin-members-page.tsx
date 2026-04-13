@@ -92,6 +92,20 @@ function asMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() ? error.message : "Request failed.";
 }
 
+const MEMBER_ERROR_FIELD_MAP: Record<string, MemberFormField> = {
+  first_name: "firstName",
+  last_name: "lastName",
+  email: "email",
+  billing_email: "email",
+  phone: "phone",
+  billing_phone: "phone",
+  role: "role",
+  status: "status",
+  membership_number: "membershipNumber",
+  joined_at: "joinedDate",
+  account_code: "accountCode",
+};
+
 function normalizeOptional(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
@@ -107,6 +121,8 @@ function joinedAtPayload(date: string): string | null {
 
 type NoticeTone = "error" | "success";
 type EditorMode = "create" | "edit";
+type MemberFormField = keyof MemberFormValues;
+type MemberFieldErrors = Partial<Record<MemberFormField, string>>;
 
 interface MemberFormValues {
   firstName: string;
@@ -126,6 +142,11 @@ interface MemberEditorState {
   entry: ClubPersonEntry | null;
   account: FinanceAccountSummary | null;
   defaults: MemberFormValues;
+}
+
+interface MemberWorkspaceSelection {
+  selectedMember: ClubPersonEntry | null;
+  selectedAccount: FinanceAccountSummary | null;
 }
 
 const ROLE_OPTIONS: Array<{ label: string; value: ClubMembershipRole }> = [
@@ -180,10 +201,86 @@ function memberFormValues(
   };
 }
 
+function buildMemberEditorState(
+  mode: EditorMode,
+  entry: ClubPersonEntry | null,
+  account: FinanceAccountSummary | null,
+  forceAccountCreation = false,
+): MemberEditorState {
+  return {
+    mode,
+    entry,
+    account,
+    defaults: memberFormValues(entry, forceAccountCreation),
+  };
+}
+
 function noticeClassName(tone: NoticeTone): string {
   return tone === "error"
     ? "rounded-xl bg-error-container/60 px-4 py-2 text-sm font-semibold text-on-error-container"
     : "rounded-xl bg-primary-container/50 px-4 py-2 text-sm font-semibold text-on-primary-container";
+}
+
+function memberFieldClassName(hasError: boolean): string {
+  return `w-full rounded-xl border px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 ${
+    hasError
+      ? "border-error bg-error-container/10 focus:border-error focus:ring-error/20"
+      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+  }`;
+}
+
+function simplifyMemberFieldError(field: MemberFormField, message: string): string {
+  const normalized = message.trim();
+  if (/field required|required/i.test(normalized)) {
+    switch (field) {
+      case "firstName":
+        return "Enter a first name.";
+      case "lastName":
+        return "Enter a last name.";
+      case "email":
+        return "Enter an email address.";
+      case "phone":
+        return "Enter a phone number.";
+      case "membershipNumber":
+        return "Enter a membership number.";
+      case "joinedDate":
+        return "Select a joined date.";
+      case "accountCode":
+        return "Enter an account code.";
+      default:
+        return "This field is required.";
+    }
+  }
+
+  if (field === "email" && /valid email/i.test(normalized)) {
+    return "Enter a valid email address.";
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function parseMemberEditorError(error: unknown): {
+  bannerMessage: string;
+  fieldErrors: MemberFieldErrors;
+} {
+  const message = asMessage(error);
+  const [fieldSegment, ...detailParts] = message.split(":");
+  if (detailParts.length === 0) {
+    return { bannerMessage: message, fieldErrors: {} };
+  }
+
+  const mappedField = MEMBER_ERROR_FIELD_MAP[fieldSegment.trim().toLowerCase()];
+  if (!mappedField) {
+    return { bannerMessage: message, fieldErrors: {} };
+  }
+
+  const detail = detailParts.join(":").trim() || "Invalid value.";
+  return {
+    bannerMessage: "Please correct the highlighted fields.",
+    fieldErrors: {
+      [mappedField]: simplifyMemberFieldError(mappedField, detail),
+    },
+  };
 }
 
 function canSubmitMemberForm(values: MemberFormValues, canManageAccounts: boolean): boolean {
@@ -194,6 +291,88 @@ function canSubmitMemberForm(values: MemberFormValues, canManageAccounts: boolea
     return false;
   }
   return true;
+}
+
+function buildAccountByPersonId(
+  accounts: FinanceAccountSummary[],
+): Map<string, FinanceAccountSummary> {
+  const accountByPersonId = new Map<string, FinanceAccountSummary>();
+  for (const account of accounts) {
+    accountByPersonId.set(account.account_customer.person_id, account);
+  }
+  return accountByPersonId;
+}
+
+function resolveMemberSelection(
+  members: ClubPersonEntry[],
+  accountByPersonId: Map<string, FinanceAccountSummary>,
+  selectedPersonId: string | null,
+): MemberWorkspaceSelection {
+  const selectedMember = members.find((member) => member.person.id === selectedPersonId) ?? null;
+  const selectedAccount = selectedPersonId ? accountByPersonId.get(selectedPersonId) ?? null : null;
+  return { selectedMember, selectedAccount };
+}
+
+function matchesMemberSearch(
+  entry: ClubPersonEntry,
+  searchValue: string,
+  accountByPersonId: Map<string, FinanceAccountSummary>,
+): boolean {
+  const accountCode = accountByPersonId.get(entry.person.id)?.account_customer.account_code ?? "";
+  return (
+    entry.person.full_name.toLowerCase().includes(searchValue) ||
+    entry.person.email?.toLowerCase().includes(searchValue) ||
+    entry.membership.membership_number?.toLowerCase().includes(searchValue) ||
+    accountCode.toLowerCase().includes(searchValue)
+  );
+}
+
+function filterMembers(
+  members: ClubPersonEntry[],
+  searchValue: string,
+  accountByPersonId: Map<string, FinanceAccountSummary>,
+): ClubPersonEntry[] {
+  if (!searchValue) {
+    return members;
+  }
+  return members.filter((entry) => matchesMemberSearch(entry, searchValue, accountByPersonId));
+}
+
+function buildPersonPayload(values: MemberFormValues) {
+  return {
+    first_name: values.firstName.trim(),
+    last_name: values.lastName.trim(),
+    email: normalizeOptional(values.email),
+    phone: normalizeOptional(values.phone),
+  };
+}
+
+function buildMembershipPayload(values: MemberFormValues) {
+  return {
+    role: values.role,
+    status: values.status,
+    joined_at: joinedAtPayload(values.joinedDate),
+    membership_number: normalizeOptional(values.membershipNumber),
+  };
+}
+
+function buildAccountCustomerPayload(personId: string, values: MemberFormValues) {
+  return {
+    person_id: personId,
+    account_code: values.accountCode.trim(),
+    billing_email: normalizeOptional(values.email),
+    billing_phone: normalizeOptional(values.phone),
+  };
+}
+
+function updateSuccessMessage(
+  editorState: MemberEditorState,
+  values: MemberFormValues,
+  canManageAccounts: boolean,
+): string {
+  return !editorState.account && values.createFinanceAccount && canManageAccounts
+    ? "Member updated and finance account linked."
+    : "Member updated.";
 }
 
 interface MemberRowProps {
@@ -261,7 +440,10 @@ function MemberRow({ entry, account, isSelected, onSelect }: MemberRowProps): JS
 
 interface MemberEditorModalProps {
   canManageAccounts: boolean;
+  errorMessage: string | null;
+  fieldErrors: MemberFieldErrors;
   onClose: () => void;
+  onFieldInteraction: (field: MemberFormField) => void;
   onSubmit: (values: MemberFormValues) => Promise<void>;
   pending: boolean;
   state: MemberEditorState;
@@ -269,7 +451,10 @@ interface MemberEditorModalProps {
 
 function MemberEditorModal({
   canManageAccounts,
+  errorMessage,
+  fieldErrors,
   onClose,
+  onFieldInteraction,
   onSubmit,
   pending,
   state,
@@ -301,6 +486,17 @@ function MemberEditorModal({
           </button>
         </div>
 
+        {errorMessage ? (
+          <div className="px-6 pt-5">
+            <div
+              className="rounded-2xl bg-error-container/60 px-4 py-3 text-sm font-semibold text-on-error-container"
+              role="alert"
+            >
+              {errorMessage}
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-6 p-6 lg:grid-cols-2">
           <section className="space-y-4">
             <div className="space-y-1">
@@ -309,10 +505,15 @@ function MemberEditorModal({
               </label>
               <input
                 id="member-first-name"
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))}
+                aria-invalid={fieldErrors.firstName ? "true" : "false"}
+                className={memberFieldClassName(Boolean(fieldErrors.firstName))}
+                onChange={(event) => {
+                  onFieldInteraction("firstName");
+                  setForm((current) => ({ ...current, firstName: event.target.value }));
+                }}
                 value={form.firstName}
               />
+              {fieldErrors.firstName ? <p className="text-xs font-medium text-error">{fieldErrors.firstName}</p> : null}
             </div>
 
             <div className="space-y-1">
@@ -321,10 +522,15 @@ function MemberEditorModal({
               </label>
               <input
                 id="member-last-name"
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))}
+                aria-invalid={fieldErrors.lastName ? "true" : "false"}
+                className={memberFieldClassName(Boolean(fieldErrors.lastName))}
+                onChange={(event) => {
+                  onFieldInteraction("lastName");
+                  setForm((current) => ({ ...current, lastName: event.target.value }));
+                }}
                 value={form.lastName}
               />
+              {fieldErrors.lastName ? <p className="text-xs font-medium text-error">{fieldErrors.lastName}</p> : null}
             </div>
 
             <div className="space-y-1">
@@ -333,11 +539,16 @@ function MemberEditorModal({
               </label>
               <input
                 id="member-email"
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                aria-invalid={fieldErrors.email ? "true" : "false"}
+                className={memberFieldClassName(Boolean(fieldErrors.email))}
+                onChange={(event) => {
+                  onFieldInteraction("email");
+                  setForm((current) => ({ ...current, email: event.target.value }));
+                }}
                 type="email"
                 value={form.email}
               />
+              {fieldErrors.email ? <p className="text-xs font-medium text-error">{fieldErrors.email}</p> : null}
             </div>
 
             <div className="space-y-1">
@@ -346,10 +557,15 @@ function MemberEditorModal({
               </label>
               <input
                 id="member-phone"
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+                aria-invalid={fieldErrors.phone ? "true" : "false"}
+                className={memberFieldClassName(Boolean(fieldErrors.phone))}
+                onChange={(event) => {
+                  onFieldInteraction("phone");
+                  setForm((current) => ({ ...current, phone: event.target.value }));
+                }}
                 value={form.phone}
               />
+              {fieldErrors.phone ? <p className="text-xs font-medium text-error">{fieldErrors.phone}</p> : null}
             </div>
           </section>
 
@@ -361,10 +577,12 @@ function MemberEditorModal({
                 </label>
                 <select
                   id="member-role"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, role: event.target.value as ClubMembershipRole }))
-                  }
+                  aria-invalid={fieldErrors.role ? "true" : "false"}
+                  className={memberFieldClassName(Boolean(fieldErrors.role))}
+                  onChange={(event) => {
+                    onFieldInteraction("role");
+                    setForm((current) => ({ ...current, role: event.target.value as ClubMembershipRole }));
+                  }}
                   value={form.role}
                 >
                   {ROLE_OPTIONS.map((option) => (
@@ -373,6 +591,7 @@ function MemberEditorModal({
                     </option>
                   ))}
                 </select>
+                {fieldErrors.role ? <p className="text-xs font-medium text-error">{fieldErrors.role}</p> : null}
               </div>
 
               <div className="space-y-1">
@@ -381,10 +600,12 @@ function MemberEditorModal({
                 </label>
                 <select
                   id="member-status"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, status: event.target.value as ClubMembershipStatus }))
-                  }
+                  aria-invalid={fieldErrors.status ? "true" : "false"}
+                  className={memberFieldClassName(Boolean(fieldErrors.status))}
+                  onChange={(event) => {
+                    onFieldInteraction("status");
+                    setForm((current) => ({ ...current, status: event.target.value as ClubMembershipStatus }));
+                  }}
                   value={form.status}
                 >
                   {STATUS_OPTIONS.map((option) => (
@@ -393,6 +614,7 @@ function MemberEditorModal({
                     </option>
                   ))}
                 </select>
+                {fieldErrors.status ? <p className="text-xs font-medium text-error">{fieldErrors.status}</p> : null}
               </div>
             </div>
 
@@ -403,10 +625,15 @@ function MemberEditorModal({
                 </label>
                 <input
                   id="member-number"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) => setForm((current) => ({ ...current, membershipNumber: event.target.value }))}
+                  aria-invalid={fieldErrors.membershipNumber ? "true" : "false"}
+                  className={memberFieldClassName(Boolean(fieldErrors.membershipNumber))}
+                  onChange={(event) => {
+                    onFieldInteraction("membershipNumber");
+                    setForm((current) => ({ ...current, membershipNumber: event.target.value }));
+                  }}
                   value={form.membershipNumber}
                 />
+                {fieldErrors.membershipNumber ? <p className="text-xs font-medium text-error">{fieldErrors.membershipNumber}</p> : null}
               </div>
 
               <div className="space-y-1">
@@ -415,11 +642,16 @@ function MemberEditorModal({
                 </label>
                 <input
                   id="member-joined"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  onChange={(event) => setForm((current) => ({ ...current, joinedDate: event.target.value }))}
+                  aria-invalid={fieldErrors.joinedDate ? "true" : "false"}
+                  className={memberFieldClassName(Boolean(fieldErrors.joinedDate))}
+                  onChange={(event) => {
+                    onFieldInteraction("joinedDate");
+                    setForm((current) => ({ ...current, joinedDate: event.target.value }));
+                  }}
                   type="date"
                   value={form.joinedDate}
                 />
+                {fieldErrors.joinedDate ? <p className="text-xs font-medium text-error">{fieldErrors.joinedDate}</p> : null}
               </div>
             </div>
 
@@ -467,10 +699,15 @@ function MemberEditorModal({
                   </label>
                   <input
                     id="member-account-code"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    onChange={(event) => setForm((current) => ({ ...current, accountCode: event.target.value }))}
+                    aria-invalid={fieldErrors.accountCode ? "true" : "false"}
+                    className={`${memberFieldClassName(Boolean(fieldErrors.accountCode))} bg-white`}
+                    onChange={(event) => {
+                      onFieldInteraction("accountCode");
+                      setForm((current) => ({ ...current, accountCode: event.target.value }));
+                    }}
                     value={form.accountCode}
                   />
+                  {fieldErrors.accountCode ? <p className="text-xs font-medium text-error">{fieldErrors.accountCode}</p> : null}
                 </div>
               ) : null}
             </div>
@@ -512,6 +749,8 @@ export function AdminMembersPage(): JSX.Element {
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editorState, setEditorState] = useState<MemberEditorState | null>(null);
+  const [editorErrorMessage, setEditorErrorMessage] = useState<string | null>(null);
+  const [editorFieldErrors, setEditorFieldErrors] = useState<MemberFieldErrors>({});
   const [notice, setNotice] = useState<{ message: string; tone: NoticeTone } | null>(null);
 
   const directoryQuery = useClubDirectoryQuery({ accessToken, selectedClubId });
@@ -529,14 +768,12 @@ export function AdminMembersPage(): JSX.Element {
   const outstandingSummary = outstandingSummaryQuery.data;
 
   // Build a person_id → FinanceAccountSummary lookup
-  const accountByPersonId = new Map<string, FinanceAccountSummary>();
-  for (const acc of accounts) {
-    accountByPersonId.set(acc.account_customer.person_id, acc);
-  }
-
-  // Find selected member's account id
-  const selectedMember = members.find((m) => m.person.id === selectedPersonId) ?? null;
-  const selectedAccount = selectedPersonId ? accountByPersonId.get(selectedPersonId) ?? null : null;
+  const accountByPersonId = buildAccountByPersonId(accounts);
+  const { selectedMember, selectedAccount } = resolveMemberSelection(
+    members,
+    accountByPersonId,
+    selectedPersonId,
+  );
 
   const ledgerQuery = useFinanceAccountLedgerQuery({
     accessToken,
@@ -545,17 +782,7 @@ export function AdminMembersPage(): JSX.Element {
   });
 
   const searchValue = search.trim().toLowerCase();
-  const filtered = searchValue
-    ? members.filter((m) => {
-        const accountCode = accountByPersonId.get(m.person.id)?.account_customer.account_code ?? "";
-        return (
-          m.person.full_name.toLowerCase().includes(searchValue) ||
-          m.person.email?.toLowerCase().includes(searchValue) ||
-          m.membership.membership_number?.toLowerCase().includes(searchValue) ||
-          accountCode.toLowerCase().includes(searchValue)
-        );
-      })
-    : members;
+  const filtered = filterMembers(members, searchValue, accountByPersonId);
 
   const reports = reportsSummaryQuery.data;
   const mutationPending =
@@ -567,12 +794,9 @@ export function AdminMembersPage(): JSX.Element {
 
   function openCreateMember(): void {
     setNotice(null);
-    setEditorState({
-      mode: "create",
-      entry: null,
-      account: null,
-      defaults: defaultMemberFormValues(),
-    });
+    setEditorErrorMessage(null);
+    setEditorFieldErrors({});
+    setEditorState(buildMemberEditorState("create", null, null));
   }
 
   function openEditMember(forceAccountCreation = false): void {
@@ -580,11 +804,25 @@ export function AdminMembersPage(): JSX.Element {
       return;
     }
     setNotice(null);
-    setEditorState({
-      mode: "edit",
-      entry: selectedMember,
-      account: selectedAccount,
-      defaults: memberFormValues(selectedMember, forceAccountCreation),
+    setEditorErrorMessage(null);
+    setEditorFieldErrors({});
+    setEditorState(
+      buildMemberEditorState("edit", selectedMember, selectedAccount, forceAccountCreation),
+    );
+  }
+
+  function closeEditor(): void {
+    setEditorState(null);
+    setEditorErrorMessage(null);
+    setEditorFieldErrors({});
+  }
+
+  function clearEditorFieldError(field: MemberFormField): void {
+    setEditorFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+      return { ...current, [field]: undefined };
     });
   }
 
@@ -594,76 +832,53 @@ export function AdminMembersPage(): JSX.Element {
     }
 
     setNotice(null);
+    setEditorErrorMessage(null);
+    setEditorFieldErrors({});
 
     try {
       if (editorState.mode === "create") {
-        const person = await createPersonMutation.mutateAsync({
-          first_name: values.firstName.trim(),
-          last_name: values.lastName.trim(),
-          email: normalizeOptional(values.email),
-          phone: normalizeOptional(values.phone),
-        });
+        const person = await createPersonMutation.mutateAsync(buildPersonPayload(values));
 
         await createMembershipMutation.mutateAsync({
           person_id: person.id,
-          role: values.role,
-          status: values.status,
-          joined_at: joinedAtPayload(values.joinedDate),
-          membership_number: normalizeOptional(values.membershipNumber),
+          ...buildMembershipPayload(values),
         });
 
         if (values.createFinanceAccount && canManageAccounts) {
-          await createAccountCustomerMutation.mutateAsync({
-            person_id: person.id,
-            account_code: values.accountCode.trim(),
-            billing_email: normalizeOptional(values.email),
-            billing_phone: normalizeOptional(values.phone),
-          });
+          await createAccountCustomerMutation.mutateAsync(
+            buildAccountCustomerPayload(person.id, values),
+          );
         }
 
         setNotice({ tone: "success", message: "Member created." });
       } else if (editorState.entry) {
         await updatePersonMutation.mutateAsync({
           personId: editorState.entry.person.id,
-          payload: {
-            first_name: values.firstName.trim(),
-            last_name: values.lastName.trim(),
-            email: normalizeOptional(values.email),
-            phone: normalizeOptional(values.phone),
-          },
+          payload: buildPersonPayload(values),
         });
 
         await updateMembershipMutation.mutateAsync({
           membershipId: editorState.entry.membership.id,
-          payload: {
-            role: values.role,
-            status: values.status,
-            joined_at: joinedAtPayload(values.joinedDate),
-            membership_number: normalizeOptional(values.membershipNumber),
-          },
+          payload: buildMembershipPayload(values),
         });
 
         if (!editorState.account && values.createFinanceAccount && canManageAccounts) {
-          await createAccountCustomerMutation.mutateAsync({
-            person_id: editorState.entry.person.id,
-            account_code: values.accountCode.trim(),
-            billing_email: normalizeOptional(values.email),
-            billing_phone: normalizeOptional(values.phone),
-          });
+          await createAccountCustomerMutation.mutateAsync(
+            buildAccountCustomerPayload(editorState.entry.person.id, values),
+          );
         }
 
         setNotice({
           tone: "success",
-          message:
-            !editorState.account && values.createFinanceAccount && canManageAccounts
-              ? "Member updated and finance account linked."
-              : "Member updated.",
+          message: updateSuccessMessage(editorState, values, canManageAccounts),
         });
       }
 
-      setEditorState(null);
+      closeEditor();
     } catch (error) {
-      setNotice({ tone: "error", message: asMessage(error) });
+      const parsedError = parseMemberEditorError(error);
+      setEditorErrorMessage(parsedError.bannerMessage);
+      setEditorFieldErrors(parsedError.fieldErrors);
     }
   }
 
@@ -974,15 +1189,18 @@ export function AdminMembersPage(): JSX.Element {
           </div>
         </aside>
       )}
-      {editorState ? (
-        <MemberEditorModal
-          canManageAccounts={canManageAccounts}
-          onClose={() => setEditorState(null)}
-          onSubmit={handleEditorSubmit}
-          pending={mutationPending}
-          state={editorState}
-        />
-      ) : null}
+        {editorState ? (
+          <MemberEditorModal
+            canManageAccounts={canManageAccounts}
+            errorMessage={editorErrorMessage}
+            fieldErrors={editorFieldErrors}
+            onClose={closeEditor}
+            onFieldInteraction={clearEditorFieldError}
+            onSubmit={handleEditorSubmit}
+            pending={mutationPending}
+            state={editorState}
+          />
+        ) : null}
     </>
   );
 }

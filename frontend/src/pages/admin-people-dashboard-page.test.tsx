@@ -101,7 +101,7 @@ describe("AdminPeopleDashboardPage", () => {
   test("renders finance account KPIs from backend outstanding summary", () => {
     renderPage();
     expect(screen.getByText("8")).toBeInTheDocument();
-    expect(screen.getByText("backend linked")).toBeInTheDocument();
+    expect(screen.getByText("linked accounts")).toBeInTheDocument();
     expect(screen.getByText("2 accounts")).toBeInTheDocument();
   });
 

@@ -225,7 +225,7 @@ describe("SuperadminAccountingProfilesPage", () => {
     });
   });
 
-  test("keeps the JSON helper available as a fallback", async () => {
+  test("keeps the JSON template loader available as a fallback", async () => {
     renderPage();
 
     const templateJson = JSON.stringify({
@@ -259,7 +259,7 @@ describe("SuperadminAccountingProfilesPage", () => {
       value: vi.fn().mockResolvedValue(templateJson),
     });
 
-    fireEvent.change(screen.getByLabelText(/load json helper/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/load json template/i), { target: { files: [file] } });
 
     await waitFor(() => {
       expect(screen.getByLabelText(/profile code/i)).toHaveValue("sage_ops");

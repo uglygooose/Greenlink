@@ -4,10 +4,12 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, UniqueConstraint, func
+from sqlalchemy import Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import FinanceAccountStatus
 from app.models.mixins import UUIDPrimaryKeyMixin
 
@@ -31,6 +33,7 @@ class FinanceAccount(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     status: Mapped[FinanceAccountStatus] = mapped_column(
+        Enum(FinanceAccountStatus, values_callable=enum_values),
         nullable=False,
         default=FinanceAccountStatus.ACTIVE,
     )

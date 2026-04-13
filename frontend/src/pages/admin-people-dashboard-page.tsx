@@ -29,7 +29,7 @@ export function AdminPeopleDashboardPage(): JSX.Element {
   return (
     <AdminWorkspace
       title="People Summary"
-      description="CRM-lite visibility across member coverage, account health, and future engagement structure."
+      description="Visibility across member coverage, account health, and engagement."
       actions={
         <>
           <NavLink
@@ -80,7 +80,7 @@ export function AdminPeopleDashboardPage(): JSX.Element {
               ) : (
                 <>
                   <span className="font-headline text-3xl font-extrabold text-on-surface">{outstandingSummary?.total_accounts ?? 0}</span>
-                  <span className="text-xs font-medium text-emerald-600">backend linked</span>
+                  <span className="text-xs font-medium text-emerald-600">linked accounts</span>
                 </>
               )}
             </div>
@@ -160,14 +160,14 @@ export function AdminPeopleDashboardPage(): JSX.Element {
 
           <div className="rounded-2xl bg-surface-container-lowest shadow-sm">
             <div className="border-b border-slate-100 px-6 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">CRM Lite</p>
-              <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Signals available now</h3>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Member Signals</p>
+              <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Current visibility</h3>
             </div>
             <div className="grid gap-4 p-4 md:grid-cols-2">
               <div className="rounded-2xl bg-surface-container-low p-4">
                 <p className="text-sm font-semibold text-on-surface">Arrears follow-up</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Use backend outstanding summaries to route finance follow-up without client-side account math.
+                  Use account summaries to prioritise finance follow-up.
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-container-low p-4">
@@ -182,8 +182,8 @@ export function AdminPeopleDashboardPage(): JSX.Element {
 
         <section className="space-y-6">
           <div className="rounded-2xl bg-surface-container-low p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Requires Backend Evolution</p>
-            <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Future CRM panels</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Planned Insights</p>
+            <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Upcoming panels</h3>
             <div className="mt-4 space-y-3">
               {[
                 "Member value or spend proxy",
@@ -192,7 +192,7 @@ export function AdminPeopleDashboardPage(): JSX.Element {
               ].map((label) => (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4" key={label}>
                   <p className="text-sm font-semibold text-on-surface">{label}</p>
-                  <p className="mt-1 text-xs text-slate-500">Unavailable until backend rollups exist.</p>
+                  <p className="mt-1 text-xs text-slate-500">Not available yet.</p>
                 </div>
               ))}
             </div>

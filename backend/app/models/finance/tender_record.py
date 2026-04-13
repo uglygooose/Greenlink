@@ -4,11 +4,12 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import FinanceTransactionSource, TenderType
 from app.models.mixins import UUIDPrimaryKeyMixin
 
@@ -28,9 +29,15 @@ class FinanceTenderRecord(UUIDPrimaryKeyMixin, Base):
         nullable=False,
         index=True,
     )
-    source: Mapped[FinanceTransactionSource] = mapped_column(nullable=False)
+    source: Mapped[FinanceTransactionSource] = mapped_column(
+        Enum(FinanceTransactionSource, values_callable=enum_values),
+        nullable=False,
+    )
     reference_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
-    tender_type: Mapped[TenderType] = mapped_column(nullable=False)
+    tender_type: Mapped[TenderType] = mapped_column(
+        Enum(TenderType, values_callable=enum_values),
+        nullable=False,
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     charge_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("finance_transactions.id", ondelete="SET NULL"),

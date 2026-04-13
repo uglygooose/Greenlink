@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AdminReportsPage } from "./admin-reports-page";
+import type { ClubTarget, ClubTargetUpsertInput } from "../types/targets";
 
 // --- Mocks ---
 
@@ -33,13 +34,90 @@ vi.mock("../features/finance/hooks", () => ({
   useFinanceTransactionVolumeSummaryQuery: () => mockUseFinanceTransactionVolumeSummaryQuery(),
 }));
 
-vi.mock("../features/targets/hooks", () => ({
-  useClubTargetsQuery: () => mockUseClubTargetsQuery(),
-  useTargetMetricCatalogQuery: () => mockUseTargetMetricCatalogQuery(),
-  useCreateClubTargetMutation: () => mockUseCreateClubTargetMutation(),
-  useUpdateClubTargetMutation: () => mockUseUpdateClubTargetMutation(),
-  useArchiveClubTargetMutation: () => mockUseArchiveClubTargetMutation(),
-}));
+vi.mock("../features/targets/hooks", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+  const actual = await vi.importActual<typeof import("../features/targets/hooks")>("../features/targets/hooks");
+  return {
+    ...actual,
+    useClubTargetCrudController: ({
+      defaultForm,
+      mapTargetToForm,
+    }: {
+      defaultForm: () => ClubTargetUpsertInput;
+      mapTargetToForm: (target: ClubTarget) => ClubTargetUpsertInput;
+    }) => {
+      const catalogQuery = mockUseTargetMetricCatalogQuery();
+      const targetsQuery = mockUseClubTargetsQuery();
+      const createTargetMutation = mockUseCreateClubTargetMutation();
+      const updateTargetMutation = mockUseUpdateClubTargetMutation();
+      const archiveTargetMutation = mockUseArchiveClubTargetMutation();
+      const [editingTargetId, setEditingTargetId] = React.useState<string | null>(null);
+      const [form, setForm] = React.useState<ClubTargetUpsertInput>(() => defaultForm());
+      const [notice, setNotice] = React.useState<string | null>(null);
+      const selectedDomain =
+        catalogQuery.data?.items.find((item: { domain_key: string }) => item.domain_key === form.domain_key) ?? null;
+      const availableMetrics = selectedDomain?.metrics ?? [];
+
+      React.useEffect(() => {
+        if (selectedDomain && !availableMetrics.some((item: { metric_key: string }) => item.metric_key === form.metric_key)) {
+          setForm((current) => ({ ...current, metric_key: availableMetrics[0]?.metric_key ?? "" }));
+        }
+      }, [availableMetrics, form.metric_key, selectedDomain]);
+
+      React.useEffect(() => {
+        if (catalogQuery.data?.items.length && !form.metric_key) {
+          const firstDomain = catalogQuery.data.items[0];
+          setForm((current) => ({
+            ...current,
+            domain_key: firstDomain.domain_key,
+            metric_key: firstDomain.metrics[0]?.metric_key ?? "",
+          }));
+        }
+      }, [catalogQuery.data, form.metric_key]);
+
+      function resetForm(): void {
+        setEditingTargetId(null);
+        setForm(defaultForm());
+      }
+
+      return {
+        availableMetrics,
+        beginCreate: () => {
+          resetForm();
+          setNotice(null);
+        },
+        beginEdit: (target: ClubTarget) => {
+          setEditingTargetId(target.id);
+          setForm(mapTargetToForm(target));
+          setNotice(null);
+        },
+        catalogQuery,
+        editingTargetId,
+        form,
+        handleArchive: async (targetId: string) => {
+          setNotice(null);
+          await archiveTargetMutation.mutateAsync(targetId);
+          setNotice("Target archived.");
+        },
+        handleSubmit: async () => {
+          setNotice(null);
+          if (editingTargetId) {
+            await updateTargetMutation.mutateAsync({ targetId: editingTargetId, payload: form });
+            setNotice("Target updated.");
+          } else {
+            await createTargetMutation.mutateAsync(form);
+            setNotice("Target created.");
+          }
+          resetForm();
+        },
+        notice,
+        resetForm,
+        setForm,
+        targetsQuery,
+      };
+    },
+  };
+});
 
 // --- Helpers ---
 
@@ -64,6 +142,9 @@ function buildTarget(overrides: Partial<{
   metric_key: string;
   metric_label: string;
   unit: string;
+  period_key: string;
+  period_start: string;
+  period_end: string;
   target_value: number;
   archived: boolean;
 }> = {}) {
@@ -357,6 +438,51 @@ describe("AdminReportsPage (Performance hub)", () => {
     expect(screen.getByRole("combobox", { name: /metric/i })).toBeInTheDocument();
     // Free-text metric key input must NOT exist
     expect(screen.queryByPlaceholderText(/rounds_booked/i)).not.toBeInTheDocument();
+  });
+
+  test("reports target creation keeps a yearly payload and annual label", async () => {
+    const createMutate = vi.fn().mockResolvedValue({ id: "target-new" });
+    mockUseCreateClubTargetMutation.mockReturnValue({
+      mutateAsync: createMutate,
+      isPending: false,
+    });
+    mockUseClubTargetsQuery.mockReturnValue({
+      data: {
+        items: [
+          buildTarget({
+            domain_key: "finance",
+            domain_label: "Finance",
+            metric_key: "total_revenue",
+            metric_label: "Total revenue",
+            period_key: "yearly",
+            period_start: "2026-01-01",
+            period_end: "2026-12-31",
+            target_value: 250000,
+            unit: "currency",
+          }),
+        ],
+        total_count: 1,
+      },
+      isLoading: false,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /add target/i }));
+    fireEvent.change(screen.getByLabelText(/annual target/i), { target: { value: "300000" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create target$/i }));
+
+    await waitFor(() => {
+      expect(createMutate).toHaveBeenCalledWith({
+        domain_key: "golf",
+        metric_key: "rounds_booked",
+        period_key: "yearly",
+        period_start: `${new Date().getFullYear()}-01-01`,
+        period_end: `${new Date().getFullYear()}-12-31`,
+        target_value: 300000,
+      });
+    });
+
+    expect(screen.getByText("Finance · 2026 annual")).toBeInTheDocument();
   });
 
   test("archive button calls mutation with the target id", async () => {

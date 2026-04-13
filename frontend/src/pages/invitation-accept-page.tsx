@@ -65,8 +65,8 @@ export function InvitationAcceptPage(): JSX.Element {
         <h1>{isAuthenticated ? "Activate Club Access" : "Accept Invitation"}</h1>
         <p className="muted">
           {isAuthenticated
-            ? "Use the backend-issued invitation token to activate access for your existing account."
-            : "Create your account from the backend-issued invitation token and activate your club access."}
+            ? "Enter your invitation token to activate access for your existing account."
+            : "Create your account to activate your club access."}
         </p>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>

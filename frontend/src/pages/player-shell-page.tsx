@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
@@ -76,6 +76,7 @@ function bookingStatusLabel(value: string): string {
 export function PlayerShellPage(): JSX.Element {
   const { accessToken, bootstrap, logout } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const displayName = bootstrap?.user.display_name ?? "John";
   const selectedClub = bootstrap?.selected_club?.name ?? "GreenLink";
   const selectedClubId = bootstrap?.selected_club_id ?? null;
@@ -94,6 +95,23 @@ export function PlayerShellPage(): JSX.Element {
     selectedClubId,
   });
 
+  useEffect(() => {
+    if (!profileOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent): void {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [profileOpen]);
+
   return (
     <div className="min-h-screen bg-background pb-24 text-on-surface">
       <header className="fixed top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-100/50 bg-white/80 px-6 backdrop-blur-md dark:border-slate-800/50 dark:bg-slate-900/80">
@@ -102,7 +120,7 @@ export function PlayerShellPage(): JSX.Element {
           <button className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-50" type="button">
             <MaterialSymbol icon="notifications" />
           </button>
-          <div className="relative">
+          <div className="relative" ref={profileMenuRef}>
             <button
               className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-container text-slate-700 transition-opacity hover:opacity-80"
               type="button"
@@ -115,25 +133,25 @@ export function PlayerShellPage(): JSX.Element {
               />
             </button>
             {profileOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-                <div className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-lg">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="text-xs font-bold text-on-surface">{displayName}</p>
-                    <p className="text-[10px] text-slate-400">{bootstrap?.user.email}</p>
-                  </div>
-                  <button
-                    className="flex w-full items-center gap-3 px-4 py-3 text-sm text-error transition-colors hover:bg-slate-50"
-                    type="button"
-                    onClick={() => {
-                      void logout();
-                    }}
-                  >
-                    <MaterialSymbol className="text-base" icon="logout" />
-                    Sign out
-                  </button>
+              <div
+                className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-lg"
+                data-testid="player-profile-menu"
+              >
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-xs font-bold text-on-surface">{displayName}</p>
+                  <p className="text-[10px] text-slate-400">{bootstrap?.user.email}</p>
                 </div>
-              </>
+                <button
+                  className="flex w-full items-center gap-3 px-4 py-3 text-sm text-error transition-colors hover:bg-slate-50"
+                  type="button"
+                  onClick={() => {
+                    void logout();
+                  }}
+                >
+                  <MaterialSymbol className="text-base" icon="logout" />
+                  Sign out
+                </button>
+              </div>
             )}
           </div>
         </div>

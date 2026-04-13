@@ -20,7 +20,7 @@ export function SelectClubPage(): JSX.Element {
       <section className="shell-card">
         <p className="eyebrow">Club Context</p>
         <h1>Select an active club</h1>
-        <p className="muted">Phase 1 exposes explicit club context before any club-scoped workspace can load.</p>
+        <p className="muted">Choose the club you want to work in.</p>
         <div className="club-list">
           {bootstrap.available_clubs.map((club) => (
             <button
@@ -32,7 +32,7 @@ export function SelectClubPage(): JSX.Element {
             >
               <strong>{club.club_name}</strong>
               <span>
-                {club.membership_role ?? "superadmin preview"} | {club.membership_status ?? "active"}
+                {club.membership_role ?? "available"} | {club.membership_status ?? "active"}
               </span>
             </button>
           ))}

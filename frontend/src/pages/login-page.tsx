@@ -38,10 +38,9 @@ export function LoginPage(): JSX.Element {
   return (
     <main className="auth-layout">
       <section className="auth-card">
-        <p className="eyebrow">GreenLink Foundation</p>
+        <p className="eyebrow">GreenLink</p>
         <h1>Sign in</h1>
-        <p className="muted">Authenticate through the Phase 1 backend and bootstrap your shell from the API.</p>
-        <p className="muted">Use seeded dev accounts: admin@greenlink.test / Admin123!</p>
+        <p className="muted">Sign in to continue to your club workspace.</p>
         <form onSubmit={handleSubmit} className="auth-form">
           <label>
             Email

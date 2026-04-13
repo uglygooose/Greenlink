@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -165,5 +165,27 @@ describe("PlayerShellPage", () => {
     expect(screen.queryByText("Club/News")).not.toBeInTheDocument();
     expect(screen.getByText("Home")).toBeInTheDocument();
     expect(screen.getByText("Profile")).toBeInTheDocument();
+  });
+
+  test("does not mount the profile menu on initial render", () => {
+    renderPage();
+
+    expect(screen.queryByTestId("player-profile-menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sign out/i })).not.toBeInTheDocument();
+  });
+
+  test("opens and closes the player profile menu intentionally without a full-screen backdrop", () => {
+    renderPage();
+
+    const profileButton = screen.getByRole("button", { name: /avery green profile/i });
+    fireEvent.click(profileButton);
+
+    expect(screen.getByTestId("player-profile-menu")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByTestId("player-profile-menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sign out/i })).not.toBeInTheDocument();
   });
 });

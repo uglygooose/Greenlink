@@ -1,18 +1,18 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 
-import {
-  cancelOrder,
-  markOrderCollected,
-  markOrderPreparing,
-  markOrderReady,
-  postOrderCharge,
-} from "../api/operations";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { OrderManagementDrawer } from "../features/orders/order-management-drawer";
-import { useOrderDetailQuery, useOrdersQuery } from "../features/orders/hooks";
+import {
+  useCancelOrderMutation,
+  useMarkOrderCollectedMutation,
+  useMarkOrderPreparingMutation,
+  useMarkOrderReadyMutation,
+  useOrderDetailQuery,
+  useOrdersQuery,
+  usePostOrderChargeMutation,
+} from "../features/orders/hooks";
 import { useSession } from "../session/session-context";
 import type { OrderChargePostResult, OrderLifecycleMutationResult, OrderStatus, OrderSummary } from "../types/orders";
 
@@ -109,7 +109,6 @@ function chargeStatusClassName(posted: boolean): string {
 
 export function AdminOrderQueuePage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
-  const queryClient = useQueryClient();
   const [selectedFilter, setSelectedFilter] = useState<QueueFilter>("open");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [drawerFeedbackMessage, setDrawerFeedbackMessage] = useState<string | null>(null);
@@ -146,19 +145,10 @@ export function AdminOrderQueuePage(): JSX.Element {
     }
   }, [orderDetailQuery.error, selectedOrderId]);
 
-  async function invalidateOrders(): Promise<void> {
-    if (!selectedClubId) {
-      return;
-    }
-    await queryClient.invalidateQueries({
-      queryKey: ["orders", selectedClubId],
-    });
-  }
-
-  async function handleLifecycleSuccess(
+  function handleLifecycleResult(
     action: LifecycleAction,
     result: OrderLifecycleMutationResult | OrderChargePostResult,
-  ): Promise<void> {
+  ): void {
     const copy = LIFECYCLE_NOTICE_COPY[action];
     if (result.decision === "blocked") {
       setDrawerFeedbackTone("error");
@@ -175,7 +165,6 @@ export function AdminOrderQueuePage(): JSX.Element {
       tone: mutationApplied ? "success" : "info",
       message: mutationApplied ? copy.success : copy.already,
     });
-    await invalidateOrders();
   }
 
   function handleLifecycleError(error: unknown): void {
@@ -183,55 +172,11 @@ export function AdminOrderQueuePage(): JSX.Element {
     setDrawerFeedbackMessage(asMessage(error));
   }
 
-  const preparingMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      markOrderPreparing(orderId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async (result) => handleLifecycleSuccess("preparing", result),
-    onError: handleLifecycleError,
-  });
-
-  const readyMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      markOrderReady(orderId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async (result) => handleLifecycleSuccess("ready", result),
-    onError: handleLifecycleError,
-  });
-
-  const collectedMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      markOrderCollected(orderId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async (result) => handleLifecycleSuccess("collected", result),
-    onError: handleLifecycleError,
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      cancelOrder(orderId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async (result) => handleLifecycleSuccess("cancel", result),
-    onError: handleLifecycleError,
-  });
-
-  const postChargeMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      postOrderCharge(orderId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async (result) => handleLifecycleSuccess("post_charge", result),
-    onError: handleLifecycleError,
-  });
+  const preparingMutation = useMarkOrderPreparingMutation();
+  const readyMutation = useMarkOrderReadyMutation();
+  const collectedMutation = useMarkOrderCollectedMutation();
+  const cancelMutation = useCancelOrderMutation();
+  const postChargeMutation = usePostOrderChargeMutation();
 
   const pendingAction = preparingMutation.isPending
     ? "preparing"
@@ -521,7 +466,10 @@ export function AdminOrderQueuePage(): JSX.Element {
               setOperationNotice(null);
               setDrawerFeedbackMessage(null);
               setDrawerFeedbackTone(null);
-              cancelMutation.mutate(orderId);
+              cancelMutation.mutate(orderId, {
+                onSuccess: (result) => handleLifecycleResult("cancel", result),
+                onError: handleLifecycleError,
+              });
             }}
             onClose={() => {
               setSelectedOrderId(null);
@@ -532,25 +480,37 @@ export function AdminOrderQueuePage(): JSX.Element {
               setOperationNotice(null);
               setDrawerFeedbackMessage(null);
               setDrawerFeedbackTone(null);
-              collectedMutation.mutate(orderId);
+              collectedMutation.mutate(orderId, {
+                onSuccess: (result) => handleLifecycleResult("collected", result),
+                onError: handleLifecycleError,
+              });
             }}
             onPostCharge={(orderId) => {
               setOperationNotice(null);
               setDrawerFeedbackMessage(null);
               setDrawerFeedbackTone(null);
-              postChargeMutation.mutate(orderId);
+              postChargeMutation.mutate(orderId, {
+                onSuccess: (result) => handleLifecycleResult("post_charge", result),
+                onError: handleLifecycleError,
+              });
             }}
             onMarkPreparing={(orderId) => {
               setOperationNotice(null);
               setDrawerFeedbackMessage(null);
               setDrawerFeedbackTone(null);
-              preparingMutation.mutate(orderId);
+              preparingMutation.mutate(orderId, {
+                onSuccess: (result) => handleLifecycleResult("preparing", result),
+                onError: handleLifecycleError,
+              });
             }}
             onMarkReady={(orderId) => {
               setOperationNotice(null);
               setDrawerFeedbackMessage(null);
               setDrawerFeedbackTone(null);
-              readyMutation.mutate(orderId);
+              readyMutation.mutate(orderId, {
+                onSuccess: (result) => handleLifecycleResult("ready", result),
+                onError: handleLifecycleError,
+              });
             }}
             order={orderDetailQuery.data}
             pendingAction={pendingAction}

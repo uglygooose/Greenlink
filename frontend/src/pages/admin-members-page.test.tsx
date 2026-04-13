@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -246,6 +246,34 @@ describe("AdminMembersPage", () => {
         billing_phone: null,
       });
     });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Member created.")).toBeInTheDocument();
+  });
+
+  test("keeps the create modal open and renders the error inside the modal on create failure", async () => {
+    createPersonMutateAsync.mockRejectedValueOnce(new Error("email: value is not a valid email address"));
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "New Member" }));
+    fireEvent.change(screen.getByLabelText("First Name"), { target: { value: "Casey" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "bad-email" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Member" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const emailInput = within(dialog).getByLabelText("Email");
+
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Please correct the highlighted fields.");
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(within(dialog).getByText("Enter a valid email address.")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Casey")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("bad-email")).toBeInTheDocument();
+    expect(screen.queryByText("Member created.")).not.toBeInTheDocument();
+    expect(createMembershipMutateAsync).not.toHaveBeenCalled();
+    expect(createAccountCustomerMutateAsync).not.toHaveBeenCalled();
   });
 
   test("updates an existing member from the detail panel", async () => {

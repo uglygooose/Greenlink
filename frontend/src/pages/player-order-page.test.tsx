@@ -3,13 +3,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { createOrder } from "../api/operations";
 import { PlayerShellPage } from "./player-shell-page";
 import { PlayerOrderPage } from "./player-order-page";
 import type { OrderCreateResult, OrderMenuItem } from "../types/orders";
 
 const mockUseSession = vi.fn();
 const mockUseOrderMenuQuery = vi.fn();
+const mockUseCreateOrderMutation = vi.fn();
 const mockUsePublishedNewsFeedQuery = vi.fn();
 const mockUsePlayerBookingReadModelQuery = vi.fn();
 
@@ -19,6 +19,7 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/orders/hooks", () => ({
   useOrderMenuQuery: () => mockUseOrderMenuQuery(),
+  useCreateOrderMutation: () => mockUseCreateOrderMutation(),
 }));
 
 vi.mock("../features/comms/hooks", () => ({
@@ -27,10 +28,6 @@ vi.mock("../features/comms/hooks", () => ({
 
 vi.mock("../features/bookings/hooks", () => ({
   usePlayerBookingReadModelQuery: () => mockUsePlayerBookingReadModelQuery(),
-}));
-
-vi.mock("../api/operations", () => ({
-  createOrder: vi.fn(),
 }));
 
 function buildQueryClient(): QueryClient {
@@ -144,6 +141,11 @@ describe("Player ordering flow", () => {
       error: null,
     });
 
+    mockUseCreateOrderMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+
     mockUsePublishedNewsFeedQuery.mockReturnValue({
       data: {
         posts: [],
@@ -174,7 +176,13 @@ describe("Player ordering flow", () => {
   });
 
   test("places a player order with selected quantities and shows minimal confirmation", async () => {
-    vi.mocked(createOrder).mockResolvedValue(buildCreateResult());
+    const mutate = vi.fn((payload, options) => {
+      options?.onSuccess?.(buildCreateResult());
+    });
+    mockUseCreateOrderMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+    });
 
     renderPlayerOrderPage();
 
@@ -187,7 +195,7 @@ describe("Player ordering flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^place order$/i }));
 
     await waitFor(() => {
-      expect(createOrder).toHaveBeenCalledWith(
+      expect(mutate).toHaveBeenCalledWith(
         {
           source: "player_app",
           items: [
@@ -199,10 +207,10 @@ describe("Player ordering flow", () => {
             },
           ],
         },
-        {
-          accessToken: "token",
-          selectedClubId: "club-1",
-        },
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onError: expect.any(Function),
+        }),
       );
     });
 

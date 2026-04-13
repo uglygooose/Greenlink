@@ -3,19 +3,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  cancelOrder,
-  markOrderCollected,
-  markOrderPreparing,
-  markOrderReady,
-  postOrderCharge,
-} from "../api/operations";
 import { AdminOrderQueuePage } from "./admin-order-queue-page";
 import type { OrderDetail, OrderSummary } from "../types/orders";
 
 const mockUseSession = vi.fn();
 const mockUseOrdersQuery = vi.fn();
 const mockUseOrderDetailQuery = vi.fn();
+const mockUseMarkOrderPreparingMutation = vi.fn();
+const mockUseMarkOrderReadyMutation = vi.fn();
+const mockUseMarkOrderCollectedMutation = vi.fn();
+const mockUseCancelOrderMutation = vi.fn();
+const mockUsePostOrderChargeMutation = vi.fn();
+const mockUseRecordPaymentMutation = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -24,14 +23,12 @@ vi.mock("../session/session-context", () => ({
 vi.mock("../features/orders/hooks", () => ({
   useOrdersQuery: () => mockUseOrdersQuery(),
   useOrderDetailQuery: () => mockUseOrderDetailQuery(),
-}));
-
-vi.mock("../api/operations", () => ({
-  cancelOrder: vi.fn(),
-  markOrderCollected: vi.fn(),
-  markOrderPreparing: vi.fn(),
-  markOrderReady: vi.fn(),
-  postOrderCharge: vi.fn(),
+  useMarkOrderPreparingMutation: () => mockUseMarkOrderPreparingMutation(),
+  useMarkOrderReadyMutation: () => mockUseMarkOrderReadyMutation(),
+  useMarkOrderCollectedMutation: () => mockUseMarkOrderCollectedMutation(),
+  useCancelOrderMutation: () => mockUseCancelOrderMutation(),
+  usePostOrderChargeMutation: () => mockUsePostOrderChargeMutation(),
+  useRecordPaymentMutation: () => mockUseRecordPaymentMutation(),
 }));
 
 function buildQueryClient(): QueryClient {
@@ -146,6 +143,38 @@ describe("AdminOrderQueuePage", () => {
       isLoading: false,
       error: null,
     });
+
+    mockUseMarkOrderPreparingMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    });
+    mockUseMarkOrderReadyMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    });
+    mockUseMarkOrderCollectedMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    });
+    mockUseCancelOrderMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    });
+    mockUsePostOrderChargeMutation.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    });
+    mockUseRecordPaymentMutation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      data: null,
+      reset: vi.fn(),
+    });
   });
 
   test("defaults to open orders and hides collected orders from the queue list", async () => {
@@ -169,17 +198,22 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("opens the drawer and marks a placed order as preparing through the backend endpoint", async () => {
-    const queryClient = buildQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    vi.mocked(markOrderPreparing).mockResolvedValue({
-      order_id: "order-1",
-      decision: "allowed",
-      transition_applied: true,
-      order: buildOrderDetail({ status: "preparing" }),
-      failures: [],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-1",
+        decision: "allowed",
+        transition_applied: true,
+        order: buildOrderDetail({ status: "preparing" }),
+        failures: [],
+      });
+    });
+    mockUseMarkOrderPreparingMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
 
-    renderPage(queryClient);
+    renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /open order order-1/i }));
 
@@ -189,13 +223,13 @@ describe("AdminOrderQueuePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /^mark preparing$/i }));
 
     await waitFor(() => {
-      expect(markOrderPreparing).toHaveBeenCalledWith("order-1", {
-        accessToken: "token",
-        selectedClubId: "club-1",
-      });
-    });
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalled();
+      expect(mutate).toHaveBeenCalledWith(
+        "order-1",
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onError: expect.any(Function),
+        }),
+      );
     });
 
     expect(
@@ -204,18 +238,25 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("keeps the drawer open when the backend blocks cancellation", async () => {
-    vi.mocked(cancelOrder).mockResolvedValue({
-      order_id: "order-1",
-      decision: "blocked",
-      transition_applied: false,
-      order: buildOrderDetail(),
-      failures: [
-        {
-          code: "order_status_not_cancellable",
-          message: "Only placed orders may transition to cancelled in this phase",
-          current_status: "preparing",
-        },
-      ],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-1",
+        decision: "blocked",
+        transition_applied: false,
+        order: buildOrderDetail(),
+        failures: [
+          {
+            code: "order_status_not_cancellable",
+            message: "Only placed orders may transition to cancelled in this phase",
+            current_status: "preparing",
+          },
+        ],
+      });
+    });
+    mockUseCancelOrderMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
 
     renderPage();
@@ -247,12 +288,19 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("marks a ready order as collected through the backend endpoint", async () => {
-    vi.mocked(markOrderCollected).mockResolvedValue({
-      order_id: "order-1",
-      decision: "allowed",
-      transition_applied: true,
-      order: buildOrderDetail({ status: "collected" }),
-      failures: [],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-1",
+        decision: "allowed",
+        transition_applied: true,
+        order: buildOrderDetail({ status: "collected" }),
+        failures: [],
+      });
+    });
+    mockUseMarkOrderCollectedMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
     mockUseOrderDetailQuery.mockReturnValue({
       data: buildOrderDetail({ status: "ready" }),
@@ -266,10 +314,13 @@ describe("AdminOrderQueuePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^mark collected$/i }));
 
     await waitFor(() => {
-      expect(markOrderCollected).toHaveBeenCalledWith("order-1", {
-        accessToken: "token",
-        selectedClubId: "club-1",
-      });
+      expect(mutate).toHaveBeenCalledWith(
+        "order-1",
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onError: expect.any(Function),
+        }),
+      );
     });
 
     expect(
@@ -347,31 +398,36 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("posts a charge for an eligible collected order and refreshes safely", async () => {
-    const queryClient = buildQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-    vi.mocked(postOrderCharge).mockResolvedValue({
-      order_id: "order-3",
-      decision: "allowed",
-      posting_applied: true,
-      order: buildOrderDetail({
-        id: "order-3",
-        status: "collected",
-        finance_charge_posted: true,
-        finance_charge_transaction_id: "txn-1",
-      }),
-      transaction: {
-        id: "txn-1",
-        club_id: "club-1",
-        account_id: "account-1",
-        amount: "-68.00",
-        type: "charge",
-        source: "order",
-        reference_id: "order-3",
-        description: "Order charge order-3",
-        created_at: "2026-03-30T10:00:00Z",
-      },
-      balance: "-68.00",
-      failures: [],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-3",
+        decision: "allowed",
+        posting_applied: true,
+        order: buildOrderDetail({
+          id: "order-3",
+          status: "collected",
+          finance_charge_posted: true,
+          finance_charge_transaction_id: "txn-1",
+        }),
+        transaction: {
+          id: "txn-1",
+          club_id: "club-1",
+          account_id: "account-1",
+          amount: "-68.00",
+          type: "charge",
+          source: "order",
+          reference_id: "order-3",
+          description: "Order charge order-3",
+          created_at: "2026-03-30T10:00:00Z",
+        },
+        balance: "-68.00",
+        failures: [],
+      });
+    });
+    mockUsePostOrderChargeMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
     mockUseOrderDetailQuery.mockReturnValue({
       data: buildOrderDetail({
@@ -384,19 +440,19 @@ describe("AdminOrderQueuePage", () => {
       error: null,
     });
 
-    renderPage(queryClient);
+    renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /open order order-1/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^post charge$/i }));
 
     await waitFor(() => {
-      expect(postOrderCharge).toHaveBeenCalledWith("order-3", {
-        accessToken: "token",
-        selectedClubId: "club-1",
-      });
-    });
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalled();
+      expect(mutate).toHaveBeenCalledWith(
+        "order-3",
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onError: expect.any(Function),
+        }),
+      );
     });
 
     expect(
@@ -405,29 +461,36 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("shows an info notice when a collected order was already posted", async () => {
-    vi.mocked(postOrderCharge).mockResolvedValue({
-      order_id: "order-3",
-      decision: "allowed",
-      posting_applied: false,
-      order: buildOrderDetail({
-        id: "order-3",
-        status: "collected",
-        finance_charge_posted: true,
-        finance_charge_transaction_id: "txn-1",
-      }),
-      transaction: {
-        id: "txn-1",
-        club_id: "club-1",
-        account_id: "account-1",
-        amount: "-68.00",
-        type: "charge",
-        source: "order",
-        reference_id: "order-3",
-        description: "Order charge order-3",
-        created_at: "2026-03-30T10:00:00Z",
-      },
-      balance: "-68.00",
-      failures: [],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-3",
+        decision: "allowed",
+        posting_applied: false,
+        order: buildOrderDetail({
+          id: "order-3",
+          status: "collected",
+          finance_charge_posted: true,
+          finance_charge_transaction_id: "txn-1",
+        }),
+        transaction: {
+          id: "txn-1",
+          club_id: "club-1",
+          account_id: "account-1",
+          amount: "-68.00",
+          type: "charge",
+          source: "order",
+          reference_id: "order-3",
+          description: "Order charge order-3",
+          created_at: "2026-03-30T10:00:00Z",
+        },
+        balance: "-68.00",
+        failures: [],
+      });
+    });
+    mockUsePostOrderChargeMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
     mockUseOrderDetailQuery.mockReturnValue({
       data: buildOrderDetail({
@@ -451,25 +514,32 @@ describe("AdminOrderQueuePage", () => {
   });
 
   test("keeps the drawer open when backend blocks charge posting", async () => {
-    vi.mocked(postOrderCharge).mockResolvedValue({
-      order_id: "order-3",
-      decision: "blocked",
-      posting_applied: false,
-      order: buildOrderDetail({
-        id: "order-3",
-        status: "ready",
-        finance_charge_posted: false,
-        finance_charge_transaction_id: null,
-      }),
-      transaction: null,
-      balance: null,
-      failures: [
-        {
-          code: "order_status_not_charge_postable",
-          message: "Only collected orders may post a finance charge in this phase",
-          current_status: "ready",
-        },
-      ],
+    const mutate = vi.fn((orderId, options) => {
+      options?.onSuccess?.({
+        order_id: "order-3",
+        decision: "blocked",
+        posting_applied: false,
+        order: buildOrderDetail({
+          id: "order-3",
+          status: "ready",
+          finance_charge_posted: false,
+          finance_charge_transaction_id: null,
+        }),
+        transaction: null,
+        balance: null,
+        failures: [
+          {
+            code: "order_status_not_charge_postable",
+            message: "Only collected orders may post a finance charge in this phase",
+            current_status: "ready",
+          },
+        ],
+      });
+    });
+    mockUsePostOrderChargeMutation.mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
     });
     mockUseOrderDetailQuery.mockReturnValue({
       data: buildOrderDetail({

@@ -21,6 +21,7 @@ const FALLBACK_NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Today", icon: "dashboard", href: "/admin/dashboard" },
   { key: "golf_dashboard", label: "Golf Summary", icon: "dashboard", href: "/admin/golf/dashboard" },
   { key: "golf_tee_sheet", label: "Tee Sheet", icon: "calendar_today", href: "/admin/golf/tee-sheet" },
+  { key: "people_dashboard", label: "People Summary", icon: "dashboard", href: "/admin/people/dashboard" },
   { key: "members", label: "Members", icon: "group", href: "/admin/members" },
   { key: "finance_dashboard", label: "Finance Summary", icon: "dashboard", href: "/admin/finance/dashboard" },
   { key: "finance", label: "Close Day", icon: "payments", href: "/admin/finance" },
@@ -38,6 +39,7 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
   dashboard: "dashboard",
   golf_dashboard: "dashboard",
   golf_tee_sheet: "calendar_today",
+  people_dashboard: "dashboard",
   settings_hub: "settings",
   golf_settings: "settings",
   settings_modules: "apps",
@@ -54,8 +56,9 @@ const BACKEND_ICON_BY_KEY: Record<string, string> = {
 };
 
 const PRIMARY_NAV_GROUPS: NavGroup[] = [
-  { id: "core", label: null, keys: ["dashboard", "members"] },
+  { id: "core", label: null, keys: ["dashboard"] },
   { id: "golf", label: "Golf", keys: ["golf_dashboard", "golf_tee_sheet"] },
+  { id: "people", label: "People", keys: ["people_dashboard", "members"] },
   { id: "finance", label: "Finance", keys: ["finance_dashboard", "finance"] },
   { id: "club", label: "My Club", keys: ["reports", "communications"] },
   { id: "operations", label: "Operations", keys: ["halfway", "pro_shop", "pos_terminal", "orders"] },
@@ -65,7 +68,6 @@ const PRIMARY_NAV_GROUPS: NavGroup[] = [
 // These entries stay in backend menu truth so ProtectedRoute can keep direct-route access aligned
 // with the bootstrap contract, but they are intentionally not part of the primary sidebar IA.
 const ACCESS_ONLY_ADMIN_MENU_KEYS = new Set([
-  "people_dashboard",
   "targets",
   "golf_settings",
   "settings_modules",

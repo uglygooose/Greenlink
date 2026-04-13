@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -9,6 +9,10 @@ const mockUseSession = vi.fn();
 const mockUseHalfwaySummaryQuery = vi.fn();
 const mockUseFinanceRevenueSummaryQuery = vi.fn();
 const mockUseFinanceTransactionVolumeSummaryQuery = vi.fn();
+const mockUseMarkOrderPreparingMutation = vi.fn();
+const mockUseMarkOrderReadyMutation = vi.fn();
+const mockUseMarkOrderCollectedMutation = vi.fn();
+const mockUseCancelOrderMutation = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -16,6 +20,13 @@ vi.mock("../session/session-context", () => ({
 
 vi.mock("../features/admin-dashboard/halfway-hooks", () => ({
   useHalfwaySummaryQuery: () => mockUseHalfwaySummaryQuery(),
+}));
+
+vi.mock("../features/orders/hooks", () => ({
+  useMarkOrderPreparingMutation: () => mockUseMarkOrderPreparingMutation(),
+  useMarkOrderReadyMutation: () => mockUseMarkOrderReadyMutation(),
+  useMarkOrderCollectedMutation: () => mockUseMarkOrderCollectedMutation(),
+  useCancelOrderMutation: () => mockUseCancelOrderMutation(),
 }));
 
 vi.mock("../features/finance/hooks", () => ({
@@ -84,6 +95,23 @@ describe("AdminHalfwayPage", () => {
       isLoading: false,
     });
 
+    mockUseMarkOrderPreparingMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    });
+    mockUseMarkOrderReadyMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    });
+    mockUseMarkOrderCollectedMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    });
+    mockUseCancelOrderMutation.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    });
+
     mockUseFinanceRevenueSummaryQuery.mockReturnValue({
       data: {
         timezone: "Africa/Johannesburg",
@@ -132,5 +160,53 @@ describe("AdminHalfwayPage", () => {
     mockUseHalfwaySummaryQuery.mockReturnValue({ data: undefined, isLoading: true });
     renderPage();
     expect(screen.getAllByText(/Loading/i).length).toBeGreaterThan(0);
+  });
+
+  test("relies on shared mutation invalidation instead of manually refetching the summary", async () => {
+    const refetch = vi.fn();
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseHalfwaySummaryQuery.mockReturnValue({
+      data: {
+        orders_today_count: 5,
+        active_queue_count: 2,
+        queue_orders: [
+          {
+            id: "order-1",
+            club_id: "club-1",
+            person_id: "person-1",
+            person: { id: "person-1", full_name: "Avery Green" },
+            booking_id: null,
+            finance_charge_transaction_id: null,
+            finance_charge_posted: false,
+            finance_payment_transaction_id: null,
+            finance_payment_posted: false,
+            finance_tender_record_id: null,
+            tender_recorded: false,
+            payment_tender_type: null,
+            source: "admin",
+            status: "placed",
+            created_at: new Date().toISOString(),
+            item_count: 2,
+            item_summary: "2x Coffee",
+          },
+        ],
+        recent_transactions: [],
+      },
+      isLoading: false,
+      refetch,
+    });
+    mockUseMarkOrderPreparingMutation.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /start prep/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith("order-1");
+    });
+    expect(refetch).not.toHaveBeenCalled();
   });
 });

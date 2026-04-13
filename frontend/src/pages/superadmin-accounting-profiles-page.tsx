@@ -166,7 +166,7 @@ export function SuperadminAccountingProfilesPage(): JSX.Element {
         target_system: template.target_system ?? current.target_system,
         mapping_config: template.mapping_config ?? current.mapping_config,
       }));
-      setNotice({ tone: "info", message: `${file.name} loaded via the internal JSON helper.` });
+      setNotice({ tone: "info", message: `${file.name} loaded from the JSON template.` });
     } catch (error) {
       setNotice({
         tone: "error",
@@ -314,10 +314,10 @@ export function SuperadminAccountingProfilesPage(): JSX.Element {
               </label>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface">
                 <MaterialSymbol icon="data_object" />
-                <span>Internal JSON Helper</span>
+                <span>Load JSON Template</span>
                 <input
                   accept="application/json,.json"
-                  aria-label="Load JSON helper"
+                  aria-label="Load JSON template"
                   className="sr-only"
                   onChange={(event) => {
                     void handleJsonHelperUpload(event);
@@ -428,7 +428,7 @@ export function SuperadminAccountingProfilesPage(): JSX.Element {
             </div>
           ) : (
             <div className="rounded-2xl bg-surface-container-low px-4 py-4 text-sm text-slate-500">
-              Upload a real accounting CSV to ground this profile in the club's actual file structure. The JSON helper remains available only as an internal fallback.
+              Upload a real accounting CSV to match the club's file structure, or load a JSON template to prefill the profile.
             </div>
           )}
 

@@ -67,6 +67,10 @@ describe("AdminSidebar", () => {
     renderSidebar(baseBootstrap);
 
     expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /people summary/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /members/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^People$/i }));
+    expect(screen.getByRole("link", { name: /people summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
 
     expect(screen.queryByRole("link", { name: /golf summary/i })).not.toBeInTheDocument();
@@ -122,6 +126,11 @@ describe("AdminSidebar", () => {
     });
 
     expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^People$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /people summary/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /members/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^People$/i }));
+    expect(screen.getByRole("link", { name: /people summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Golf$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Finance$/i })).not.toBeInTheDocument();
@@ -169,11 +178,12 @@ describe("AdminSidebar", () => {
   test("fallback nav covers the visible admin IA", () => {
     renderSidebar(baseBootstrap);
 
-    for (const label of ["Golf", "Finance", "My Club", "Operations"]) {
+    for (const label of ["Golf", "People", "Finance", "My Club", "Operations"]) {
       fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}$`, "i") }));
     }
 
     expect(screen.getByRole("link", { name: /today$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /people summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
@@ -199,6 +209,22 @@ describe("AdminSidebar", () => {
           path: "/admin/dashboard",
           shell: "admin",
           domain: "overview",
+          module_key: null,
+        },
+        {
+          key: "people_dashboard",
+          label: "People Summary",
+          path: "/admin/people/dashboard",
+          shell: "admin",
+          domain: "people",
+          module_key: null,
+        },
+        {
+          key: "members",
+          label: "Members",
+          path: "/admin/members",
+          shell: "admin",
+          domain: "people",
           module_key: null,
         },
         {
@@ -276,10 +302,13 @@ describe("AdminSidebar", () => {
       ],
     });
 
+    fireEvent.click(screen.getByRole("button", { name: /^People$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Golf$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Finance$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^My Club$/i }));
 
+    expect(screen.getByRole("link", { name: /people summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /golf summary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tee sheet/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /finance summary/i })).toBeInTheDocument();
@@ -397,5 +426,44 @@ describe("AdminSidebar", () => {
     const myClubButtons = screen.getAllByRole("button", { name: /^My Club$/i });
     expect(myClubButtons[myClubButtons.length - 1]).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /communications/i })).toBeInTheDocument();
+  });
+
+  test("auto-expands the people group for direct people routes", () => {
+    renderSidebar(
+      {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "dashboard",
+            label: "Today",
+            path: "/admin/dashboard",
+            shell: "admin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "people_dashboard",
+            label: "People Summary",
+            path: "/admin/people/dashboard",
+            shell: "admin",
+            domain: "people",
+            module_key: null,
+          },
+          {
+            key: "members",
+            label: "Members",
+            path: "/admin/members",
+            shell: "admin",
+            domain: "people",
+            module_key: null,
+          },
+        ],
+      },
+      "/admin/people/dashboard",
+    );
+
+    expect(screen.getByRole("button", { name: /^People$/i })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: /people summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /members/i })).toBeInTheDocument();
   });
 });

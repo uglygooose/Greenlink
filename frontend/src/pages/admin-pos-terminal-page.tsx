@@ -146,7 +146,7 @@ export function AdminPosTerminalPage(): JSX.Element {
   return (
     <AdminWorkspace
       title="POS Terminal"
-      description="Quick-sale checkout with backend-owned transaction posting."
+      description="Quick-sale checkout for counter service."
       actions={
         <>
           <NavLink
@@ -344,7 +344,7 @@ export function AdminPosTerminalPage(): JSX.Element {
                   })}
                 </div>
                 <p className="mb-4 text-center text-xs text-on-surface-variant">
-                  Member account checkout stays disabled until member lookup is wired into this terminal.
+                  Member account checkout is currently unavailable.
                 </p>
 
                 <button

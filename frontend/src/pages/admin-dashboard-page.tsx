@@ -6,10 +6,6 @@ import { useAdminDashboardSummaryQuery } from "../features/admin-dashboard/hooks
 import { useSession } from "../session/session-context";
 import type { DashboardActivityItem } from "../types/admin-dashboard";
 
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
 function formatAmount(amount: number): string {
   return `R${Math.abs(amount).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -33,10 +29,6 @@ function activityIcon(entry: DashboardActivityItem): { icon: string; className: 
   if (entry.type === "payment") return { icon: "payments", className: "bg-secondary-container text-secondary" };
   return { icon: "receipt_long", className: "bg-surface-container-high text-on-surface-variant" };
 }
-
-// ---------------------------------------------------------------------------
-// Today layout
-// ---------------------------------------------------------------------------
 
 interface AlertChipProps {
   count: number;
@@ -110,7 +102,6 @@ function TodayLayout(): JSX.Element {
   const recentActivity = summary?.recent_activity ?? [];
   const activeTargets = summary?.active_targets ?? [];
 
-  // Build work queue cards — only show items that need attention
   const workCards: WorkCardProps[] = [];
 
   if (unpaidCount > 0) {
@@ -154,7 +145,6 @@ function TodayLayout(): JSX.Element {
       title="Today"
     >
       <div className="space-y-8">
-        {/* Alerts strip */}
         <div className="flex flex-wrap items-center gap-3">
           {summaryQuery.isLoading ? (
             <div className="h-9 w-48 animate-pulse rounded-full bg-slate-100" />
@@ -198,7 +188,6 @@ function TodayLayout(): JSX.Element {
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.65fr)_360px]">
           <div className="space-y-8">
-            {/* Work queue */}
             <section className="rounded-2xl bg-surface-container-low p-6">
               <div className="mb-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Work Queue</p>
@@ -229,7 +218,6 @@ function TodayLayout(): JSX.Element {
               </div>
             </section>
 
-            {/* Recent activity */}
             <section className="rounded-2xl bg-surface-container-lowest shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
                 <div>
@@ -272,7 +260,6 @@ function TodayLayout(): JSX.Element {
             </section>
           </div>
 
-          {/* Targets row */}
           <div className="space-y-6">
             <section className="rounded-2xl bg-surface-container-low p-6">
               <div className="mb-4">
@@ -308,7 +295,6 @@ function TodayLayout(): JSX.Element {
               )}
             </section>
 
-            {/* Tee occupancy summary */}
             <section className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
               <div className="mb-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Tee Sheet</p>

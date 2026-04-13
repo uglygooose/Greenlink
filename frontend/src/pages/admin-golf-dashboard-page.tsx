@@ -109,7 +109,7 @@ export function AdminGolfDashboardPage(): JSX.Element {
                   <span className="font-headline text-3xl font-extrabold text-on-surface">
                     {formatAmountStr(revenueSummaryQuery.data?.day.operational_revenue ?? "0.00")}
                   </span>
-                  <span className="text-xs font-medium text-emerald-600">live backend summary</span>
+                  <span className="text-xs font-medium text-emerald-600">live summary</span>
                 </>
               )}
             </div>
@@ -232,7 +232,7 @@ export function AdminGolfDashboardPage(): JSX.Element {
               </div>
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4">
                 <p className="text-sm font-semibold text-on-surface">Pricing insights</p>
-                <p className="mt-1 text-xs text-slate-500">Structure is ready for pricing recommendations when backend optimization signals exist.</p>
+                <p className="mt-1 text-xs text-slate-500">Pricing recommendations will appear here when available.</p>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
@@ -10,11 +10,8 @@ import {
   useFinanceTransactionVolumeSummaryQuery,
 } from "../features/finance/hooks";
 import {
-  useArchiveClubTargetMutation,
-  useClubTargetsQuery,
-  useCreateClubTargetMutation,
-  useTargetMetricCatalogQuery,
-  useUpdateClubTargetMutation,
+  deriveYearlyTargetRange,
+  useClubTargetCrudController,
 } from "../features/targets/hooks";
 import { useSession } from "../session/session-context";
 import type { ClubTarget, ClubTargetUpsertInput } from "../types/targets";
@@ -41,12 +38,12 @@ const DOMAIN_ACTION: Record<string, { label: string; href: string; icon: string 
 const CURRENT_YEAR = new Date().getFullYear();
 
 function defaultTargetForm(year = CURRENT_YEAR): ClubTargetUpsertInput {
+  const yearlyRange = deriveYearlyTargetRange(`${year}-01-01`);
   return {
     domain_key: "golf",
     metric_key: "",
     period_key: "yearly",
-    period_start: `${year}-01-01`,
-    period_end: `${year}-12-31`,
+    ...yearlyRange,
     target_value: 1,
   };
 }
@@ -85,16 +82,32 @@ export function AdminReportsPage(): JSX.Element {
   const revenueSummaryQuery = useFinanceRevenueSummaryQuery({ accessToken, selectedClubId });
   const outstandingSummaryQuery = useFinanceOutstandingSummaryQuery({ accessToken, selectedClubId });
   const transactionVolumeSummaryQuery = useFinanceTransactionVolumeSummaryQuery({ accessToken, selectedClubId });
-  const targetsQuery = useClubTargetsQuery({ accessToken, selectedClubId });
-  const catalogQuery = useTargetMetricCatalogQuery({ accessToken, selectedClubId });
-  const createTargetMutation = useCreateClubTargetMutation();
-  const updateTargetMutation = useUpdateClubTargetMutation();
-  const archiveTargetMutation = useArchiveClubTargetMutation();
-
-  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
-  const [targetForm, setTargetForm] = useState<ClubTargetUpsertInput>(defaultTargetForm);
+  const {
+    availableMetrics,
+    beginCreate,
+    beginEdit,
+    catalogQuery,
+    editingTargetId,
+    form: targetForm,
+    handleArchive,
+    handleSubmit,
+    notice,
+    setForm: setTargetForm,
+    targetsQuery,
+  } = useClubTargetCrudController({
+    defaultForm: defaultTargetForm,
+    mapTargetToForm: (target: ClubTarget) => {
+      const yearlyRange = deriveYearlyTargetRange(target.period_start);
+      return {
+        domain_key: target.domain_key,
+        metric_key: target.metric_key,
+        period_key: "yearly",
+        ...yearlyRange,
+        target_value: target.target_value,
+      };
+    },
+  });
   const [showTargetForm, setShowTargetForm] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const reports = reportsSummaryQuery.data;
   const revenuePeriod = revenueSummaryQuery.data?.month;
@@ -107,63 +120,6 @@ export function AdminReportsPage(): JSX.Element {
 
   const arrears = outstandingSummary?.accounts_in_arrears ?? 0;
   const pendingItems = outstandingSummary?.pending_items_count ?? 0;
-
-  // Catalog-driven form cascades
-  const selectedDomain = catalogQuery.data?.items.find((item) => item.domain_key === targetForm.domain_key) ?? null;
-  const availableMetrics = selectedDomain?.metrics ?? [];
-
-  // When domain changes and current metric_key is no longer valid, reset to first available
-  useEffect(() => {
-    if (!selectedDomain || availableMetrics.some((m) => m.metric_key === targetForm.metric_key)) return;
-    setTargetForm((c) => ({ ...c, metric_key: availableMetrics[0]?.metric_key ?? "" }));
-  }, [availableMetrics, targetForm.metric_key, selectedDomain]);
-
-  // Seed form from catalog once loaded (only if not already set)
-  useEffect(() => {
-    if (catalogQuery.data?.items.length && !targetForm.metric_key) {
-      const first = catalogQuery.data.items[0];
-      setTargetForm((c) => ({
-        ...c,
-        domain_key: first.domain_key,
-        metric_key: first.metrics[0]?.metric_key ?? "",
-      }));
-    }
-  }, [catalogQuery.data, targetForm.metric_key]);
-
-  function beginEdit(target: ClubTarget): void {
-    setEditingTargetId(target.id);
-    const year = parseInt(target.period_start.slice(0, 4), 10) || CURRENT_YEAR;
-    setTargetForm({
-      domain_key: target.domain_key,
-      metric_key: target.metric_key,
-      period_key: "yearly",
-      period_start: `${year}-01-01`,
-      period_end: `${year}-12-31`,
-      target_value: target.target_value,
-    });
-    setShowTargetForm(true);
-    setNotice(null);
-  }
-
-  async function handleTargetSubmit(): Promise<void> {
-    setNotice(null);
-    if (editingTargetId) {
-      await updateTargetMutation.mutateAsync({ targetId: editingTargetId, payload: targetForm });
-      setNotice("Target updated.");
-    } else {
-      await createTargetMutation.mutateAsync(targetForm);
-      setNotice("Target created.");
-    }
-    setEditingTargetId(null);
-    setTargetForm(defaultTargetForm());
-    setShowTargetForm(false);
-  }
-
-  async function handleArchive(targetId: string): Promise<void> {
-    setNotice(null);
-    await archiveTargetMutation.mutateAsync(targetId);
-    setNotice("Target archived.");
-  }
 
   return (
     <AdminWorkspace
@@ -292,8 +248,11 @@ export function AdminReportsPage(): JSX.Element {
           <button
             className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white"
             onClick={() => {
-              setEditingTargetId(null);
-              setTargetForm(defaultTargetForm());
+              if (showTargetForm && !editingTargetId) {
+                setShowTargetForm(false);
+                return;
+              }
+              beginCreate();
               setShowTargetForm((prev) => !prev);
             }}
             type="button"
@@ -361,11 +320,11 @@ export function AdminReportsPage(): JSX.Element {
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
                   onChange={(e) => {
                     const year = Number(e.target.value);
+                    const yearlyRange = deriveYearlyTargetRange(`${year}-01-01`);
                     setTargetForm((c) => ({
                       ...c,
                       period_key: "yearly",
-                      period_start: `${year}-01-01`,
-                      period_end: `${year}-12-31`,
+                      ...yearlyRange,
                     }));
                   }}
                   value={deriveYearFromForm(targetForm)}
@@ -379,7 +338,11 @@ export function AdminReportsPage(): JSX.Element {
             <div className="mt-4 flex gap-3">
               <button
                 className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white"
-                onClick={() => { void handleTargetSubmit(); }}
+                onClick={() => {
+                  void handleSubmit().then(() => {
+                    setShowTargetForm(false);
+                  });
+                }}
                 type="button"
               >
                 {editingTargetId ? "Save Target" : "Create Target"}
@@ -388,9 +351,8 @@ export function AdminReportsPage(): JSX.Element {
                 <button
                   className="rounded-xl bg-surface-container px-4 py-2.5 text-sm font-semibold text-on-surface"
                   onClick={() => {
-                    setEditingTargetId(null);
-                    setTargetForm(defaultTargetForm());
                     setShowTargetForm(false);
+                    beginCreate();
                   }}
                   type="button"
                 >
@@ -442,7 +404,10 @@ export function AdminReportsPage(): JSX.Element {
                     <div className="flex shrink-0 flex-col gap-1.5">
                       <button
                         className="rounded-lg bg-surface-container px-2.5 py-1.5 text-[11px] font-semibold text-on-surface"
-                        onClick={() => beginEdit(target)}
+                        onClick={() => {
+                          beginEdit(target);
+                          setShowTargetForm(true);
+                        }}
                         type="button"
                       >
                         Edit

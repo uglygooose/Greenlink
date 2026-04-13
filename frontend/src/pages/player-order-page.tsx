@@ -1,15 +1,13 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { createOrder } from "../api/operations";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import { MobileTabBar } from "../components/benchmark/mobile-tab-bar";
 import { UserAvatar } from "../components/benchmark/user-avatar";
-import { useOrderMenuQuery } from "../features/orders/hooks";
+import { useCreateOrderMutation, useOrderMenuQuery } from "../features/orders/hooks";
 import { buildPlayerTabItems } from "./player-tab-items";
 import { useSession } from "../session/session-context";
-import type { OrderCreateResult, OrderMenuItem } from "../types/orders";
+import type { OrderCreateInput, OrderCreateResult, OrderMenuItem } from "../types/orders";
 
 function initials(name: string | undefined): string {
   return (
@@ -47,7 +45,6 @@ function quantityFor(productId: string, quantities: Record<string, number>): num
 
 export function PlayerOrderPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
-  const queryClient = useQueryClient();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const displayName = bootstrap?.user.display_name ?? "Member";
   const selectedClubName = bootstrap?.selected_club?.name ?? "GreenLink";
@@ -67,37 +64,7 @@ export function PlayerOrderPage(): JSX.Element {
     0,
   );
 
-  const createOrderMutation = useMutation({
-    mutationFn: (items: OrderMenuItem[]) =>
-      createOrder(
-        {
-          source: "player_app",
-          items: items.map((item) => ({
-            product_id: item.product_id,
-            item_name: item.item_name,
-            unit_price: item.unit_price,
-            quantity: quantityFor(item.product_id, quantities),
-          })),
-        },
-        {
-          accessToken: accessToken as string,
-          selectedClubId: selectedClubId as string,
-        },
-      ),
-    onSuccess: async (result) => {
-      setFeedbackMessage(
-        result.created ? "Order placed. Status will update from backend state." : "Order already recorded.",
-      );
-      setConfirmation(result);
-      setQuantities({});
-      await queryClient.invalidateQueries({
-        queryKey: ["orders", selectedClubId ?? "none"],
-      });
-    },
-    onError: (error) => {
-      setFeedbackMessage(asMessage(error));
-    },
-  });
+  const createOrderMutation = useCreateOrderMutation();
 
   function adjustQuantity(productId: string, nextQuantity: number): void {
     setConfirmation(null);
@@ -120,7 +87,27 @@ export function PlayerOrderPage(): JSX.Element {
       return;
     }
     setFeedbackMessage(null);
-    createOrderMutation.mutate(selectedItems);
+    const payload: OrderCreateInput = {
+      source: "player_app",
+      items: selectedItems.map((item) => ({
+        product_id: item.product_id,
+        item_name: item.item_name,
+        unit_price: item.unit_price,
+        quantity: quantityFor(item.product_id, quantities),
+      })),
+    };
+    createOrderMutation.mutate(payload, {
+      onSuccess: (result) => {
+        setFeedbackMessage(
+          result.created ? "Order placed. Status will update from backend state." : "Order already recorded.",
+        );
+        setConfirmation(result);
+        setQuantities({});
+      },
+      onError: (error) => {
+        setFeedbackMessage(asMessage(error));
+      },
+    });
   }
 
   return (

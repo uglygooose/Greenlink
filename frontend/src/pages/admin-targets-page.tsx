@@ -1,15 +1,9 @@
-import { useEffect, useState } from "react";
-
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
-  useArchiveClubTargetMutation,
-  useClubTargetsQuery,
-  useCreateClubTargetMutation,
-  useTargetMetricCatalogQuery,
-  useUpdateClubTargetMutation,
+  normalizeTargetPeriodRange,
+  useClubTargetCrudController,
 } from "../features/targets/hooks";
-import { useSession } from "../session/session-context";
 import type { ClubTarget, ClubTargetUpsertInput, TargetDomainCatalogItem } from "../types/targets";
 
 function defaultForm(): ClubTargetUpsertInput {
@@ -17,8 +11,7 @@ function defaultForm(): ClubTargetUpsertInput {
     domain_key: "golf",
     metric_key: "",
     period_key: "monthly",
-    period_start: "2026-05-01",
-    period_end: "2026-05-31",
+    ...normalizeTargetPeriodRange("monthly", "2026-05-01"),
     target_value: 1,
   };
 }
@@ -31,72 +24,39 @@ function formatTargetValue(target: ClubTarget): string {
 }
 
 export function AdminTargetsPage(): JSX.Element {
-  const { accessToken, bootstrap } = useSession();
-  const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const catalogQuery = useTargetMetricCatalogQuery({ accessToken, selectedClubId });
-  const targetsQuery = useClubTargetsQuery({ accessToken, selectedClubId });
-  const createTargetMutation = useCreateClubTargetMutation();
-  const updateTargetMutation = useUpdateClubTargetMutation();
-  const archiveTargetMutation = useArchiveClubTargetMutation();
-  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
-  const [form, setForm] = useState<ClubTargetUpsertInput>(defaultForm);
-  const [notice, setNotice] = useState<string | null>(null);
+  const {
+    availableMetrics,
+    beginEdit,
+    catalogQuery,
+    editingTargetId,
+    form,
+    handleArchive,
+    handleSubmit,
+    notice,
+    resetForm,
+    setForm,
+    targetsQuery,
+  } = useClubTargetCrudController({
+    defaultForm,
+    mapTargetToForm: (target: ClubTarget) => {
+      const normalizedRange = normalizeTargetPeriodRange(target.period_key, target.period_start);
+      return {
+        domain_key: target.domain_key,
+        metric_key: target.metric_key,
+        period_key: target.period_key,
+        ...normalizedRange,
+        target_value: target.target_value,
+      };
+    },
+  });
+  const activeTargets = (targetsQuery.data?.items ?? []).filter((target) => !target.archived);
 
-  const selectedDomain =
-    catalogQuery.data?.items.find((item) => item.domain_key === form.domain_key) ?? null;
-  const availableMetrics = selectedDomain?.metrics ?? [];
-
-  useEffect(() => {
-    if (!selectedDomain || availableMetrics.some((item) => item.metric_key === form.metric_key)) {
-      return;
-    }
+  function applyPeriodToForm(periodKey: string, anchorDate: string): void {
     setForm((current) => ({
       ...current,
-      metric_key: availableMetrics[0]?.metric_key ?? "",
+      period_key: periodKey,
+      ...normalizeTargetPeriodRange(periodKey, anchorDate),
     }));
-  }, [availableMetrics, form.metric_key, selectedDomain]);
-
-  useEffect(() => {
-    if (catalogQuery.data?.items.length && !form.metric_key) {
-      const firstDomain = catalogQuery.data.items[0];
-      setForm((current) => ({
-        ...current,
-        domain_key: firstDomain.domain_key,
-        metric_key: firstDomain.metrics[0]?.metric_key ?? "",
-      }));
-    }
-  }, [catalogQuery.data, form.metric_key]);
-
-  function beginEdit(target: ClubTarget): void {
-    setEditingTargetId(target.id);
-    setForm({
-      domain_key: target.domain_key,
-      metric_key: target.metric_key,
-      period_key: target.period_key,
-      period_start: target.period_start,
-      period_end: target.period_end,
-      target_value: target.target_value,
-    });
-    setNotice(null);
-  }
-
-  async function handleSubmit(): Promise<void> {
-    setNotice(null);
-    if (editingTargetId) {
-      await updateTargetMutation.mutateAsync({ targetId: editingTargetId, payload: form });
-      setNotice("Target updated.");
-    } else {
-      await createTargetMutation.mutateAsync(form);
-      setNotice("Target created.");
-    }
-    setEditingTargetId(null);
-    setForm(defaultForm());
-  }
-
-  async function handleArchive(targetId: string): Promise<void> {
-    setNotice(null);
-    await archiveTargetMutation.mutateAsync(targetId);
-    setNotice("Target archived.");
   }
 
   return (
@@ -160,7 +120,7 @@ export function AdminTargetsPage(): JSX.Element {
               Period
               <select
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                onChange={(event) => setForm((current) => ({ ...current, period_key: event.target.value }))}
+                onChange={(event) => applyPeriodToForm(event.target.value, form.period_start)}
                 value={form.period_key}
               >
                 <option value="daily">Daily</option>
@@ -175,7 +135,7 @@ export function AdminTargetsPage(): JSX.Element {
                 Start
                 <input
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                  onChange={(event) => setForm((current) => ({ ...current, period_start: event.target.value }))}
+                  onChange={(event) => applyPeriodToForm(form.period_key, event.target.value)}
                   type="date"
                   value={form.period_start}
                 />
@@ -184,7 +144,7 @@ export function AdminTargetsPage(): JSX.Element {
                 End
                 <input
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                  onChange={(event) => setForm((current) => ({ ...current, period_end: event.target.value }))}
+                  onChange={(event) => applyPeriodToForm(form.period_key, event.target.value)}
                   type="date"
                   value={form.period_end}
                 />
@@ -215,8 +175,7 @@ export function AdminTargetsPage(): JSX.Element {
                 <button
                   className="rounded-xl bg-surface-container px-4 py-2.5 text-sm font-semibold text-on-surface"
                   onClick={() => {
-                    setEditingTargetId(null);
-                    setForm(defaultForm());
+                    resetForm();
                   }}
                   type="button"
                 >
@@ -234,11 +193,11 @@ export function AdminTargetsPage(): JSX.Element {
               <h2 className="mt-1 font-headline text-xl font-bold text-on-surface">Club Target Register</h2>
             </div>
             <span className="rounded-full bg-surface-container px-3 py-1 text-xs font-semibold text-slate-500">
-              {targetsQuery.data?.total_count ?? 0}
+              {activeTargets.length}
             </span>
           </div>
           <div className="space-y-3">
-            {(targetsQuery.data?.items ?? []).map((target) => (
+            {activeTargets.map((target) => (
               <div key={target.id} className="rounded-2xl border border-slate-100 bg-white px-4 py-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -256,21 +215,15 @@ export function AdminTargetsPage(): JSX.Element {
                     >
                       Edit
                     </button>
-                    {!target.archived ? (
-                      <button
-                        className="rounded-xl bg-error/10 px-3 py-2 text-xs font-semibold text-error"
-                        onClick={() => {
-                          void handleArchive(target.id);
-                        }}
-                        type="button"
-                      >
-                        Archive
-                      </button>
-                    ) : (
-                      <span className="rounded-xl bg-surface-container px-3 py-2 text-xs font-semibold text-slate-500">
-                        Archived
-                      </span>
-                    )}
+                    <button
+                      className="rounded-xl bg-error/10 px-3 py-2 text-xs font-semibold text-error"
+                      onClick={() => {
+                        void handleArchive(target.id);
+                      }}
+                      type="button"
+                    >
+                      Archive
+                    </button>
                   </div>
                 </div>
               </div>
@@ -278,7 +231,7 @@ export function AdminTargetsPage(): JSX.Element {
             {targetsQuery.isLoading ? (
               <div className="rounded-2xl bg-white px-4 py-6 text-sm text-slate-500">Loading targets...</div>
             ) : null}
-            {!targetsQuery.isLoading && (targetsQuery.data?.items.length ?? 0) === 0 ? (
+            {!targetsQuery.isLoading && activeTargets.length === 0 ? (
               <div className="rounded-2xl bg-white px-4 py-6 text-sm text-slate-500">
                 No club targets have been defined yet.
               </div>

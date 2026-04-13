@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import Enum, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import OrderSource, OrderStatus
 from app.models.mixins import UUIDPrimaryKeyMixin
 
@@ -48,8 +49,12 @@ class Order(UUIDPrimaryKeyMixin, Base):
         unique=True,
         index=True,
     )
-    source: Mapped[OrderSource] = mapped_column(nullable=False)
+    source: Mapped[OrderSource] = mapped_column(
+        Enum(OrderSource, values_callable=enum_values),
+        nullable=False,
+    )
     status: Mapped[OrderStatus] = mapped_column(
+        Enum(OrderStatus, values_callable=enum_values),
         nullable=False,
         default=OrderStatus.PLACED,
     )

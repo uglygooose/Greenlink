@@ -1,10 +1,28 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "../../api/client";
-import { fetchOrder, fetchOrderMenu, fetchOrders } from "../../api/operations";
+import {
+  cancelOrder,
+  createOrder,
+  fetchOrder,
+  fetchOrderMenu,
+  fetchOrders,
+  markOrderCollected,
+  markOrderPreparing,
+  markOrderReady,
+  postOrderCharge,
+} from "../../api/operations";
 import { useSession } from "../../session/session-context";
+import { adminDashboardKeys } from "../admin-dashboard/hooks";
+import { halfwayKeys } from "../admin-dashboard/halfway-hooks";
+import { reportsKeys } from "../admin-dashboard/reports-hooks";
+import { financeKeys } from "../finance/hooks";
 import type {
+  OrderChargePostResult,
+  OrderCreateInput,
+  OrderCreateResult,
   OrderDetail,
+  OrderLifecycleMutationResult,
   OrderMenuItem,
   OrderSettlementRequestInput,
   OrderSettlementResult,
@@ -17,6 +35,39 @@ export const orderKeys = {
   list: (clubId: string, status: OrderStatus | null) => ["orders", clubId, "list", status ?? "all"] as const,
   detail: (clubId: string, orderId: string) => ["orders", clubId, "detail", orderId] as const,
 };
+
+function syncOrderDetail(
+  queryClient: QueryClient,
+  selectedClubId: string,
+  order: OrderDetail | null | undefined,
+): void {
+  if (!order) {
+    return;
+  }
+  queryClient.setQueryData(orderKeys.detail(selectedClubId, order.id), order);
+}
+
+async function invalidateOrderReads(
+  queryClient: QueryClient,
+  selectedClubId: string,
+  orderId?: string,
+): Promise<void> {
+  const invalidations: Array<Promise<void>> = [
+    queryClient.invalidateQueries({ queryKey: ["orders", selectedClubId] }),
+    queryClient.invalidateQueries({ queryKey: halfwayKeys.summary(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: financeKeys.revenueSummary(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: financeKeys.outstandingSummary(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: financeKeys.transactionVolumeSummary(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: adminDashboardKeys.summary(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: reportsKeys.summary(selectedClubId) }),
+  ];
+
+  if (orderId) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: orderKeys.detail(selectedClubId, orderId) }));
+  }
+
+  await Promise.all(invalidations);
+}
 
 interface OrdersQueryOptions {
   accessToken: string | null;
@@ -97,12 +148,38 @@ export async function prefetchOpenOrders(
   });
 }
 
+export function useCreateOrderMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: OrderCreateInput) =>
+      createOrder(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async (result) => {
+      if (!selectedClubId) {
+        return;
+      }
+      syncOrderDetail(queryClient, selectedClubId, result.order);
+      await invalidateOrderReads(queryClient, selectedClubId, result.order.id);
+    },
+  });
+}
+
 interface RecordPaymentVariables {
   orderId: string;
   tenderType: OrderSettlementRequestInput["tender_type"];
 }
 
-function makeOrderStatusMutation(endpoint: string) {
+function makeOrderStatusMutation(
+  mutationFn: (
+    orderId: string,
+    options: { accessToken: string; selectedClubId: string },
+  ) => Promise<OrderLifecycleMutationResult>,
+) {
   return function useOrderStatusMutation() {
     const queryClient = useQueryClient();
     const { accessToken, bootstrap } = useSession();
@@ -110,24 +187,44 @@ function makeOrderStatusMutation(endpoint: string) {
 
     return useMutation({
       mutationFn: (orderId: string) =>
-        apiRequest<{ order_id: string; status: OrderStatus }>(`/api/orders/${orderId}/${endpoint}`, {
-          method: "POST",
+        mutationFn(orderId, {
           accessToken: accessToken as string,
           selectedClubId: selectedClubId as string,
         }),
-      onSuccess: async () => {
+      onSuccess: async (result, orderId) => {
         if (!selectedClubId) return;
-        await queryClient.invalidateQueries({ queryKey: ["orders", selectedClubId] });
-        await queryClient.invalidateQueries({ queryKey: ["halfway", selectedClubId] });
+        syncOrderDetail(queryClient, selectedClubId, result.order);
+        await invalidateOrderReads(queryClient, selectedClubId, orderId);
       },
     });
   };
 }
 
-export const useMarkOrderPreparingMutation = makeOrderStatusMutation("preparing");
-export const useMarkOrderReadyMutation = makeOrderStatusMutation("ready");
-export const useMarkOrderCollectedMutation = makeOrderStatusMutation("collected");
-export const useCancelOrderMutation = makeOrderStatusMutation("cancel");
+export const useMarkOrderPreparingMutation = makeOrderStatusMutation(markOrderPreparing);
+export const useMarkOrderReadyMutation = makeOrderStatusMutation(markOrderReady);
+export const useMarkOrderCollectedMutation = makeOrderStatusMutation(markOrderCollected);
+export const useCancelOrderMutation = makeOrderStatusMutation(cancelOrder);
+
+export function usePostOrderChargeMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      postOrderCharge(orderId, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async (result: OrderChargePostResult, orderId) => {
+      if (!selectedClubId) {
+        return;
+      }
+      syncOrderDetail(queryClient, selectedClubId, result.order);
+      await invalidateOrderReads(queryClient, selectedClubId, orderId);
+    },
+  });
+}
 
 export function useRecordPaymentMutation() {
   const queryClient = useQueryClient();
@@ -138,17 +235,16 @@ export function useRecordPaymentMutation() {
     mutationFn: ({ orderId, tenderType }: RecordPaymentVariables) =>
       apiRequest<OrderSettlementResult>(`/api/orders/${orderId}/record-payment`, {
         method: "POST",
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-        body: JSON.stringify({ tender_type: tenderType }),
+      accessToken: accessToken as string,
+      selectedClubId: selectedClubId as string,
+      body: JSON.stringify({ tender_type: tenderType }),
       }),
-    onSuccess: async () => {
+    onSuccess: async (result, variables) => {
       if (!selectedClubId) {
         return;
       }
-      await queryClient.invalidateQueries({
-        queryKey: ["orders", selectedClubId],
-      });
+      syncOrderDetail(queryClient, selectedClubId, result.order);
+      await invalidateOrderReads(queryClient, selectedClubId, variables.orderId);
     },
   });
 }
