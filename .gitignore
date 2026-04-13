@@ -13,6 +13,8 @@ dist/
 coverage/
 *.tsbuildinfo
 backend/.uv-cache/
+/.uv-cache/
+/.uv-cache-local/
 backend/pytest-cache-files-*/
 
 .env
@@ -24,6 +26,7 @@ frontend/.env
 .logs/
 .tmp_local/
 *.log
+*.err
 .tmp-*
 
 # Legacy SQLite local artifacts from the scaffold period. PostgreSQL is the canonical dev database.
