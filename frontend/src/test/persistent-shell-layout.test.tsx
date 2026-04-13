@@ -72,15 +72,15 @@ function SuperadminClubsStub(): JSX.Element {
   return (
     <div>
       <div>Clubs Content</div>
-      <Link to="/superadmin/review">Go Review</Link>
+      <Link to="/superadmin/accounting-profiles">Go Accounting Profiles</Link>
     </div>
   );
 }
 
-function SuperadminReviewStub(): JSX.Element {
+function SuperadminAccountingProfilesStub(): JSX.Element {
   return (
     <div>
-      <div>Review Content</div>
+      <div>Accounting Profiles Content</div>
       <Link to="/superadmin/clubs">Go Clubs</Link>
     </div>
   );
@@ -128,7 +128,7 @@ function renderWithSession(value: SessionContextValue, initialEntries: string[])
           <Route path="/superadmin" element={<ProtectedRoute shell="superadmin" />}>
             <Route element={<SuperadminLayout />}>
               <Route path="clubs" element={<SuperadminClubsStub />} />
-              <Route path="review" element={<SuperadminReviewStub />} />
+              <Route path="accounting-profiles" element={<SuperadminAccountingProfilesStub />} />
             </Route>
           </Route>
         </Routes>
@@ -214,9 +214,9 @@ test("keeps the superadmin shell mounted while navigating between superadmin rou
   expect(superadminShellMounts).toBe(1);
   expect(superadminShellUnmounts).toBe(0);
 
-  fireEvent.click(screen.getByRole("link", { name: "Go Review" }));
+  fireEvent.click(screen.getByRole("link", { name: "Go Accounting Profiles" }));
 
-  expect(await screen.findByText("Review Content")).toBeInTheDocument();
+  expect(await screen.findByText("Accounting Profiles Content")).toBeInTheDocument();
   expect(superadminShellMounts).toBe(1);
   expect(superadminShellUnmounts).toBe(0);
   expect(screen.getByTestId("superadmin-shell")).toBeInTheDocument();

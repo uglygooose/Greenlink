@@ -6,6 +6,12 @@ import { useSession } from "../../session/session-context";
 const NAV_ITEMS = [
   { key: "overview", label: "Overview", icon: "dashboard", href: "/superadmin/overview" },
   { key: "clubs", label: "Clubs", icon: "business", href: "/superadmin/clubs" },
+  {
+    key: "accounting_profiles",
+    label: "Accounting Profiles",
+    icon: "payments",
+    href: "/superadmin/accounting-profiles",
+  },
 ] as const;
 
 function SignOutButton(): JSX.Element {

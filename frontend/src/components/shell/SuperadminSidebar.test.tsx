@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import { SessionContext, type SessionContextValue } from "../../session/session-context";
@@ -26,6 +26,10 @@ const baseBootstrap: SessionBootstrap = {
 };
 
 function renderSidebar(bootstrap: SessionBootstrap): void {
+  renderSidebarApp(bootstrap);
+}
+
+function renderSidebarApp(bootstrap: SessionBootstrap, initialEntries: string[] = ["/superadmin/clubs"]): void {
   const sessionValue: SessionContextValue = {
     accessToken: "token",
     bootstrap,
@@ -48,14 +52,58 @@ function renderSidebar(bootstrap: SessionBootstrap): void {
 
   render(
     <SessionContext.Provider value={sessionValue}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <SuperadminSidebar />
+        <Routes>
+          <Route path="/superadmin/overview" element={<div>Overview Page</div>} />
+          <Route path="/superadmin/clubs" element={<div>Clubs Page</div>} />
+          <Route path="/superadmin/accounting-profiles" element={<div>Accounting Profiles Page</div>} />
+        </Routes>
       </MemoryRouter>
     </SessionContext.Provider>,
   );
 }
 
 describe("SuperadminSidebar", () => {
+  test("renders all live superadmin routes from backend menu truth", () => {
+    renderSidebar({
+      ...baseBootstrap,
+      menu_items: [
+        {
+          key: "overview",
+          label: "Overview",
+          path: "/superadmin/overview",
+          shell: "superadmin",
+          domain: "overview",
+          module_key: null,
+        },
+        {
+          key: "clubs",
+          label: "Clubs",
+          path: "/superadmin/clubs",
+          shell: "superadmin",
+          domain: "clubs",
+          module_key: null,
+        },
+        {
+          key: "accounting_profiles",
+          label: "Accounting Profiles",
+          path: "/superadmin/accounting-profiles",
+          shell: "superadmin",
+          domain: "finance",
+          module_key: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("link", { name: /overview/i })).toHaveAttribute("href", "/superadmin/overview");
+    expect(screen.getByRole("link", { name: /clubs/i })).toHaveAttribute("href", "/superadmin/clubs");
+    expect(screen.getByRole("link", { name: /accounting profiles/i })).toHaveAttribute(
+      "href",
+      "/superadmin/accounting-profiles",
+    );
+  });
+
   test("filters superadmin navigation from backend menu items when present", () => {
     renderSidebar({
       ...baseBootstrap,
@@ -73,5 +121,47 @@ describe("SuperadminSidebar", () => {
 
     expect(screen.getByRole("link", { name: /clubs/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /overview/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /accounting profiles/i })).not.toBeInTheDocument();
+  });
+
+  test("navigates to accounting profiles from the sidebar", async () => {
+    renderSidebarApp(
+      {
+        ...baseBootstrap,
+        menu_items: [
+          {
+            key: "overview",
+            label: "Overview",
+            path: "/superadmin/overview",
+            shell: "superadmin",
+            domain: "overview",
+            module_key: null,
+          },
+          {
+            key: "clubs",
+            label: "Clubs",
+            path: "/superadmin/clubs",
+            shell: "superadmin",
+            domain: "clubs",
+            module_key: null,
+          },
+          {
+            key: "accounting_profiles",
+            label: "Accounting Profiles",
+            path: "/superadmin/accounting-profiles",
+            shell: "superadmin",
+            domain: "finance",
+            module_key: null,
+          },
+        ],
+      },
+      ["/superadmin/clubs"],
+    );
+
+    expect(screen.getByText("Clubs Page")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: /accounting profiles/i }));
+
+    expect(await screen.findByText("Accounting Profiles Page")).toBeInTheDocument();
   });
 });
