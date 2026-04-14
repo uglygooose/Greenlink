@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
@@ -80,6 +80,14 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function teeSheetHref(filter: string, date: string, courseId?: string | null): string {
+  const params = new URLSearchParams({ filter, date });
+  if (courseId) {
+    params.set("courseId", courseId);
+  }
+  return `/admin/golf/tee-sheet?${params.toString()}`;
+}
+
 function latestExportEvent(batch: { metadata_json: { export_events?: { exported_at: string }[] } }) {
   const events = batch.metadata_json.export_events ?? [];
   return events.length > 0 ? events[events.length - 1] : null;
@@ -114,12 +122,6 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
   const exportBatchDetailQuery = useFinanceExportBatchDetailQuery({ accessToken, selectedClubId, batchId: selectedBatchId });
   const exportBatchReconciliationQuery = useFinanceExportBatchReconciliationQuery({ accessToken, selectedClubId, batchId: selectedBatchId });
   const accountingProfilesQuery = useAccountingExportProfilesQuery({ accessToken, selectedClubId });
-  const mappedExportPreviewQuery = useAccountingMappedExportPreviewQuery({
-    accessToken,
-    selectedClubId,
-    batchId: selectedBatchId,
-    profileId: selectedAccountingProfileId,
-  });
 
   const createExportBatchMutation = useCreateFinanceExportBatchMutation();
   const voidExportBatchMutation = useVoidFinanceExportBatchMutation();
@@ -130,17 +132,27 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
   const selectedBatch = exportBatchDetailQuery.data;
   const reconciliation = exportBatchReconciliationQuery.data;
   const accountingProfiles = accountingProfilesQuery.data?.profiles ?? [];
-  const mappedPreview = mappedExportPreviewQuery.data;
 
   const hasExceptions = (exceptions?.total_exception_count ?? 0) > 0;
   const hasDrift = reconciliation !== undefined && !reconciliation.matches_live_state;
-  const activeProfile = accountingProfiles.find((p) => p.id === selectedAccountingProfileId) ?? accountingProfiles[0];
+  const defaultAccountingProfile = accountingProfiles.find((p) => p.is_active) ?? accountingProfiles[0] ?? null;
+  const selectedAccountingProfile = accountingProfiles.find((p) => p.id === selectedAccountingProfileId) ?? null;
+  const selectedAccountingProfileIdForWorkflow = selectedAccountingProfile?.id ?? null;
+  const unpaidBookingCourseIds = Array.from(new Set((exceptions?.unpaid_bookings ?? []).map((booking) => booking.course_id)));
+  const singleUnpaidCourseId = unpaidBookingCourseIds.length === 1 ? unpaidBookingCourseIds[0] : null;
+  const mappedExportPreviewQuery = useAccountingMappedExportPreviewQuery({
+    accessToken,
+    selectedClubId,
+    batchId: selectedBatchId,
+    profileId: selectedAccountingProfileIdForWorkflow,
+  });
+  const mappedPreview = mappedExportPreviewQuery.data;
 
-  // Auto-select first active accounting profile
-  if (accountingProfiles.length > 0 && !selectedAccountingProfileId) {
-    const active = accountingProfiles.find((p) => p.is_active) ?? accountingProfiles[0];
-    setSelectedAccountingProfileId(active.id);
-  }
+  useEffect(() => {
+    if (!selectedAccountingProfileId && defaultAccountingProfile) {
+      setSelectedAccountingProfileId(defaultAccountingProfile.id);
+    }
+  }, [defaultAccountingProfile, selectedAccountingProfileId]);
 
   async function handleGenerateBatch(): Promise<void> {
     setNotice(null);
@@ -178,7 +190,7 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
   }
 
   async function handleDownloadMappedExport(): Promise<void> {
-    if (!selectedBatch || !selectedAccountingProfileId || !accessToken || !selectedClubId) return;
+    if (!selectedBatch || !selectedAccountingProfileIdForWorkflow || !accessToken || !selectedClubId) return;
     setNotice(null);
     setIsDownloadingMapped(true);
     try {
@@ -186,7 +198,7 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
         accessToken,
         selectedClubId,
         batchId: selectedBatch.id,
-        profileId: selectedAccountingProfileId,
+        profileId: selectedAccountingProfileIdForWorkflow,
       });
       await Promise.all([exportBatchesQuery.refetch(), exportBatchDetailQuery.refetch()]);
       setNotice({ tone: "success", message: `${fileName} exported successfully.` });
@@ -383,22 +395,28 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
                         <NavLink
                           aria-label={`Resolve unpaid booking at ${formatTime(booking.slot_datetime)} on tee sheet`}
                           className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
-                          to={`/admin/golf/tee-sheet?filter=unpaid&date=${closeDateStr}`}
+                          to={teeSheetHref("unpaid", closeDateStr, booking.course_id)}
                         >
                           <MaterialSymbol icon="open_in_new" />
                           Resolve on Tee Sheet
                         </NavLink>
                       </div>
                     ))}
-                    <div className="bg-slate-50 px-5 py-3">
+                    {singleUnpaidCourseId ? (
+                      <div className="bg-slate-50 px-5 py-3">
                       <NavLink
                         className="flex w-full items-center justify-center gap-2 rounded-xl border border-error/20 bg-error-container/20 px-4 py-3 text-sm font-bold text-on-error-container transition-colors hover:bg-error-container/30"
-                        to={`/admin/golf/tee-sheet?filter=unpaid&date=${closeDateStr}`}
+                        to={teeSheetHref("unpaid", closeDateStr, singleUnpaidCourseId)}
                       >
                         <MaterialSymbol icon="receipt_long" />
                         View All Unpaid on Tee Sheet — {formatDate(closeDateStr)}
                       </NavLink>
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 px-5 py-3 text-center text-xs font-semibold text-slate-600">
+                        Open each unpaid booking from its row to land on the matching tee-sheet course.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -683,14 +701,20 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Accounting Profile</p>
-                        <p className="mt-0.5 text-sm font-bold text-slate-900">{activeProfile?.name ?? "—"}</p>
-                        <p className="text-xs text-slate-500">{activeProfile?.target_system ?? ""}</p>
+                        {selectedAccountingProfile ? (
+                          <>
+                            <p className="mt-0.5 text-sm font-bold text-slate-900">{selectedAccountingProfile.name}</p>
+                            <p className="text-xs text-slate-500">{selectedAccountingProfile.target_system}</p>
+                          </>
+                        ) : (
+                          <p className="mt-0.5 text-sm font-bold text-slate-900">No accounting profile selected.</p>
+                        )}
                       </div>
                       <select
                         aria-label="Select accounting profile"
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-primary"
                         onChange={(e) => setSelectedAccountingProfileId(e.target.value)}
-                        value={selectedAccountingProfileId ?? ""}
+                        value={selectedAccountingProfileIdForWorkflow ?? ""}
                       >
                         {accountingProfiles.map((profile) => (
                           <option key={profile.id} value={profile.id}>
@@ -701,11 +725,17 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
                     </div>
                   </div>
 
-                  {mappedExportPreviewQuery.isLoading ? (
+                  {!selectedAccountingProfile ? (
+                    <div className="border-b border-slate-100 px-5 py-4 text-sm font-semibold text-slate-500">
+                      Choose an accounting profile to preview and export this batch.
+                    </div>
+                  ) : null}
+
+                  {selectedAccountingProfile && mappedExportPreviewQuery.isLoading ? (
                     <div className="px-5 py-6 text-center text-sm text-slate-500">Loading mapped export preview...</div>
                   ) : null}
 
-                  {mappedPreview ? (
+                  {selectedAccountingProfile && mappedPreview ? (
                     <div className="px-5 py-4">
                       {mappedPreview.validation_errors.length > 0 ? (
                         <div className="mb-4 rounded-xl border border-error/20 bg-error-container/20 px-4 py-3">
@@ -724,7 +754,12 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
                         </div>
                         <button
                           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-dim disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={!mappedPreview.download_ready || isDownloadingMapped || mappedPreview.validation_errors.length > 0}
+                          disabled={
+                            !selectedAccountingProfile ||
+                            !mappedPreview.download_ready ||
+                            isDownloadingMapped ||
+                            mappedPreview.validation_errors.length > 0
+                          }
                           onClick={() => void handleDownloadMappedExport()}
                           type="button"
                         >

@@ -3,11 +3,17 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import PricingDayType, PricingRuleAppliesTo, PricingTimeBand
+from app.models.enums import (
+    PricingDayType,
+    PricingPlayerType,
+    PricingRuleAppliesTo,
+    PricingSeason,
+    PricingTimeBand,
+)
 from app.models.enum_utils import enum_values
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -23,9 +29,19 @@ class PricingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(PricingRuleAppliesTo, values_callable=enum_values),
         nullable=False,
     )
+    player_type: Mapped[PricingPlayerType] = mapped_column(
+        Enum(PricingPlayerType, values_callable=enum_values),
+        nullable=False,
+    )
+    holes: Mapped[int] = mapped_column(Integer, nullable=False)
     day_type: Mapped[PricingDayType] = mapped_column(
         Enum(PricingDayType, values_callable=enum_values),
         nullable=False,
+    )
+    season: Mapped[PricingSeason] = mapped_column(
+        Enum(PricingSeason, values_callable=enum_values),
+        nullable=False,
+        default=PricingSeason.ANY,
     )
     time_band: Mapped[PricingTimeBand] = mapped_column(
         Enum(PricingTimeBand, values_callable=enum_values),

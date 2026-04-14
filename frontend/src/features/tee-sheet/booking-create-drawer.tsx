@@ -1,10 +1,10 @@
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import { BookingExtrasControls } from "./booking-extras-controls";
 import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
 import { useDrawerAccessibility } from "./use-drawer-accessibility";
-import type { BookingCreateParticipantInput } from "../../types/bookings";
+import type { BookingParticipantType } from "../../types/bookings";
 import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
@@ -19,7 +19,7 @@ interface BookingCreateDrawerProps {
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone | null;
   laneLabel: string;
-  onAddParticipant: () => void;
+  onAddParticipant: (type: BookingParticipantType) => void;
   onCaddieFlagChange: (value: boolean) => void;
   onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
   onClose: () => void;
@@ -48,14 +48,13 @@ function feedbackClassName(tone: FeedbackTone | null): string {
   return "bg-secondary-container text-on-secondary-container";
 }
 
-function asPayload(participants: DraftParticipant[]): BookingCreateParticipantInput[] {
-  return participants.map((participant) => ({
-    participant_type: participant.participant_type,
-    person_id: participant.participant_type === "guest" ? null : participant.person_id,
-    guest_name: participant.participant_type === "guest" ? participant.guest_name.trim() : null,
-    is_primary: participant.is_primary,
-  }));
+function participantReadyCount(participants: DraftParticipant[], directory: ClubPersonEntry[]): number {
+  return participants.filter((participant) => {
+    if (participant.participant_type === "guest") return participant.guest_name.trim().length > 0;
+    return participant.person_id !== null && directory.some((entry) => entry.person.id === participant.person_id);
+  }).length;
 }
+
 
 export function BookingCreateDrawer({
   caddieFlag,
@@ -80,8 +79,10 @@ export function BookingCreateDrawer({
 }: BookingCreateDrawerProps): JSX.Element {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const payloadPreview = useMemo(() => asPayload(participants), [participants]);
   useDrawerAccessibility({ containerRef: panelRef, initialFocusRef: closeButtonRef, onClose });
+
+  const readyCount = participantReadyCount(participants, directory);
+  const totalCount = participants.length;
 
   return (
     <>
@@ -98,11 +99,12 @@ export function BookingCreateDrawer({
         role="dialog"
         tabIndex={-1}
       >
-        <div className="flex items-center justify-between px-6 pb-5 pt-6">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pb-4 pt-6">
           <div>
             <h3 className="font-headline text-lg font-extrabold text-slate-900">Create Booking</h3>
             <p className="text-xs text-slate-500">
-              {formatDateLabel(selectedDate)} at {slot.local_time.slice(0, 5)}
+              {laneLabel} · {formatDateLabel(selectedDate)} · {slot.local_time.slice(0, 5)}
             </p>
           </div>
           <button
@@ -116,22 +118,17 @@ export function BookingCreateDrawer({
           </button>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-6 pb-6">
-          <section className="rounded-2xl bg-surface-container-low p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
-                <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  {slot.occupancy.remaining_player_capacity ?? 0} player spaces remaining
-                </p>
-              </div>
-              <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">
-                {slot.display_status}
-              </span>
-            </div>
-          </section>
+        {/* Capacity indicator */}
+        <div className="mx-6 mb-4 flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-2.5">
+          <span className="text-xs font-semibold text-on-surface">
+            {slot.occupancy.remaining_player_capacity ?? 0} spaces available
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            {slot.display_status}
+          </span>
+        </div>
 
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 pb-6">
           {feedbackMessage ? (
             <section className={`rounded-2xl px-4 py-3 ${feedbackClassName(feedbackTone)}`}>
               <div className="flex items-start gap-3">
@@ -156,42 +153,29 @@ export function BookingCreateDrawer({
             onCartFlagChange={onCartFlagChange}
           />
 
-          <section className="rounded-2xl bg-surface-container-low p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Request Preview</p>
-            <p className="mt-2 text-sm text-slate-500">
-              Frontend only assembles participant intent. Backend still validates membership, slot capacity, and rule outcomes.
-            </p>
-            <div className="mt-3 space-y-2 text-sm text-on-surface">
-              {payloadPreview.map((participant, index) => (
-                <div className="flex items-center justify-between gap-3" key={`${participant.participant_type}-${index}`}>
-                  <span>
-                    {participant.is_primary ? "Primary" : `Player ${index + 1}`} | {participant.participant_type}
-                  </span>
-                  <span className="text-slate-500">
-                    {participant.participant_type === "guest"
-                      ? participant.guest_name || "Guest"
-                      : directory.find((entry) => entry.person.id === participant.person_id)?.person.full_name || "Select person"}
-                  </span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                <span>Extras</span>
-                <span>{[cartFlag ? "Cart" : null, caddieFlag ? "Caddie" : null].filter(Boolean).join(" | ") || "None"}</span>
-              </div>
+          {/* Readiness indicator — only shows when something needs attention */}
+          {totalCount > 0 && readyCount < totalCount ? (
+            <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+              <MaterialSymbol className="text-sm" icon="info" />
+              <span>
+                {totalCount - readyCount} player{totalCount - readyCount !== 1 ? "s" : ""} still need
+                {totalCount - readyCount === 1 ? "s" : ""} to be filled in
+              </span>
             </div>
-          </section>
+          ) : null}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 bg-surface-container-low px-6 py-5">
+        {/* Footer */}
+        <div className="grid grid-cols-2 gap-3 border-t border-slate-100 bg-white px-6 py-5">
           <button
-            className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-on-surface"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-on-surface"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white"
+            className="rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
             disabled={creating}
             onClick={onCreate}
             type="button"

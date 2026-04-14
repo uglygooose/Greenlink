@@ -23,8 +23,10 @@ from app.models import (
     Person,
     PricingDayType,
     PricingMatrix,
+    PricingPlayerType,
     PricingRule,
     PricingRuleAppliesTo,
+    PricingSeason,
     PricingTimeBand,
     Tee,
     User,
@@ -223,7 +225,10 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.MEMBER,
+                player_type=PricingPlayerType.MEMBER_STANDARD,
+                holes=18,
                 day_type=PricingDayType.WEEKDAY,
+                season=PricingSeason.ANY,
                 time_band=PricingTimeBand.MORNING,
                 price="325.00",
                 currency="ZAR",
@@ -232,7 +237,10 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.MEMBER,
+                player_type=PricingPlayerType.MEMBER_STANDARD,
+                holes=18,
                 day_type=PricingDayType.WEEKEND,
+                season=PricingSeason.ANY,
                 time_band=PricingTimeBand.MORNING,
                 price="425.00",
                 currency="ZAR",
@@ -241,7 +249,10 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.GUEST,
+                player_type=PricingPlayerType.VISITOR_NON_AFFILIATED,
+                holes=18,
                 day_type=PricingDayType.WEEKDAY,
+                season=PricingSeason.ANY,
                 time_band=PricingTimeBand.MORNING,
                 price="525.00",
                 currency="ZAR",
@@ -285,7 +296,7 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
     assert any(warning["code"] == "public_holiday_unresolved" for warning in payload["warnings"])
 
 
-def test_rule_evaluation_without_datetime_is_timeless_and_returns_broad_pricing_candidates(
+def test_rule_evaluation_without_datetime_uses_any_dimension_pricing_rules(
     client: TestClient, db_session: Session
 ) -> None:
     user = _create_user(db_session, email="timeless@example.com")
@@ -341,17 +352,23 @@ def test_rule_evaluation_without_datetime_is_timeless_and_returns_broad_pricing_
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.MEMBER,
-                day_type=PricingDayType.WEEKDAY,
-                time_band=PricingTimeBand.MORNING,
+                player_type=PricingPlayerType.MEMBER_STANDARD,
+                holes=18,
+                day_type=PricingDayType.ANY,
+                season=PricingSeason.ANY,
+                time_band=PricingTimeBand.ANY,
                 price="100.00",
                 currency="ZAR",
                 active=True,
             ),
             PricingRule(
                 matrix_id=matrix.id,
-                applies_to=PricingRuleAppliesTo.MEMBER,
-                day_type=PricingDayType.WEEKEND,
-                time_band=PricingTimeBand.AFTERNOON,
+                applies_to=PricingRuleAppliesTo.GUEST,
+                player_type=PricingPlayerType.VISITOR_NON_AFFILIATED,
+                holes=18,
+                day_type=PricingDayType.ANY,
+                season=PricingSeason.ANY,
+                time_band=PricingTimeBand.ANY,
                 price="120.00",
                 currency="ZAR",
                 active=True,
@@ -361,13 +378,14 @@ def test_rule_evaluation_without_datetime_is_timeless_and_returns_broad_pricing_
     db_session.commit()
 
     headers = _auth_headers(client, user.email, str(club.id))
-    response = client.get("/api/rules/evaluate?membership_type=member", headers=headers)
+    response = client.get("/api/rules/evaluate?membership_type=member&holes=18", headers=headers)
     assert response.status_code == 200
     payload = response.json()
 
     assert payload["booking_constraints"]["advance_window"]["days"] == 7
     assert "max_future_bookings" not in payload["limits"]
-    assert len(payload["pricing"]["candidate_rules"]) == 2
+    assert len(payload["pricing"]["candidate_rules"]) == 1
+    assert payload["pricing"]["candidate_rules"][0]["price"] == "100.00"
     assert payload["context"]["day_type"] is None
     assert payload["context"]["time_band"] is None
     assert any(rule["reason"] == "first_match_stopped" for rule in payload["ignored_rules"])
@@ -388,7 +406,10 @@ def test_rule_context_supports_supplied_public_holiday_and_custom_time_band(
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.MEMBER,
+                player_type=PricingPlayerType.MEMBER_STANDARD,
+                holes=18,
                 day_type=PricingDayType.PUBLIC_HOLIDAY,
+                season=PricingSeason.ANY,
                 time_band=PricingTimeBand.CUSTOM,
                 time_band_ref="prime",
                 price="450.00",
@@ -398,7 +419,10 @@ def test_rule_context_supports_supplied_public_holiday_and_custom_time_band(
             PricingRule(
                 matrix_id=matrix.id,
                 applies_to=PricingRuleAppliesTo.MEMBER,
+                player_type=PricingPlayerType.MEMBER_STANDARD,
+                holes=18,
                 day_type=PricingDayType.PUBLIC_HOLIDAY,
+                season=PricingSeason.ANY,
                 time_band=PricingTimeBand.CUSTOM,
                 time_band_ref="sunrise",
                 price="400.00",
@@ -414,6 +438,8 @@ def test_rule_context_supports_supplied_public_holiday_and_custom_time_band(
         "/api/rules/evaluate",
         params={
             "membership_type": "member",
+            "pricing_player_type": "member_standard",
+            "holes": 18,
             "day_type": "public_holiday",
             "time_band": "custom",
             "time_band_ref": "prime",

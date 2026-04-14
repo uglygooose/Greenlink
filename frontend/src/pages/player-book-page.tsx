@@ -108,6 +108,10 @@ export function PlayerBookPage(): JSX.Element {
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
 
   const coursesQuery = useCoursesQuery({ accessToken, selectedClubId });
+  const selectedCourse = useMemo(
+    () => (coursesQuery.data ?? []).find((course) => course.id === courseId) ?? null,
+    [courseId, coursesQuery.data],
+  );
 
   useEffect(() => {
     if (!courseId && coursesQuery.data?.length) {
@@ -184,6 +188,7 @@ export function PlayerBookPage(): JSX.Element {
           tee_id: slot.teeId,
           start_lane: slot.startLane,
           slot_datetime: slot.slot.slot_datetime,
+          holes: selectedCourse?.holes ?? null,
           source: "member_portal",
           participants: [],
         },

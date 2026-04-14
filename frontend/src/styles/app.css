@@ -448,3 +448,12 @@ h3,
   background: #cfdce3;
   border-radius: 999px;
 }
+
+/* Tee sheet drag-and-drop: immediate drop-target highlight toggled via classList,
+   bypassing React state to guarantee ≤1-frame visual latency. */
+.tee-sheet-drop-target {
+  background-color: rgb(var(--color-primary-container) / 0.15) !important;
+  outline: 2px solid rgb(var(--color-primary) / 0.35);
+  outline-offset: -2px;
+  transition: none;
+}

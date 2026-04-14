@@ -4,7 +4,7 @@ import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import { BookingExtrasControls } from "./booking-extras-controls";
 import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
 import { useDrawerAccessibility } from "./use-drawer-accessibility";
-import type { BookingPaymentStatus, BookingSummary } from "../../types/bookings";
+import type { BookingParticipantType, BookingPaymentStatus, BookingSummary } from "../../types/bookings";
 import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
@@ -15,6 +15,8 @@ interface BookingManagementDrawerProps {
   editCartFlag: boolean;
   colorCode: string | null;
   directory: ClubPersonEntry[];
+  feedbackBookingId?: string | null;
+  feedbackField?: string | null;
   editingBookingId: string | null;
   editParticipants: DraftParticipant[];
   feedbackMessage: string | null;
@@ -24,7 +26,7 @@ interface BookingManagementDrawerProps {
   onCheckIn: (bookingId: string) => void;
   onClose: () => void;
   onComplete: (bookingId: string) => void;
-  onEditAddParticipant: () => void;
+  onEditAddParticipant: (type: BookingParticipantType) => void;
   onEditCancel: () => void;
   onEditCaddieFlagChange: (value: boolean) => void;
   onEditChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
@@ -32,8 +34,9 @@ interface BookingManagementDrawerProps {
   onEditRemoveParticipant: (key: string) => void;
   onEditSave: (bookingId: string) => void;
   onEditStart: (booking: BookingSummary) => void;
+  onFinanceInputChange: () => void;
   onNoShow: (bookingId: string) => void;
-  onPostCharge: (bookingId: string, amount: string) => void;
+  onPostCharge: (bookingId: string, amount?: string) => void;
   onRecordPayment: (bookingId: string) => void;
   onMarkComplimentary: (bookingId: string) => void;
   onMarkWaived: (bookingId: string) => void;
@@ -77,8 +80,6 @@ function paymentStatusClassName(status: BookingPaymentStatus | null | undefined)
     case "paid":
       return "bg-primary-container/50 text-on-primary-container";
     case "pending":
-      // Intentionally amber — NOT secondary-container which is also used by the
-      // checked_in booking-status badge above it, preventing visual confusion.
       return "bg-amber-100 text-amber-800";
     case "complimentary":
       return "bg-surface-container-high text-on-surface";
@@ -90,22 +91,55 @@ function paymentStatusClassName(status: BookingPaymentStatus | null | undefined)
 }
 
 function paymentStatusLabel(status: BookingPaymentStatus | null | undefined): string {
-  return status ? status.replace("_", " ") : "unassigned";
+  switch (status) {
+    case "pending":
+      return "Unpaid";
+    case "paid":
+      return "Paid";
+    case "complimentary":
+      return "Complimentary";
+    case "waived":
+      return "Waived";
+    default:
+      return "—";
+  }
 }
 
-function participantSummary(
-  participants: Array<{ display_name: string; is_primary: boolean }>,
-  partySize: number,
-): string {
-  const names = participants.map((participant) => participant.display_name).filter(Boolean);
-  if (names.length > 0) return names.join(", ");
-  return `${partySize} players`;
+function primaryName(participants: Array<{ display_name: string; is_primary: boolean }>): string {
+  const primary = participants.find((p) => p.is_primary);
+  return primary?.display_name || participants[0]?.display_name || "";
 }
 
 function feedbackClassName(tone: FeedbackTone | null): string {
   if (tone === "error") return "bg-error-container/40 text-on-error-container";
   return "bg-secondary-container text-on-secondary-container";
 }
+
+function formatCurrencyAmount(amount: string | null | undefined, currency: string | null | undefined): string | null {
+  if (!amount) return null;
+  const numeric = Number.parseFloat(amount);
+  if (!Number.isFinite(numeric)) return amount;
+  if (!currency) return numeric.toFixed(2);
+  try {
+    return new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numeric);
+  } catch {
+    return `${currency} ${numeric.toFixed(2)}`;
+  }
+}
+
+const primaryButtonClassName =
+  "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary-dim disabled:cursor-not-allowed disabled:bg-slate-300";
+
+const secondaryButtonClassName =
+  "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:text-slate-400";
+
+const ghostButtonClassName =
+  "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:text-slate-300";
 
 const actionButtonClassName =
   "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary-dim disabled:cursor-not-allowed disabled:bg-slate-300";
@@ -118,6 +152,7 @@ interface ActionButtonProps {
   label: string;
   onClick: () => void;
   pendingLabel: string;
+  variant?: "primary" | "secondary" | "ghost";
 }
 
 function ActionButton({
@@ -128,11 +163,19 @@ function ActionButton({
   label,
   onClick,
   pendingLabel,
+  variant = "primary",
 }: ActionButtonProps): JSX.Element {
+  const className =
+    variant === "secondary"
+      ? secondaryButtonClassName
+      : variant === "ghost"
+        ? ghostButtonClassName
+        : actionButtonClassName;
+
   return (
     <button
       aria-label={ariaLabel}
-      className={actionButtonClassName}
+      className={className}
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -162,7 +205,7 @@ function EditPanel({
   booking: BookingSummary;
   cartFlag: boolean;
   directory: ClubPersonEntry[];
-  onAddParticipant: () => void;
+  onAddParticipant: (type: BookingParticipantType) => void;
   onCancel: () => void;
   onCaddieFlagChange: (value: boolean) => void;
   onChangeParticipant: (key: string, patch: Partial<DraftParticipant>) => void;
@@ -175,16 +218,13 @@ function EditPanel({
   return (
     <section className="space-y-4 rounded-2xl bg-surface-container p-4">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Edit Booking</p>
-          <p className="mt-1 text-sm text-on-surface">Adjust participants and guests for this reserved booking.</p>
-        </div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Edit Party</p>
         <button
           className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm"
           onClick={onCancel}
           type="button"
         >
-          Close Edit
+          Done
         </button>
       </div>
       <BookingPartyEditor
@@ -215,7 +255,7 @@ function EditPanel({
           onClick={onSave}
           type="button"
         >
-          {saving ? "Saving..." : "Save Booking"}
+          {saving ? "Saving..." : "Save"}
         </button>
       </div>
     </section>
@@ -227,6 +267,8 @@ export function BookingManagementDrawer({
   editCartFlag,
   colorCode,
   directory,
+  feedbackBookingId,
+  feedbackField,
   editingBookingId,
   editParticipants,
   feedbackMessage,
@@ -244,6 +286,7 @@ export function BookingManagementDrawer({
   onEditRemoveParticipant,
   onEditSave,
   onEditStart,
+  onFinanceInputChange,
   onMarkComplimentary,
   onMarkWaived,
   onNoShow,
@@ -285,9 +328,11 @@ export function BookingManagementDrawer({
       >
         <div className="flex items-center justify-between px-6 pb-5 pt-6">
           <div>
-            <h3 className="font-headline text-lg font-extrabold text-slate-900">Booking Management</h3>
+            <h3 className="font-headline text-lg font-extrabold text-slate-900">
+              {laneLabel}
+            </h3>
             <p className="text-xs text-slate-500">
-              {formatDateLabel(selectedDate)} at {slot.local_time.slice(0, 5)}
+              {formatDateLabel(selectedDate)} · {slot.local_time.slice(0, 5)}
             </p>
           </div>
           <button
@@ -302,21 +347,6 @@ export function BookingManagementDrawer({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-6 pb-6">
-          <section className="rounded-2xl bg-surface-container-low p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Slot</p>
-                <p className="mt-1 text-sm font-bold text-on-surface">{laneLabel}</p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  {slot.party_summary.total_players ?? 0} players in active view
-                </p>
-              </div>
-              <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">
-                {slot.display_status}
-              </span>
-            </div>
-          </section>
-
           {feedbackMessage ? (
             <section className={`rounded-2xl px-4 py-3 ${feedbackClassName(feedbackTone)}`}>
               <div className="flex items-start gap-3">
@@ -326,237 +356,259 @@ export function BookingManagementDrawer({
             </section>
           ) : null}
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Bookings</span>
-              <span className="text-xs font-semibold text-slate-500">{slot.bookings.length} active</span>
-            </div>
-            {slot.bookings.map((booking) => {
-              const isPending = pendingBookingId === booking.id;
-              const isCheckInPending = isPending && pendingAction === "check_in";
-              const isCompletePending = isPending && pendingAction === "complete";
-              const isNoShowPending = isPending && pendingAction === "no_show";
-              const isCancelPending = isPending && pendingAction === "cancel";
-              const isFinancePending = pendingFinanceBookingId === booking.id;
-              const isPostChargePending = isFinancePending && pendingFinanceAction === "post_charge";
-              const isRecordPaymentPending = isFinancePending && pendingFinanceAction === "record_payment";
-              const isComplimentaryPending = isFinancePending && pendingFinanceAction === "mark_complimentary";
-              const isWaivedPending = isFinancePending && pendingFinanceAction === "mark_waived";
-              const isEditing = editingBookingId === booking.id;
-              const isSaving = savingBookingId === booking.id;
-              const chargeAmount = chargeDrafts[booking.id] ?? "";
-              const canPostCharge =
-                booking.payment_status !== "paid" &&
-                booking.payment_status !== "complimentary" &&
-                booking.payment_status !== "waived";
-              const canRecordPayment = booking.payment_status === "pending";
-              const canMarkComplimentary =
-                booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
-              const canMarkWaived =
-                booking.payment_status !== "waived" && booking.payment_status !== "paid";
+          {slot.bookings.map((booking) => {
+            const isPending = pendingBookingId === booking.id;
+            const isCheckInPending = isPending && pendingAction === "check_in";
+            const isCompletePending = isPending && pendingAction === "complete";
+            const isNoShowPending = isPending && pendingAction === "no_show";
+            const isCancelPending = isPending && pendingAction === "cancel";
+            const isFinancePending = pendingFinanceBookingId === booking.id;
+            const isPostChargePending = isFinancePending && pendingFinanceAction === "post_charge";
+            const isRecordPaymentPending = isFinancePending && pendingFinanceAction === "record_payment";
+            const isComplimentaryPending = isFinancePending && pendingFinanceAction === "mark_complimentary";
+            const isWaivedPending = isFinancePending && pendingFinanceAction === "mark_waived";
+            const isEditing = editingBookingId === booking.id;
+            const isSaving = savingBookingId === booking.id;
+            const chargeAmount = chargeDrafts[booking.id] ?? "";
+            const chargeOverride = chargeAmount.trim();
+            const resolvedAmountLabel = formatCurrencyAmount(booking.fee_amount, booking.fee_currency);
+            const hasResolvedAmount = Boolean(booking.fee_amount);
+            const hasChargeOverride = chargeOverride.length > 0;
+            const showAmountError =
+              feedbackTone === "error" && feedbackField === "amount" && feedbackBookingId === booking.id;
+            const canPostCharge =
+              booking.payment_status !== "paid" &&
+              booking.payment_status !== "complimentary" &&
+              booking.payment_status !== "waived";
+            const canRecordPayment = booking.payment_status === "pending";
+            const canMarkComplimentary =
+              booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
+            const canMarkWaived =
+              booking.payment_status !== "waived" && booking.payment_status !== "paid";
 
-              return (
-                <article className="space-y-4 rounded-2xl bg-surface-container-low p-4" key={booking.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-on-surface">Booking {booking.id.slice(0, 8)}</p>
-                      <p className="mt-1 truncate text-[11px] text-slate-500">{booking.id}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${bookingStatusClassName(booking.status)}`}
-                    >
-                      {bookingStatusLabel(booking.status)}
-                    </span>
-                  </div>
+            const bookingPrimaryName = primaryName(booking.participants);
 
-                  <div className="space-y-2 text-sm text-on-surface">
-                    <div className="flex items-center gap-2">
-                      <MaterialSymbol className="text-sm text-slate-400" icon="groups" />
-                      <span>{booking.party_size} players</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MaterialSymbol className="mt-0.5 text-sm text-slate-400" icon="badge" />
-                      <span className="leading-relaxed">
-                        {participantSummary(booking.participants, booking.party_size)}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${paymentStatusClassName(booking.payment_status)}`}>
-                        {paymentStatusLabel(booking.payment_status)}
-                      </span>
-                      <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
-                        {booking.fee_label ?? "Rate pending"}
+            return (
+              <article className="space-y-4 rounded-2xl bg-surface-container-low p-4" key={booking.id}>
+                {/* Booking header — name first */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-on-surface">
+                      {bookingPrimaryName || `${booking.party_size} players`}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">
+                        {booking.party_size} {booking.party_size === 1 ? "player" : "players"}
                       </span>
                       {booking.cart_flag ? (
-                        <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
+                        <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-on-surface">
                           Cart
                         </span>
                       ) : null}
                       {booking.caddie_flag ? (
-                        <span className="rounded-full bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface">
+                        <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-on-surface">
                           Caddie
                         </span>
                       ) : null}
                     </div>
                   </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${bookingStatusClassName(booking.status)}`}
+                  >
+                    {bookingStatusLabel(booking.status)}
+                  </span>
+                </div>
 
-                  {isEditing ? (
-                    <EditPanel
-                      caddieFlag={editCaddieFlag}
-                      booking={booking}
-                      cartFlag={editCartFlag}
-                      directory={directory}
-                      onAddParticipant={onEditAddParticipant}
-                      onCancel={onEditCancel}
-                      onCaddieFlagChange={onEditCaddieFlagChange}
-                      onChangeParticipant={onEditChangeParticipant}
-                      onCartFlagChange={onEditCartFlagChange}
-                      onRemoveParticipant={onEditRemoveParticipant}
-                      onSave={() => onEditSave(booking.id)}
-                      participants={editParticipants}
-                      saving={isSaving}
-                    />
-                  ) : null}
+                {/* Participants summary */}
+                {booking.participants.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {booking.participants.map((participant) => (
+                      <span
+                        className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-on-surface shadow-sm"
+                        key={participant.id}
+                      >
+                        {participant.display_name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
 
-                  {showFinanceActions ? (
-                    <section
-                      className={`space-y-3 rounded-2xl border p-4 ${booking.payment_status === "pending" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white/70"}`}
-                      data-testid={`booking-finance-panel-${booking.id}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Finance Actions</p>
-                          <p className="mt-1 text-sm text-on-surface">
-                            {booking.payment_status === "pending"
-                              ? "Payment is still outstanding for this booking."
-                              : "Finance state stays backend-owned. Use these actions to post or settle booking charges."}
-                          </p>
-                        </div>
-                        {booking.payment_status === "pending" ? (
-                          <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                            Unpaid
-                          </span>
+                {/* Edit party panel */}
+                {isEditing ? (
+                  <EditPanel
+                    caddieFlag={editCaddieFlag}
+                    booking={booking}
+                    cartFlag={editCartFlag}
+                    directory={directory}
+                    onAddParticipant={onEditAddParticipant}
+                    onCancel={onEditCancel}
+                    onCaddieFlagChange={onEditCaddieFlagChange}
+                    onChangeParticipant={onEditChangeParticipant}
+                    onCartFlagChange={onEditCartFlagChange}
+                    onRemoveParticipant={onEditRemoveParticipant}
+                    onSave={() => onEditSave(booking.id)}
+                    participants={editParticipants}
+                    saving={isSaving}
+                  />
+                ) : null}
+
+                {/* Settlement section */}
+                {showFinanceActions ? (
+                  <section
+                    className={`space-y-3 rounded-2xl border p-4 ${booking.payment_status === "pending" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white/70"}`}
+                    data-testid={`booking-finance-panel-${booking.id}`}
+                  >
+                    {/* Amount + status row */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Settlement</p>
+                        <p className="mt-1 text-lg font-extrabold text-on-surface">
+                          {resolvedAmountLabel ?? (
+                            <span className="text-sm font-semibold text-slate-400">No rate assigned</span>
+                          )}
+                        </p>
+                        {booking.fee_label ? (
+                          <p className="text-[10px] text-slate-400">{booking.fee_label}</p>
                         ) : null}
                       </div>
-
-                      <label className="space-y-1">
-                        <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Charge Amount</span>
-                        <input
-                          aria-label={`Charge amount for booking ${booking.id}`}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-on-surface focus:border-transparent focus:ring-2 focus:ring-primary/20"
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setChargeDrafts((current) => ({
-                              ...current,
-                              [booking.id]: event.target.value,
-                            }))
-                          }
-                          placeholder="85.00"
-                          type="text"
-                          value={chargeAmount}
-                        />
-                      </label>
-
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <ActionButton
-                          ariaLabel="Post Charge"
-                          disabled={!canPostCharge || chargeAmount.trim().length === 0 || isPending || isSaving || isFinancePending}
-                          icon="receipt_long"
-                          isPending={isPostChargePending}
-                          label="Post Charge"
-                          onClick={() => onPostCharge(booking.id, chargeAmount)}
-                          pendingLabel="Posting..."
-                        />
-                        <ActionButton
-                          ariaLabel="Record Payment"
-                          disabled={!canRecordPayment || isPending || isSaving || isFinancePending}
-                          icon="payments"
-                          isPending={isRecordPaymentPending}
-                          label="Record Payment"
-                          onClick={() => onRecordPayment(booking.id)}
-                          pendingLabel="Recording..."
-                        />
-                        <ActionButton
-                          ariaLabel="Mark Complimentary"
-                          disabled={!canMarkComplimentary || isPending || isSaving || isFinancePending}
-                          icon="redeem"
-                          isPending={isComplimentaryPending}
-                          label="Mark Complimentary"
-                          onClick={() => onMarkComplimentary(booking.id)}
-                          pendingLabel="Updating..."
-                        />
-                        <ActionButton
-                          ariaLabel="Mark Waived"
-                          disabled={!canMarkWaived || isPending || isSaving || isFinancePending}
-                          icon="remove_circle"
-                          isPending={isWaivedPending}
-                          label="Mark Waived"
-                          onClick={() => onMarkWaived(booking.id)}
-                          pendingLabel="Updating..."
-                        />
-                      </div>
-                    </section>
-                  ) : null}
-
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    {booking.status === "reserved" ? (
-                      <button
-                        aria-label={`Edit booking ${booking.id}`}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-on-surface shadow-sm"
-                        disabled={isPending || isSaving}
-                        onClick={() => onEditStart(booking)}
-                        type="button"
+                      <span
+                        className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${paymentStatusClassName(booking.payment_status)}`}
                       >
-                        Edit Party
-                      </button>
-                    ) : null}
-                    {booking.status === "reserved" ? (
-                      <>
-                        <ActionButton
-                          ariaLabel="Check In"
-                          disabled={isPending || isSaving}
-                          icon="how_to_reg"
-                          isPending={isCheckInPending}
-                          label="Check In"
-                          onClick={() => onCheckIn(booking.id)}
-                          pendingLabel="Checking in..."
-                        />
-                        <ActionButton
-                          ariaLabel="Mark No-Show"
-                          disabled={isPending || isSaving}
-                          icon="person_off"
-                          isPending={isNoShowPending}
-                          label="Mark No-Show"
-                          onClick={() => onNoShow(booking.id)}
-                          pendingLabel="Marking..."
-                        />
-                      </>
-                    ) : null}
-                    {booking.status === "checked_in" ? (
-                      <ActionButton
-                        ariaLabel="Complete Booking"
-                        disabled={isPending || isSaving}
-                        icon="task_alt"
-                        isPending={isCompletePending}
-                        label="Complete Booking"
-                        onClick={() => onComplete(booking.id)}
-                        pendingLabel="Completing..."
+                        {paymentStatusLabel(booking.payment_status)}
+                      </span>
+                    </div>
+
+                    {/* Override amount — compact */}
+                    <div>
+                      <input
+                        aria-label={`Override amount for booking ${booking.id}`}
+                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-on-surface placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-primary/20 ${showAmountError ? "border-rose-300 ring-1 ring-rose-200" : "border-slate-200"}`}
+                        inputMode="decimal"
+                        onChange={(event) => {
+                          onFinanceInputChange();
+                          setChargeDrafts((current) => ({
+                            ...current,
+                            [booking.id]: event.target.value,
+                          }));
+                        }}
+                        placeholder={resolvedAmountLabel ?? "Override amount"}
+                        type="text"
+                        value={chargeAmount}
                       />
-                    ) : null}
-                    <ActionButton
-                      ariaLabel="Cancel Booking"
+                      {showAmountError ? (
+                        <span className="mt-1 block text-xs font-medium text-rose-700">{feedbackMessage}</span>
+                      ) : null}
+                    </div>
+
+                    {/* Primary actions */}
+                    <div className="flex gap-2">
+                      <ActionButton
+                        ariaLabel="Post Charge"
+                        disabled={!canPostCharge || (!hasResolvedAmount && !hasChargeOverride) || isPending || isSaving || isFinancePending}
+                        icon="receipt_long"
+                        isPending={isPostChargePending}
+                        label="Post Charge"
+                        onClick={() => onPostCharge(booking.id, hasChargeOverride ? chargeOverride : undefined)}
+                        pendingLabel="Posting..."
+                        variant="primary"
+                      />
+                      <ActionButton
+                        ariaLabel="Record Payment"
+                        disabled={!canRecordPayment || isPending || isSaving || isFinancePending}
+                        icon="payments"
+                        isPending={isRecordPaymentPending}
+                        label="Record Payment"
+                        onClick={() => onRecordPayment(booking.id)}
+                        pendingLabel="Recording..."
+                        variant="secondary"
+                      />
+                    </div>
+
+                    {/* Exception actions */}
+                    <div className="flex gap-1 border-t border-slate-100 pt-2">
+                      <ActionButton
+                        ariaLabel="Mark Complimentary"
+                        disabled={!canMarkComplimentary || isPending || isSaving || isFinancePending}
+                        icon="redeem"
+                        isPending={isComplimentaryPending}
+                        label="Complimentary"
+                        onClick={() => onMarkComplimentary(booking.id)}
+                        pendingLabel="Updating..."
+                        variant="ghost"
+                      />
+                      <ActionButton
+                        ariaLabel="Mark Waived"
+                        disabled={!canMarkWaived || isPending || isSaving || isFinancePending}
+                        icon="remove_circle"
+                        isPending={isWaivedPending}
+                        label="Waive"
+                        onClick={() => onMarkWaived(booking.id)}
+                        pendingLabel="Updating..."
+                        variant="ghost"
+                      />
+                    </div>
+                  </section>
+                ) : null}
+
+                {/* Booking lifecycle actions */}
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {booking.status === "reserved" ? (
+                    <button
+                      aria-label={`Edit booking ${booking.id}`}
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-on-surface shadow-sm"
                       disabled={isPending || isSaving}
-                      icon="event_busy"
-                      isPending={isCancelPending}
-                      label="Cancel Booking"
-                      onClick={() => onCancel(booking.id)}
-                      pendingLabel="Cancelling..."
+                      onClick={() => onEditStart(booking)}
+                      type="button"
+                    >
+                      Edit Party
+                    </button>
+                  ) : null}
+                  {booking.status === "reserved" ? (
+                    <>
+                      <ActionButton
+                        ariaLabel="Check In"
+                        disabled={isPending || isSaving}
+                        icon="how_to_reg"
+                        isPending={isCheckInPending}
+                        label="Check In"
+                        onClick={() => onCheckIn(booking.id)}
+                        pendingLabel="Checking in..."
+                      />
+                      <ActionButton
+                        ariaLabel="Mark No-Show"
+                        disabled={isPending || isSaving}
+                        icon="person_off"
+                        isPending={isNoShowPending}
+                        label="Mark No-Show"
+                        onClick={() => onNoShow(booking.id)}
+                        pendingLabel="Marking..."
+                      />
+                    </>
+                  ) : null}
+                  {booking.status === "checked_in" ? (
+                    <ActionButton
+                      ariaLabel="Complete Booking"
+                      disabled={isPending || isSaving}
+                      icon="task_alt"
+                      isPending={isCompletePending}
+                      label="Complete Booking"
+                      onClick={() => onComplete(booking.id)}
+                      pendingLabel="Completing..."
                     />
-                  </div>
-                </article>
-              );
-            })}
-          </section>
+                  ) : null}
+                  <ActionButton
+                    ariaLabel="Cancel Booking"
+                    disabled={isPending || isSaving}
+                    icon="event_busy"
+                    isPending={isCancelPending}
+                    label="Cancel Booking"
+                    onClick={() => onCancel(booking.id)}
+                    pendingLabel="Cancelling..."
+                  />
+                </div>
+              </article>
+            );
+          })}
         </div>
       </aside>
     </>

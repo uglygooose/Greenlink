@@ -25,11 +25,19 @@ from app.models import (
     ClubMembershipStatus,
     Course,
     Person,
+    PricingDayType,
+    PricingMatrix,
+    PricingPlayerType,
+    PricingRule,
+    PricingRuleAppliesTo,
+    PricingSeason,
+    PricingTimeBand,
     StartLane,
     Tee,
     TeeSheetSlotState,
 )
 from app.scripts.seed_users import DEV_CLUB_SLUG, DEV_CLUB_TIMEZONE, seed_users
+from app.services.booking_commercial_service import BookingCommercialService
 
 DEMO_COURSE_NAME = "GreenLink Championship Course"
 DEMO_TIMEZONE = ZoneInfo(DEV_CLUB_TIMEZONE)
@@ -46,6 +54,7 @@ class DemoPersonSeed:
     last_name: str
     membership_number: str
     role: ClubMembershipRole
+    pricing_player_type: PricingPlayerType | None = None
 
     @property
     def full_name(self) -> str:
@@ -78,6 +87,13 @@ DEMO_MEMBERS: tuple[DemoPersonSeed, ...] = tuple(
         last_name=last_name,
         membership_number=f"GL-DEMO-M{index:03d}",
         role=ClubMembershipRole.MEMBER,
+        pricing_player_type=(
+            PricingPlayerType.SCHOLAR
+            if index <= 4
+            else PricingPlayerType.STUDENT
+            if index <= 8
+            else PricingPlayerType.PENSIONER
+        ),
     )
     for index, (first_name, last_name) in enumerate(
         (
@@ -105,6 +121,7 @@ DEMO_STAFF: tuple[DemoPersonSeed, ...] = (
         last_name="Starter",
         membership_number="GL-DEMO-S001",
         role=ClubMembershipRole.CLUB_STAFF,
+        pricing_player_type=PricingPlayerType.STAFF_COURTESY,
     ),
     DemoPersonSeed(
         email="demo.staff02@greenlink.test",
@@ -112,6 +129,7 @@ DEMO_STAFF: tuple[DemoPersonSeed, ...] = (
         last_name="Marshal",
         membership_number="GL-DEMO-S002",
         role=ClubMembershipRole.CLUB_STAFF,
+        pricing_player_type=PricingPlayerType.STAFF_COURTESY,
     ),
     DemoPersonSeed(
         email="demo.staff03@greenlink.test",
@@ -119,6 +137,7 @@ DEMO_STAFF: tuple[DemoPersonSeed, ...] = (
         last_name="Foreman",
         membership_number="GL-DEMO-S003",
         role=ClubMembershipRole.CLUB_STAFF,
+        pricing_player_type=PricingPlayerType.STAFF_COURTESY,
     ),
 )
 
@@ -292,7 +311,10 @@ def upsert_person_and_membership(db, club: Club, seed: DemoPersonSeed) -> ClubMe
             status=ClubMembershipStatus.ACTIVE,
             is_primary=True,
             membership_number=seed.membership_number,
-            membership_metadata={"demo_seed": True},
+            membership_metadata={
+                "demo_seed": True,
+                **({"pricing_player_type": seed.pricing_player_type.value} if seed.pricing_player_type else {}),
+            },
         )
         db.add(membership)
         db.flush()
@@ -304,9 +326,263 @@ def upsert_person_and_membership(db, club: Club, seed: DemoPersonSeed) -> ClubMe
     membership.membership_number = seed.membership_number
     metadata = dict(membership.membership_metadata or {})
     metadata["demo_seed"] = True
+    if seed.pricing_player_type is not None:
+        metadata["pricing_player_type"] = seed.pricing_player_type.value
     membership.membership_metadata = metadata
     db.flush()
     return membership
+
+
+def upsert_demo_pricing_matrix(db, club: Club) -> PricingMatrix:
+    matrix = db.scalar(select(PricingMatrix).where(PricingMatrix.club_id == club.id, PricingMatrix.name == "Demo Benchmark Pricing"))
+    if matrix is None:
+        matrix = PricingMatrix(club_id=club.id, name="Demo Benchmark Pricing", active=True)
+        db.add(matrix)
+        db.flush()
+    else:
+        matrix.active = True
+
+    for existing in list(matrix.rules):
+        db.delete(existing)
+    db.flush()
+
+    rules: tuple[PricingRule, ...] = (
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=9,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.OFF_PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("370.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=9,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("490.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=9,
+            day_type=PricingDayType.WEEKEND,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("490.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.OFF_PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("575.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("700.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKEND,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("700.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_NON_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.OFF_PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("700.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_NON_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.PEAK,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("900.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.GUEST,
+            player_type=PricingPlayerType.VISITOR_NON_AFFILIATED,
+            holes=18,
+            day_type=PricingDayType.WEEKEND,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("900.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.SCHOLAR,
+            holes=9,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("180.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.SCHOLAR,
+            holes=18,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("215.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.STUDENT,
+            holes=9,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("230.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.STUDENT,
+            holes=18,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("350.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.PENSIONER,
+            holes=9,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("230.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.PENSIONER,
+            holes=18,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("360.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.STAFF,
+            player_type=PricingPlayerType.STAFF_COURTESY,
+            holes=9,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("0.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.STAFF,
+            player_type=PricingPlayerType.STAFF_COURTESY,
+            holes=18,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("0.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        # Standard member fallback — covers any member without a special pricing category
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.MEMBER_STANDARD,
+            holes=9,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("250.00"),
+            currency="ZAR",
+            active=True,
+        ),
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.MEMBER_STANDARD,
+            holes=18,
+            day_type=PricingDayType.ANY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.ANY,
+            price=Decimal("380.00"),
+            currency="ZAR",
+            active=True,
+        ),
+    )
+    db.add_all(rules)
+    db.flush()
+
+    for other in db.scalars(select(PricingMatrix).where(PricingMatrix.club_id == club.id, PricingMatrix.id != matrix.id)):
+        other.active = False
+    return matrix
 
 
 def delete_existing_window_data(db, club: Club, course: Course, start_utc: datetime, end_utc: datetime) -> None:
@@ -543,6 +819,7 @@ def seed_bookings(
                     start_lane=template.lane.value,
                     slot_datetime=local_datetime.astimezone(UTC),
                     slot_interval_minutes=SLOT_INTERVAL_MINUTES,
+                    holes=course.holes,
                     status=booking_status_for_date(local_day, template_index=template_index, today=today),
                     source=BookingSource.ADMIN,
                     party_size=len(participants),
@@ -574,6 +851,7 @@ def seed_demo_golf_data() -> None:
         upsert_club_config(db, club)
         course = upsert_course(db, club)
         tees_by_name = {seed.name: upsert_tee(db, course, seed) for seed in TEE_SEEDS}
+        upsert_demo_pricing_matrix(db, club)
 
         for seed in (*DEMO_MEMBERS, *DEMO_STAFF):
             upsert_person_and_membership(db, club, seed)
@@ -631,6 +909,14 @@ def seed_demo_golf_data() -> None:
             end_date=end_date,
             today=today,
         )
+        db.flush()
+        commercial_service = BookingCommercialService(db)
+        for booking in db.scalars(
+            select(Booking)
+            .options(selectinload(Booking.participants))
+            .where(Booking.club_id == club.id, Booking.course_id == course.id)
+        ):
+            commercial_service.apply_snapshot(booking, commercial_service.snapshot_for_booking(booking))
         db.commit()
 
     print(

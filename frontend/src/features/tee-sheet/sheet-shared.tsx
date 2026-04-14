@@ -248,11 +248,14 @@ export function deriveBookingNextAction(
   booking: Pick<TeeSheetBookingView, "payment_status" | "slot_datetime" | "status">,
   referenceDatetime: string | null | undefined,
 ): BookingNextAction {
-  if (booking.status === "cancelled" || booking.status === "completed" || booking.status === "no_show") {
+  if (booking.status === "cancelled" || booking.status === "no_show") {
     return "completed";
   }
   if (booking.payment_status === "pending") {
     return "needs_payment";
+  }
+  if (booking.status === "completed") {
+    return "completed";
   }
   if (booking.status === "reserved" && referenceDatetime && Date.parse(booking.slot_datetime) < Date.parse(referenceDatetime)) {
     return "at_risk";

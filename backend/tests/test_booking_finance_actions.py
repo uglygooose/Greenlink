@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -165,6 +165,8 @@ def _create_booking(
     club: Club,
     course: Course,
     person: Person,
+    fee_amount: str | None = None,
+    fee_currency: str | None = None,
     payment_status: BookingPaymentStatus | None = None,
 ) -> Booking:
     booking = Booking(
@@ -179,6 +181,8 @@ def _create_booking(
         primary_person_id=person.id,
         primary_membership_id=None,
         fee_label="Member Weekend Rate",
+        fee_amount=fee_amount,
+        fee_currency=fee_currency,
         payment_status=payment_status,
     )
     db.add(booking)
@@ -254,6 +258,41 @@ def test_booking_finance_actions_post_charge_and_record_payment_happy_path(
     assert transactions[0].source == FinanceTransactionSource.BOOKING
     assert transactions[1].type == FinanceTransactionType.PAYMENT
     assert transactions[1].source == FinanceTransactionSource.BOOKING
+
+
+def test_booking_finance_actions_post_charge_uses_resolved_booking_fee_when_amount_is_omitted(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = _create_user(db_session, email="booking-finance-resolved-admin@example.com")
+    customer = _create_person(db_session, email="booking-finance-resolved-customer@example.com")
+    club = _create_club_with_config(db_session, name="Booking Finance Resolved Club", slug="booking-finance-resolved-club")
+    _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    account_customer = _create_account_customer(db_session, club=club, person=customer, account_code="MEM-110")
+    _create_finance_account(db_session, club=club, account_customer=account_customer)
+    course = _create_course(db_session, club=club, name="North")
+    booking = _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        person=customer,
+        fee_amount="370.00",
+        fee_currency="ZAR",
+    )
+    headers = _auth_headers(client, admin.email, str(club.id))
+
+    charge_response = client.post(
+        f"/api/golf/bookings/{booking.id}/post-charge",
+        headers=headers,
+        json={},
+    )
+    assert charge_response.status_code == 200
+    charge_payload = charge_response.json()
+    assert charge_payload["decision"] == "allowed"
+    assert charge_payload["posting_applied"] is True
+    assert charge_payload["booking"]["payment_status"] == "pending"
+    assert charge_payload["transaction"]["amount"] == "-370.00"
+    assert charge_payload["balance"] == "-370.00"
 
 
 def test_booking_finance_actions_allow_marking_booking_complimentary(
@@ -334,3 +373,98 @@ def test_booking_finance_actions_are_scoped_to_the_selected_club(
     assert payload["failures"][0]["code"] == "booking_not_found"
 
     assert len(db_session.scalars(select(FinanceTransaction)).all()) == 0
+
+
+def test_record_payment_clears_completed_pending_booking_from_finance_exceptions_and_tee_sheet(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = _create_user(db_session, email="booking-finance-consistency-admin@example.com")
+    customer = _create_person(db_session, email="booking-finance-consistency-customer@example.com")
+    club = _create_club_with_config(db_session, name="Booking Finance Consistency Club", slug="booking-finance-consistency-club")
+    _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    account_customer = _create_account_customer(db_session, club=club, person=customer, account_code="MEM-300")
+    _create_finance_account(db_session, club=club, account_customer=account_customer)
+    course = _create_course(db_session, club=club, name="North")
+    booking = _create_booking(db_session, club=club, course=course, person=customer)
+    headers = _auth_headers(client, admin.email, str(club.id))
+
+    charge_response = client.post(
+        f"/api/golf/bookings/{booking.id}/post-charge",
+        headers=headers,
+        json={"amount": "85.00"},
+    )
+    assert charge_response.status_code == 200
+    assert charge_response.json()["booking"]["payment_status"] == "pending"
+
+    booking.status = BookingStatus.COMPLETED
+    db_session.add(booking)
+    db_session.commit()
+    db_session.refresh(booking)
+
+    exceptions_before = client.get(
+        f"/api/finance/exceptions?date={date(2026, 4, 1).isoformat()}",
+        headers=headers,
+    )
+    assert exceptions_before.status_code == 200
+    assert [item["id"] for item in exceptions_before.json()["unpaid_bookings"]] == [str(booking.id)]
+
+    tee_sheet_before = client.get(
+        "/api/golf/tee-sheet/day",
+        headers=headers,
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 4, 1).isoformat(),
+            "membership_type": "member",
+        },
+    )
+    assert tee_sheet_before.status_code == 200
+    bookings_before = [
+        booking_view
+        for row in tee_sheet_before.json()["rows"]
+        for slot in row["slots"]
+        for booking_view in slot["bookings"]
+    ]
+    assert [(item["id"], item["status"], item["payment_status"]) for item in bookings_before] == [
+        (str(booking.id), "completed", "pending")
+    ]
+
+    record_response = client.post(
+        f"/api/golf/bookings/{booking.id}/record-payment",
+        headers=headers,
+        json={},
+    )
+    assert record_response.status_code == 200
+    record_payload = record_response.json()
+    assert record_payload["decision"] == "allowed"
+    assert record_payload["settlement_applied"] is True
+    assert record_payload["booking"]["payment_status"] == "paid"
+
+    persisted_booking = db_session.get(Booking, booking.id)
+    assert persisted_booking is not None
+    assert persisted_booking.payment_status == BookingPaymentStatus.PAID
+
+    exceptions_after = client.get(
+        f"/api/finance/exceptions?date={date(2026, 4, 1).isoformat()}",
+        headers=headers,
+    )
+    assert exceptions_after.status_code == 200
+    assert exceptions_after.json()["unpaid_bookings"] == []
+
+    tee_sheet_after = client.get(
+        "/api/golf/tee-sheet/day",
+        headers=headers,
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 4, 1).isoformat(),
+            "membership_type": "member",
+        },
+    )
+    assert tee_sheet_after.status_code == 200
+    bookings_after = [
+        booking_view
+        for row in tee_sheet_after.json()["rows"]
+        for slot in row["slots"]
+        for booking_view in slot["bookings"]
+    ]
+    assert bookings_after == []

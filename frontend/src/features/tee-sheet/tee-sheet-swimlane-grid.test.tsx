@@ -57,6 +57,7 @@ function buildLaneSlot(
               id: "booking-1",
               status: "reserved",
               party_size: 2,
+              holes: 18,
               slot_datetime: slotDatetime,
               start_lane: startLane,
               fee_label: "Member Weekend Rate",

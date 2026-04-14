@@ -298,7 +298,10 @@ class GolfSettingsService:
             rules=[
                 PricingRuleWriteRequest(
                     applies_to=rule.applies_to,
+                    player_type=rule.player_type,
+                    holes=rule.holes,
                     day_type=rule.day_type,
+                    season=rule.season,
                     time_band=rule.time_band,
                     time_band_ref=rule.time_band_ref,
                     price=rule.price,
@@ -385,7 +388,10 @@ class GolfSettingsService:
                 PricingRule(
                     matrix_id=matrix.id,
                     applies_to=item.applies_to,
+                    player_type=item.player_type,
+                    holes=item.holes,
                     day_type=item.day_type,
+                    season=item.season,
                     time_band=item.time_band,
                     time_band_ref=item.time_band_ref,
                     price=item.price,

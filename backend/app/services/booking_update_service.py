@@ -16,6 +16,7 @@ from app.models import (
     BookingStatus,
     ClubConfig,
     ClubMembership,
+    Course,
     StartLane,
     TeeSheetSlotState,
 )
@@ -29,6 +30,7 @@ from app.schemas.bookings import (
 )
 from app.schemas.rule_context import RuleContextInput
 from app.services.availability_service import AvailabilityService
+from app.services.booking_commercial_service import BookingCommercialService
 from app.services.booking_participant_resolver import (
     BookingParticipantResolver,
     ResolvedBookingParticipant,
@@ -47,6 +49,7 @@ class BookingUpdateService:
         self.rule_context_service = RuleContextService(db)
         self.booking_state_service = BookingStateService(db)
         self.availability_service = AvailabilityService(db)
+        self.booking_commercial_service = BookingCommercialService(db)
         self.participant_resolver = BookingParticipantResolver(db)
 
     def update_booking(
@@ -106,12 +109,28 @@ class BookingUpdateService:
         assert primary_participant is not None
 
         applies_to = payload.applies_to or derive_applies_to(primary_participant.participant_type)
-        membership_role = None
-        if primary_participant.club_membership_id is not None:
-            membership_role = self.db.scalar(
-                select(ClubMembership.role).where(
-                    ClubMembership.id == primary_participant.club_membership_id
-                )
+        membership_role, pricing_player_type = self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
+            primary_participant.club_membership_id,
+            participant_type=primary_participant.participant_type,
+        )
+        course_holes = self.db.scalar(select(Course.holes).where(Course.id == booking.course_id)) or booking.holes
+        try:
+            booking_holes = self.booking_commercial_service.resolve_booking_holes(
+                course_holes=course_holes,
+                requested_holes=payload.holes if payload.holes is not None else booking.holes,
+            )
+        except ValueError as exc:
+            return BookingUpdateResult(
+                booking_id=booking.id,
+                decision=BookingUpdateDecision.BLOCKED,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingUpdateFailureDetail(
+                        code="booking_holes_invalid",
+                        message=str(exc),
+                        field="holes",
+                    )
+                ],
             )
 
         reference_datetime = (
@@ -127,6 +146,8 @@ class BookingUpdateService:
                     tee_id=booking.tee_id,
                     applies_to=applies_to,
                     membership_role=membership_role,
+                    pricing_player_type=pricing_player_type,
+                    holes=booking_holes,
                     effective_datetime=booking.slot_datetime,
                     reference_datetime=reference_datetime,
                 )
@@ -197,8 +218,14 @@ class BookingUpdateService:
         booking.primary_person_id = primary_participant.person_id
         booking.primary_membership_id = primary_participant.club_membership_id
         booking.party_size = len(resolved_participants)
+        booking.holes = booking_holes
         booking.cart_flag = payload.cart_flag
         booking.caddie_flag = payload.caddie_flag
+        if booking.payment_status is None:
+            self.booking_commercial_service.apply_snapshot(
+                booking,
+                self.booking_commercial_service.snapshot_from_availability(availability),
+            )
         booking.participants = [
             self._to_booking_participant(booking_id=booking.id, participant=participant)
             for participant in resolved_participants

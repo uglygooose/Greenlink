@@ -18,6 +18,7 @@ import { ApiError } from "../api/client";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery, useTeesQuery } from "../features/golf-settings/hooks";
+import { invalidateClubOperationalReadModels } from "../features/operational-read-models/invalidation";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { BookingCreateDrawer } from "../features/tee-sheet/booking-create-drawer";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
@@ -76,7 +77,8 @@ import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView }
 
 type DrawerMode = "create" | "manage";
 type Notice = { message: string; tone: "success" | "info" | "error" };
-type SelectedSlotKey = { rowKey: string; slotDatetime: string };
+type DrawerFeedback = { bookingId: string | null; field: string | null; message: string };
+type SelectedSlotKey = { startLane: StartLane | null; slotDatetime: string };
 type ExpandedBookingContext = SelectedSlotKey & {
   bookingId: string;
   cellKey: string;
@@ -188,6 +190,13 @@ function localDateString(date: Date): string {
 
 function todayValue(): string {
   return localDateString(new Date());
+}
+
+function normalizedDateSearchParam(value: string | null): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  return value;
 }
 
 function addDays(value: string, amount: number): string {
@@ -503,20 +512,20 @@ function bookingIsUnresolved(booking: Pick<TeeSheetBookingView, "payment_status"
 
 function matchesExpandedBooking(
   context: ExpandedBookingContext | null,
-  slot: Pick<LaneSlot, "rowKey" | "slot">,
+  slot: Pick<LaneSlot, "startLane" | "slot">,
   bookingId: string,
 ): boolean {
   return Boolean(
     context &&
     context.bookingId === bookingId &&
-    context.rowKey === slot.rowKey &&
+    context.startLane === slot.startLane &&
     context.slotDatetime === slot.slot.slot_datetime,
   );
 }
 
 function matchesExpandedBookingCell(
   context: ExpandedBookingContext | null,
-  slot: Pick<LaneSlot, "rowKey" | "slot">,
+  slot: Pick<LaneSlot, "startLane" | "slot">,
   bookingId: string,
   cellKey: string,
 ): boolean {
@@ -732,10 +741,45 @@ function bookingFeedback(result: BookingCreateResult | BookingUpdateResult): { m
   };
 }
 
-function bookingFinanceBlockedMessage(
+function bookingFinanceFeedback(
   result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult,
-): string {
-  return result.failures[0]?.message ?? "Finance action blocked.";
+): DrawerFeedback {
+  const failure = result.failures[0];
+  if (!failure) {
+    return { bookingId: result.booking_id, field: null, message: "Finance action blocked." };
+  }
+  switch (failure.code) {
+    case "booking_charge_not_posted":
+      return {
+        bookingId: result.booking_id,
+        field: null,
+        message: "Post the booking charge before recording payment.",
+      };
+    case "booking_finance_account_not_found":
+      return {
+        bookingId: result.booking_id,
+        field: null,
+        message: "Link an active finance account to this booking before posting the charge.",
+      };
+    case "booking_finance_account_closed":
+      return {
+        bookingId: result.booking_id,
+        field: null,
+        message: "The linked finance account is closed. Reopen or replace it before posting the charge.",
+      };
+    case "booking_charge_amount_unresolved":
+      return {
+        bookingId: result.booking_id,
+        field: "amount",
+        message: "Resolved booking price is unavailable. Enter an override amount or fix pricing setup first.",
+      };
+    default:
+      return {
+        bookingId: result.booking_id,
+        field: failure.field ?? null,
+        message: failure.message,
+      };
+  }
 }
 
 function bookingFinanceSuccessMessage(
@@ -821,19 +865,24 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap, initialized, loading } = useSession();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState(todayValue);
+  const deepLinkedDate = normalizedDateSearchParam(searchParams.get("date"));
+  const deepLinkedCourseId = searchParams.get("courseId");
+  const [selectedDate, setSelectedDate] = useState(() => deepLinkedDate ?? todayValue());
   const membershipType: BookingRuleAppliesTo = "staff";
-  const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseId, setCourseId] = useState<string | null>(deepLinkedCourseId);
   const teeId = null;
   const [drawerMode, setDrawerMode] = useState<DrawerMode | null>(null);
   const [selectedSlotKey, setSelectedSlotKey] = useState<SelectedSlotKey | null>(null);
   const [drawerFeedbackMessage, setDrawerFeedbackMessage] = useState<string | null>(null);
   const [drawerFeedbackTone, setDrawerFeedbackTone] = useState<"error" | "info" | null>(null);
+  const [drawerFeedbackField, setDrawerFeedbackField] = useState<string | null>(null);
+  const [drawerFeedbackBookingId, setDrawerFeedbackBookingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [drafts, setDrafts] = useState<DraftParticipant[]>(initialDrafts("member"));
   const [createCartFlag, setCreateCartFlag] = useState(false);
   const [createCaddieFlag, setCreateCaddieFlag] = useState(false);
   const [dragged, setDragged] = useState<Dragged | null>(null);
+  const draggedRef = useRef<Dragged | null>(null);
   const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
   const [searchInputValue, setSearchInputValue] = useState("");
   // 5.5: Compound filter state replaces single ViewFilter.
@@ -853,6 +902,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       return "classic";
     }
   });
+
+  useEffect(() => {
+    if (drawerFeedbackMessage !== null) return;
+    setDrawerFeedbackField(null);
+    setDrawerFeedbackBookingId(null);
+  }, [drawerFeedbackMessage]);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<DraftParticipant[]>([]);
   const [editCartFlag, setEditCartFlag] = useState(false);
@@ -883,6 +938,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const coursesQuery = useCoursesQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
   const teesQuery = useTeesQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
   const directoryQuery = useClubDirectoryQuery({ accessToken: guardedAccessToken, selectedClubId: guardedSelectedClubId });
+  const selectedCourse = useMemo(
+    () => (coursesQuery.data ?? []).find((course) => course.id === courseId) ?? null,
+    [courseId, coursesQuery.data],
+  );
   const activeCourseTees = useMemo(
     () => (teesQuery.data ?? []).filter((tee: Tee) => tee.course_id === courseId && tee.active),
     [courseId, teesQuery.data],
@@ -1063,7 +1122,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const selectedSlot = useMemo(
     () =>
       selectedSlotKey
-        ? slots.find((item) => item.rowKey === selectedSlotKey.rowKey && item.slot.slot_datetime === selectedSlotKey.slotDatetime) ?? null
+        ? slots.find((item) => item.startLane === selectedSlotKey.startLane && item.slot.slot_datetime === selectedSlotKey.slotDatetime) ?? null
         : null,
     [selectedSlotKey, slots],
   );
@@ -1100,8 +1159,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     guardedSelectedClubId && courseId ? teeSheetKeys.day(guardedSelectedClubId, courseId, selectedDate, membershipType, teeId) : null;
 
   async function invalidate(): Promise<void> {
-    if (!currentDayKey) return;
-    await queryClient.invalidateQueries({ queryKey: currentDayKey });
+    await invalidateClubOperationalReadModels(queryClient, guardedSelectedClubId);
   }
 
   function rollbackLifecycleContext(context?: { previousDay: TeeSheetDayResponse | undefined }): void {
@@ -1288,10 +1346,15 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       ),
     onSuccess: async (result, variables) => {
       if (result.decision === "blocked") {
+        const feedback = bookingFinanceFeedback(result);
+        setDrawerFeedbackField(feedback.field);
+        setDrawerFeedbackBookingId(feedback.bookingId);
         setDrawerFeedbackTone("error");
-        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        setDrawerFeedbackMessage(feedback.message);
         return;
       }
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("info");
       setDrawerFeedbackMessage(
         bookingFinanceSuccessMessage(
@@ -1302,29 +1365,38 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       await invalidate();
     },
     onError: (error) => {
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("error");
       setDrawerFeedbackMessage(asMessage(error));
     },
   });
 
   const postChargeMutation = useMutation({
-    mutationFn: ({ bookingId, amount }: { bookingId: string; amount: string }) =>
+    mutationFn: ({ bookingId, amount }: { bookingId: string; amount?: string }) =>
       postBookingCharge(
         bookingId,
-        { amount },
+        amount ? { amount } : {},
         { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
       ),
     onSuccess: async (result) => {
       if (result.decision === "blocked") {
+        const feedback = bookingFinanceFeedback(result);
+        setDrawerFeedbackField(feedback.field);
+        setDrawerFeedbackBookingId(feedback.bookingId);
         setDrawerFeedbackTone("error");
-        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        setDrawerFeedbackMessage(feedback.message);
         return;
       }
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("info");
       setDrawerFeedbackMessage(bookingFinanceSuccessMessage("post_charge", result));
       await invalidate();
     },
     onError: (error) => {
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("error");
       setDrawerFeedbackMessage(asMessage(error));
     },
@@ -1335,15 +1407,22 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       recordBookingPayment(bookingId, { accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
     onSuccess: async (result) => {
       if (result.decision === "blocked") {
+        const feedback = bookingFinanceFeedback(result);
+        setDrawerFeedbackField(feedback.field);
+        setDrawerFeedbackBookingId(feedback.bookingId);
         setDrawerFeedbackTone("error");
-        setDrawerFeedbackMessage(bookingFinanceBlockedMessage(result));
+        setDrawerFeedbackMessage(feedback.message);
         return;
       }
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("info");
       setDrawerFeedbackMessage(bookingFinanceSuccessMessage("record_payment", result));
       await invalidate();
     },
     onError: (error) => {
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
       setDrawerFeedbackTone("error");
       setDrawerFeedbackMessage(asMessage(error));
     },
@@ -1377,7 +1456,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         if (currentDayKey && context?.previousDay) queryClient.setQueryData(currentDayKey, context.previousDay);
         const message = result.failures[0]?.message ?? "Move blocked.";
         setNotice({ tone: "error", message });
-        if (selectedSlotKey?.rowKey === variables.target.rowKey && selectedSlotKey.slotDatetime === variables.target.slot.slot_datetime) {
+        if (selectedSlotKey?.startLane === variables.target.startLane && selectedSlotKey.slotDatetime === variables.target.slot.slot_datetime) {
           setDrawerFeedbackTone("error");
           setDrawerFeedbackMessage(message);
         }
@@ -1517,7 +1596,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     resetCreateDrafts();
     setDrawerMode("manage");
     resetEditState();
-    setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+    setSelectedSlotKey({ startLane: slot.startLane, slotDatetime: slot.slot.slot_datetime });
   }, [resetCreateDrafts, resetEditState]);
 
   const openCreate = useCallback((slot: LaneSlot): void => {
@@ -1529,7 +1608,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     resetCreateDrafts();
     setDrawerMode("create");
     resetEditState();
-    setSelectedSlotKey({ rowKey: slot.rowKey, slotDatetime: slot.slot.slot_datetime });
+    setSelectedSlotKey({ startLane: slot.startLane, slotDatetime: slot.slot.slot_datetime });
   }, [resetCreateDrafts, resetEditState]);
 
   const toggleBookingExpansion = useCallback((
@@ -1549,7 +1628,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             participantId: participantId ?? null,
             focusedParticipantName: focusedParticipantName ?? null,
             focusedParticipantType: focusedParticipantType ?? null,
-            rowKey: slot.rowKey,
+            startLane: slot.startLane,
             slotDatetime: slot.slot.slot_datetime,
           }
     ));
@@ -1571,7 +1650,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       participantId: leadParticipant?.id ?? null,
       focusedParticipantName: leadParticipant?.display_name ?? null,
       focusedParticipantType: leadParticipant?.participant_type ?? null,
-      rowKey: slot.rowKey,
+      startLane: slot.startLane,
       slotDatetime: slot.slot.slot_datetime,
     });
     window.setTimeout(() => setHighlightedSlotKey(null), 1500);
@@ -1625,8 +1704,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setDrafts((current) => current.map((participant) => (participant.key === key ? { ...participant, ...patch } : participant)));
   }
 
-  function addDraft(): void {
-    setDrafts((current) => (current.length >= 4 ? current : [...current, { key: nextKey(), participant_type: "guest", person_id: null, guest_name: "", is_primary: false }]));
+  function addDraft(type: BookingParticipantType): void {
+    setDrafts((current) => (current.length >= 4 ? current : [...current, { key: nextKey(), participant_type: type, person_id: null, guest_name: "", is_primary: false }]));
   }
 
   function removeDraft(key: string): void {
@@ -1637,8 +1716,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setEditDrafts((current) => current.map((participant) => (participant.key === key ? { ...participant, ...patch } : participant)));
   }
 
-  function addEditDraft(): void {
-    setEditDrafts((current) => (current.length >= 4 ? current : [...current, { key: nextKey(), participant_type: "guest", person_id: null, guest_name: "", is_primary: false }]));
+  function addEditDraft(type: BookingParticipantType): void {
+    setEditDrafts((current) => (current.length >= 4 ? current : [...current, { key: nextKey(), participant_type: type, person_id: null, guest_name: "", is_primary: false }]));
   }
 
   function removeEditDraft(key: string): void {
@@ -1663,6 +1742,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   function createPayload(slot: LaneSlot): BookingCreateInput {
     const participants = asParticipantPayload(drafts);
     const primary = drafts.find((participant) => participant.is_primary);
+    const appliesTo = primary?.participant_type === "staff" ? "staff" : primary?.participant_type === "guest" ? "guest" : primary?.participant_type === "member" ? "member" : undefined;
     return {
       course_id: courseId as string,
       tee_id: slot.teeId,
@@ -1670,7 +1750,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       slot_datetime: slot.slot.slot_datetime,
       slot_interval_minutes: teeSheetQuery.data?.interval_minutes ?? null,
       source: "admin",
-      applies_to: primary?.participant_type === "staff" ? "staff" : primary?.participant_type === "member" ? "member" : undefined,
+      holes: selectedCourse?.holes ?? null,
+      applies_to: appliesTo,
       reference_datetime: teeSheetQuery.data?.reference_datetime ?? null,
       cart_flag: createCartFlag,
       caddie_flag: createCaddieFlag,
@@ -1681,8 +1762,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   function updatePayload(): BookingUpdateInput {
     const participants = asParticipantPayload(editDrafts);
     const primary = editDrafts.find((participant) => participant.is_primary);
+    const appliesTo = primary?.participant_type === "staff" ? "staff" : primary?.participant_type === "guest" ? "guest" : primary?.participant_type === "member" ? "member" : undefined;
     return {
-      applies_to: primary?.participant_type === "staff" ? "staff" : primary?.participant_type === "member" ? "member" : undefined,
+      holes: selectedCourse?.holes ?? null,
+      applies_to: appliesTo,
       reference_datetime: teeSheetQuery.data?.reference_datetime ?? null,
       cart_flag: editCartFlag,
       caddie_flag: editCaddieFlag,
@@ -1694,9 +1777,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return `${slot.rowKey}:${slot.slot.slot_datetime}`;
   }
 
-  function dropAllowed(target: LaneSlot): boolean {
-    return Boolean(dragged && canDrop(target.slot) && !(dragged.rowKey === target.rowKey && dragged.slotDatetime === target.slot.slot_datetime));
-  }
+  const dropAllowed = useCallback((target: LaneSlot): boolean => {
+    const d = draggedRef.current;
+    return Boolean(d && canDrop(target.slot) && !(d.rowKey === target.rowKey && d.slotDatetime === target.slot.slot_datetime));
+  }, []);
 
   const startDrag = useCallback((
     event: DragEvent<HTMLElement>,
@@ -1708,21 +1792,45 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", bookingId);
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        event.dataTransfer.setDragImage(canvas, 0, 0);
+      } catch {
+        // setDragImage is best-effort; ignore if unavailable
+      }
     }
-    setDragged({
+    const dragState: Dragged = {
       bookingId,
       cellKey,
       participantId: participantId ?? null,
       rowKey: slot.rowKey,
       slotDatetime: slot.slot.slot_datetime,
-    });
+    };
+    draggedRef.current = dragState;
+    setDragged(dragState);
     setNotice(null);
   }, []);
 
   const endDrag = useCallback((): void => {
+    draggedRef.current = null;
     setDragged(null);
     setActiveDropKey(null);
   }, []);
+
+  // Stable wrappers so TeeSheetSwimLaneGrid never gets new function references on
+  // re-renders that are unrelated to drag state changes.
+  const onGridCheckInAllRef = useRef<(slotDatetime: string) => Promise<void>>(async () => undefined);
+  const onGridCheckInAll = useCallback((slotDatetime: string): void => {
+    void onGridCheckInAllRef.current(slotDatetime);
+  }, []);
+
+  const onGridMoveBooking = useCallback((target: LaneSlot): void => {
+    const d = draggedRef.current;
+    if (!d) return;
+    moveMutation.mutate({ bookingId: d.bookingId, target });
+  }, [moveMutation]);
 
   const runInlineQuickAction = useCallback(async (action: QuickAction, bookingId: string): Promise<void> => {
     if (!accessToken || !selectedClubId) return;
@@ -1854,6 +1962,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       setCheckingInAllBucket(null);
     }
   }
+  // Keep the stable grid callback pointing at the latest handleCheckInAll closure.
+  onGridCheckInAllRef.current = handleCheckInAll;
 
   async function handleBatchNoShow(): Promise<void> {
     if (!accessToken || !selectedClubId) return;
@@ -2648,7 +2758,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                               const targetKey = dropKey(item);
                               const allowedDrop = dropAllowed(item);
                               const bucketExpandedRowCount = expandedBookingContext && bucket.slots.some((slot) => (
-                                slot.rowKey === expandedBookingContext.rowKey &&
+                                slot.startLane === expandedBookingContext.startLane &&
                                 slot.slot.slot_datetime === expandedBookingContext.slotDatetime
                               )) ? 1 : 0;
                               const isMultiLane = bucket.slots.length > 1;
@@ -3008,14 +3118,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     highlightedSlotKey={highlightedSlotKey}
                     intervalMinutes={teeSheetQuery.data?.interval_minutes ?? 30}
                     movingBookingId={movingBookingId}
-                    onCheckInAll={(slotDatetime) => {
-                      void handleCheckInAll(slotDatetime);
-                    }}
+                    onCheckInAll={onGridCheckInAll}
                     onEndDrag={endDrag}
-                    onMoveBooking={(target) => {
-                      if (!dragged) return;
-                      moveMutation.mutate({ bookingId: dragged.bookingId, target });
-                    }}
+                    onMoveBooking={onGridMoveBooking}
                     onOpenCreate={openCreate}
                     onOpenManage={openManage}
                     onQuickAction={handleInlineQuickAction}
@@ -3177,6 +3282,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
               editCartFlag={editCartFlag}
               colorCode={selectedSlot.colorCode}
               directory={directory}
+              feedbackBookingId={drawerFeedbackBookingId}
+              feedbackField={drawerFeedbackField}
               editingBookingId={editingBookingId}
               editParticipants={editDrafts}
               feedbackMessage={drawerFeedbackMessage}
@@ -3214,6 +3321,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 void updateMutation.mutateAsync({ bookingId, payload: updatePayload() });
               }}
               onEditStart={startEdit}
+              onFinanceInputChange={() => {
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+              }}
               onMarkComplimentary={(bookingId) => {
                 setNotice(null);
                 setDrawerFeedbackMessage(null);

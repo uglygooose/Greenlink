@@ -124,7 +124,7 @@ describe("order mutation invalidation", () => {
     });
   });
 
-  test("create order invalidates order, halfway, finance, dashboard, and reports reads", async () => {
+  test("create order invalidates tee sheet, order, halfway, finance, dashboard, and reports reads", async () => {
     const queryClient = buildQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
@@ -145,11 +145,15 @@ describe("order mutation invalidation", () => {
       expect(mockCreateOrder).toHaveBeenCalled();
     });
     await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tee-sheet", "club-1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["halfway", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "accounts"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "journal"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "revenue"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "outstanding"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "transaction-volume"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "exceptions"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-dashboard", "club-1", "summary"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-reports", "club-1", "summary"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1", "detail", "order-1"] });
@@ -222,11 +226,15 @@ describe("order mutation invalidation", () => {
       );
     });
     await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tee-sheet", "club-1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["halfway", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "accounts"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "journal"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "revenue"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "outstanding"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "transaction-volume"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "exceptions"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-dashboard", "club-1", "summary"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-reports", "club-1", "summary"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1", "detail", "order-1"] });

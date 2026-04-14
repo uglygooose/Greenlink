@@ -14,7 +14,9 @@ from app.models import (
     BookingRuleScopeType,
     BookingRuleType,
     PricingDayType,
+    PricingPlayerType,
     PricingRuleAppliesTo,
+    PricingSeason,
     PricingTimeBand,
 )
 
@@ -28,6 +30,96 @@ OPERATING_DAYS = (
     "saturday",
     "sunday",
 )
+
+
+def _validate_pricing_holes(value: int) -> int:
+    if value not in {9, 18}:
+        raise ValueError("holes must be 9 or 18")
+    return value
+
+
+def _pricing_dimension_specificity(
+    *,
+    day_type: PricingDayType,
+    season: PricingSeason,
+    time_band: PricingTimeBand,
+) -> int:
+    return int(day_type != PricingDayType.ANY) + int(season != PricingSeason.ANY) + int(time_band != PricingTimeBand.ANY)
+
+
+def _pricing_rules_overlap(left: "PricingRuleWriteRequest", right: "PricingRuleWriteRequest") -> bool:
+    if left.applies_to != right.applies_to:
+        return False
+    if left.player_type != right.player_type:
+        return False
+    if left.holes != right.holes:
+        return False
+    if left.day_type != PricingDayType.ANY and right.day_type != PricingDayType.ANY and left.day_type != right.day_type:
+        return False
+    if left.season != PricingSeason.ANY and right.season != PricingSeason.ANY and left.season != right.season:
+        return False
+    if left.time_band != PricingTimeBand.ANY and right.time_band != PricingTimeBand.ANY and left.time_band != right.time_band:
+        return False
+    if left.time_band == right.time_band == PricingTimeBand.CUSTOM:
+        return left.time_band_ref == right.time_band_ref
+    return True
+
+
+def _pricing_rule_dominates(left: "PricingRuleWriteRequest", right: "PricingRuleWriteRequest") -> bool:
+    if left.applies_to != right.applies_to or left.player_type != right.player_type or left.holes != right.holes:
+        return False
+    if right.day_type != PricingDayType.ANY and left.day_type != right.day_type:
+        return False
+    if right.season != PricingSeason.ANY and left.season != right.season:
+        return False
+    if right.time_band != PricingTimeBand.ANY:
+        if left.time_band != right.time_band:
+            return False
+        if right.time_band == PricingTimeBand.CUSTOM and left.time_band_ref != right.time_band_ref:
+            return False
+    return _pricing_dimension_specificity(
+        day_type=left.day_type,
+        season=left.season,
+        time_band=left.time_band,
+    ) > _pricing_dimension_specificity(
+        day_type=right.day_type,
+        season=right.season,
+        time_band=right.time_band,
+    )
+
+
+def _validate_pricing_rule_conflicts(rules: list["PricingRuleWriteRequest"]) -> None:
+    active_rules = [rule for rule in rules if rule.active]
+    for index, left in enumerate(active_rules):
+        for other_index, right in enumerate(active_rules[index + 1 :], start=index + 1):
+            if not _pricing_rules_overlap(left, right):
+                continue
+            if _pricing_rule_dominates(left, right) or _pricing_rule_dominates(right, left):
+                continue
+            raise ValueError(
+                "pricing rules conflict for the same player_type/holes combination "
+                f"(rows {index + 1} and {other_index + 1})"
+            )
+
+
+def _validate_pricing_player_type_bucket(
+    applies_to: PricingRuleAppliesTo,
+    player_type: PricingPlayerType,
+) -> None:
+    if player_type in {
+        PricingPlayerType.SCHOLAR,
+        PricingPlayerType.STUDENT,
+        PricingPlayerType.PENSIONER,
+        PricingPlayerType.MEMBER_STANDARD,
+    } and applies_to != PricingRuleAppliesTo.MEMBER:
+        raise ValueError("player_type requires applies_to member")
+    if player_type in {
+        PricingPlayerType.VISITOR_AFFILIATED,
+        PricingPlayerType.VISITOR_NON_AFFILIATED,
+    } and applies_to != PricingRuleAppliesTo.GUEST:
+        raise ValueError("visitor player_type requires applies_to guest")
+    if player_type == PricingPlayerType.STAFF_COURTESY and applies_to != PricingRuleAppliesTo.STAFF:
+        raise ValueError("staff_courtesy player_type requires applies_to staff")
 
 
 class OperatingHoursEntry(BaseModel):
@@ -250,8 +342,11 @@ class BookingRuleSetResponse(BaseModel):
 
 class PricingRuleWriteRequest(BaseModel):
     applies_to: PricingRuleAppliesTo
-    day_type: PricingDayType
-    time_band: PricingTimeBand
+    player_type: PricingPlayerType
+    holes: int
+    day_type: PricingDayType = PricingDayType.ANY
+    season: PricingSeason = PricingSeason.ANY
+    time_band: PricingTimeBand = PricingTimeBand.ANY
     time_band_ref: str | None = Field(default=None, max_length=120)
     price: Decimal = Field(ge=0)
     currency: str = Field(min_length=3, max_length=3)
@@ -262,8 +357,14 @@ class PricingRuleWriteRequest(BaseModel):
     def normalize_currency(cls, value: str) -> str:
         return value.upper()
 
+    @field_validator("holes")
+    @classmethod
+    def validate_holes(cls, value: int) -> int:
+        return _validate_pricing_holes(value)
+
     @model_validator(mode="after")
     def validate_time_band_contract(self) -> PricingRuleWriteRequest:
+        _validate_pricing_player_type_bucket(self.applies_to, self.player_type)
         if self.time_band == PricingTimeBand.CUSTOM and not self.time_band_ref:
             raise ValueError("time_band_ref is required when time_band is custom")
         if self.time_band != PricingTimeBand.CUSTOM and self.time_band_ref is not None:
@@ -276,7 +377,10 @@ class PricingRuleResponse(BaseModel):
 
     id: uuid.UUID
     applies_to: PricingRuleAppliesTo
+    player_type: PricingPlayerType
+    holes: int
     day_type: PricingDayType
+    season: PricingSeason
     time_band: PricingTimeBand
     time_band_ref: str | None
     price: Decimal
@@ -290,6 +394,11 @@ class PricingMatrixCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     active: bool = True
     rules: list[PricingRuleWriteRequest] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_rule_conflicts(self) -> "PricingMatrixCreateRequest":
+        _validate_pricing_rule_conflicts(self.rules)
+        return self
 
 
 class PricingMatrixUpdateRequest(PricingMatrixCreateRequest):

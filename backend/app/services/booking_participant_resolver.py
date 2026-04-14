@@ -143,4 +143,6 @@ class BookingParticipantResolver:
 def derive_applies_to(participant_type: BookingParticipantType) -> BookingRuleAppliesTo:
     if participant_type == BookingParticipantType.STAFF:
         return BookingRuleAppliesTo.STAFF
+    if participant_type == BookingParticipantType.GUEST:
+        return BookingRuleAppliesTo.GUEST
     return BookingRuleAppliesTo.MEMBER

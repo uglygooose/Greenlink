@@ -132,8 +132,11 @@ def _create_pricing_matrix(
             "rules": [
                 {
                     "applies_to": applies_to,
+                    "player_type": "member_standard",
+                    "holes": 18,
                     "day_type": "weekday",
-                    "time_band": "morning",
+                    "season": "any",
+                    "time_band": "any",
                     "price": price,
                     "currency": "ZAR",
                     "active": True,

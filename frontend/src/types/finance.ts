@@ -327,6 +327,7 @@ export interface AccountingMappedExportPreview {
 
 export interface FinanceUnpaidBooking {
   id: string;
+  course_id: string;
   slot_datetime: string;
   party_size: number;
   fee_label: string | null;

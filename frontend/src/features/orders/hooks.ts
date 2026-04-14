@@ -13,10 +13,7 @@ import {
   postOrderCharge,
 } from "../../api/operations";
 import { useSession } from "../../session/session-context";
-import { adminDashboardKeys } from "../admin-dashboard/hooks";
-import { halfwayKeys } from "../admin-dashboard/halfway-hooks";
-import { reportsKeys } from "../admin-dashboard/reports-hooks";
-import { financeKeys } from "../finance/hooks";
+import { invalidateClubOperationalReadModels } from "../operational-read-models/invalidation";
 import type {
   OrderChargePostResult,
   OrderCreateInput,
@@ -52,15 +49,7 @@ async function invalidateOrderReads(
   selectedClubId: string,
   orderId?: string,
 ): Promise<void> {
-  const invalidations: Array<Promise<void>> = [
-    queryClient.invalidateQueries({ queryKey: ["orders", selectedClubId] }),
-    queryClient.invalidateQueries({ queryKey: halfwayKeys.summary(selectedClubId) }),
-    queryClient.invalidateQueries({ queryKey: financeKeys.revenueSummary(selectedClubId) }),
-    queryClient.invalidateQueries({ queryKey: financeKeys.outstandingSummary(selectedClubId) }),
-    queryClient.invalidateQueries({ queryKey: financeKeys.transactionVolumeSummary(selectedClubId) }),
-    queryClient.invalidateQueries({ queryKey: adminDashboardKeys.summary(selectedClubId) }),
-    queryClient.invalidateQueries({ queryKey: reportsKeys.summary(selectedClubId) }),
-  ];
+  const invalidations: Array<Promise<void>> = [invalidateClubOperationalReadModels(queryClient, selectedClubId)];
 
   if (orderId) {
     invalidations.push(queryClient.invalidateQueries({ queryKey: orderKeys.detail(selectedClubId, orderId) }));

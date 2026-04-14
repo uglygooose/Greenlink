@@ -12,7 +12,9 @@ from app.models import (
     BookingRuleScopeType,
     BookingRuleType,
     PricingDayType,
+    PricingPlayerType,
     PricingRuleAppliesTo,
+    PricingSeason,
     PricingTimeBand,
 )
 from app.schemas.rule_context import ContextNotice, NormalizedRuleContext
@@ -52,7 +54,10 @@ class PricingCandidate(BaseModel):
     matrix_name: str
     rule_id: uuid.UUID
     applies_to: PricingRuleAppliesTo
+    player_type: PricingPlayerType
+    holes: int
     day_type: PricingDayType
+    season: PricingSeason
     time_band: PricingTimeBand
     time_band_ref: str | None = None
     price: Decimal
@@ -65,14 +70,20 @@ class PricingIgnoredTrace(BaseModel):
     matrix_name: str
     rule_id: uuid.UUID
     applies_to: PricingRuleAppliesTo
+    player_type: PricingPlayerType
+    holes: int
     day_type: PricingDayType
+    season: PricingSeason
     time_band: PricingTimeBand
     time_band_ref: str | None = None
     reason: str
 
 
 class PricingEvaluationResult(BaseModel):
+    context_player_type: PricingPlayerType | None = None
+    context_holes: int | None = None
     context_day_type: PricingDayType | None = None
+    context_season: PricingSeason | None = None
     context_time_band: PricingTimeBand | None = None
     context_time_band_ref: str | None = None
     candidate_rules: list[PricingCandidate]

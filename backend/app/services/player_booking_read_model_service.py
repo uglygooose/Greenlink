@@ -122,6 +122,7 @@ class PlayerBookingReadModelService:
             status=booking.status,
             source=booking.source,
             slot_datetime=booking.slot_datetime,
+            holes=booking.holes,
             local_date=local_slot.date().isoformat(),
             local_time=local_slot.strftime("%H:%M"),
             course_name=course_name,
@@ -131,5 +132,7 @@ class PlayerBookingReadModelService:
             primary_participant_name=primary_participant.display_name if primary_participant else None,
             participant_names=participant_names,
             fee_label=booking.fee_label,
+            fee_amount=booking.fee_amount,
+            fee_currency=booking.fee_currency,
             payment_status=booking.payment_status,
         )

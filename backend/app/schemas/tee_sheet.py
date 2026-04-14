@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -70,11 +71,14 @@ class TeeSheetBookingSummary(BaseModel):
     id: uuid.UUID
     status: BookingStatus
     party_size: int
+    holes: int
     slot_datetime: datetime
     start_lane: StartLane | None = None
     cart_flag: bool = False
     caddie_flag: bool = False
     fee_label: str | None = None
+    fee_amount: Decimal | None = None
+    fee_currency: str | None = None
     payment_status: BookingPaymentStatus | None = None
     participants: list[TeeSheetBookingParticipantSummary] = Field(default_factory=list)
 

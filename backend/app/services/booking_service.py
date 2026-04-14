@@ -37,6 +37,7 @@ from app.schemas.bookings import (
 )
 from app.schemas.rule_context import RuleContextInput
 from app.services.availability_service import AvailabilityService
+from app.services.booking_commercial_service import BookingCommercialService
 from app.services.booking_participant_resolver import (
     BookingParticipantResolver,
     ResolvedBookingParticipant,
@@ -57,6 +58,7 @@ class BookingService:
         self.rule_context_service = RuleContextService(db)
         self.booking_state_service = BookingStateService(db)
         self.availability_service = AvailabilityService(db)
+        self.booking_commercial_service = BookingCommercialService(db)
         self.participant_resolver = BookingParticipantResolver(db)
 
     def create_booking(
@@ -112,12 +114,25 @@ class BookingService:
         assert primary_participant is not None
 
         applies_to = payload.applies_to or derive_applies_to(primary_participant.participant_type)
-        membership_role = None
-        if primary_participant.club_membership_id is not None:
-            membership_role = self.db.scalar(
-                select(ClubMembership.role).where(
-                    ClubMembership.id == primary_participant.club_membership_id
-                )
+        membership_role, pricing_player_type = self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
+            primary_participant.club_membership_id,
+            participant_type=primary_participant.participant_type,
+        )
+        try:
+            booking_holes = self.booking_commercial_service.resolve_booking_holes(
+                course_holes=course.holes,
+                requested_holes=payload.holes,
+            )
+        except ValueError as exc:
+            return BookingCreateResult(
+                decision=BookingCreateDecision.BLOCKED,
+                failures=[
+                    BookingCreateFailureDetail(
+                        code="booking_holes_invalid",
+                        message=str(exc),
+                        field="holes",
+                    )
+                ],
             )
 
         reference_datetime = (
@@ -133,6 +148,8 @@ class BookingService:
                     tee_id=tee.id if tee is not None else None,
                     applies_to=applies_to,
                     membership_role=membership_role,
+                    pricing_player_type=pricing_player_type,
+                    holes=booking_holes,
                     effective_datetime=payload.slot_datetime,
                     reference_datetime=reference_datetime,
                 )
@@ -225,6 +242,7 @@ class BookingService:
                 availability=availability,
                 failures=failures,
             )
+        commercial_snapshot = self.booking_commercial_service.snapshot_from_availability(availability)
 
         booking = Booking(
             club_id=club_id,
@@ -233,6 +251,7 @@ class BookingService:
             start_lane=payload.start_lane,
             slot_datetime=context.effective_datetime,
             slot_interval_minutes=slot_interval_minutes,
+            holes=booking_holes,
             status=BookingStatus.RESERVED,
             source=payload.source,
             party_size=len(resolved_participants),
@@ -240,6 +259,8 @@ class BookingService:
             primary_membership_id=primary_participant.club_membership_id,
             cart_flag=payload.cart_flag,
             caddie_flag=payload.caddie_flag,
+            fee_amount=commercial_snapshot.fee_amount,
+            fee_currency=commercial_snapshot.fee_currency,
             participants=[
                 self._to_booking_participant(participant) for participant in resolved_participants
             ],

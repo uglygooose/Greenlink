@@ -5,9 +5,18 @@ export type BookingRuleType =
   | "max_future_bookings"
   | "guest_limit"
   | "time_restriction";
-export type PricingRuleAppliesTo = "member" | "guest";
-export type PricingDayType = "weekday" | "weekend" | "public_holiday";
-export type PricingTimeBand = "morning" | "afternoon" | "custom";
+export type PricingRuleAppliesTo = "member" | "guest" | "staff";
+export type PricingPlayerType =
+  | "member_standard"
+  | "visitor_affiliated"
+  | "visitor_non_affiliated"
+  | "scholar"
+  | "student"
+  | "pensioner"
+  | "staff_courtesy";
+export type PricingDayType = "any" | "weekday" | "weekend" | "public_holiday";
+export type PricingSeason = "any" | "peak" | "off_peak";
+export type PricingTimeBand = "any" | "morning" | "afternoon" | "custom";
 
 export interface ClubConfig {
   id: string;
@@ -120,7 +129,10 @@ export interface BookingRuleSetInput {
 export interface PricingRule {
   id: string;
   applies_to: PricingRuleAppliesTo;
+  player_type: PricingPlayerType;
+  holes: number;
   day_type: PricingDayType;
+  season: PricingSeason;
   time_band: PricingTimeBand;
   time_band_ref: string | null;
   price: string;
@@ -132,7 +144,10 @@ export interface PricingRule {
 
 export interface PricingRuleInput {
   applies_to: PricingRuleAppliesTo;
+  player_type: PricingPlayerType;
+  holes: number;
   day_type: PricingDayType;
+  season: PricingSeason;
   time_band: PricingTimeBand;
   time_band_ref?: string | null;
   price: string;

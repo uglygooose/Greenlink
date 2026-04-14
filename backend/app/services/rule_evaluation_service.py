@@ -12,7 +12,9 @@ from app.models import (
     BookingRuleScopeType,
     BookingRuleSet,
     BookingRuleType,
+    PricingDayType,
     PricingMatrix,
+    PricingSeason,
     PricingRule,
     PricingTimeBand,
 )
@@ -127,6 +129,7 @@ class RuleEvaluationService:
         ignored_rules: list[PricingIgnoredTrace] = []
         unresolved_rules: list[PricingIgnoredTrace] = []
         warnings: list[ContextNotice] = []
+        candidate_specificity: dict[uuid.UUID, int] = {}
 
         for matrix in matrices:
             for rule in sorted(matrix.rules, key=lambda item: (item.created_at, str(item.id))):
@@ -136,8 +139,23 @@ class RuleEvaluationService:
                 if context.applies_to and rule.applies_to.value != context.applies_to.value:
                     ignored_rules.append(self._pricing_trace(matrix, rule, "applies_to_mismatch"))
                     continue
-                if context.day_type and rule.day_type != context.day_type:
+                if context.pricing_player_type is None:
+                    unresolved_rules.append(self._pricing_trace(matrix, rule, "pricing_player_type_unresolved"))
+                    continue
+                if rule.player_type != context.pricing_player_type:
+                    ignored_rules.append(self._pricing_trace(matrix, rule, "player_type_mismatch"))
+                    continue
+                if context.holes is None:
+                    unresolved_rules.append(self._pricing_trace(matrix, rule, "pricing_holes_unresolved"))
+                    continue
+                if rule.holes != context.holes:
+                    ignored_rules.append(self._pricing_trace(matrix, rule, "holes_mismatch"))
+                    continue
+                if not self._pricing_day_type_matches(rule, context):
                     ignored_rules.append(self._pricing_trace(matrix, rule, "day_type_mismatch"))
+                    continue
+                if not self._pricing_season_matches(rule, context):
+                    ignored_rules.append(self._pricing_trace(matrix, rule, "season_mismatch"))
                     continue
                 time_band_outcome = self._pricing_time_band_outcome(rule, context)
                 if time_band_outcome == "ignored":
@@ -162,32 +180,61 @@ class RuleEvaluationService:
                     unresolved_rules.append(self._pricing_trace(matrix, rule, "custom_time_band_context_missing"))
                     continue
 
-                candidates.append(
-                    PricingCandidate(
-                        matrix_id=matrix.id,
-                        matrix_name=matrix.name,
-                        rule_id=rule.id,
-                        applies_to=rule.applies_to,
-                        day_type=rule.day_type,
-                        time_band=rule.time_band,
-                        time_band_ref=rule.time_band_ref,
-                        price=rule.price,
-                        currency=rule.currency,
-                        reason="pricing_rule_matches_context",
+                candidate = PricingCandidate(
+                    matrix_id=matrix.id,
+                    matrix_name=matrix.name,
+                    rule_id=rule.id,
+                    applies_to=rule.applies_to,
+                    player_type=rule.player_type,
+                    holes=rule.holes,
+                    day_type=rule.day_type,
+                    season=rule.season,
+                    time_band=rule.time_band,
+                    time_band_ref=rule.time_band_ref,
+                    price=rule.price,
+                    currency=rule.currency,
+                    reason="pricing_rule_matches_context",
+                )
+                candidates.append(candidate)
+                candidate_specificity[rule.id] = self._pricing_specificity(rule)
+
+        selected_candidates = candidates
+        if candidates:
+            highest_specificity = max(candidate_specificity[candidate.rule_id] for candidate in candidates)
+            selected_candidates = [
+                candidate for candidate in candidates if candidate_specificity[candidate.rule_id] == highest_specificity
+            ]
+            if len(selected_candidates) > 1:
+                warnings.append(
+                    ContextNotice(
+                        code="pricing_rule_collision",
+                        message="More than one pricing rule matched with the same specificity",
                     )
                 )
+                unresolved_rules.extend(
+                    self._pricing_trace(matrix, rule, "pricing_rule_collision")
+                    for matrix in matrices
+                    for rule in matrix.rules
+                    if rule.id in {candidate.rule_id for candidate in selected_candidates}
+                )
+                selected_candidates = []
 
         return PricingEvaluationResult(
+            context_player_type=context.pricing_player_type,
+            context_holes=context.holes,
             context_day_type=context.day_type,
+            context_season=context.season,
             context_time_band=context.time_band,
             context_time_band_ref=context.time_band_ref,
-            candidate_rules=candidates,
+            candidate_rules=selected_candidates,
             ignored_rules=ignored_rules,
             unresolved_rules=unresolved_rules,
             warnings=warnings,
         )
 
     def _pricing_time_band_outcome(self, rule: PricingRule, context: NormalizedRuleContext) -> str:
+        if rule.time_band == PricingTimeBand.ANY:
+            return "matched"
         if context.time_band is None:
             if rule.time_band == PricingTimeBand.CUSTOM:
                 return "unresolved_missing_context_band"
@@ -203,6 +250,21 @@ class RuleEvaluationService:
         if rule.time_band_ref != context.time_band_ref:
             return "ignored_custom_ref_mismatch"
         return "matched"
+
+    def _pricing_day_type_matches(self, rule: PricingRule, context: NormalizedRuleContext) -> bool:
+        if rule.day_type == PricingDayType.ANY:
+            return True
+        return context.day_type is not None and rule.day_type == context.day_type
+
+    def _pricing_season_matches(self, rule: PricingRule, context: NormalizedRuleContext) -> bool:
+        if rule.season == PricingSeason.ANY:
+            return True
+        return context.season is not None and rule.season == context.season
+
+    def _pricing_specificity(self, rule: PricingRule) -> int:
+        return int(rule.day_type != PricingDayType.ANY) + int(rule.season != PricingSeason.ANY) + int(
+            rule.time_band != PricingTimeBand.ANY
+        )
 
     def _load_rule_sets(self, club_id: uuid.UUID) -> list[BookingRuleSet]:
         statement = (
@@ -379,7 +441,10 @@ class RuleEvaluationService:
             matrix_name=matrix.name,
             rule_id=rule.id,
             applies_to=rule.applies_to,
+            player_type=rule.player_type,
+            holes=rule.holes,
             day_type=rule.day_type,
+            season=rule.season,
             time_band=rule.time_band,
             time_band_ref=rule.time_band_ref,
             reason=reason,

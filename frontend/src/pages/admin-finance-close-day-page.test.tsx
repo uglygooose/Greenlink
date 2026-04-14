@@ -1,12 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AdminFinancePage } from "./admin-finance-page";
-
-// --- Mocks ---
 
 const mockUseSession = vi.fn();
 const mockUseFinanceExceptionsQuery = vi.fn();
@@ -20,6 +17,8 @@ const mockUseVoidFinanceExportBatchMutation = vi.fn();
 const mockUseRegenerateFinanceExportBatchMutation = vi.fn();
 const mockDownloadFinanceExportBatch = vi.fn();
 const mockDownloadMappedFinanceExport = vi.fn();
+
+let latestMappedPreviewArgs: Record<string, unknown> | null = null;
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
@@ -39,10 +38,13 @@ vi.mock("../features/finance/hooks", () => ({
   downloadMappedFinanceExport: (args: unknown) => mockDownloadMappedFinanceExport(args),
 }));
 
-// --- Helpers ---
-
 function buildQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+}
+
+function todayInputValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function renderPage(): void {
@@ -55,10 +57,19 @@ function renderPage(): void {
   );
 }
 
-function buildExceptions(overrides: Partial<{
-  unpaid_bookings: object[];
-  unresolved_orders: object[];
-}> = {}) {
+function buildExceptions(
+  overrides: Partial<{
+    unpaid_bookings: Array<{
+      id: string;
+      course_id: string;
+      slot_datetime: string;
+      party_size: number;
+      fee_label: string | null;
+      primary_person_id: string | null;
+    }>;
+    unresolved_orders: object[];
+  }> = {},
+) {
   const unpaid_bookings = overrides.unpaid_bookings ?? [];
   const unresolved_orders = overrides.unresolved_orders ?? [];
   return {
@@ -88,10 +99,56 @@ function buildBatchSummary() {
   };
 }
 
-// --- beforeEach ---
+function buildBatchDetail() {
+  return {
+    ...buildBatchSummary(),
+    rows: [],
+  };
+}
+
+function buildAccountingProfile(
+  id: string,
+  name: string,
+  isActive: boolean,
+  targetSystem = "generic_journal",
+) {
+  return {
+    id,
+    club_id: "club-1",
+    code: `${id}_code`,
+    name,
+    target_system: targetSystem,
+    is_active: isActive,
+    created_by_person_id: "person-1",
+    created_at: "2026-04-01T09:00:00Z",
+    updated_at: "2026-04-01T09:00:00Z",
+    mapping_config: {
+      reference_prefix: "GL",
+      fallback_customer_code: "UNASSIGNED",
+      transaction_mappings: {
+        charge: { debit_account_code: "1100-AR", credit_account_code: "4000-SALES", description_prefix: "Charge" },
+        payment: { debit_account_code: "1000-BANK", credit_account_code: "1100-AR", description_prefix: "Payment" },
+        adjustment: { debit_account_code: "9990-ADJUST", credit_account_code: "9990-ADJUST", description_prefix: "Adjust" },
+      },
+    },
+  };
+}
+
+function buildMappedPreview() {
+  return {
+    batch_id: "batch-1",
+    profile_id: "profile-1",
+    target_system: "generic_journal",
+    file_name: "mapped-export.csv",
+    row_count: 5,
+    download_ready: true,
+    validation_errors: [],
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  latestMappedPreviewArgs = null;
 
   mockUseSession.mockReturnValue({
     accessToken: "token",
@@ -140,59 +197,42 @@ beforeEach(() => {
 
   mockUseAccountingExportProfilesQuery.mockReturnValue({
     data: {
-      profiles: [
-        {
-          id: "profile-1",
-          club_id: "club-1",
-          code: "generic_journal_ops",
-          name: "Generic Journal Ops",
-          target_system: "generic_journal",
-          is_active: true,
-          created_by_person_id: "person-1",
-          created_at: "2026-04-01T09:00:00Z",
-          updated_at: "2026-04-01T09:00:00Z",
-          mapping_config: {
-            reference_prefix: "GL",
-            fallback_customer_code: "UNASSIGNED",
-            transaction_mappings: {
-              charge: { debit_account_code: "1100-AR", credit_account_code: "4000-SALES", description_prefix: "Charge" },
-              payment: { debit_account_code: "1000-BANK", credit_account_code: "1100-AR", description_prefix: "Payment" },
-              adjustment: { debit_account_code: "9990-ADJUST", credit_account_code: "9990-ADJUST", description_prefix: "Adjust" },
-            },
-          },
-        },
-      ],
+      profiles: [buildAccountingProfile("profile-1", "Generic Journal Ops", true)],
       total_count: 1,
     },
     isLoading: false,
     isError: false,
   });
 
-  mockUseAccountingMappedExportPreviewQuery.mockReturnValue({
-    data: undefined,
-    isLoading: false,
-    isError: false,
+  mockUseAccountingMappedExportPreviewQuery.mockImplementation((args: Record<string, unknown>) => {
+    latestMappedPreviewArgs = args;
+    return {
+      data: buildMappedPreview(),
+      isLoading: false,
+      isError: false,
+    };
   });
 
   mockUseCreateFinanceExportBatchMutation.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({ created: true, batch: { ...buildBatchSummary(), rows: [] } }),
+    mutateAsync: vi.fn().mockResolvedValue({ created: true, batch: buildBatchDetail() }),
     isPending: false,
   });
 
   mockUseVoidFinanceExportBatchMutation.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({ void_applied: true, batch: { ...buildBatchSummary(), status: "void", rows: [] } }),
+    mutateAsync: vi.fn().mockResolvedValue({ void_applied: true, batch: { ...buildBatchDetail(), status: "void" } }),
     isPending: false,
   });
 
   mockUseRegenerateFinanceExportBatchMutation.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({ superseded_batch_id: "batch-1", batch: { ...buildBatchSummary(), rows: [] } }),
+    mutateAsync: vi.fn().mockResolvedValue({ superseded_batch_id: "batch-1", batch: buildBatchDetail() }),
     isPending: false,
   });
+
+  mockDownloadFinanceExportBatch.mockResolvedValue("finance-export.csv");
+  mockDownloadMappedFinanceExport.mockResolvedValue("mapped-export.csv");
 });
 
-// --- Tests ---
-
-describe("AdminFinancePage — Close Day wizard", () => {
+describe("AdminFinancePage - Close Day wizard", () => {
   test("renders the wizard with Exceptions step active by default", () => {
     renderPage();
     expect(screen.getByRole("heading", { name: "Resolve Exceptions", level: 2 })).toBeInTheDocument();
@@ -209,7 +249,14 @@ describe("AdminFinancePage — Close Day wizard", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          { id: "b-1", slot_datetime: "2026-04-10T06:00:00Z", party_size: 2, fee_label: "Member Rate", primary_person_id: null },
+          {
+            id: "b-1",
+            course_id: "course-1",
+            slot_datetime: "2026-04-10T06:00:00Z",
+            party_size: 2,
+            fee_label: "Member Rate",
+            primary_person_id: null,
+          },
         ],
         unresolved_orders: [],
       }),
@@ -221,17 +268,22 @@ describe("AdminFinancePage — Close Day wizard", () => {
 
     renderPage();
 
-    // The error badge on the Exceptions nav button should show the count
     expect(screen.getByText(/1 exception.*must be resolved/i)).toBeInTheDocument();
-    const nextButton = screen.getByRole("button", { name: /next: generate batch/i });
-    expect(nextButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: /next: generate batch/i })).toBeDisabled();
   });
 
   test("unpaid booking links deep-link to tee sheet with filter=unpaid and date param", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          { id: "b-1", slot_datetime: "2026-04-10T06:00:00Z", party_size: 4, fee_label: "Weekend Rate", primary_person_id: null },
+          {
+            id: "b-1",
+            course_id: "course-2",
+            slot_datetime: "2026-04-10T06:00:00Z",
+            party_size: 4,
+            fee_label: "Weekend Rate",
+            primary_person_id: null,
+          },
         ],
         unresolved_orders: [],
       }),
@@ -246,42 +298,104 @@ describe("AdminFinancePage — Close Day wizard", () => {
     const link = screen.getByRole("link", { name: /resolve unpaid booking.*on tee sheet/i });
     expect(link).toHaveAttribute("href", expect.stringContaining("/admin/golf/tee-sheet"));
     expect(link).toHaveAttribute("href", expect.stringContaining("filter=unpaid"));
+    expect(link).toHaveAttribute("href", expect.stringContaining(`date=${todayInputValue()}`));
+    expect(link).toHaveAttribute("href", expect.stringContaining("courseId=course-2"));
+  });
+
+  test("view-all unpaid link targets the shared course when all unpaid bookings are on one course", () => {
+    mockUseFinanceExceptionsQuery.mockReturnValue({
+      data: buildExceptions({
+        unpaid_bookings: [
+          {
+            id: "b-1",
+            course_id: "course-2",
+            slot_datetime: "2026-04-10T06:00:00Z",
+            party_size: 4,
+            fee_label: "Weekend Rate",
+            primary_person_id: null,
+          },
+          {
+            id: "b-2",
+            course_id: "course-2",
+            slot_datetime: "2026-04-10T07:00:00Z",
+            party_size: 2,
+            fee_label: "Guest Rate",
+            primary_person_id: null,
+          },
+        ],
+      }),
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    const link = screen.getByRole("link", { name: /view all unpaid on tee sheet/i });
+    expect(link).toHaveAttribute("href", expect.stringContaining("courseId=course-2"));
+  });
+
+  test("suppresses the shared unpaid tee-sheet link when exceptions span multiple courses", () => {
+    mockUseFinanceExceptionsQuery.mockReturnValue({
+      data: buildExceptions({
+        unpaid_bookings: [
+          {
+            id: "b-1",
+            course_id: "course-1",
+            slot_datetime: "2026-04-10T06:00:00Z",
+            party_size: 4,
+            fee_label: "Weekend Rate",
+            primary_person_id: null,
+          },
+          {
+            id: "b-2",
+            course_id: "course-2",
+            slot_datetime: "2026-04-10T07:00:00Z",
+            party_size: 2,
+            fee_label: "Guest Rate",
+            primary_person_id: null,
+          },
+        ],
+      }),
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.queryByRole("link", { name: /view all unpaid on tee sheet/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/open each unpaid booking from its row/i)).toBeInTheDocument();
   });
 
   test("Next button is enabled and navigates to Generate Batch step when no exceptions", () => {
     renderPage();
-    const nextButton = screen.getByRole("button", { name: /next: generate batch/i });
-    expect(nextButton).not.toBeDisabled();
-    fireEvent.click(nextButton);
+    fireEvent.click(screen.getByRole("button", { name: /next: generate batch/i }));
     expect(screen.getByRole("heading", { name: /generate export batch/i, level: 2 })).toBeInTheDocument();
   });
 
   test("navigates through all steps via step nav buttons", () => {
     renderPage();
 
-    // Use the nav aria to scope click to the step navigator buttons
     const nav = screen.getByRole("navigation", { name: /close day steps/i });
-    fireEvent.click(screen.getByRole("button", { name: /^publish generate batch/i }));
+    fireEvent.click(within(nav).getByRole("button", { name: /^publish generate batch/i }));
     expect(screen.getByRole("heading", { name: /generate export batch/i, level: 2 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^balance reconcile/i }));
+    fireEvent.click(within(nav).getByRole("button", { name: /^balance reconcile/i }));
     expect(screen.getByRole("heading", { name: /reconcile/i, level: 2 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^history audit trail/i }));
+    fireEvent.click(within(nav).getByRole("button", { name: /^history audit trail/i }));
     expect(screen.getByRole("heading", { name: /audit trail/i, level: 2 })).toBeInTheDocument();
-
-    // nav was used in query context, just ensure it was in scope
-    expect(nav).toBeInTheDocument();
   });
 
   test("generate batch calls mutation and advances to Reconcile step", async () => {
-    const mutateAsync = vi.fn().mockResolvedValue({ created: true, batch: { ...buildBatchSummary(), rows: [] } });
+    const mutateAsync = vi.fn().mockResolvedValue({ created: true, batch: buildBatchDetail() });
     mockUseCreateFinanceExportBatchMutation.mockReturnValue({ mutateAsync, isPending: false });
 
     renderPage();
-    // Navigate to Generate Batch step
     fireEvent.click(screen.getByRole("button", { name: /next: generate batch/i }));
-    // The content-area button name is exactly "publish Generate Batch" (no step number suffix)
     fireEvent.click(screen.getByRole("button", { name: /^publish generate batch$/i }));
 
     await waitFor(() => {
@@ -297,7 +411,7 @@ describe("AdminFinancePage — Close Day wizard", () => {
 
   test("reconcile step shows drift state and regenerate button when batch has drift", () => {
     mockUseFinanceExportBatchDetailQuery.mockReturnValue({
-      data: { ...buildBatchSummary(), rows: [] },
+      data: buildBatchDetail(),
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
@@ -334,8 +448,125 @@ describe("AdminFinancePage — Close Day wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /audit trail/i }));
 
     expect(screen.getByRole("heading", { name: /audit trail/i, level: 2 })).toBeInTheDocument();
-    // Batch appears in audit trail
     expect(screen.getByText(/1 Apr 2026 to 10 Apr 2026/i)).toBeInTheDocument();
   });
 
+  test("auto-selects the first active accounting profile for export", async () => {
+    mockUseFinanceExportBatchDetailQuery.mockReturnValue({
+      data: buildBatchDetail(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockUseAccountingExportProfilesQuery.mockReturnValue({
+      data: {
+        profiles: [
+          buildAccountingProfile("profile-1", "Generic Journal Ops", true),
+          buildAccountingProfile("profile-2", "Secondary Ledger", false, "xero"),
+        ],
+        total_count: 2,
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderPage();
+    const nav = screen.getByRole("navigation", { name: /close day steps/i });
+    fireEvent.click(within(nav).getByRole("button", { name: /^upload_file export/i }));
+
+    const select = await screen.findByRole("combobox", { name: /select accounting profile/i });
+    await waitFor(() => {
+      expect(select).toHaveValue("profile-1");
+      expect(latestMappedPreviewArgs).toMatchObject({ batchId: null, profileId: "profile-1" });
+    });
+    expect(screen.getAllByText("Generic Journal Ops").length).toBeGreaterThan(0);
+  });
+
+  test("does not reset the selected accounting profile after manual change", async () => {
+    mockUseFinanceExportBatchDetailQuery.mockReturnValue({
+      data: buildBatchDetail(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockUseAccountingExportProfilesQuery.mockReturnValue({
+      data: {
+        profiles: [
+          buildAccountingProfile("profile-1", "Generic Journal Ops", true),
+          buildAccountingProfile("profile-2", "Secondary Ledger", false, "xero"),
+        ],
+        total_count: 2,
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderPage();
+    const nav = screen.getByRole("navigation", { name: /close day steps/i });
+    fireEvent.click(within(nav).getByRole("button", { name: /^upload_file export/i }));
+
+    const select = await screen.findByRole("combobox", { name: /select accounting profile/i });
+    await waitFor(() => expect(select).toHaveValue("profile-1"));
+
+    fireEvent.change(select, { target: { value: "profile-2" } });
+    await waitFor(() => expect(select).toHaveValue("profile-2"));
+
+    fireEvent.click(screen.getByRole("button", { name: /next: audit trail/i }));
+    fireEvent.click(within(nav).getByRole("button", { name: /^upload_file export/i }));
+
+    expect(await screen.findByRole("combobox", { name: /select accounting profile/i })).toHaveValue("profile-2");
+    expect(screen.getAllByText("Secondary Ledger").length).toBeGreaterThan(0);
+  });
+
+  test("preview and export use the same selected accounting profile", async () => {
+    mockUseFinanceExportBatchDetailQuery.mockReturnValue({
+      data: buildBatchDetail(),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockUseAccountingExportProfilesQuery.mockReturnValue({
+      data: {
+        profiles: [
+          buildAccountingProfile("profile-1", "Generic Journal Ops", true),
+          buildAccountingProfile("profile-2", "Secondary Ledger", false, "xero"),
+        ],
+        total_count: 2,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAccountingMappedExportPreviewQuery.mockImplementation((args: Record<string, unknown>) => {
+      latestMappedPreviewArgs = args;
+      return {
+        data: { ...buildMappedPreview(), profile_id: String(args.profileId ?? "profile-1"), target_system: "xero" },
+        isLoading: false,
+        isError: false,
+      };
+    });
+
+    renderPage();
+    const nav = screen.getByRole("navigation", { name: /close day steps/i });
+    fireEvent.click(within(nav).getByRole("button", { name: /^upload_file export/i }));
+
+    const select = await screen.findByRole("combobox", { name: /select accounting profile/i });
+    await waitFor(() => expect(select).toHaveValue("profile-1"));
+
+    fireEvent.change(select, { target: { value: "profile-2" } });
+
+    await waitFor(() => {
+      expect(latestMappedPreviewArgs).toMatchObject({ profileId: "profile-2" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /export mapped csv/i }));
+
+    await waitFor(() => {
+      expect(mockDownloadMappedFinanceExport).toHaveBeenCalledWith({
+        accessToken: "token",
+        selectedClubId: "club-1",
+        batchId: "batch-1",
+        profileId: "profile-2",
+      });
+    });
+  });
 });

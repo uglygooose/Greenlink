@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Booking, ClubConfig, Course, StartLane, Tee, TeeSheetSlotState
+from app.models import Booking, BookingPaymentStatus, BookingStatus, ClubConfig, Course, StartLane, Tee, TeeSheetSlotState
 from app.schemas.rule_context import ContextNotice, RuleContextInput
 from app.schemas.tee_sheet import (
     TeeSheetBookingParticipantSummary,
@@ -23,6 +23,7 @@ from app.schemas.tee_sheet import (
     TeeSheetSlotView,
 )
 from app.services.availability_service import AvailabilityService
+from app.services.booking_commercial_service import BookingCommercialService
 from app.services.booking_state_service import LIVE_OCCUPANCY_STATUSES, BookingStateService
 from app.services.rule_context_service import RuleContextService
 
@@ -33,6 +34,7 @@ class TeeSheetService:
         self.rule_context_service = RuleContextService(db)
         self.booking_state_service = BookingStateService(db)
         self.availability_service = AvailabilityService(db)
+        self.booking_commercial_service = BookingCommercialService(db)
 
     def load_day(self, query: TeeSheetDayQuery) -> TeeSheetDayResponse:
         club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == query.club_id))
@@ -84,10 +86,10 @@ class TeeSheetService:
                 slot_bookings = bookings[
                     (tee.id if tee is not None else None, start_lane, slot_datetime)
                 ]
-                live_slot_bookings = [
+                visible_slot_bookings = [
                     booking
                     for booking in slot_bookings
-                    if booking.status in LIVE_OCCUPANCY_STATUSES
+                    if self._should_include_booking_in_sheet(booking)
                 ]
                 normalized_context = self.rule_context_service.normalize_context(
                     RuleContextInput(
@@ -152,27 +154,8 @@ class TeeSheetService:
                         unresolved_checks=availability.unresolved_checks,
                         warnings=availability.warnings,
                         bookings=[
-                            TeeSheetBookingSummary(
-                                id=booking.id,
-                                status=booking.status,
-                                party_size=booking.party_size,
-                                slot_datetime=booking.slot_datetime,
-                                start_lane=self._normalize_start_lane(booking.start_lane),
-                                cart_flag=booking.cart_flag,
-                                caddie_flag=booking.caddie_flag,
-                                fee_label=booking.fee_label,
-                                payment_status=booking.payment_status,
-                                participants=[
-                                    TeeSheetBookingParticipantSummary(
-                                        id=participant.id,
-                                        display_name=participant.display_name,
-                                        participant_type=participant.participant_type,
-                                        is_primary=participant.is_primary,
-                                    )
-                                    for participant in booking.participants
-                                ],
-                            )
-                            for booking in live_slot_bookings
+                            self._to_booking_summary(booking)
+                            for booking in visible_slot_bookings
                         ],
                         decision_input=decision_input,
                         booking_state=decision_input.booking_state,
@@ -201,6 +184,32 @@ class TeeSheetService:
             reference_datetime=reference_datetime,
             rows=rows,
             warnings=warnings,
+        )
+
+    def _to_booking_summary(self, booking: Booking) -> TeeSheetBookingSummary:
+        commercial_snapshot = self.booking_commercial_service.snapshot_for_booking(booking)
+        return TeeSheetBookingSummary(
+            id=booking.id,
+            status=booking.status,
+            party_size=booking.party_size,
+            holes=booking.holes,
+            slot_datetime=booking.slot_datetime,
+            start_lane=self._normalize_start_lane(booking.start_lane),
+            cart_flag=booking.cart_flag,
+            caddie_flag=booking.caddie_flag,
+            fee_label=booking.fee_label,
+            fee_amount=commercial_snapshot.fee_amount,
+            fee_currency=commercial_snapshot.fee_currency,
+            payment_status=booking.payment_status,
+            participants=[
+                TeeSheetBookingParticipantSummary(
+                    id=participant.id,
+                    display_name=participant.display_name,
+                    participant_type=participant.participant_type,
+                    is_primary=participant.is_primary,
+                )
+                for participant in booking.participants
+            ],
         )
 
     def _load_row_scopes(
@@ -343,6 +352,12 @@ class TeeSheetService:
         if availability.warnings:
             return TeeSheetSlotDisplayStatus.WARNING
         return TeeSheetSlotDisplayStatus.AVAILABLE
+
+    def _should_include_booking_in_sheet(self, booking: Booking) -> bool:
+        return booking.status in LIVE_OCCUPANCY_STATUSES or (
+            booking.status == BookingStatus.COMPLETED
+            and booking.payment_status == BookingPaymentStatus.PENDING
+        )
 
     def _parse_hhmm(self, value: object) -> time | None:
         if not isinstance(value, str) or ":" not in value:

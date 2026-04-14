@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -35,6 +36,7 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     slot_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    holes: Mapped[int] = mapped_column(Integer, nullable=False, default=18)
     status: Mapped[BookingStatus] = mapped_column(
         Enum(BookingStatus, values_callable=enum_values),
         nullable=False,
@@ -52,6 +54,8 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cart_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     caddie_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     fee_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    fee_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     payment_status: Mapped[BookingPaymentStatus | None] = mapped_column(
         Enum(BookingPaymentStatus, values_callable=enum_values),
         nullable=True,

@@ -41,6 +41,7 @@ class BookingCreateRequest(BaseModel):
     start_lane: StartLane | None = None
     slot_datetime: datetime
     slot_interval_minutes: int | None = Field(default=None, ge=1, le=240)
+    holes: int | None = Field(default=None)
     source: BookingSource = BookingSource.ADMIN
     applies_to: BookingRuleAppliesTo | None = None
     reference_datetime: datetime | None = None
@@ -57,6 +58,15 @@ class BookingCreateRequest(BaseModel):
             raise ValueError("Datetime values must include an explicit timezone offset")
         return value
 
+    @field_validator("holes")
+    @classmethod
+    def validate_holes(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value not in {9, 18}:
+            raise ValueError("holes must be 9 or 18")
+        return value
+
     @model_validator(mode="after")
     def validate_participants(self) -> BookingCreateRequest:
         if self.source == BookingSource.MEMBER_PORTAL and not self.participants:
@@ -66,16 +76,13 @@ class BookingCreateRequest(BaseModel):
         ]
         if len(primary_participants) != 1:
             raise ValueError("exactly one primary participant is required")
-        if primary_participants[0].participant_type == BookingParticipantType.GUEST:
-            raise ValueError(
-                "primary participant must be a member or staff participant in this phase"
-            )
         if self.applies_to is not None:
-            expected_applies_to = (
-                BookingRuleAppliesTo.STAFF
-                if primary_participants[0].participant_type == BookingParticipantType.STAFF
-                else BookingRuleAppliesTo.MEMBER
-            )
+            if primary_participants[0].participant_type == BookingParticipantType.STAFF:
+                expected_applies_to = BookingRuleAppliesTo.STAFF
+            elif primary_participants[0].participant_type == BookingParticipantType.GUEST:
+                expected_applies_to = BookingRuleAppliesTo.GUEST
+            else:
+                expected_applies_to = BookingRuleAppliesTo.MEMBER
             if self.applies_to != expected_applies_to:
                 raise ValueError(
                     "applies_to must match the primary participant bucket in this phase"
@@ -118,6 +125,7 @@ class BookingSummary(BaseModel):
     start_lane: StartLane | None = None
     slot_datetime: datetime
     slot_interval_minutes: int
+    holes: int
     status: BookingStatus
     source: BookingSource
     party_size: int
@@ -126,6 +134,8 @@ class BookingSummary(BaseModel):
     cart_flag: bool = False
     caddie_flag: bool = False
     fee_label: str | None = None
+    fee_amount: Decimal | None = None
+    fee_currency: str | None = None
     payment_status: BookingPaymentStatus | None = None
     created_at: datetime
     updated_at: datetime
@@ -137,6 +147,7 @@ class PlayerBookingReadModelItem(BaseModel):
     status: BookingStatus
     source: BookingSource
     slot_datetime: datetime
+    holes: int
     local_date: str
     local_time: str
     course_name: str
@@ -146,6 +157,8 @@ class PlayerBookingReadModelItem(BaseModel):
     primary_participant_name: str | None = None
     participant_names: list[str] = Field(default_factory=list)
     fee_label: str | None = None
+    fee_amount: Decimal | None = None
+    fee_currency: str | None = None
     payment_status: BookingPaymentStatus | None = None
 
 
@@ -165,6 +178,7 @@ class BookingCreateResult(BaseModel):
 
 class BookingUpdateRequest(BaseModel):
     participants: list[BookingCreateParticipantInput] = Field(default_factory=list, max_length=32)
+    holes: int | None = Field(default=None)
     applies_to: BookingRuleAppliesTo | None = None
     reference_datetime: datetime | None = None
     cart_flag: bool = False
@@ -179,6 +193,15 @@ class BookingUpdateRequest(BaseModel):
             raise ValueError("reference_datetime must include an explicit timezone offset")
         return value
 
+    @field_validator("holes")
+    @classmethod
+    def validate_holes(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value not in {9, 18}:
+            raise ValueError("holes must be 9 or 18")
+        return value
+
     @model_validator(mode="after")
     def validate_participants(self) -> BookingUpdateRequest:
         primary_participants = [
@@ -186,16 +209,13 @@ class BookingUpdateRequest(BaseModel):
         ]
         if len(primary_participants) != 1:
             raise ValueError("exactly one primary participant is required")
-        if primary_participants[0].participant_type == BookingParticipantType.GUEST:
-            raise ValueError(
-                "primary participant must be a member or staff participant in this phase"
-            )
         if self.applies_to is not None:
-            expected_applies_to = (
-                BookingRuleAppliesTo.STAFF
-                if primary_participants[0].participant_type == BookingParticipantType.STAFF
-                else BookingRuleAppliesTo.MEMBER
-            )
+            if primary_participants[0].participant_type == BookingParticipantType.STAFF:
+                expected_applies_to = BookingRuleAppliesTo.STAFF
+            elif primary_participants[0].participant_type == BookingParticipantType.GUEST:
+                expected_applies_to = BookingRuleAppliesTo.GUEST
+            else:
+                expected_applies_to = BookingRuleAppliesTo.MEMBER
             if self.applies_to != expected_applies_to:
                 raise ValueError(
                     "applies_to must match the primary participant bucket in this phase"
@@ -415,7 +435,7 @@ class BookingPaymentStatusUpdateResult(BaseModel):
 class BookingChargePostInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount: Decimal = Field(gt=0)
+    amount: Decimal | None = Field(default=None, gt=0)
     description: str | None = Field(default=None, max_length=255)
 
 
@@ -424,7 +444,7 @@ class BookingChargePostRequest(BaseModel):
 
     booking_id: uuid.UUID
     acting_user_id: uuid.UUID
-    amount: Decimal
+    amount: Decimal | None = None
     description: str | None = None
 
 

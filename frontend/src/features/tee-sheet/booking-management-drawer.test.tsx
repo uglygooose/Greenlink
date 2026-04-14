@@ -5,7 +5,10 @@ import { BookingManagementDrawer } from "./booking-management-drawer";
 import type { BookingSummary } from "../../types/bookings";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
 
-function buildBooking(paymentStatus: BookingSummary["payment_status"]): BookingSummary {
+function buildBooking(
+  paymentStatus: BookingSummary["payment_status"],
+  { feeAmount = "325.00", feeCurrency = "ZAR" }: { feeAmount?: string | null; feeCurrency?: string | null } = {},
+): BookingSummary {
   return {
     id: "booking-1",
     club_id: "club-1",
@@ -13,12 +16,15 @@ function buildBooking(paymentStatus: BookingSummary["payment_status"]): BookingS
     tee_id: "tee-1",
     slot_datetime: "2026-03-30T04:00:00Z",
     slot_interval_minutes: 30,
+    holes: 18,
     status: "reserved",
     source: "admin",
     party_size: 2,
     cart_flag: false,
     caddie_flag: false,
     fee_label: "Member Weekend Rate",
+    fee_amount: feeAmount,
+    fee_currency: feeCurrency,
     payment_status: paymentStatus,
     created_at: "2026-03-25T06:00:00Z",
     updated_at: "2026-03-25T06:00:00Z",
@@ -65,13 +71,25 @@ function buildSlot(booking: BookingSummary): TeeSheetSlotView {
 }
 
 function renderDrawer({
+  feedbackBookingId = null,
+  feedbackField = null,
   paymentStatus = "pending",
+  feeAmount = "325.00",
+  feeCurrency = "ZAR",
   showFinanceActions = true,
+  onFinanceInputChange = vi.fn(),
+  onPostCharge = vi.fn(),
 }: {
+  feedbackBookingId?: string | null;
+  feedbackField?: string | null;
   paymentStatus?: BookingSummary["payment_status"];
+  feeAmount?: string | null;
+  feeCurrency?: string | null;
   showFinanceActions?: boolean;
+  onFinanceInputChange?: () => void;
+  onPostCharge?: (bookingId: string, amount?: string) => void;
 } = {}): void {
-  const booking = buildBooking(paymentStatus);
+  const booking = buildBooking(paymentStatus, { feeAmount, feeCurrency });
   const slot = buildSlot(booking);
   render(
     <BookingManagementDrawer
@@ -81,6 +99,8 @@ function renderDrawer({
       editCartFlag={false}
       editingBookingId={null}
       editParticipants={[]}
+      feedbackBookingId={feedbackBookingId}
+      feedbackField={feedbackField}
       feedbackMessage={null}
       feedbackTone={null}
       laneLabel="1st Tee"
@@ -96,10 +116,11 @@ function renderDrawer({
       onEditRemoveParticipant={vi.fn()}
       onEditSave={vi.fn()}
       onEditStart={vi.fn()}
+      onFinanceInputChange={onFinanceInputChange}
       onMarkComplimentary={vi.fn()}
       onMarkWaived={vi.fn()}
       onNoShow={vi.fn()}
-      onPostCharge={vi.fn()}
+      onPostCharge={onPostCharge}
       onRecordPayment={vi.fn()}
       pendingAction={null}
       pendingBookingId={null}
@@ -117,25 +138,20 @@ function renderDrawer({
 describe("BookingManagementDrawer finance actions", () => {
   test("shows the finance panel only when the rebuild flag path is enabled", () => {
     renderDrawer({ showFinanceActions: false });
-    expect(screen.queryByText("Finance Actions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Settlement")).not.toBeInTheDocument();
 
     renderDrawer({ showFinanceActions: true });
-    expect(screen.getByText("Finance Actions")).toBeInTheDocument();
+    expect(screen.getByText("Settlement")).toBeInTheDocument();
   });
 
   test("highlights pending bookings and enables the expected actions", () => {
     renderDrawer({ paymentStatus: "pending" });
 
     expect(screen.getByText("Unpaid")).toBeInTheDocument();
+    expect(screen.getByText(/325/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Record Payment/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Mark Complimentary/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Mark Waived/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Post Charge/i })).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText(/Charge amount for booking booking-1/i), {
-      target: { value: "85.00" },
-    });
-
     expect(screen.getByRole("button", { name: /Post Charge/i })).toBeEnabled();
   });
 
@@ -147,5 +163,81 @@ describe("BookingManagementDrawer finance actions", () => {
     expect(screen.getByRole("button", { name: /Record Payment/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Mark Complimentary/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Mark Waived/i })).toBeDisabled();
+  });
+
+  test("requires an explicit override when no resolved booking price is available", () => {
+    renderDrawer({ feeAmount: null, feeCurrency: null, paymentStatus: null });
+
+    expect(screen.getByText("No rate assigned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Post Charge/i })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Override amount for booking booking-1/i), {
+      target: { value: "85.00" },
+    });
+
+    expect(screen.getByRole("button", { name: /Post Charge/i })).toBeEnabled();
+  });
+
+  test("renders amount errors inline and clears them when the override changes", () => {
+    const onFinanceInputChange = vi.fn();
+    render(
+      <BookingManagementDrawer
+        colorCode="#1b4d8f"
+        directory={[]}
+        editCaddieFlag={false}
+        editCartFlag={false}
+        editingBookingId={null}
+        editParticipants={[]}
+        feedbackBookingId="booking-1"
+        feedbackField="amount"
+        feedbackMessage="Resolved booking price is unavailable. Enter an override amount or fix pricing setup first."
+        feedbackTone="error"
+        laneLabel="1st Tee"
+        onCancel={vi.fn()}
+        onCheckIn={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+        onEditAddParticipant={vi.fn()}
+        onEditCancel={vi.fn()}
+        onEditCaddieFlagChange={vi.fn()}
+        onEditChangeParticipant={vi.fn()}
+        onEditCartFlagChange={vi.fn()}
+        onEditRemoveParticipant={vi.fn()}
+        onEditSave={vi.fn()}
+        onEditStart={vi.fn()}
+        onFinanceInputChange={onFinanceInputChange}
+        onMarkComplimentary={vi.fn()}
+        onMarkWaived={vi.fn()}
+        onNoShow={vi.fn()}
+        onPostCharge={vi.fn()}
+        onRecordPayment={vi.fn()}
+        pendingAction={null}
+        pendingBookingId={null}
+        pendingFinanceAction={null}
+        pendingFinanceBookingId={null}
+        savingBookingId={null}
+        selectedDate="2026-03-30"
+        showFinanceActions={true}
+        slot={buildSlot(buildBooking("pending", { feeAmount: null, feeCurrency: null }))}
+        teeLabel="Blue"
+      />,
+    );
+
+    expect(screen.getAllByText(/Resolved booking price is unavailable/i).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText(/Override amount for booking booking-1/i), {
+      target: { value: "95.00" },
+    });
+
+    expect(onFinanceInputChange).toHaveBeenCalled();
+  });
+
+  test("posts the resolved booking amount without requiring manual entry", () => {
+    const onPostCharge = vi.fn();
+    renderDrawer({ onPostCharge, paymentStatus: null });
+
+    fireEvent.click(screen.getByRole("button", { name: /Post Charge/i }));
+
+    expect(onPostCharge).toHaveBeenCalledWith("booking-1", undefined);
   });
 });

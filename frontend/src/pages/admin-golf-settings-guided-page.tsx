@@ -1,24 +1,21 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
-  createCourse,
-  createPricingMatrix,
-  createRuleSet,
-  createTee,
-  publishGolfPricingMatrix,
-  publishGolfRuleSet,
-  rollbackGolfPricingMatrix,
-  rollbackGolfRuleSet,
-} from "../api/operations";
-import {
-  operationsKeys,
+  useCreateCourseMutation,
+  useCreatePricingMatrixMutation,
+  useCreateRuleSetMutation,
+  useCreateTeeMutation,
   useCoursesQuery,
   useGolfSettingsReadinessQuery,
+  usePublishGolfPricingMatrixMutation,
+  usePublishGolfRuleSetMutation,
   usePricingMatricesQuery,
+  useRollbackGolfPricingMatrixMutation,
+  useRollbackGolfRuleSetMutation,
   useRuleSetsQuery,
   useTeesQuery,
+  useUpdatePricingMatrixMutation,
 } from "../features/golf-settings/hooks";
 import { useSession } from "../session/session-context";
 import type {
@@ -30,8 +27,11 @@ import type {
   Course,
   GolfSettingsReadiness,
   PricingMatrix,
+  PricingDayType,
+  PricingPlayerType,
   PricingRuleInput,
   PricingRuleAppliesTo,
+  PricingSeason,
   PricingTimeBand,
 } from "../types/operations";
 
@@ -48,15 +48,29 @@ type RuleDraftForm = {
   endTime: string;
 };
 
-type PricingDraftForm = {
-  name: string;
+type PricingRuleDraftForm = {
+  key: string;
   appliesTo: PricingRuleAppliesTo;
+  playerType: PricingPlayerType;
+  holes: string;
+  dayType: PricingDayType;
+  season: PricingSeason;
   timeBand: PricingTimeBand;
+  timeBandRef: string;
   price: string;
   currency: string;
 };
 
+type PricingDraftForm = {
+  name: string;
+  rules: PricingRuleDraftForm[];
+};
+
+type GuidedFieldKey = "courseName" | "teeName" | "ruleName" | "pricingName";
+type GuidedFieldErrors = Partial<Record<GuidedFieldKey, string>>;
+
 const SECTION_ORDER: SetupStage[] = ["courses", "tees", "rules", "pricing"];
+const GUIDED_FIELD_BANNER = "Please correct the highlighted fields.";
 
 function blankRuleDraft(): RuleDraftForm {
   return {
@@ -73,15 +87,84 @@ function blankRuleDraft(): RuleDraftForm {
 function blankPricingDraft(): PricingDraftForm {
   return {
     name: "",
-    appliesTo: "member",
-    timeBand: "morning",
-    price: "325.00",
+    rules: [blankPricingRuleDraft()],
+  };
+}
+
+function nextPricingRuleKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+function blankPricingRuleDraft(): PricingRuleDraftForm {
+  return {
+    key: nextPricingRuleKey(),
+    appliesTo: "guest",
+    playerType: "visitor_affiliated",
+    holes: "18",
+    dayType: "weekday",
+    season: "off_peak",
+    timeBand: "any",
+    timeBandRef: "",
+    price: "575.00",
     currency: "ZAR",
   };
 }
 
 function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed";
+}
+
+function guidedFieldClassName(hasError: boolean): string {
+  return `mt-2 w-full rounded-2xl border bg-white px-4 py-3 text-sm text-on-surface focus:outline-none ${
+    hasError ? "border-rose-400 focus:border-rose-500" : "border-slate-200 focus:border-emerald-500"
+  }`;
+}
+
+function guidedRequiredMessage(field: GuidedFieldKey): string {
+  switch (field) {
+    case "courseName":
+      return "Enter a course name.";
+    case "teeName":
+      return "Enter a tee name.";
+    case "ruleName":
+      return "Enter a rule set name.";
+    case "pricingName":
+      return "Enter a matrix name.";
+  }
+}
+
+function simplifyGuidedFieldError(field: GuidedFieldKey, detail: string): string {
+  const normalized = detail.trim();
+
+  if (/field required|missing|should not be empty/i.test(normalized)) {
+    return guidedRequiredMessage(field);
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function parseGuidedMutationError(
+  error: unknown,
+  fieldMap: Partial<Record<string, GuidedFieldKey>>,
+): { bannerMessage: string; fieldErrors: GuidedFieldErrors } {
+  const message = asMessage(error);
+  const [fieldSegment, ...detailParts] = message.split(":");
+  if (detailParts.length === 0) {
+    return { bannerMessage: message, fieldErrors: {} };
+  }
+
+  const mappedField = fieldMap[fieldSegment.trim().toLowerCase()];
+  if (!mappedField) {
+    return { bannerMessage: message, fieldErrors: {} };
+  }
+
+  const detail = detailParts.join(":").trim() || "Invalid value.";
+  return {
+    bannerMessage: GUIDED_FIELD_BANNER,
+    fieldErrors: {
+      [mappedField]: simplifyGuidedFieldError(mappedField, detail),
+    },
+  };
 }
 
 function readinessCount(readiness: GolfSettingsReadiness | undefined): number {
@@ -191,16 +274,19 @@ function buildRulePayload(form: RuleDraftForm): BookingRuleInput {
   return { type: form.ruleType, config, active: true };
 }
 
-function buildPricingPayload(form: PricingDraftForm): PricingRuleInput {
-  return {
-    applies_to: form.appliesTo,
-    day_type: "weekday",
-    time_band: form.timeBand,
-    time_band_ref: form.timeBand === "custom" ? "custom-window" : null,
-    price: form.price,
-    currency: form.currency.toUpperCase(),
+function buildPricingPayload(form: PricingDraftForm): PricingRuleInput[] {
+  return form.rules.map((rule) => ({
+    applies_to: rule.appliesTo,
+    player_type: rule.playerType,
+    holes: Number(rule.holes),
+    day_type: rule.dayType,
+    season: rule.season,
+    time_band: rule.timeBand,
+    time_band_ref: rule.timeBand === "custom" ? rule.timeBandRef.trim() || "custom-window" : null,
+    price: rule.price,
+    currency: rule.currency.toUpperCase(),
     active: true,
-  };
+  }));
 }
 
 function surfaceRuleSetLabel(ruleSet: BookingRuleSet): string {
@@ -208,8 +294,34 @@ function surfaceRuleSetLabel(ruleSet: BookingRuleSet): string {
 }
 
 function surfacePricingLabel(matrix: PricingMatrix): string {
-  const firstRule = matrix.rules[0];
-  return firstRule ? `${matrix.name} / ${firstRule.applies_to}` : matrix.name;
+  return `${matrix.name} / ${matrix.rules.length} rules`;
+}
+
+function pricingRuleSummary(rule: PricingMatrix["rules"][number] | PricingRuleDraftForm | undefined): string {
+  if (!rule) {
+    return "No pricing rules configured yet.";
+  }
+  const seasonValue = "player_type" in rule ? rule.season : rule.season;
+  const season = seasonValue === "any" ? "all seasons" : seasonValue;
+  const dayTypeValue = "player_type" in rule ? rule.day_type : rule.dayType;
+  const dayType = dayTypeValue === "any" ? "all days" : dayTypeValue;
+  const timeBand = "player_type" in rule ? rule.time_band : rule.timeBand;
+  const playerType = "player_type" in rule ? rule.player_type : rule.playerType;
+  const holes = "player_type" in rule ? rule.holes : Number(rule.holes);
+  const price = rule.price;
+  const currency = rule.currency;
+  return `${playerType} / ${holes} holes / ${dayType} / ${season} / ${timeBand} / ${price} ${currency}`;
+}
+
+function pricingPlayerTypeOptions(appliesTo: PricingRuleAppliesTo): PricingPlayerType[] {
+  switch (appliesTo) {
+    case "guest":
+      return ["visitor_affiliated", "visitor_non_affiliated"];
+    case "staff":
+      return ["staff_courtesy"];
+    default:
+      return ["member_standard", "scholar", "student", "pensioner"];
+  }
 }
 
 function FieldLabel({ label, note }: { label: string; note?: string }): JSX.Element {
@@ -283,7 +395,6 @@ function SetupSection({
 }
 
 export function AdminGolfSettingsGuidedPage(): JSX.Element {
-  const queryClient = useQueryClient();
   const { accessToken, bootstrap } = useSession();
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const selectedClub = bootstrap?.selected_club;
@@ -304,7 +415,9 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
   const [teeColor, setTeeColor] = useState("#1b4d8f");
   const [ruleDraft, setRuleDraft] = useState<RuleDraftForm>(blankRuleDraft());
   const [pricingDraft, setPricingDraft] = useState<PricingDraftForm>(blankPricingDraft());
+  const [editingPricingMatrixId, setEditingPricingMatrixId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<GuidedFieldErrors>({});
 
   const selectedRole =
     bootstrap?.available_clubs.find((club) => club.club_id === selectedClubId)?.membership_role ?? null;
@@ -325,155 +438,255 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
   const pricingLocked = !readiness?.rules_configured;
   const completedCount = readinessCount(readiness);
 
+  const courseMutation = useCreateCourseMutation();
+  const teeMutation = useCreateTeeMutation();
+  const ruleCreateMutation = useCreateRuleSetMutation();
+  const pricingCreateMutation = useCreatePricingMatrixMutation();
+  const pricingUpdateMutation = useUpdatePricingMatrixMutation();
+  const publishRulesMutation = usePublishGolfRuleSetMutation();
+  const rollbackRulesMutation = useRollbackGolfRuleSetMutation();
+  const publishPricingMutation = usePublishGolfPricingMatrixMutation();
+  const rollbackPricingMutation = useRollbackGolfPricingMatrixMutation();
+
   useEffect(() => {
     if (!teeCourseId && courses[0]?.id) {
       setTeeCourseId(courses[0].id);
     }
   }, [courses, teeCourseId]);
 
-  async function invalidateSetupQueries(): Promise<void> {
-    if (!selectedClubId) {
+  function clearFieldError(field: GuidedFieldKey): void {
+    if (!fieldErrors[field]) {
       return;
     }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: operationsKeys.courses(selectedClubId) }),
-      queryClient.invalidateQueries({ queryKey: operationsKeys.tees(selectedClubId) }),
-      queryClient.invalidateQueries({ queryKey: operationsKeys.rules(selectedClubId) }),
-      queryClient.invalidateQueries({ queryKey: operationsKeys.pricing(selectedClubId) }),
-      queryClient.invalidateQueries({ queryKey: operationsKeys.readiness(selectedClubId) }),
-    ]);
+
+    const nextErrors = { ...fieldErrors };
+    delete nextErrors[field];
+    setFieldErrors(nextErrors);
+
+    if (error === GUIDED_FIELD_BANNER && Object.keys(nextErrors).length === 0) {
+      setError(null);
+    }
   }
 
-  const courseMutation = useMutation({
-    mutationFn: () =>
-      createCourse(
-        { name: courseName.trim(), holes: Number(courseHoles), active: true },
-        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
-      ),
-    onSuccess: async () => {
+  function validateRequiredField(field: GuidedFieldKey, value: string): boolean {
+    if (value.trim()) {
+      return true;
+    }
+
+    setFieldErrors((current) => ({
+      ...current,
+      [field]: guidedRequiredMessage(field),
+    }));
+    return false;
+  }
+
+  function applyMutationError(
+    mutationError: unknown,
+    fieldMap: Partial<Record<string, GuidedFieldKey>>,
+  ): void {
+    const parsedError = parseGuidedMutationError(mutationError, fieldMap);
+    setError(parsedError.bannerMessage);
+    if (Object.keys(parsedError.fieldErrors).length > 0) {
+      setFieldErrors((current) => ({ ...current, ...parsedError.fieldErrors }));
+    }
+  }
+
+  async function handleCreateCourse(): Promise<void> {
+    if (!validateRequiredField("courseName", courseName)) {
+      setError(GUIDED_FIELD_BANNER);
+      return;
+    }
+
+    try {
+      await courseMutation.mutateAsync({
+        name: courseName.trim(),
+        holes: Number(courseHoles),
+        active: true,
+      });
+      clearFieldError("courseName");
       setCourseName("");
       setCourseHoles("18");
       setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+    } catch (mutationError) {
+      applyMutationError(mutationError, { name: "courseName" });
+    }
+  }
 
-  const teeMutation = useMutation({
-    mutationFn: () =>
-      createTee(
-        {
-          course_id: teeCourseId,
-          name: teeName.trim(),
-          gender: teeGender,
-          slope_rating: Number(teeSlope),
-          course_rating: teeRating,
-          color_code: teeColor,
-          active: true,
-        },
-        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
-      ),
-    onSuccess: async () => {
+  async function handleCreateTee(): Promise<void> {
+    if (!validateRequiredField("teeName", teeName)) {
+      setError(GUIDED_FIELD_BANNER);
+      return;
+    }
+
+    try {
+      await teeMutation.mutateAsync({
+        course_id: teeCourseId,
+        name: teeName.trim(),
+        gender: teeGender,
+        slope_rating: Number(teeSlope),
+        course_rating: teeRating,
+        color_code: teeColor,
+        active: true,
+      });
+      clearFieldError("teeName");
       setTeeName("");
       setTeeGender("mixed");
       setTeeSlope("113");
       setTeeRating("72.0");
       setTeeColor("#1b4d8f");
       setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+    } catch (mutationError) {
+      applyMutationError(mutationError, { name: "teeName" });
+    }
+  }
 
-  const ruleCreateMutation = useMutation({
-    mutationFn: () =>
-      createRuleSet(
-        {
-          name: ruleDraft.name.trim(),
-          applies_to: ruleDraft.appliesTo,
-          priority: Number(ruleDraft.priority),
-          active: false,
-          rules: [buildRulePayload(ruleDraft)],
-        },
-        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
-      ),
-    onSuccess: async () => {
+  async function handleCreateRuleSet(): Promise<void> {
+    if (!validateRequiredField("ruleName", ruleDraft.name)) {
+      setError(GUIDED_FIELD_BANNER);
+      return;
+    }
+
+    try {
+      await ruleCreateMutation.mutateAsync({
+        name: ruleDraft.name.trim(),
+        applies_to: ruleDraft.appliesTo,
+        priority: Number(ruleDraft.priority),
+        active: false,
+        rules: [buildRulePayload(ruleDraft)],
+      });
+      clearFieldError("ruleName");
       setRuleDraft(blankRuleDraft());
       setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+    } catch (mutationError) {
+      applyMutationError(mutationError, { name: "ruleName" });
+    }
+  }
 
-  const pricingCreateMutation = useMutation({
-    mutationFn: () =>
-      createPricingMatrix(
-        {
-          name: pricingDraft.name.trim(),
-          active: false,
-          rules: [buildPricingPayload(pricingDraft)],
-        },
-        { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
-      ),
-    onSuccess: async () => {
-      setPricingDraft(blankPricingDraft());
-      setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
-
-  const publishRulesMutation = useMutation({
-    mutationFn: (ruleSetId: string) =>
-      publishGolfRuleSet(ruleSetId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
+  function updatePricingRuleDraft(
+    key: string,
+    patch: Partial<PricingRuleDraftForm>,
+  ): void {
+    setPricingDraft((current) => ({
+      ...current,
+      rules: current.rules.map((rule) => {
+        if (rule.key !== key) {
+          return rule;
+        }
+        const next = { ...rule, ...patch };
+        if (patch.appliesTo) {
+          const supported = pricingPlayerTypeOptions(patch.appliesTo);
+          if (!supported.includes(next.playerType)) {
+            next.playerType = supported[0];
+          }
+        }
+        if (patch.timeBand && patch.timeBand !== "custom") {
+          next.timeBandRef = "";
+        }
+        return next;
       }),
-    onSuccess: async () => {
-      setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+    }));
+  }
 
-  const rollbackRulesMutation = useMutation({
-    mutationFn: () =>
-      rollbackGolfRuleSet({
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async () => {
-      setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+  function addPricingRuleDraft(): void {
+    setPricingDraft((current) => ({
+      ...current,
+      rules: [...current.rules, blankPricingRuleDraft()],
+    }));
+  }
 
-  const publishPricingMutation = useMutation({
-    mutationFn: (matrixId: string) =>
-      publishGolfPricingMatrix(matrixId, {
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async () => {
-      setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+  function removePricingRuleDraft(key: string): void {
+    setPricingDraft((current) => ({
+      ...current,
+      rules: current.rules.length === 1 ? current.rules : current.rules.filter((rule) => rule.key !== key),
+    }));
+  }
 
-  const rollbackPricingMutation = useMutation({
-    mutationFn: () =>
-      rollbackGolfPricingMatrix({
-        accessToken: accessToken as string,
-        selectedClubId: selectedClubId as string,
-      }),
-    onSuccess: async () => {
+  function startEditingPricingMatrix(matrix: PricingMatrix): void {
+    setEditingPricingMatrixId(matrix.id);
+    setPricingDraft({
+      name: matrix.name,
+      rules: matrix.rules.map((rule) => ({
+        key: nextPricingRuleKey(),
+        appliesTo: rule.applies_to,
+        playerType: rule.player_type,
+        holes: String(rule.holes),
+        dayType: rule.day_type,
+        season: rule.season,
+        timeBand: rule.time_band,
+        timeBandRef: rule.time_band_ref ?? "",
+        price: rule.price,
+        currency: rule.currency,
+      })),
+    });
+    setError(null);
+    clearFieldError("pricingName");
+  }
+
+  function resetPricingDraft(): void {
+    setEditingPricingMatrixId(null);
+    setPricingDraft(blankPricingDraft());
+  }
+
+  async function handleCreatePricingMatrix(): Promise<void> {
+    if (!validateRequiredField("pricingName", pricingDraft.name)) {
+      setError(GUIDED_FIELD_BANNER);
+      return;
+    }
+
+    try {
+      const payload = {
+        name: pricingDraft.name.trim(),
+        active: false,
+        rules: buildPricingPayload(pricingDraft),
+      };
+      if (editingPricingMatrixId) {
+        await pricingUpdateMutation.mutateAsync({ matrixId: editingPricingMatrixId, payload });
+      } else {
+        await pricingCreateMutation.mutateAsync(payload);
+      }
+      clearFieldError("pricingName");
+      resetPricingDraft();
       setError(null);
-      await invalidateSetupQueries();
-    },
-    onError: (mutationError) => setError(asMessage(mutationError)),
-  });
+    } catch (mutationError) {
+      applyMutationError(mutationError, { name: "pricingName" });
+    }
+  }
+
+  async function handlePublishRules(ruleSetId: string): Promise<void> {
+    try {
+      await publishRulesMutation.mutateAsync(ruleSetId);
+      setError(null);
+    } catch (mutationError) {
+      applyMutationError(mutationError, {});
+    }
+  }
+
+  async function handleRollbackRules(): Promise<void> {
+    try {
+      await rollbackRulesMutation.mutateAsync();
+      setError(null);
+    } catch (mutationError) {
+      applyMutationError(mutationError, {});
+    }
+  }
+
+  async function handlePublishPricing(matrixId: string): Promise<void> {
+    try {
+      await publishPricingMutation.mutateAsync(matrixId);
+      setError(null);
+    } catch (mutationError) {
+      applyMutationError(mutationError, {});
+    }
+  }
+
+  async function handleRollbackPricing(): Promise<void> {
+    try {
+      await rollbackPricingMutation.mutateAsync();
+      setError(null);
+    } catch (mutationError) {
+      applyMutationError(mutationError, {});
+    }
+  }
 
   return (
     <AdminWorkspace
@@ -535,11 +748,19 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
           <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
             <FieldLabel label="Course name" />
             <input
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-              onChange={(event) => setCourseName(event.target.value)}
+              aria-invalid={fieldErrors.courseName ? "true" : "false"}
+              className={guidedFieldClassName(Boolean(fieldErrors.courseName))}
+              onBlur={() => {
+                validateRequiredField("courseName", courseName);
+              }}
+              onChange={(event) => {
+                clearFieldError("courseName");
+                setCourseName(event.target.value);
+              }}
               placeholder="Championship"
               value={courseName}
             />
+            {fieldErrors.courseName ? <p className="mt-2 text-xs font-medium text-rose-700">{fieldErrors.courseName}</p> : null}
             <div className="mt-4">
               <FieldLabel label="Holes" />
               <select
@@ -554,7 +775,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
             <button
               className="mt-5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
               disabled={!courseName.trim() || courseMutation.isPending}
-              onClick={() => courseMutation.mutate()}
+              onClick={() => void handleCreateCourse()}
               type="button"
             >
               {courseMutation.isPending ? "Saving..." : "Add course"}
@@ -610,11 +831,19 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                 <div>
                   <FieldLabel label="Tee name" />
                   <input
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) => setTeeName(event.target.value)}
+                    aria-invalid={fieldErrors.teeName ? "true" : "false"}
+                    className={guidedFieldClassName(Boolean(fieldErrors.teeName))}
+                    onBlur={() => {
+                      validateRequiredField("teeName", teeName);
+                    }}
+                    onChange={(event) => {
+                      clearFieldError("teeName");
+                      setTeeName(event.target.value);
+                    }}
                     placeholder="Blue"
                     value={teeName}
                   />
+                  {fieldErrors.teeName ? <p className="mt-2 text-xs font-medium text-rose-700">{fieldErrors.teeName}</p> : null}
                 </div>
                 <div>
                   <FieldLabel label="Gender" />
@@ -657,7 +886,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
               <button
                 className="mt-5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
                 disabled={!teeCourseId || !teeName.trim() || teeMutation.isPending}
-                onClick={() => teeMutation.mutate()}
+                onClick={() => void handleCreateTee()}
                 type="button"
               >
                 {teeMutation.isPending ? "Saving..." : "Add tee"}
@@ -709,11 +938,19 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                 <div>
                   <FieldLabel label="Rule set name" />
                   <input
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) => setRuleDraft((current) => ({ ...current, name: event.target.value }))}
+                    aria-invalid={fieldErrors.ruleName ? "true" : "false"}
+                    className={guidedFieldClassName(Boolean(fieldErrors.ruleName))}
+                    onBlur={() => {
+                      validateRequiredField("ruleName", ruleDraft.name);
+                    }}
+                    onChange={(event) => {
+                      clearFieldError("ruleName");
+                      setRuleDraft((current) => ({ ...current, name: event.target.value }));
+                    }}
                     placeholder="Member standard"
                     value={ruleDraft.name}
                   />
+                  {fieldErrors.ruleName ? <p className="mt-2 text-xs font-medium text-rose-700">{fieldErrors.ruleName}</p> : null}
                 </div>
                 <div>
                   <FieldLabel label="Audience" />
@@ -788,7 +1025,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
               <button
                 className="mt-5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
                 disabled={!ruleDraft.name.trim() || ruleCreateMutation.isPending}
-                onClick={() => ruleCreateMutation.mutate()}
+                onClick={() => void handleCreateRuleSet()}
                 type="button"
               >
                 {ruleCreateMutation.isPending ? "Saving..." : "Save draft"}
@@ -811,7 +1048,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                 <button
                   className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!activeRuleSet || rollbackRulesMutation.isPending}
-                  onClick={() => rollbackRulesMutation.mutate()}
+                  onClick={() => void handleRollbackRules()}
                   type="button"
                 >
                   {rollbackRulesMutation.isPending ? "Rolling back..." : "Rollback"}
@@ -830,7 +1067,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                         <button
                           className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                           disabled={publishRulesMutation.isPending}
-                          onClick={() => publishRulesMutation.mutate(draft.id)}
+                          onClick={() => void handlePublishRules(draft.id)}
                           type="button"
                         >
                           {publishRulesMutation.isPending ? "Publishing..." : "Publish"}
@@ -862,7 +1099,9 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">New draft</p>
-                  <h3 className="mt-1 font-headline text-xl font-extrabold text-on-surface">Create pricing draft</h3>
+                  <h3 className="mt-1 font-headline text-xl font-extrabold text-on-surface">
+                    {editingPricingMatrixId ? "Edit pricing draft" : "Create pricing draft"}
+                  </h3>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Draft only</span>
               </div>
@@ -870,64 +1109,181 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                 <div>
                   <FieldLabel label="Matrix name" />
                   <input
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) => setPricingDraft((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Member weekday"
+                    aria-invalid={fieldErrors.pricingName ? "true" : "false"}
+                    className={guidedFieldClassName(Boolean(fieldErrors.pricingName))}
+                    onBlur={() => {
+                      validateRequiredField("pricingName", pricingDraft.name);
+                    }}
+                    onChange={(event) => {
+                      clearFieldError("pricingName");
+                      setPricingDraft((current) => ({ ...current, name: event.target.value }));
+                    }}
+                    placeholder="Visitor benchmark pricing"
                     value={pricingDraft.name}
                   />
+                  {fieldErrors.pricingName ? <p className="mt-2 text-xs font-medium text-rose-700">{fieldErrors.pricingName}</p> : null}
                 </div>
                 <div>
-                  <FieldLabel label="Audience" />
-                  <select
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) =>
-                      setPricingDraft((current) => ({ ...current, appliesTo: event.target.value as PricingRuleAppliesTo }))
-                    }
-                    value={pricingDraft.appliesTo}
-                  >
-                    <option value="member">Member</option>
-                    <option value="guest">Guest</option>
-                  </select>
-                </div>
-                <div>
-                  <FieldLabel label="Time band" />
-                  <select
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) =>
-                      setPricingDraft((current) => ({ ...current, timeBand: event.target.value as PricingTimeBand }))
-                    }
-                    value={pricingDraft.timeBand}
-                  >
-                    <option value="morning">Morning</option>
-                    <option value="afternoon">Afternoon</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                </div>
-                <div>
-                  <FieldLabel label="Price" />
-                  <input
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) => setPricingDraft((current) => ({ ...current, price: event.target.value }))}
-                    value={pricingDraft.price}
-                  />
-                </div>
-                <div>
-                  <FieldLabel label="Currency" note={selectedRole === "club_admin" ? "Managed locally" : undefined} />
-                  <input
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm uppercase text-on-surface focus:border-emerald-500 focus:outline-none"
-                    onChange={(event) => setPricingDraft((current) => ({ ...current, currency: event.target.value.toUpperCase() }))}
-                    value={pricingDraft.currency}
-                  />
+                  <FieldLabel label="Rule rows" note={`${pricingDraft.rules.length} configured`} />
+                  <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                    Dimensions stay backend-owned: player type, holes, day type, season, and time band.
+                  </div>
                 </div>
               </div>
-              <button
-                className="mt-5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!pricingDraft.name.trim() || pricingCreateMutation.isPending}
-                onClick={() => pricingCreateMutation.mutate()}
-                type="button"
-              >
-                {pricingCreateMutation.isPending ? "Saving..." : "Save draft"}
-              </button>
+              <div className="mt-5 space-y-4">
+                {pricingDraft.rules.map((rule, index) => (
+                  <div className="rounded-[24px] border border-slate-200 bg-white p-4" key={rule.key}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rule row {index + 1}</p>
+                        <p className="mt-1 text-sm text-slate-500">{pricingRuleSummary(rule)}</p>
+                      </div>
+                      <button
+                        className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                        disabled={pricingDraft.rules.length === 1}
+                        onClick={() => removePricingRuleDraft(rule.key)}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div>
+                        <FieldLabel label="Audience" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { appliesTo: event.target.value as PricingRuleAppliesTo })}
+                          value={rule.appliesTo}
+                        >
+                          <option value="member">Member</option>
+                          <option value="guest">Guest</option>
+                          <option value="staff">Staff</option>
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel label="Player type" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { playerType: event.target.value as PricingPlayerType })}
+                          value={rule.playerType}
+                        >
+                          {pricingPlayerTypeOptions(rule.appliesTo).map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel label="Holes" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { holes: event.target.value })}
+                          value={rule.holes}
+                        >
+                          <option value="9">9 holes</option>
+                          <option value="18">18 holes</option>
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel label="Day type" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { dayType: event.target.value as PricingDayType })}
+                          value={rule.dayType}
+                        >
+                          <option value="any">All days</option>
+                          <option value="weekday">Weekday</option>
+                          <option value="weekend">Weekend</option>
+                          <option value="public_holiday">Public holiday</option>
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel label="Season" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { season: event.target.value as PricingSeason })}
+                          value={rule.season}
+                        >
+                          <option value="any">All seasons</option>
+                          <option value="peak">Peak</option>
+                          <option value="off_peak">Off peak</option>
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel label="Time band" />
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { timeBand: event.target.value as PricingTimeBand })}
+                          value={rule.timeBand}
+                        >
+                          <option value="any">Any time</option>
+                          <option value="morning">Morning</option>
+                          <option value="afternoon">Afternoon</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                      </div>
+                      {rule.timeBand === "custom" ? (
+                        <div>
+                          <FieldLabel label="Custom ref" />
+                          <input
+                            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                            onChange={(event) => updatePricingRuleDraft(rule.key, { timeBandRef: event.target.value })}
+                            placeholder="prime"
+                            value={rule.timeBandRef}
+                          />
+                        </div>
+                      ) : null}
+                      <div>
+                        <FieldLabel label="Price" />
+                        <input
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { price: event.target.value })}
+                          value={rule.price}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel label="Currency" note={selectedRole === "club_admin" ? "Managed locally" : undefined} />
+                        <input
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm uppercase text-on-surface focus:border-emerald-500 focus:outline-none"
+                          onChange={(event) => updatePricingRuleDraft(rule.key, { currency: event.target.value.toUpperCase() })}
+                          value={rule.currency}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  onClick={() => addPricingRuleDraft()}
+                  type="button"
+                >
+                  Add rule row
+                </button>
+                {editingPricingMatrixId ? (
+                  <button
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    onClick={() => resetPricingDraft()}
+                    type="button"
+                  >
+                    Cancel edit
+                  </button>
+                ) : null}
+                <button
+                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  disabled={!pricingDraft.name.trim() || pricingCreateMutation.isPending || pricingUpdateMutation.isPending}
+                  onClick={() => void handleCreatePricingMatrix()}
+                  type="button"
+                >
+                  {pricingCreateMutation.isPending || pricingUpdateMutation.isPending
+                    ? "Saving..."
+                    : editingPricingMatrixId
+                      ? "Update draft"
+                      : "Save draft"}
+                </button>
+              </div>
             </div>
             <div className="space-y-4">
               <div className="rounded-[24px] border border-slate-200 bg-white p-5">
@@ -939,7 +1295,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                     </h3>
                     <p className="mt-2 text-sm text-slate-500">
                       {activePricing?.rules[0]
-                        ? `${activePricing.rules[0].time_band} / ${activePricing.rules[0].price} ${activePricing.rules[0].currency}`
+                        ? pricingRuleSummary(activePricing.rules[0])
                         : "Publish a pricing draft when booking rules are active."}
                     </p>
                   </div>
@@ -950,7 +1306,7 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                 <button
                   className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!activePricing || rollbackPricingMutation.isPending}
-                  onClick={() => rollbackPricingMutation.mutate()}
+                  onClick={() => void handleRollbackPricing()}
                   type="button"
                 >
                   {rollbackPricingMutation.isPending ? "Rolling back..." : "Rollback"}
@@ -966,18 +1322,27 @@ export function AdminGolfSettingsGuidedPage(): JSX.Element {
                           <h4 className="mt-1 font-headline text-lg font-extrabold text-on-surface">{surfacePricingLabel(draft)}</h4>
                           <p className="mt-2 text-sm text-slate-600">
                             {draft.rules[0]
-                              ? `${draft.rules[0].time_band} / ${draft.rules[0].price} ${draft.rules[0].currency}`
+                              ? pricingRuleSummary(draft.rules[0])
                               : "Draft pricing rules ready to publish"}
                           </p>
                         </div>
-                        <button
-                          className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                          disabled={publishPricingMutation.isPending}
-                          onClick={() => publishPricingMutation.mutate(draft.id)}
-                          type="button"
-                        >
-                          {publishPricingMutation.isPending ? "Publishing..." : "Publish"}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                            onClick={() => startEditingPricingMatrix(draft)}
+                            type="button"
+                          >
+                            {editingPricingMatrixId === draft.id ? "Editing" : "Edit"}
+                          </button>
+                          <button
+                            className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                            disabled={publishPricingMutation.isPending}
+                            onClick={() => void handlePublishPricing(draft.id)}
+                            type="button"
+                          >
+                            {publishPricingMutation.isPending ? "Publishing..." : "Publish"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))

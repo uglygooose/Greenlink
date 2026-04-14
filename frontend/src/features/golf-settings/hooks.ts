@@ -1,20 +1,37 @@
-import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import {
+  createCourse,
+  createPricingMatrix,
+  createRuleSet,
+  createTee,
   fetchClubConfig,
   fetchCourses,
   fetchGolfSettingsReadiness,
   fetchPricingMatrices,
   fetchRuleSets,
   fetchTees,
+  publishGolfPricingMatrix,
+  publishGolfRuleSet,
+  rollbackGolfPricingMatrix,
+  rollbackGolfRuleSet,
+  updateClubConfig,
+  updatePricingMatrix,
+  updateRuleSet,
 } from "../../api/operations";
+import { useSession } from "../../session/session-context";
 import type {
   BookingRuleSet,
+  BookingRuleSetInput,
   ClubConfig,
+  ClubConfigInput,
   Course,
+  CourseInput,
   GolfSettingsReadiness,
   PricingMatrix,
+  PricingMatrixInput,
   Tee,
+  TeeInput,
 } from "../../types/operations";
 
 export const operationsKeys = {
@@ -33,6 +50,30 @@ interface QueryOptions {
 
 function isReady(accessToken: string | null, selectedClubId: string | null): accessToken is string {
   return Boolean(accessToken && selectedClubId);
+}
+
+async function invalidateOperationalSettingsWorkspace(
+  queryClient: ReturnType<typeof useQueryClient>,
+  selectedClubId: string | null,
+  includeClubConfig = false,
+): Promise<void> {
+  if (!selectedClubId) {
+    return;
+  }
+
+  const invalidations: Array<Promise<void>> = [
+    queryClient.invalidateQueries({ queryKey: operationsKeys.courses(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: operationsKeys.tees(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: operationsKeys.rules(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: operationsKeys.pricing(selectedClubId) }),
+    queryClient.invalidateQueries({ queryKey: operationsKeys.readiness(selectedClubId) }),
+  ];
+
+  if (includeClubConfig) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: operationsKeys.clubConfig(selectedClubId) }));
+  }
+
+  await Promise.all(invalidations);
 }
 
 export function useClubConfigQuery({ accessToken, selectedClubId }: QueryOptions) {
@@ -82,6 +123,193 @@ export function useGolfSettingsReadinessQuery({ accessToken, selectedClubId }: Q
     queryFn: () =>
       fetchGolfSettingsReadiness({ accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
     enabled: isReady(accessToken, selectedClubId),
+  });
+}
+
+export function useCreateCourseMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: CourseInput) =>
+      createCourse(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useCreateTeeMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: TeeInput) =>
+      createTee(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useUpdateClubConfigMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: ClubConfigInput) =>
+      updateClubConfig(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId, true);
+    },
+  });
+}
+
+export function useCreateRuleSetMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: BookingRuleSetInput) =>
+      createRuleSet(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useUpdateRuleSetMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: ({ ruleSetId, payload }: { ruleSetId: string; payload: BookingRuleSetInput }) =>
+      updateRuleSet(ruleSetId, payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function usePublishGolfRuleSetMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (ruleSetId: string) =>
+      publishGolfRuleSet(ruleSetId, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useRollbackGolfRuleSetMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: () =>
+      rollbackGolfRuleSet({
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useCreatePricingMatrixMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (payload: PricingMatrixInput) =>
+      createPricingMatrix(payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useUpdatePricingMatrixMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: ({ matrixId, payload }: { matrixId: string; payload: PricingMatrixInput }) =>
+      updatePricingMatrix(matrixId, payload, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function usePublishGolfPricingMatrixMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: (matrixId: string) =>
+      publishGolfPricingMatrix(matrixId, {
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
+  });
+}
+
+export function useRollbackGolfPricingMatrixMutation() {
+  const queryClient = useQueryClient();
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+
+  return useMutation({
+    mutationFn: () =>
+      rollbackGolfPricingMatrix({
+        accessToken: accessToken as string,
+        selectedClubId: selectedClubId as string,
+      }),
+    onSuccess: async () => {
+      await invalidateOperationalSettingsWorkspace(queryClient, selectedClubId);
+    },
   });
 }
 

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import ClubMembershipRole, PricingDayType, PricingTimeBand
+from app.models import ClubMembershipRole, PricingDayType, PricingPlayerType, PricingSeason, PricingTimeBand
 from app.models.enums import BookingRuleAppliesTo
 
 
@@ -24,6 +24,9 @@ class RuleContextInput(BaseModel):
     effective_datetime: datetime | None = None
     reference_datetime: datetime | None = None
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    pricing_player_type: PricingPlayerType | None = None
+    holes: int | None = None
+    season: PricingSeason | None = None
     day_type: PricingDayType | None = None
     time_band: PricingTimeBand | None = None
     time_band_ref: str | None = Field(default=None, max_length=120)
@@ -35,6 +38,15 @@ class RuleContextInput(BaseModel):
             return value
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Datetime values must include an explicit timezone offset")
+        return value
+
+    @field_validator("holes")
+    @classmethod
+    def validate_holes(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value not in {9, 18}:
+            raise ValueError("holes must be 9 or 18")
         return value
 
     @model_validator(mode="after")
@@ -82,6 +94,9 @@ class NormalizedRuleContext(BaseModel):
     tee_id: uuid.UUID | None = None
     applies_to: BookingRuleAppliesTo | None = None
     membership_role: ClubMembershipRole | None = None
+    pricing_player_type: PricingPlayerType | None = None
+    holes: int | None = None
+    season: PricingSeason | None = None
     effective_datetime: datetime | None = None
     reference_datetime: datetime | None = None
     timezone: str

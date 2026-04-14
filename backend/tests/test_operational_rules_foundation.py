@@ -195,7 +195,10 @@ def test_club_admin_can_manage_operational_rules_foundation(
             "rules": [
                 {
                     "applies_to": "member",
+                    "player_type": "member_standard",
+                    "holes": 18,
                     "day_type": "weekday",
+                    "season": "any",
                     "time_band": "morning",
                     "price": "325.00",
                     "currency": "ZAR",
@@ -216,7 +219,10 @@ def test_club_admin_can_manage_operational_rules_foundation(
             "rules": [
                 {
                     "applies_to": "guest",
+                    "player_type": "visitor_affiliated",
+                    "holes": 18,
                     "day_type": "weekend",
+                    "season": "any",
                     "time_band": "afternoon",
                     "price": "475.00",
                     "currency": "ZAR",
@@ -295,7 +301,10 @@ def test_club_staff_has_limited_operational_access(client: TestClient, db_sessio
             "rules": [
                 {
                     "applies_to": "guest",
+                    "player_type": "visitor_non_affiliated",
+                    "holes": 18,
                     "day_type": "weekday",
+                    "season": "any",
                     "time_band": "custom",
                     "time_band_ref": "staff-window",
                     "price": "250.00",

@@ -432,6 +432,7 @@ class FinanceUnpaidBookingSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    course_id: uuid.UUID
     slot_datetime: datetime
     party_size: int
     fee_label: str | None = None

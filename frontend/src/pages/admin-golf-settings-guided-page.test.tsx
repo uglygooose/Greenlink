@@ -10,45 +10,53 @@ const mockUseTeesQuery = vi.fn();
 const mockUseRuleSetsQuery = vi.fn();
 const mockUsePricingMatricesQuery = vi.fn();
 const mockUseGolfSettingsReadinessQuery = vi.fn();
+const mockUseCreateCourseMutation = vi.fn();
+const mockUseCreateTeeMutation = vi.fn();
+const mockUseCreateRuleSetMutation = vi.fn();
+const mockUseCreatePricingMatrixMutation = vi.fn();
+const mockUseUpdatePricingMatrixMutation = vi.fn();
+const mockUsePublishGolfRuleSetMutation = vi.fn();
+const mockUseRollbackGolfRuleSetMutation = vi.fn();
+const mockUsePublishGolfPricingMatrixMutation = vi.fn();
+const mockUseRollbackGolfPricingMatrixMutation = vi.fn();
 
-const mockCreateCourse = vi.fn();
-const mockCreateTee = vi.fn();
-const mockCreateRuleSet = vi.fn();
-const mockCreatePricingMatrix = vi.fn();
-const mockPublishGolfRuleSet = vi.fn();
-const mockRollbackGolfRuleSet = vi.fn();
-const mockPublishGolfPricingMatrix = vi.fn();
-const mockRollbackGolfPricingMatrix = vi.fn();
+const createCourseMutateAsync = vi.fn();
+const createTeeMutateAsync = vi.fn();
+const createRuleSetMutateAsync = vi.fn();
+const createPricingMatrixMutateAsync = vi.fn();
+const updatePricingMatrixMutateAsync = vi.fn();
+const publishRuleSetMutateAsync = vi.fn();
+const rollbackRuleSetMutateAsync = vi.fn();
+const publishPricingMutateAsync = vi.fn();
+const rollbackPricingMutateAsync = vi.fn();
 
 vi.mock("../session/session-context", () => ({
   useSession: () => mockUseSession(),
 }));
 
 vi.mock("../features/golf-settings/hooks", () => ({
-  operationsKeys: {
-    courses: (clubId: string) => ["operations", clubId, "courses"],
-    tees: (clubId: string) => ["operations", clubId, "tees"],
-    rules: (clubId: string) => ["operations", clubId, "rules"],
-    pricing: (clubId: string) => ["operations", clubId, "pricing"],
-    readiness: (clubId: string) => ["operations", clubId, "readiness"],
-  },
   useCoursesQuery: () => mockUseCoursesQuery(),
   useTeesQuery: () => mockUseTeesQuery(),
   useRuleSetsQuery: () => mockUseRuleSetsQuery(),
   usePricingMatricesQuery: () => mockUsePricingMatricesQuery(),
   useGolfSettingsReadinessQuery: () => mockUseGolfSettingsReadinessQuery(),
+  useCreateCourseMutation: () => mockUseCreateCourseMutation(),
+  useCreateTeeMutation: () => mockUseCreateTeeMutation(),
+  useCreateRuleSetMutation: () => mockUseCreateRuleSetMutation(),
+  useCreatePricingMatrixMutation: () => mockUseCreatePricingMatrixMutation(),
+  useUpdatePricingMatrixMutation: () => mockUseUpdatePricingMatrixMutation(),
+  usePublishGolfRuleSetMutation: () => mockUsePublishGolfRuleSetMutation(),
+  useRollbackGolfRuleSetMutation: () => mockUseRollbackGolfRuleSetMutation(),
+  usePublishGolfPricingMatrixMutation: () => mockUsePublishGolfPricingMatrixMutation(),
+  useRollbackGolfPricingMatrixMutation: () => mockUseRollbackGolfPricingMatrixMutation(),
 }));
 
-vi.mock("../api/operations", () => ({
-  createCourse: (...args: unknown[]) => mockCreateCourse(...args),
-  createTee: (...args: unknown[]) => mockCreateTee(...args),
-  createRuleSet: (...args: unknown[]) => mockCreateRuleSet(...args),
-  createPricingMatrix: (...args: unknown[]) => mockCreatePricingMatrix(...args),
-  publishGolfRuleSet: (...args: unknown[]) => mockPublishGolfRuleSet(...args),
-  rollbackGolfRuleSet: (...args: unknown[]) => mockRollbackGolfRuleSet(...args),
-  publishGolfPricingMatrix: (...args: unknown[]) => mockPublishGolfPricingMatrix(...args),
-  rollbackGolfPricingMatrix: (...args: unknown[]) => mockRollbackGolfPricingMatrix(...args),
-}));
+function buildMutation(mutateAsync: ReturnType<typeof vi.fn>) {
+  return {
+    mutateAsync,
+    isPending: false,
+  };
+}
 
 function renderPage(): void {
   const queryClient = new QueryClient({
@@ -100,14 +108,25 @@ describe("AdminGolfSettingsGuidedPage", () => {
       isLoading: false,
     });
 
-    mockCreateCourse.mockResolvedValue({});
-    mockCreateTee.mockResolvedValue({});
-    mockCreateRuleSet.mockResolvedValue({});
-    mockCreatePricingMatrix.mockResolvedValue({});
-    mockPublishGolfRuleSet.mockResolvedValue({});
-    mockRollbackGolfRuleSet.mockResolvedValue({});
-    mockPublishGolfPricingMatrix.mockResolvedValue({});
-    mockRollbackGolfPricingMatrix.mockResolvedValue({});
+    createCourseMutateAsync.mockResolvedValue({});
+    createTeeMutateAsync.mockResolvedValue({});
+    createRuleSetMutateAsync.mockResolvedValue({});
+    createPricingMatrixMutateAsync.mockResolvedValue({});
+    updatePricingMatrixMutateAsync.mockResolvedValue({});
+    publishRuleSetMutateAsync.mockResolvedValue({});
+    rollbackRuleSetMutateAsync.mockResolvedValue({});
+    publishPricingMutateAsync.mockResolvedValue({});
+    rollbackPricingMutateAsync.mockResolvedValue({});
+
+    mockUseCreateCourseMutation.mockReturnValue(buildMutation(createCourseMutateAsync));
+    mockUseCreateTeeMutation.mockReturnValue(buildMutation(createTeeMutateAsync));
+    mockUseCreateRuleSetMutation.mockReturnValue(buildMutation(createRuleSetMutateAsync));
+    mockUseCreatePricingMatrixMutation.mockReturnValue(buildMutation(createPricingMatrixMutateAsync));
+    mockUseUpdatePricingMatrixMutation.mockReturnValue(buildMutation(updatePricingMatrixMutateAsync));
+    mockUsePublishGolfRuleSetMutation.mockReturnValue(buildMutation(publishRuleSetMutateAsync));
+    mockUseRollbackGolfRuleSetMutation.mockReturnValue(buildMutation(rollbackRuleSetMutateAsync));
+    mockUsePublishGolfPricingMatrixMutation.mockReturnValue(buildMutation(publishPricingMutateAsync));
+    mockUseRollbackGolfPricingMatrixMutation.mockReturnValue(buildMutation(rollbackPricingMutateAsync));
   });
 
   test("shows backend-driven readiness and keeps later sections visibly locked", () => {
@@ -118,6 +137,21 @@ describe("AdminGolfSettingsGuidedPage", () => {
     expect(screen.getByText("Complete Courses before Tees unlock.")).toBeInTheDocument();
     expect(screen.getByText("Complete Tees before Booking Rules unlock.")).toBeInTheDocument();
     expect(screen.getByText("Activate Booking Rules before Pricing unlocks.")).toBeInTheDocument();
+  });
+
+  test("submits the course form through the canonical mutation hook", async () => {
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText("Championship"), { target: { value: "  Championship  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add course" }));
+
+    await waitFor(() => {
+      expect(createCourseMutateAsync).toHaveBeenCalledWith({
+        name: "Championship",
+        holes: 18,
+        active: true,
+      });
+    });
   });
 
   test("renders publish and rollback controls for active and draft rule and pricing versions", async () => {
@@ -163,13 +197,13 @@ describe("AdminGolfSettingsGuidedPage", () => {
           id: "pricing-active",
           name: "Live Pricing",
           status: "active",
-          rules: [{ applies_to: "member", time_band: "morning", price: "325.00", currency: "ZAR" }],
+          rules: [{ applies_to: "member", player_type: "member_standard", holes: 18, day_type: "weekday", season: "any", time_band: "morning", price: "325.00", currency: "ZAR" }],
         },
         {
           id: "pricing-draft",
           name: "Guest Pricing",
           status: "draft",
-          rules: [{ applies_to: "guest", time_band: "afternoon", price: "450.00", currency: "ZAR" }],
+          rules: [{ applies_to: "guest", player_type: "visitor_affiliated", holes: 18, day_type: "weekday", season: "off_peak", time_band: "any", price: "450.00", currency: "ZAR" }],
         },
       ],
       isLoading: false,
@@ -201,20 +235,10 @@ describe("AdminGolfSettingsGuidedPage", () => {
     fireEvent.click(rollbackButtons[1]);
 
     await waitFor(() => {
-      expect(mockPublishGolfRuleSet).toHaveBeenCalledWith(
-        "rule-draft",
-        expect.objectContaining({ accessToken: "token", selectedClubId: "club-1" }),
-      );
-      expect(mockPublishGolfPricingMatrix).toHaveBeenCalledWith(
-        "pricing-draft",
-        expect.objectContaining({ accessToken: "token", selectedClubId: "club-1" }),
-      );
-      expect(mockRollbackGolfRuleSet).toHaveBeenCalledWith(
-        expect.objectContaining({ accessToken: "token", selectedClubId: "club-1" }),
-      );
-      expect(mockRollbackGolfPricingMatrix).toHaveBeenCalledWith(
-        expect.objectContaining({ accessToken: "token", selectedClubId: "club-1" }),
-      );
+      expect(publishRuleSetMutateAsync).toHaveBeenCalledWith("rule-draft");
+      expect(publishPricingMutateAsync).toHaveBeenCalledWith("pricing-draft");
+      expect(rollbackRuleSetMutateAsync).toHaveBeenCalled();
+      expect(rollbackPricingMutateAsync).toHaveBeenCalled();
     });
   });
 });

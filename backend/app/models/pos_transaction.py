@@ -4,11 +4,12 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import TenderType
 from app.models.mixins import UUIDPrimaryKeyMixin
 
@@ -25,7 +26,10 @@ class PosTransaction(UUIDPrimaryKeyMixin, Base):
         index=True,
     )
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    tender_type: Mapped[TenderType] = mapped_column(nullable=False)
+    tender_type: Mapped[TenderType] = mapped_column(
+        Enum(TenderType, values_callable=enum_values),
+        nullable=False,
+    )
     finance_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("finance_transactions.id", ondelete="SET NULL"),
         nullable=True,

@@ -192,6 +192,7 @@ def test_exceptions_returns_unpaid_bookings_and_unresolved_orders(
     assert data["date"] == _TARGET_DATE
     assert len(data["unpaid_bookings"]) == 1
     assert len(data["unresolved_orders"]) == 1
+    assert data["unpaid_bookings"][0]["course_id"] == str(course.id)
     assert data["total_exception_count"] == 2
 
 

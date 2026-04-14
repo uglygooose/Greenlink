@@ -366,6 +366,8 @@ class BookingMoveService:
             cart_flag=booking.cart_flag,
             caddie_flag=booking.caddie_flag,
             fee_label=booking.fee_label,
+            fee_amount=booking.fee_amount,
+            fee_currency=booking.fee_currency,
             payment_status=booking.payment_status,
         )
         self.db.add(moved_booking)

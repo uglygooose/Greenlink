@@ -48,11 +48,14 @@ export interface TeeSheetSlotView {
     id: string;
     status: BookingStatus;
     party_size: number;
+    holes: number;
     slot_datetime: string;
     start_lane?: StartLane | null;
     cart_flag?: boolean;
     caddie_flag?: boolean;
     fee_label?: string | null;
+    fee_amount?: string | null;
+    fee_currency?: string | null;
     payment_status?: BookingPaymentStatus | null;
     participants: BookingParticipantSummary[];
   }>;

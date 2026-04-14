@@ -51,7 +51,7 @@ vi.mock("../features/tee-sheet/hooks", () => ({
     ],
   },
   teeSheetDayQueryOptions: (...args: unknown[]) => mockTeeSheetDayQueryOptions(...args),
-  useTeeSheetDayQuery: () => mockUseTeeSheetDayQuery(),
+  useTeeSheetDayQuery: (args: unknown) => mockUseTeeSheetDayQuery(args),
 }));
 
 vi.mock("../api/operations", () => ({
@@ -224,9 +224,12 @@ const teeSheetPayload = {
               id: "booking-1",
               status: "reserved" as const,
               party_size: 2,
+              holes: 18,
               slot_datetime: "2026-03-30T04:00:00Z",
               start_lane: "hole_1" as const,
               fee_label: "Member Weekend Rate",
+              fee_amount: "325.00",
+              fee_currency: "ZAR",
               payment_status: "pending" as const,
               cart_flag: true,
               caddie_flag: false,
@@ -272,6 +275,7 @@ const teeSheetPayload = {
               id: "booking-2",
               status: "reserved" as const,
               party_size: 4,
+              holes: 18,
               slot_datetime: "2026-03-30T04:10:00Z",
               start_lane: "hole_1" as const,
               fee_label: "Golf Day Allocation",
@@ -575,8 +579,46 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(screen.queryByRole("button", { name: /create booking for 1st tee 06:30/i })).not.toBeInTheDocument();
   });
 
+  test("honors deep-linked date and courseId query params on initial load", async () => {
+    mockUseCoursesQuery.mockReturnValue({
+      data: [
+        { id: "course-1", name: "North" },
+        { id: "course-2", name: "South" },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockUseTeesQuery.mockReturnValue({
+      data: [
+        { id: "tee-1", course_id: "course-1", active: true },
+        { id: "tee-2", course_id: "course-2", active: true },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockUseTeeSheetDayQuery.mockImplementation((args?: any) => ({
+      data: { ...cloneTeeSheetPayload(), course_id: args?.courseId ?? "course-2", date: args?.date ?? "2026-04-13" },
+      isLoading: false,
+      error: null,
+    }));
+
+    renderPage(undefined, "/admin/golf/tee-sheet?filter=unpaid&date=2026-04-13&courseId=course-2");
+
+    await waitFor(() => {
+      expect(mockUseTeeSheetDayQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          courseId: "course-2",
+          date: "2026-04-13",
+          membershipType: "staff",
+          teeId: null,
+        }),
+      );
+    });
+  });
+
   test("derives a single operational next action from booking state", () => {
     expect(deriveBookingNextAction({ payment_status: "pending", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T03:30:00Z")).toBe("needs_payment");
+    expect(deriveBookingNextAction({ payment_status: "pending", slot_datetime: "2026-03-30T04:00:00Z", status: "completed" }, "2026-03-30T04:15:00Z")).toBe("needs_payment");
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T03:30:00Z")).toBe("ready_to_check_in");
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "reserved" }, "2026-03-30T04:15:00Z")).toBe("at_risk");
     expect(deriveBookingNextAction({ payment_status: "paid", slot_datetime: "2026-03-30T04:00:00Z", status: "completed" }, "2026-03-30T04:15:00Z")).toBe("completed");
@@ -654,7 +696,7 @@ describe("AdminGolfTeeSheetPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
 
     expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cart").length).toBeGreaterThan(0);
   });
 
@@ -793,6 +835,7 @@ describe("AdminGolfTeeSheetPage", () => {
         id: "booking-3",
         status: "reserved",
         party_size: 1,
+        holes: 18,
         slot_datetime: "2026-03-30T04:00:00Z",
         start_lane: "hole_10",
         fee_label: "Member Rate",
@@ -847,9 +890,17 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(markBookingNoShow).toHaveBeenCalledWith("booking-2", { accessToken: "token", selectedClubId: "club-1" });
     expect(markBookingNoShow).toHaveBeenCalledWith("booking-3", { accessToken: "token", selectedClubId: "club-1" });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: teeSheetDayKey(testLocalDateString(new Date()), "staff", null),
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tee-sheet", "club-1"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["halfway", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "accounts"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "journal"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "revenue"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "outstanding"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "transaction-volume"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "exceptions"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-dashboard", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-reports", "club-1", "summary"] });
     });
     expect(await screen.findByText("Batch No-Show finished. 1 updated, 1 failed, 0 already processed. Only reserved bookings may be marked no-show.")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -862,6 +913,7 @@ describe("AdminGolfTeeSheetPage", () => {
         id: "booking-unresolved",
         status: "checked_in",
         party_size: 1,
+        holes: 18,
         slot_datetime: "2026-03-30T04:00:00Z",
         start_lane: "hole_10",
         fee_label: "Member Weekday Rate",
@@ -909,7 +961,7 @@ describe("AdminGolfTeeSheetPage", () => {
     expect(drawer).toBeInTheDocument();
   });
 
-  test("runs finance actions through the booking drawer and invalidates the tee sheet query", async () => {
+  test("runs finance actions through the booking drawer and invalidates cross-domain operational reads", async () => {
     vi.mocked(updateBookingPaymentStatus).mockResolvedValue({
       booking_id: "booking-1",
       decision: "allowed",
@@ -948,9 +1000,122 @@ describe("AdminGolfTeeSheetPage", () => {
       );
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: teeSheetDayKey(testLocalDateString(new Date()), "staff", null),
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tee-sheet", "club-1"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["orders", "club-1"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["halfway", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "accounts"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "journal"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "revenue"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "outstanding"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "summary", "transaction-volume"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["finance", "club-1", "exceptions"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-dashboard", "club-1", "summary"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin-reports", "club-1", "summary"] });
+    });
+  });
+
+  test("posts the resolved booking charge without a typed override", async () => {
+    vi.mocked(postBookingCharge).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      posting_applied: true,
+      booking: {
+        ...teeSheetPayload.rows[0].slots[0].bookings[0],
+        id: "booking-1",
+        club_id: "club-1",
+        course_id: "course-1",
+        slot_interval_minutes: 30,
+        source: "admin",
+        created_at: "2026-03-25T06:00:00Z",
+        updated_at: "2026-03-25T06:00:00Z",
+      },
+      transaction: {
+        id: "txn-1",
+        club_id: "club-1",
+        account_id: "account-1",
+        amount: "-325.00",
+        type: "charge",
+        source: "booking",
+        reference_id: "booking-1",
+        description: "Booking charge",
+        created_at: "2026-03-25T06:00:00Z",
+      },
+      balance: "-325.00",
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Post Charge/i }));
+
+    await waitFor(() => {
+      expect(postBookingCharge).toHaveBeenCalledWith(
+        "booking-1",
+        {},
+        { accessToken: "token", selectedClubId: "club-1" },
+      );
+    });
+    expect(await screen.findByText("Charge posted. Tee sheet refreshed from backend state.")).toBeInTheDocument();
+  });
+
+  test("requires an override amount before posting an unresolved booking charge", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[0].slots[0].bookings[0].fee_amount = null;
+    payload.rows[0].slots[0].bookings[0].fee_currency = null;
+    payload.rows[0].slots[0].bookings[0].payment_status = null;
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+    vi.mocked(postBookingCharge).mockResolvedValue({
+      booking_id: "booking-1",
+      decision: "allowed",
+      posting_applied: true,
+      booking: {
+        ...payload.rows[0].slots[0].bookings[0],
+        id: "booking-1",
+        club_id: "club-1",
+        course_id: "course-1",
+        slot_interval_minutes: 30,
+        source: "admin",
+        created_at: "2026-03-25T06:00:00Z",
+        updated_at: "2026-03-25T06:00:00Z",
+      },
+      transaction: {
+        id: "txn-2",
+        club_id: "club-1",
+        account_id: "account-1",
+        amount: "-325.00",
+        type: "charge",
+        source: "booking",
+        reference_id: "booking-1",
+        description: "Booking charge",
+        created_at: "2026-03-25T06:00:00Z",
+      },
+      balance: "-325.00",
+      failures: [],
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /manage bookings for 1st tee 06:00/i }));
+    const postChargeButton = await screen.findByRole("button", { name: /Post Charge/i });
+    expect(postChargeButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Override amount for booking booking-1/i), {
+      target: { value: "325.00" },
+    });
+
+    await waitFor(() => {
+      expect(postChargeButton).toBeEnabled();
+    });
+
+    fireEvent.click(postChargeButton);
+
+    await waitFor(() => {
+      expect(postBookingCharge).toHaveBeenCalledWith(
+        "booking-1",
+        { amount: "325.00" },
+        { accessToken: "token", selectedClubId: "club-1" },
+      );
     });
   });
 

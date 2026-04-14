@@ -46,10 +46,7 @@ export function BookingExtrasControls({
 }: BookingExtrasControlsProps): JSX.Element {
   return (
     <section className="space-y-3 rounded-2xl bg-surface-container-low p-4">
-      <div className="space-y-1">
-        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Extras</p>
-        <p className="text-sm text-on-surface">This only sends extras intent. Booking rules, availability, and pricing remain backend-owned.</p>
-      </div>
+      <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Extras</p>
       <div className="flex flex-wrap gap-3">
         <ExtrasToggleButton
           active={cartFlag}

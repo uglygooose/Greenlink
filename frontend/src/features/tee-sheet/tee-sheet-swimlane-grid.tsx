@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type { StartLane } from "../../types/bookings";
@@ -128,6 +128,7 @@ export function TeeSheetSwimLaneGrid({
 }: TeeSheetSwimLaneGridProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrolledDateRef = useRef<string | null>(null);
+  const activeDropCellRef = useRef<Element | null>(null);
   const [minuteTick, setMinuteTick] = useState(0);
 
   const columnWidth = COLUMN_WIDTH;
@@ -461,7 +462,6 @@ export function TeeSheetSwimLaneGrid({
                     const slotKey = slot ? dropKey(slot) : `${row.laneKey}:${bucket.slotDatetime}`;
                     const isHighlighted = highlightedSlotKey === slotKey;
                     const isActiveDrop = slot ? activeDropKey === dropKey(slot) : false;
-                    const allowedDrop = slot ? dropAllowed(slot) : false;
                     const reservedBlock = slot ? slot.slot.display_status === "blocked" || slot.slot.display_status === "reserved" : false;
                     const bookingSegments = slot ? slotBookingSegments(slot.slot) : [];
                     const bookingCards = bookingSegments.filter((segment) => segment.kind === "booking");
@@ -473,25 +473,40 @@ export function TeeSheetSwimLaneGrid({
                     return (
                       <div
                         aria-label={slot ? `${row.laneLabel} timeline row ${timeKey(bucket.localTime)}` : undefined}
-                        className={`absolute top-0 border-r px-2 py-2 ${bucketCellClass(virtualColumn.index)} ${isActiveDrop ? "bg-primary-container/10" : ""}`}
+                        className={`absolute top-0 border-r px-2 py-2 ${bucketCellClass(virtualColumn.index)}`}
                         data-slot-anchor={slotKey}
                         key={`${row.laneKey}:${bucket.slotDatetime}`}
                         onDragEnter={(event) => {
                           event.preventDefault();
-                          if (slot && allowedDrop) onSetActiveDropKey(dropKey(slot));
+                          if (!slot || !dropAllowed(slot)) return;
+                          if (activeDropCellRef.current && activeDropCellRef.current !== event.currentTarget) {
+                            activeDropCellRef.current.classList.remove("tee-sheet-drop-target");
+                          }
+                          activeDropCellRef.current = event.currentTarget;
+                          event.currentTarget.classList.add("tee-sheet-drop-target");
+                          onSetActiveDropKey(dropKey(slot));
                         }}
-                        onDragLeave={() => {
-                          if (slot && isActiveDrop) onSetActiveDropKey(null);
+                        onDragLeave={(event) => {
+                          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                          event.currentTarget.classList.remove("tee-sheet-drop-target");
+                          if (activeDropCellRef.current === event.currentTarget) {
+                            activeDropCellRef.current = null;
+                          }
+                          onSetActiveDropKey(null);
                         }}
                         onDragOver={(event) => {
-                          if (!slot || !allowedDrop) return;
+                          if (!slot || !dropAllowed(slot)) return;
                           event.preventDefault();
                           if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-                          onSetActiveDropKey(dropKey(slot));
                         }}
                         onDrop={(event) => {
                           event.preventDefault();
-                          if (slot && allowedDrop && dragged) onMoveBooking(slot);
+                          event.currentTarget.classList.remove("tee-sheet-drop-target");
+                          if (activeDropCellRef.current === event.currentTarget) {
+                            activeDropCellRef.current = null;
+                          }
+                          onSetActiveDropKey(null);
+                          if (slot && dropAllowed(slot) && dragged) onMoveBooking(slot);
                         }}
                         style={{ height: rowHeight, left: LEFT_RAIL_WIDTH + virtualColumn.start, width: virtualColumn.size }}
                       >

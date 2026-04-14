@@ -15,7 +15,16 @@ from app.api.routes.club_access import (
 )
 from app.api.routes.operations_support import load_rule_set, replace_booking_rules, to_rule_set_response
 from app.auth.dependencies import get_current_user, get_db
-from app.models import BookingRuleAppliesTo, BookingRuleSet, ClubMembershipRole, PricingDayType, PricingTimeBand, User
+from app.models import (
+    BookingRuleAppliesTo,
+    BookingRuleSet,
+    ClubMembershipRole,
+    PricingDayType,
+    PricingPlayerType,
+    PricingSeason,
+    PricingTimeBand,
+    User,
+)
 from app.schemas.availability import AvailabilityPolicyResult
 from app.schemas.booking_state import SlotPreviewRequest
 from app.schemas.operations import (
@@ -43,6 +52,9 @@ def evaluate_rules(
     effective_datetime: datetime | None = Query(default=None),
     reference_datetime: datetime | None = Query(default=None),
     timezone: str | None = Query(default=None),
+    pricing_player_type: PricingPlayerType | None = Query(default=None),
+    holes: int | None = Query(default=None),
+    season: PricingSeason | None = Query(default=None),
     day_type: PricingDayType | None = Query(default=None),
     time_band: PricingTimeBand | None = Query(default=None),
     time_band_ref: str | None = Query(default=None),
@@ -61,6 +73,9 @@ def evaluate_rules(
         effective_datetime=effective_datetime,
         reference_datetime=reference_datetime,
         timezone=timezone,
+        pricing_player_type=pricing_player_type,
+        holes=holes,
+        season=season,
         day_type=day_type,
         time_band=time_band,
         time_band_ref=time_band_ref,
@@ -78,6 +93,9 @@ def preview_availability(
     effective_datetime: datetime | None = Query(default=None),
     reference_datetime: datetime | None = Query(default=None),
     timezone: str | None = Query(default=None),
+    pricing_player_type: PricingPlayerType | None = Query(default=None),
+    holes: int | None = Query(default=None),
+    season: PricingSeason | None = Query(default=None),
     day_type: PricingDayType | None = Query(default=None),
     time_band: PricingTimeBand | None = Query(default=None),
     time_band_ref: str | None = Query(default=None),
@@ -96,6 +114,9 @@ def preview_availability(
         effective_datetime=effective_datetime,
         reference_datetime=reference_datetime,
         timezone=timezone,
+        pricing_player_type=pricing_player_type,
+        holes=holes,
+        season=season,
         day_type=day_type,
         time_band=time_band,
         time_band_ref=time_band_ref,
@@ -123,6 +144,9 @@ def preview_slot(
         effective_datetime=payload.effective_datetime,
         reference_datetime=payload.reference_datetime,
         timezone=payload.timezone,
+        pricing_player_type=payload.pricing_player_type,
+        holes=payload.holes,
+        season=payload.season,
         day_type=payload.day_type,
         time_band=payload.time_band,
         time_band_ref=payload.time_band_ref,
@@ -238,6 +262,9 @@ def _normalize_request_context(
     effective_datetime: datetime | None,
     reference_datetime: datetime | None,
     timezone: str | None,
+    pricing_player_type: PricingPlayerType | None,
+    holes: int | None,
+    season: PricingSeason | None,
     day_type: PricingDayType | None,
     time_band: PricingTimeBand | None,
     time_band_ref: str | None,
@@ -255,6 +282,9 @@ def _normalize_request_context(
             effective_datetime=effective_datetime,
             reference_datetime=reference_datetime,
             timezone=timezone,
+            pricing_player_type=pricing_player_type,
+            holes=holes,
+            season=season,
             day_type=day_type,
             time_band=time_band,
             time_band_ref=time_band_ref,

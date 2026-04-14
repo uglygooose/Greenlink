@@ -27,6 +27,7 @@ from app.schemas.bookings import (
     BookingSummary,
 )
 from app.schemas.finance import FinanceTransactionCreateRequest, FinanceTransactionResponse
+from app.services.booking_commercial_service import BookingCommercialService
 from app.services.finance.ledger_service import LedgerService
 
 
@@ -34,6 +35,7 @@ class BookingFinanceService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.ledger_service = LedgerService(db)
+        self.booking_commercial_service = BookingCommercialService(db)
 
     def update_payment_status(
         self,
@@ -182,6 +184,27 @@ class BookingFinanceService:
                 failures=[],
             )
 
+        charge_amount = payload.amount
+        if charge_amount is None:
+            commercial_snapshot = self.booking_commercial_service.snapshot_for_booking(booking)
+            charge_amount = commercial_snapshot.fee_amount
+        if charge_amount is None:
+            return BookingChargePostResult(
+                booking_id=booking.id,
+                decision="blocked",
+                posting_applied=False,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingFinanceMutationFailureDetail(
+                        code="booking_charge_amount_unresolved",
+                        message="Resolved booking price is unavailable. Use an override amount or fix pricing setup first.",
+                        field="amount",
+                        current_status=booking.status,
+                        current_payment_status=booking.payment_status,
+                    )
+                ],
+            )
+
         finance_account = self._resolve_finance_account(club_id=club_id, booking=booking)
         if finance_account is None:
             return BookingChargePostResult(
@@ -221,7 +244,7 @@ class BookingFinanceService:
             club_id=club_id,
             payload=FinanceTransactionCreateRequest(
                 account_id=finance_account.id,
-                amount=-payload.amount,
+                amount=-charge_amount,
                 type=FinanceTransactionType.CHARGE,
                 source=FinanceTransactionSource.BOOKING,
                 reference_id=booking.id,

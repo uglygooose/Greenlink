@@ -16,8 +16,9 @@ export interface BookingCreateInput {
   start_lane?: StartLane | null;
   slot_datetime: string;
   slot_interval_minutes?: number | null;
+  holes?: number | null;
   source?: "admin" | "member_portal";
-  applies_to?: "member" | "staff" | null;
+  applies_to?: "member" | "guest" | "staff" | null;
   reference_datetime?: string | null;
   cart_flag?: boolean;
   caddie_flag?: boolean;
@@ -42,6 +43,7 @@ export interface BookingSummary {
   tee_id?: string | null;
   start_lane?: StartLane | null;
   slot_interval_minutes?: number;
+  holes: number;
   status: BookingStatus;
   source?: string;
   party_size: number;
@@ -50,6 +52,8 @@ export interface BookingSummary {
   cart_flag?: boolean;
   caddie_flag?: boolean;
   fee_label?: string | null;
+  fee_amount?: string | null;
+  fee_currency?: string | null;
   payment_status?: BookingPaymentStatus | null;
   slot_datetime: string;
   created_at?: string;
@@ -92,7 +96,8 @@ export interface BookingCreateResult {
 
 export interface BookingUpdateInput {
   participants: BookingCreateParticipantInput[];
-  applies_to?: "member" | "staff" | null;
+  holes?: number | null;
+  applies_to?: "member" | "guest" | "staff" | null;
   reference_datetime?: string | null;
   cart_flag?: boolean;
   caddie_flag?: boolean;
@@ -146,7 +151,7 @@ export interface BookingPaymentStatusUpdateResult {
 }
 
 export interface BookingChargePostInput {
-  amount: string;
+  amount?: string | null;
   description?: string | null;
 }
 
@@ -236,6 +241,7 @@ export interface PlayerBookingReadModelItem {
   status: BookingStatus;
   source: "admin" | "member_portal";
   slot_datetime: string;
+  holes: number;
   local_date: string;
   local_time: string;
   course_name: string;
@@ -245,6 +251,8 @@ export interface PlayerBookingReadModelItem {
   primary_participant_name?: string | null;
   participant_names: string[];
   fee_label?: string | null;
+  fee_amount?: string | null;
+  fee_currency?: string | null;
   payment_status?: BookingPaymentStatus | null;
 }
 

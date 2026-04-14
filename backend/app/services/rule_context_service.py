@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError, NotFoundError
-from app.models import Club, ClubConfig, Course, PricingDayType, PricingTimeBand, Tee
+from app.models import Club, ClubConfig, Course, PricingDayType, PricingPlayerType, PricingSeason, PricingTimeBand, Tee
 from app.schemas.rule_context import (
     ContextNotice,
     DayTypeResolution,
@@ -83,6 +83,13 @@ class RuleContextService:
             tee_id=tee.id if tee is not None else None,
             applies_to=raw.applies_to,
             membership_role=raw.membership_role,
+            pricing_player_type=self._resolve_pricing_player_type(
+                raw.pricing_player_type,
+                raw.applies_to,
+                raw.membership_role,
+            ),
+            holes=raw.holes if raw.holes is not None else course.holes if course is not None else None,
+            season=self._resolve_season(raw.season, local_effective),
             effective_datetime=effective_datetime,
             reference_datetime=reference_datetime,
             timezone=timezone_name,
@@ -214,3 +221,28 @@ class RuleContextService:
             time_band_ref=None,
             warnings=[],
         )
+
+    def _resolve_season(self, supplied_season: PricingSeason | None, local_effective) -> PricingSeason | None:
+        if supplied_season is not None:
+            return supplied_season
+        if local_effective is None:
+            return None
+        return PricingSeason.PEAK if local_effective.month in {12, 1, 2, 3} else PricingSeason.OFF_PEAK
+
+    def _resolve_pricing_player_type(
+        self,
+        supplied_player_type: PricingPlayerType | None,
+        applies_to,
+        membership_role,
+    ) -> PricingPlayerType | None:
+        if supplied_player_type is not None:
+            return supplied_player_type
+        if membership_role is not None and membership_role.value in {"club_admin", "club_staff"}:
+            return PricingPlayerType.STAFF_COURTESY
+        if applies_to is None:
+            return None
+        if applies_to.value == "guest":
+            return PricingPlayerType.VISITOR_NON_AFFILIATED
+        if applies_to.value == "staff":
+            return PricingPlayerType.STAFF_COURTESY
+        return PricingPlayerType.MEMBER_STANDARD

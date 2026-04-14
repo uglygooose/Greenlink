@@ -99,18 +99,37 @@ class BookingRuleType(StrEnum):
 class PricingRuleAppliesTo(StrEnum):
     MEMBER = "member"
     GUEST = "guest"
+    STAFF = "staff"
+
+
+class PricingPlayerType(StrEnum):
+    MEMBER_STANDARD = "member_standard"
+    VISITOR_AFFILIATED = "visitor_affiliated"
+    VISITOR_NON_AFFILIATED = "visitor_non_affiliated"
+    SCHOLAR = "scholar"
+    STUDENT = "student"
+    PENSIONER = "pensioner"
+    STAFF_COURTESY = "staff_courtesy"
 
 
 class PricingDayType(StrEnum):
+    ANY = "any"
     WEEKDAY = "weekday"
     WEEKEND = "weekend"
     PUBLIC_HOLIDAY = "public_holiday"
 
 
 class PricingTimeBand(StrEnum):
+    ANY = "any"
     MORNING = "morning"
     AFTERNOON = "afternoon"
     CUSTOM = "custom"
+
+
+class PricingSeason(StrEnum):
+    ANY = "any"
+    PEAK = "peak"
+    OFF_PEAK = "off_peak"
 
 
 class BookingStatus(StrEnum):

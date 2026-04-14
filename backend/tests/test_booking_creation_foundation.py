@@ -27,6 +27,13 @@ from app.models import (
     ClubMembershipStatus,
     Course,
     Person,
+    PricingDayType,
+    PricingMatrix,
+    PricingPlayerType,
+    PricingRule,
+    PricingRuleAppliesTo,
+    PricingSeason,
+    PricingTimeBand,
     StartLane,
     Tee,
     TeeSheetSlotState,
@@ -176,6 +183,27 @@ def _seed_rules(db: Session, *, club: Club) -> None:
     db.commit()
 
 
+def _seed_pricing_matrix(db: Session, *, club: Club, price: str = "325.00") -> None:
+    matrix = PricingMatrix(club_id=club.id, name="Standard", active=True)
+    db.add(matrix)
+    db.flush()
+    db.add(
+        PricingRule(
+            matrix_id=matrix.id,
+            applies_to=PricingRuleAppliesTo.MEMBER,
+            player_type=PricingPlayerType.MEMBER_STANDARD,
+            holes=18,
+            day_type=PricingDayType.WEEKDAY,
+            season=PricingSeason.ANY,
+            time_band=PricingTimeBand.MORNING,
+            price=price,
+            currency="ZAR",
+            active=True,
+        )
+    )
+    db.commit()
+
+
 def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClient, db_session: Session) -> None:
     admin = _create_user(db_session, email="booking-admin@example.com")
     member = _create_user(db_session, email="booking-member@example.com")
@@ -259,6 +287,85 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     assert first_slot["party_summary"]["guest_count"] == 1
     assert first_slot["bookings"][0]["cart_flag"] is True
     assert first_slot["bookings"][0]["caddie_flag"] is True
+
+
+def test_booking_create_persists_resolved_pricing_snapshot_for_tee_sheet(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = _create_user(db_session, email="booking-pricing-admin@example.com")
+    member = _create_user(db_session, email="booking-pricing-member@example.com")
+    club = _create_club(db_session, name="Pricing Snapshot Club", slug="pricing-snapshot-club")
+    _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    course, tee = _seed_course_stack(db_session, club=club)
+    _seed_club_config(db_session, club=club)
+    _seed_rules(db_session, club=club)
+    _seed_pricing_matrix(db_session, club=club, price="370.00")
+
+    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    db_session.add(
+        TeeSheetSlotState(
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            slot_datetime=slot_datetime,
+            player_capacity=4,
+            manually_blocked=False,
+            reserved_state_active=False,
+            competition_controlled=False,
+            event_controlled=False,
+            externally_unavailable=False,
+        )
+    )
+    db_session.commit()
+
+    headers = _auth_headers(client, admin.email, str(club.id))
+    response = client.post(
+        "/api/golf/bookings",
+        headers=headers,
+        json={
+            "course_id": str(course.id),
+            "tee_id": str(tee.id),
+            "slot_datetime": slot_datetime.isoformat(),
+            "source": "admin",
+            "applies_to": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+            "participants": [
+                {
+                    "participant_type": "member",
+                    "person_id": str(member.person_id),
+                    "is_primary": True,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["decision"] == "allowed"
+    assert payload["booking"]["fee_amount"] == "370.00"
+    assert payload["booking"]["fee_currency"] == "ZAR"
+
+    persisted = db_session.scalar(select(Booking).where(Booking.id == payload["booking"]["id"]))
+    assert persisted is not None
+    assert str(persisted.fee_amount) == "370.00"
+    assert persisted.fee_currency == "ZAR"
+
+    tee_sheet = client.get(
+        "/api/golf/tee-sheet/day",
+        headers=headers,
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+    )
+    assert tee_sheet.status_code == 200
+    first_slot = tee_sheet.json()["rows"][0]["slots"][0]
+    assert first_slot["bookings"][0]["fee_amount"] == "370.00"
+    assert first_slot["bookings"][0]["fee_currency"] == "ZAR"
 
 
 def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_sheet(
