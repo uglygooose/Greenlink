@@ -18,7 +18,6 @@ import { ApiError } from "../api/client";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery, useTeesQuery } from "../features/golf-settings/hooks";
-import { invalidateClubOperationalReadModels } from "../features/operational-read-models/invalidation";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { BookingCreateDrawer } from "../features/tee-sheet/booking-create-drawer";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
@@ -62,6 +61,7 @@ import type {
   BookingCreateResult,
   BookingChargePostResult,
   BookingLifecycleMutationResult,
+  BookingParticipantSummary,
   BookingPaymentRecordResult,
   BookingPaymentStatusUpdateResult,
   BookingParticipantType,
@@ -657,26 +657,53 @@ function updateSlotFromBookings(slot: TeeSheetSlotView, bookings: TeeSheetBookin
   };
 }
 
+function normalizeOptimisticParticipants(
+  participants: BookingParticipantSummary[],
+): BookingParticipantSummary[] {
+  return participants.map((participant, index) => ({
+    ...participant,
+    is_primary: index === 0,
+    sort_order: index,
+  }));
+}
+
 function optimisticallyMoveBooking(
   day: TeeSheetDayResponse | undefined,
   bookingId: string,
   target: LaneSlot,
+  participantId?: string | null,
 ): TeeSheetDayResponse | undefined {
   if (!day) return day;
-  let bookingToMove: TeeSheetBookingView | null = null;
+  let sourceBooking: TeeSheetBookingView | null = null;
+  let movingParticipant: BookingParticipantSummary | null = null;
   for (const row of day.rows) {
     for (const slot of row.slots) {
       const booking = slot.bookings.find((entry) => entry.id === bookingId);
       if (booking) {
-        bookingToMove = {
-          ...booking,
-          slot_datetime: target.slot.slot_datetime,
-          start_lane: target.startLane,
-        };
+        sourceBooking = booking;
+        movingParticipant = participantId
+          ? booking.participants.find((participant) => participant.id === participantId) ?? null
+          : null;
       }
     }
   }
-  if (!bookingToMove) return day;
+  if (!sourceBooking) return day;
+
+  const splitParticipantMove = Boolean(participantId && movingParticipant && sourceBooking.participants.length > 1);
+  const bookingToMove: TeeSheetBookingView = splitParticipantMove
+    ? {
+        ...sourceBooking,
+        id: `${sourceBooking.id}:optimistic:${participantId}`,
+        party_size: 1,
+        slot_datetime: target.slot.slot_datetime,
+        start_lane: target.startLane,
+        participants: normalizeOptimisticParticipants([movingParticipant as BookingParticipantSummary]),
+      }
+    : {
+        ...sourceBooking,
+        slot_datetime: target.slot.slot_datetime,
+        start_lane: target.startLane,
+      };
 
   return {
     ...day,
@@ -684,9 +711,21 @@ function optimisticallyMoveBooking(
       ...row,
       slots: row.slots.map((slot) => {
         const isSource = slot.bookings.some((booking) => booking.id === bookingId);
-        const isTarget = row.row_key === target.rowKey && slot.slot_datetime === target.slot.slot_datetime;
+        const isTarget = row.start_lane === target.startLane && slot.slot_datetime === target.slot.slot_datetime;
         if (!isSource && !isTarget) return slot;
-        let nextBookings = slot.bookings.filter((booking) => booking.id !== bookingId);
+        let nextBookings = slot.bookings.flatMap((booking) => {
+          if (booking.id !== bookingId) return [booking];
+          if (!splitParticipantMove || !participantId) return [];
+
+          const remainingParticipants = booking.participants.filter((participant) => participant.id !== participantId);
+          if (remainingParticipants.length === 0) return [];
+
+          return [{
+            ...booking,
+            party_size: remainingParticipants.length,
+            participants: normalizeOptimisticParticipants(remainingParticipants),
+          }];
+        });
         if (isTarget) nextBookings = [...nextBookings, bookingToMove as TeeSheetBookingView];
         return updateSlotFromBookings(slot, nextBookings);
       }),
@@ -861,6 +900,50 @@ function SetupState({
   );
 }
 
+function TeeSheetGridSkeleton(): JSX.Element {
+  const laneRows = ["1st Tee", "10th Tee", "Practice Tee"];
+  const bucketCount = 8;
+
+  return (
+    <div
+      aria-hidden="true"
+      className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-sm"
+      data-testid="tee-sheet-grid-skeleton"
+    >
+      <div className="border-b border-slate-200/70 bg-slate-50/80 px-4 py-4">
+        <div className="grid grid-cols-[136px_repeat(8,minmax(0,1fr))] gap-3">
+          <div className="h-10 rounded-2xl bg-slate-200/80 animate-pulse" />
+          {Array.from({ length: bucketCount }).map((_, index) => (
+            <div key={`header-${index}`} className="space-y-2 rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
+              <div className="h-3 w-12 rounded-full bg-slate-200/90 animate-pulse" />
+              <div className="h-6 rounded-xl bg-slate-200/80 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3 bg-slate-50/50 px-4 py-4">
+        {laneRows.map((label) => (
+          <div key={label} className="grid grid-cols-[136px_repeat(8,minmax(0,1fr))] gap-3">
+            <div className="space-y-2 rounded-[24px] bg-slate-100/90 px-4 py-4">
+              <div className="h-3 w-16 rounded-full bg-slate-200/90 animate-pulse" />
+              <div className="h-7 rounded-2xl bg-slate-200/80 animate-pulse" />
+            </div>
+            {Array.from({ length: bucketCount }).map((_, index) => (
+              <div key={`${label}-${index}`} className="h-28 rounded-[24px] border border-slate-200/80 bg-white/85 p-3 shadow-sm">
+                <div className="space-y-3">
+                  <div className="h-3 w-14 rounded-full bg-slate-200/90 animate-pulse" />
+                  <div className="h-10 rounded-2xl bg-slate-200/80 animate-pulse" />
+                  <div className="h-3 w-20 rounded-full bg-slate-200/80 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AdminGolfTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap, initialized, loading } = useSession();
   const [searchParams] = useSearchParams();
@@ -883,6 +966,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [createCaddieFlag, setCreateCaddieFlag] = useState(false);
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const draggedRef = useRef<Dragged | null>(null);
+  const activeTableDropLaneCellRef = useRef<HTMLTableCellElement | null>(null);
   const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
   const [searchInputValue, setSearchInputValue] = useState("");
   // 5.5: Compound filter state replaces single ViewFilter.
@@ -1119,13 +1203,54 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     [slots],
   );
 
-  const selectedSlot = useMemo(
-    () =>
-      selectedSlotKey
-        ? slots.find((item) => item.startLane === selectedSlotKey.startLane && item.slot.slot_datetime === selectedSlotKey.slotDatetime) ?? null
-        : null,
-    [selectedSlotKey, slots],
-  );
+  const selectedSlot = useMemo(() => {
+    if (!selectedSlotKey) return null;
+    const slot =
+      slots.find((item) => item.startLane === selectedSlotKey.startLane && item.slot.slot_datetime === selectedSlotKey.slotDatetime) ?? null;
+    if (!slot || !expandedBookingContext) return slot;
+    if (!matchesExpandedBooking(expandedBookingContext, slot, expandedBookingContext.bookingId)) return slot;
+
+    const focusedBookingIndex = slot.slot.bookings.findIndex((booking) => booking.id === expandedBookingContext.bookingId);
+    if (focusedBookingIndex < 0) return slot;
+
+    const focusedBooking = slot.slot.bookings[focusedBookingIndex];
+    const focusedParticipantIndex = expandedBookingContext.participantId
+      ? focusedBooking.participants.findIndex((participant) => participant.id === expandedBookingContext.participantId)
+      : expandedBookingContext.focusedParticipantName
+        ? focusedBooking.participants.findIndex((participant) => participant.display_name === expandedBookingContext.focusedParticipantName)
+        : -1;
+    const focusedBookingForDrawer = focusedParticipantIndex > 0
+      ? {
+          ...focusedBooking,
+          participants: normalizeOptimisticParticipants([
+            focusedBooking.participants[focusedParticipantIndex],
+            ...focusedBooking.participants.filter((_, index) => index !== focusedParticipantIndex),
+          ]),
+        }
+      : focusedBooking;
+
+    if (focusedBookingIndex === 0) {
+      if (focusedBookingForDrawer === focusedBooking) return slot;
+      return {
+        ...slot,
+        slot: {
+          ...slot.slot,
+          bookings: [focusedBookingForDrawer, ...slot.slot.bookings.slice(1)],
+        },
+      };
+    }
+
+    const otherBookings = slot.slot.bookings.filter((booking) => booking.id !== expandedBookingContext.bookingId);
+
+    return {
+      ...slot,
+      slot: {
+        ...slot.slot,
+        bookings: [focusedBookingForDrawer, ...otherBookings],
+      },
+    };
+  }, [expandedBookingContext, selectedSlotKey, slots]);
+  const inlineExpandedBookingContext = drawerMode === "manage" ? null : expandedBookingContext;
 
   useEffect(() => {
     if (selectedSlotKey && !selectedSlot) {
@@ -1159,7 +1284,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     guardedSelectedClubId && courseId ? teeSheetKeys.day(guardedSelectedClubId, courseId, selectedDate, membershipType, teeId) : null;
 
   async function invalidate(): Promise<void> {
-    await invalidateClubOperationalReadModels(queryClient, guardedSelectedClubId);
+    if (!currentDayKey) return;
+    await queryClient.invalidateQueries({ queryKey: currentDayKey });
   }
 
   function rollbackLifecycleContext(context?: { previousDay: TeeSheetDayResponse | undefined }): void {
@@ -1442,13 +1568,13 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       ),
     onMutate: async ({ bookingId, participantId, target }) => {
       if (!currentDayKey) return { previousDay: undefined };
-      await queryClient.cancelQueries({ queryKey: currentDayKey });
       const previousDay = queryClient.getQueryData<TeeSheetDayResponse>(currentDayKey);
-      if (!participantId) {
-        queryClient.setQueryData<TeeSheetDayResponse>(currentDayKey, (current) => optimisticallyMoveBooking(current, bookingId, target));
-      }
+      queryClient.setQueryData<TeeSheetDayResponse>(currentDayKey, (current) =>
+        optimisticallyMoveBooking(current, bookingId, target, participantId),
+      );
       setDragged(null);
       setActiveDropKey(null);
+      await queryClient.cancelQueries({ queryKey: currentDayKey });
       return { previousDay };
     },
     onSuccess: async (result, variables, context) => {
@@ -1587,17 +1713,33 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     expandedBookingPanelRef.current = node;
   }, []);
 
-  const openManage = useCallback((slot: LaneSlot): void => {
+  const openManage = useCallback((slot: LaneSlot, initialBookingId?: string): void => {
     if (!canManage(slot.slot)) return;
     setNotice(null);
     setDrawerFeedbackMessage(null);
     setDrawerFeedbackTone(null);
-    setExpandedBookingContext(null);
+    setExpandedBookingContext(
+      initialBookingId
+        ? (
+            matchesExpandedBooking(expandedBookingContext, slot, initialBookingId)
+              ? expandedBookingContext
+              : {
+                  bookingId: initialBookingId,
+                  cellKey: `${initialBookingId}:lead`,
+                  focusedParticipantName: null,
+                  focusedParticipantType: null,
+                  participantId: null,
+                  slotDatetime: slot.slot.slot_datetime,
+                  startLane: slot.startLane,
+                }
+          )
+        : null,
+    );
     resetCreateDrafts();
     setDrawerMode("manage");
     resetEditState();
     setSelectedSlotKey({ startLane: slot.startLane, slotDatetime: slot.slot.slot_datetime });
-  }, [resetCreateDrafts, resetEditState]);
+  }, [expandedBookingContext, resetCreateDrafts, resetEditState]);
 
   const openCreate = useCallback((slot: LaneSlot): void => {
     if (!canCreate(slot.slot)) return;
@@ -1658,8 +1800,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   }, [dropKey]);
 
   const isBookingExpanded = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): boolean => (
-    matchesExpandedBooking(expandedBookingContext, slot, booking.id)
-  ), [expandedBookingContext]);
+    matchesExpandedBooking(inlineExpandedBookingContext, slot, booking.id)
+  ), [inlineExpandedBookingContext]);
 
   const nextBookableSlot = useMemo(
     () => filteredBuckets.flatMap((bucket) => bucket.slots).find((slot) => canCreate(slot.slot)) ?? slots.find((slot) => canCreate(slot.slot)) ?? null,
@@ -1782,6 +1924,19 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return Boolean(d && canDrop(target.slot) && !(d.rowKey === target.rowKey && d.slotDatetime === target.slot.slot_datetime));
   }, []);
 
+  const clearActiveTableDropTarget = useCallback((): void => {
+    activeTableDropLaneCellRef.current?.classList.remove("tee-sheet-drop-target");
+    activeTableDropLaneCellRef.current = null;
+  }, []);
+
+  const setActiveTableDropTarget = useCallback((row: HTMLTableRowElement): void => {
+    const laneCell = row.querySelector<HTMLTableCellElement>('[data-drop-lane="true"]');
+    if (!laneCell || activeTableDropLaneCellRef.current === laneCell) return;
+    clearActiveTableDropTarget();
+    laneCell.classList.add("tee-sheet-drop-target");
+    activeTableDropLaneCellRef.current = laneCell;
+  }, [clearActiveTableDropTarget]);
+
   const startDrag = useCallback((
     event: DragEvent<HTMLElement>,
     bookingId: string,
@@ -1816,8 +1971,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const endDrag = useCallback((): void => {
     draggedRef.current = null;
     setDragged(null);
+    clearActiveTableDropTarget();
     setActiveDropKey(null);
-  }, []);
+  }, [clearActiveTableDropTarget]);
 
   // Stable wrappers so TeeSheetSwimLaneGrid never gets new function references on
   // re-renders that are unrelated to drag state changes.
@@ -1857,12 +2013,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
   const renderExpandedBookingPanel = useCallback((slot: LaneSlot, booking: TeeSheetBookingView, compact = false): JSX.Element => {
     const focusedParticipantName =
-      matchesExpandedBooking(expandedBookingContext, slot, booking.id)
-        ? expandedBookingContext?.focusedParticipantName ?? null
+      matchesExpandedBooking(inlineExpandedBookingContext, slot, booking.id)
+        ? inlineExpandedBookingContext?.focusedParticipantName ?? null
         : null;
     const focusedParticipantType =
-      matchesExpandedBooking(expandedBookingContext, slot, booking.id)
-        ? expandedBookingContext?.focusedParticipantType ?? null
+      matchesExpandedBooking(inlineExpandedBookingContext, slot, booking.id)
+        ? inlineExpandedBookingContext?.focusedParticipantType ?? null
         : null;
     const directoryEntry =
       findDirectoryEntryByDisplayName(
@@ -1877,7 +2033,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         focusedParticipantName={focusedParticipantName}
         focusedParticipantType={focusedParticipantType}
         onOpenFullView={() => {
-          openManage(slot);
+          openManage(slot, booking.id);
         }}
         onQuickAction={handleInlineQuickAction}
         panelRef={setExpandedBookingPanelElement}
@@ -1887,7 +2043,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       />
     );
   }, [
-    expandedBookingContext,
+    inlineExpandedBookingContext,
     directoryByName,
     handleInlineQuickAction,
     openManage,
@@ -2009,7 +2165,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   }, [filters.partySize, filters.timeFrom, filters.timeTo, filters.viewFilter, selectedDate]);
 
   useEffect(() => {
-    if (!expandedBookingContext) return;
+    if (!inlineExpandedBookingContext) return;
 
     function handlePointerDown(event: MouseEvent): void {
       const target = event.target as Node | null;
@@ -2022,7 +2178,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
     };
-  }, [expandedBookingContext]);
+  }, [inlineExpandedBookingContext]);
 
   useEffect(() => {
     if (!commandPaletteOpen) return;
@@ -2043,6 +2199,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     configuredForSheet && !teeSheetQuery.isLoading && !teeSheetQuery.error && buckets.length > 0 && filteredBuckets.length === 0;
   const showClearSearch = searchInputValue.trim().length > 0;
   const showingTransitionDay = teeSheetQuery.isFetching && teeSheetQuery.data?.date !== selectedDate;
+  const showInitialGridSkeleton = configuredForSheet && teeSheetQuery.isLoading && !teeSheetQuery.data;
   const hasActiveFilters =
     filters.viewFilter !== "all" ||
     filters.partySize !== "any" ||
@@ -2215,7 +2372,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         return;
       }
 
-      if (event.key === "Escape" && expandedBookingContext) {
+      if (event.key === "Escape" && inlineExpandedBookingContext) {
         event.preventDefault();
         closeExpandedBookingContext();
         return;
@@ -2268,7 +2425,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     closeExpandedBookingContext,
     commandPaletteOpen,
     drawerMode,
-    expandedBookingContext,
+    inlineExpandedBookingContext,
     openCommandPalette,
   ]);
 
@@ -2300,7 +2457,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
         {configuredForSheet ? (
           <div className="space-y-4">
-            {teeSheetQuery.isLoading ? <div className="rounded-2xl bg-surface-container-lowest px-6 py-5 text-sm text-slate-500 shadow-sm">Loading tee sheet...</div> : null}
+            {showInitialGridSkeleton ? <TeeSheetGridSkeleton /> : null}
             {teeSheetQuery.error ? <div className="rounded-2xl bg-error-container/30 px-6 py-5 text-sm text-error shadow-sm">{teeSheetErrorMessage}</div> : null}
             {showingTransitionDay ? (
               <div className="rounded-2xl bg-surface-container-lowest px-6 py-4 text-sm text-slate-500 shadow-sm">
@@ -2756,10 +2913,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                           {filteredBuckets.map((bucket) =>
                             bucket.slots.map((item, index) => {
                               const targetKey = dropKey(item);
-                              const allowedDrop = dropAllowed(item);
-                              const bucketExpandedRowCount = expandedBookingContext && bucket.slots.some((slot) => (
-                                slot.startLane === expandedBookingContext.startLane &&
-                                slot.slot.slot_datetime === expandedBookingContext.slotDatetime
+                              const bucketExpandedRowCount = inlineExpandedBookingContext && bucket.slots.some((slot) => (
+                                slot.startLane === inlineExpandedBookingContext.startLane &&
+                                slot.slot.slot_datetime === inlineExpandedBookingContext.slotDatetime
                               )) ? 1 : 0;
                               const isMultiLane = bucket.slots.length > 1;
                               const reservedBookings = reservedBookingsByBucket.get(bucket.slotDatetime) ?? [];
@@ -2772,7 +2928,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   }
                                 : item.slot;
                               const reservedBlock = (item.slot.display_status === "blocked" || item.slot.display_status === "reserved") && displaySlot.bookings.length === 0;
-                              const expandedBooking = displaySlot.bookings.find((booking) => matchesExpandedBooking(expandedBookingContext, item, booking.id)) ?? null;
+                              const expandedBooking = displaySlot.bookings.find((booking) => matchesExpandedBooking(inlineExpandedBookingContext, item, booking.id)) ?? null;
                               // Build individual player cells — one <td> per slot position, never merged
                               const capacity = slotCapacity(displaySlot);
                               const playerCells: Array<
@@ -2814,28 +2970,30 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   aria-label={`${item.laneLabel} lane row ${bucket.localTime.slice(0, 5)}`}
                                   className={`group transition-all duration-300 ${highlightedSlotKey === targetKey ? "ring-2 ring-primary ring-offset-1 rounded-[18px]" : ""}`}
                                   data-testid={`lane-row-${item.rowKey}`}
-                                  onDragEnter={() => {
-                                    if (allowedDrop) setActiveDropKey(targetKey);
+                                  onDragEnter={(event) => {
+                                    if (!dropAllowed(item)) return;
+                                    setActiveTableDropTarget(event.currentTarget);
                                   }}
-                                  onDragLeave={() => {
-                                    if (activeDropKey === targetKey) setActiveDropKey(null);
+                                  onDragLeave={(event) => {
+                                    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                                    clearActiveTableDropTarget();
                                   }}
                                   onDragOver={(event) => {
-                                    if (allowedDrop) {
-                                      event.preventDefault();
-                                      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-                                      setActiveDropKey(targetKey);
-                                    }
+                                    if (!dropAllowed(item)) return;
+                                    event.preventDefault();
+                                    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                                    setActiveTableDropTarget(event.currentTarget);
                                   }}
                                   onDrop={(event) => {
                                     event.preventDefault();
-                                    if (allowedDrop && dragged) {
-                                      moveMutation.mutate({
-                                        bookingId: dragged.bookingId,
-                                        participantId: dragged.participantId ?? null,
-                                        target: item,
-                                      });
-                                    }
+                                    const currentDrag = draggedRef.current;
+                                    clearActiveTableDropTarget();
+                                    if (!currentDrag || !dropAllowed(item)) return;
+                                    moveMutation.mutate({
+                                      bookingId: currentDrag.bookingId,
+                                      participantId: currentDrag.participantId ?? null,
+                                      target: item,
+                                    });
                                   }}
                                 >
                                   {index === 0 ? (
@@ -2887,7 +3045,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                   ) : null}
 
                                   <td
-                                    className={`w-[80px] px-3 align-middle transition-colors ${activeDropKey === targetKey ? "bg-primary-container/10" : ""}`}
+                                    className="w-[80px] px-3 align-middle transition-colors"
+                                    data-drop-lane="true"
                                   >
                                     <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface">{item.laneLabel}</p>
                                     <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${statusClass(item.slot.display_status)}`}>
@@ -2943,7 +3102,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                         {cell.kind === "player" ? (
                                           <div
                                             className={`relative group/chip ${movingBookingId === cell.booking.id ? "opacity-50" : ""}`}
-                                            ref={matchesExpandedBookingCell(expandedBookingContext, item, cell.booking.id, cell.cellKey) ? setExpandedBookingCardElement : undefined}
+                                            ref={matchesExpandedBookingCell(inlineExpandedBookingContext, item, cell.booking.id, cell.cellKey) ? setExpandedBookingCardElement : undefined}
                                           >
                                             {(() => {
                                               const nextAction = deriveBookingNextAction(
@@ -2952,7 +3111,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                               );
                                               const badge = nextActionBadgeProps(nextAction);
                                               const isExpanded = matchesExpandedBookingCell(
-                                                expandedBookingContext,
+                                                inlineExpandedBookingContext,
                                                 item,
                                                 cell.booking.id,
                                                 cell.cellKey,

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -1415,6 +1415,60 @@ describe("AdminGolfTeeSheetPage", () => {
     });
   });
 
+  test("optimistically splits and moves a dragged participant before the move request resolves", async () => {
+    const today = testLocalDateString(new Date());
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(teeSheetDayKey(today), cloneTeeSheetPayload());
+
+    let resolveMove!: (value: Awaited<ReturnType<typeof moveBooking>>) => void;
+    vi.mocked(moveBooking).mockReturnValue(
+      new Promise((resolve: (value: Awaited<ReturnType<typeof moveBooking>>) => void) => {
+        resolveMove = resolve;
+      }) as ReturnType<typeof moveBooking>,
+    );
+
+    renderPage(queryClient);
+    await waitFor(() => {
+      expect(screen.getByTestId("tee-sheet-toolbar")).toBeInTheDocument();
+    });
+
+    fireEvent.dragStart(screen.getByRole("button", { name: /open slot for Guest One/i }));
+    const targetRow = screen.getByLabelText(/10th tee lane row 06:00/i);
+    fireEvent.dragEnter(targetRow);
+    fireEvent.dragOver(targetRow);
+    fireEvent.drop(targetRow);
+
+    await waitFor(() => {
+      const optimistic = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      expect(optimistic.rows[0].slots[0].bookings).toHaveLength(1);
+      expect(optimistic.rows[0].slots[0].bookings[0].participants.map((participant: any) => participant.display_name)).toEqual(["Member One"]);
+      expect(optimistic.rows[0].slots[0].bookings[0].party_size).toBe(1);
+      expect(optimistic.rows[0].slots[0].occupancy.reserved_player_count).toBe(1);
+
+      expect(optimistic.rows[1].slots[0].bookings).toHaveLength(1);
+      expect(optimistic.rows[1].slots[0].bookings[0].id).toBe("booking-1:optimistic:participant-2");
+      expect(optimistic.rows[1].slots[0].bookings[0].participants.map((participant: any) => participant.display_name)).toEqual(["Guest One"]);
+      expect(optimistic.rows[1].slots[0].bookings[0].party_size).toBe(1);
+      expect(optimistic.rows[1].slots[0].bookings[0].start_lane).toBe("hole_10");
+      expect(optimistic.rows[1].slots[0].occupancy.reserved_player_count).toBe(1);
+    });
+
+    await act(async () => {
+      resolveMove({
+        booking_id: "booking-9",
+        decision: "allowed",
+        transition_applied: true,
+        booking: null,
+        failures: [],
+      });
+    });
+  });
+
   test("only applies deterministic optimistic lifecycle transitions", () => {
     const reservedPayload = cloneTeeSheetPayload();
     const checkedInPayload = cloneTeeSheetPayload();
@@ -1787,6 +1841,58 @@ describe("AdminGolfTeeSheetPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /open full view/i }));
 
     expect((await screen.findAllByText("Member Weekend Rate")).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
+  });
+
+  test("full view opens the management drawer focused on the clicked booking", async () => {
+    const payload = cloneTeeSheetPayload();
+    payload.rows[0].slots[0].bookings.push({
+      id: "booking-4",
+      status: "reserved",
+      party_size: 1,
+      holes: 18,
+      slot_datetime: "2026-03-30T04:00:00Z",
+      start_lane: "hole_1",
+      fee_label: "Guest Midweek Rate",
+      fee_amount: "210.00",
+      fee_currency: "ZAR",
+      payment_status: "pending",
+      cart_flag: false,
+      caddie_flag: false,
+      participants: [
+        { id: "participant-7", display_name: "Member Four", participant_type: "member", is_primary: true },
+      ],
+    });
+    payload.rows[0].slots[0].occupancy.reserved_player_count = 3;
+    payload.rows[0].slots[0].occupancy.reserved_booking_count = 2;
+    payload.rows[0].slots[0].party_summary.member_count = 2;
+    payload.rows[0].slots[0].party_summary.guest_count = 1;
+    payload.rows[0].slots[0].party_summary.total_players = 3;
+    mockUseTeeSheetDayQuery.mockReturnValue({ data: payload, isLoading: false, error: null });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /open booking booking-4/i }));
+    expect(await screen.findByTestId("inline-booking-panel-booking-4")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open full view/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getAllByRole("button", { name: /edit booking/i })[0]).toHaveAttribute("aria-label", "Edit booking booking-4");
+    expect(screen.queryByTestId("inline-booking-panel-booking-4")).not.toBeInTheDocument();
+  });
+
+  test("full view preserves the clicked participant focus inside the management drawer", async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /open slot for Guest One/i }));
+    expect(await screen.findByTestId("inline-booking-panel-booking-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open full view/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getAllByText("Guest One")[0]).toBeInTheDocument();
+    expect(within(drawer).getAllByRole("button", { name: /edit booking/i })[0]).toHaveAttribute("aria-label", "Edit booking booking-1");
     expect(screen.queryByTestId("inline-booking-panel-booking-1")).not.toBeInTheDocument();
   });
 

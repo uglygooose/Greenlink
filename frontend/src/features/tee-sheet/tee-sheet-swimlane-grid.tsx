@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type { StartLane } from "../../types/bookings";
@@ -98,7 +98,7 @@ function swimLaneKey(startLane: StartLane | null): string {
   return startLane ?? "hole_1";
 }
 
-export function TeeSheetSwimLaneGrid({
+function TeeSheetSwimLaneGridComponent({
   activeDropKey,
   checkingInAllBucket,
   columns,
@@ -202,7 +202,7 @@ export function TeeSheetSwimLaneGrid({
     getScrollElement: () => scrollRef.current,
     horizontal: true,
     initialRect: { height: 640, width: 1280 },
-    overscan: 3,
+    overscan: 8,
   });
 
   const virtualColumns = virtualizer.getVirtualItems();
@@ -646,3 +646,6 @@ export function TeeSheetSwimLaneGrid({
     </section>
   );
 }
+
+export const TeeSheetSwimLaneGrid = memo(TeeSheetSwimLaneGridComponent);
+TeeSheetSwimLaneGrid.displayName = "TeeSheetSwimLaneGrid";
