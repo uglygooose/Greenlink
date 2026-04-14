@@ -1,19 +1,16 @@
-# GreenLink - Master System File
+# GreenLink — Master System File
 
-Last updated: 2026-04-13
+Last updated: 2026-04-14
 
-## Canonical Role
+## Canonical role
 
-This file is the canonical current system definition.
-It reflects the locked completed baseline and the approved direction of the GreenLink hardening program.
+This file is the single source of truth for GreenLink's product definition, architecture decisions, identity and session contracts, domain model, route surface, and navigation baseline. It supersedes all prior canonical doc sets (MASTER_SYSTEM.md, CODEX-EXECUTION-RULES.txt, GreenLink-Master-Build-Plan.txt, SYSTEM_STATUS.md, docs/restructure-plan.md, docs/decisions/0001-stack-and-architecture.md, docs/contracts/*).
 
-The canonical authority set is:
-- `docs/MASTER_SYSTEM.md`
-- `GreenLink-Master-Build-Plan.txt`
-- `CODEX-EXECUTION-RULES.txt`
-- `SYSTEM_STATUS.md`
+For current build status, pending work, and known gaps see `docs/LIVE_STATE.md`.
 
-## Product Definition
+---
+
+## Product definition
 
 GreenLink is a multi-sport club operations OS.
 
@@ -25,13 +22,15 @@ GreenLink is not:
 
 GreenLink is:
 - a day-to-day operational system for clubs
-- centered on tee-sheet-style operational control
+- centred on tee-sheet-style operational control
 - paired with finance operations that reconcile into the club's accounting software
 - extensible across golf, tennis, bowls, pro shop, halfway house, and related club domains without losing a coherent system model
 
-## Core Operating Lifecycle
+---
 
-All UX and information architecture should align to this lifecycle:
+## Core operating lifecycle
+
+All UX and information architecture must align to this sequence:
 
 1. Setup (Superadmin)
 2. Configure (Club Admin within controlled authority)
@@ -41,232 +40,326 @@ All UX and information architecture should align to this lifecycle:
 
 Lifecycle weighting takes precedence over domain grouping in UX structure.
 
-## Non-Negotiable Rules
+---
 
-- Backend owns logic.
-- Frontend sends intent only.
-- No duplicated business rules.
+## Non-negotiable rules
+
+- Backend owns logic. Frontend sends intent only.
+- No duplicated business rules between backend and frontend.
 - No hidden side effects.
 - No domain mixing at data/service boundaries.
 - Tee sheet is a read model.
 - Orders are not payments.
 - Admin and superadmin shells are router-owned persistent layouts.
 - Benchmark UI references remain the visual authority.
+- Pricing authority is backend-owned: superadmin defines dimensional rules → backend resolves fee → staff executes. No frontend pricing logic.
 
-## Product Hierarchy
+---
 
-### Tier 1 - Core system pillars
+## Product hierarchy
+
+### Tier 1 — Core system pillars
 
 - Tee Sheet / operational booking control
 - Finance operations and export-to-accounting
 - Members / accounts / club people operations
 - Reporting, targets, and performance review
 
-### Tier 2 - Operational extensions
+### Tier 2 — Operational extensions
 
 - Pro Shop
 - Halfway House
 - Tennis
 - Bowls
 
-### Tier 3 - Add-on / adjunct surfaces
+### Tier 3 — Add-on / adjunct surfaces
 
 - POS
 - Orders
 - Communications
 
-Tier 2 and Tier 3 surfaces may be important for some clubs, but must not outweigh or structurally distort Tier 1.
+Tier 2 and Tier 3 surfaces may be important for some clubs but must not outweigh or structurally distort Tier 1.
 
-## Current System Definition
+---
 
-### Platform and auth
+## Stack and architecture
 
-- Completed
-- FastAPI backend with PostgreSQL runtime is in place.
-- JWT access tokens plus refresh-token rotation are in place.
-- `/api/session/bootstrap` remains the frontend bootstrap truth.
-- Club-scoped tenancy is enforced through auth plus selected-club resolution.
+- Python, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL.
+- Redis as an integration point for future cache and queue work.
+- React, TypeScript, Vite, React Router, TanStack Query.
+- Modular monolith with explicit tenancy and backend-owned session bootstrap.
 
-### Identity and membership
+Key decisions:
+- Global user type is only `superadmin` or `user`. Real club authority lives in `ClubMembership.role`.
+- Refresh tokens are stored server-side as hashed `AuthSession` rows and rotated on refresh.
+- Platform bootstrap is one-time and permanently locked through persisted `PlatformState`.
+- Selected club context is not embedded in access tokens; passed explicitly and validated centrally.
+- Auth and session datetimes normalised to UTC-aware values at the shared type/helper layer.
+- JWT `sub` remains a string in token, converted to `UUID` at the auth boundary before any ORM query.
 
-- Completed
-- `User -> Person -> ClubMembership` is the working identity model.
-- People directory, membership, account-customer, and bulk-intake foundations are built.
-- GL-07 cleaned up members workspace ownership without changing backend authority.
+---
 
-### TS - Tee Sheet
+## Identity model
 
-- Partial
-- Tee sheet read model exists.
-- Booking lifecycle and admin lifecycle actions are live.
-- Admin tee-sheet route is live inside the router-owned persistent admin shell.
-- Booking creation, editing, and move UX are live.
-- Participant-level booking move is live.
-- Inline quick actions, bucket check-in-all, keyboard shortcuts, and focus-trapped drawers are live.
-- Timeline swimlane layout is live alongside the classic tee-sheet table and consumes the same read model and mutation flows.
-- `AdminGolfDashboardPage` at `/admin/golf/dashboard` is live for utilization, revenue posture, tee warnings, and config readiness.
+```
+User (optional login) → Person (platform identity) → ClubMembership (club-local authority)
+```
 
-### FIN - Finance
+### Person
 
-- Partial
-- FinanceAccount, append-only FinanceTransaction, journal, ledger, revenue summary, outstanding summary, and transaction-volume summary are built.
+Platform-wide identity. Fields: `id`, `first_name`, `last_name`, `full_name`, `email`, `phone`, `date_of_birth`, `gender`, `external_ref`, `notes`, `profile_metadata`, timestamps.
+
+Normalisation: emails stored lowercase; phone normalised for matching and duplicate detection.
+
+### ClubMembership
+
+Club-local relationship surface. Fields: `id`, `person_id`, `club_id`, `role`, `status`, `joined_at`, `is_primary`, `membership_number`, `membership_metadata`.
+
+Role vocabulary: `club_admin`, `club_staff`, `member`.
+
+Status vocabulary: `active`, `invited`, `suspended`, `inactive`.
+
+`membership_metadata` carries backend-owned extended fields including `pricing_player_type`.
+
+### User linkage
+
+`User` is optional. People can exist without credentials. Membership records do not require a `User`. Tenancy for authenticated users is resolved through the linked person's memberships.
+
+### AccountCustomer
+
+Club-scoped, linked to `Person`. Fields: `id`, `club_id`, `person_id`, `account_code`, `active`, `billing_email`, `billing_phone`, `billing_metadata`.
+
+---
+
+## Session bootstrap contract
+
+`GET /api/session/bootstrap` is the frontend source of truth.
+
+Inputs: Bearer access token. Optional `selected_club_id` query param or `X-Club-Id` header.
+
+Response fields: `user`, `available_clubs`, `selected_club_id`, `selected_club`, `club_selection_required`, `role_shell`, `default_workspace`, `landing_path`, `menu_items`, `module_flags`, `permissions`.
+
+Resolution rules:
+- One active club membership → auto-select.
+- Multiple active club memberships → require explicit selection.
+- Zero active memberships for non-superadmin → no selected club, no shell, `/login` landing path.
+- Superadmin → resolves to dedicated superadmin shell without club selection.
+
+Landing rules:
+- `club_admin` and `club_staff` → `/admin/dashboard`.
+- `member` → `/player/home`.
+- `superadmin` → `/superadmin/clubs`.
+
+`menu_items` is the shell/access contract. Frontend route access checks align to `menu_items`. The visible sidebar may intentionally expose a smaller primary-nav subset. Demoted but valid admin routes remain in `menu_items` for access control.
+
+Related auth routes: `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me`.
+
+---
+
+## People API surface
+
+- `GET /api/people`
+- `POST /api/people`
+- `GET /api/people/club-directory`
+- `GET /api/people/{person_id}`
+- `PATCH /api/people/{person_id}`
+- `GET /api/people/{person_id}/memberships`
+- `GET /api/people/{person_id}/integrity`
+- `POST /api/people/memberships`
+- `PATCH /api/people/memberships/{membership_id}`
+- `POST /api/people/account-customers`
+- `POST /api/people/bulk-intake/preview`
+- `POST /api/people/bulk-intake/process`
+
+Club-scoped people routes require explicit `selected_club_id` query param or `X-Club-Id` header.
+
+`GET /api/people/{person_id}/integrity` returns: person summary, duplicate candidates, profile readiness, membership readiness, account-customer readiness, structured issues/exceptions. Readiness status values: `ready`, `warning`, `blocked`.
+
+Bulk intake matching is deterministic: normalised email match, normalised phone match, ambiguous multi-person matches reject the row, no hidden fuzzy merge. Row outcomes: `create_person_create_membership`, `match_existing_create_membership`, `match_existing_update_membership`, `reject_row`, `warning_only`. `preview` classifies without persisting; `process` applies and persists.
+
+---
+
+## Pricing model
+
+Pricing authority is fully backend-owned. The resolution stack:
+
+1. Superadmin defines `PricingRule` rows inside a `PricingMatrix` attached to a `BookingRuleSet`.
+2. `BookingCommercialService` resolves the correct fee at booking create/update time and snapshots it onto `bookings.fee_amount` / `bookings.fee_currency`.
+3. `TeeSheetService` re-resolves fee for existing bookings without a snapshot when building the read model.
+
+### Pricing dimensions (4)
+
+| Dimension | Enum | ANY sentinel |
+|---|---|---|
+| `player_type` | `PricingPlayerType` | — (required, no ANY) |
+| `holes` | int (9 or 18) | — (required, no ANY) |
+| `day_type` | `PricingDayType` | `any` |
+| `season` | `PricingSeason` | `any` |
+
+Plus: `time_band` (`PricingTimeBand`): `any`, `morning`, `afternoon`, `custom`.
+
+### PricingPlayerType values
+
+`member_standard`, `visitor_affiliated`, `visitor_non_affiliated`, `scholar`, `student`, `pensioner`, `staff_courtesy`.
+
+Stored in `membership_metadata.pricing_player_type`. Resolved by `BookingCommercialService.resolve_pricing_player_type()`:
+- Guest participant + affiliated membership metadata → `visitor_affiliated`
+- Guest participant otherwise → `visitor_non_affiliated`
+- Staff participant / staff role → `staff_courtesy`
+- Member with metadata → from metadata
+- Member without metadata → `member_standard`
+
+### PricingSeason values
+
+`any`, `peak`, `off_peak`.
+
+### Rule evaluation
+
+`RuleEvaluationService.resolve_pricing()` matches on all dimensions in order: `applies_to`, `player_type`, `holes`, `day_type`, `season`, `time_band`. Rules are specificity-ranked (more specific dimensions = higher score). Collisions at equal specificity emit a warning trace. Unresolved context (no `pricing_player_type` or no `holes`) emits an unresolved trace.
+
+### PricingRuleAppliesTo
+
+`member`, `guest`, `staff`.
+
+---
+
+## Tee sheet domain
+
+Tee sheet is a read model. All mutations go through backend commands.
+
+Booking lifecycle commands:
+- `POST /api/golf/bookings` — create booking
+- `PATCH /api/golf/bookings/{id}` — update party/details
+- `POST /api/golf/bookings/{id}/check-in`
+- `POST /api/golf/bookings/{id}/no-show`
+- `POST /api/golf/bookings/{id}/cancel`
+- `POST /api/golf/bookings/{id}/move` — move booking to a different slot
+- `POST /api/golf/bookings/{id}/move-participant` — participant-level split move
+
+Booking finance commands:
+- `PATCH /api/golf/bookings/{id}/payment-status`
+- `POST /api/golf/bookings/{id}/post-charge`
+- `POST /api/golf/bookings/{id}/record-payment`
+
+Booking fields relevant to pricing:
+- `holes` — 9 or 18, resolved at booking creation by `BookingCommercialService.resolve_booking_holes()`
+- `fee_amount`, `fee_currency` — snapshotted at creation; re-resolved by tee sheet service if absent
+- `fee_label` — optional human-readable label
+- `payment_status` — `pending`, `paid`, `complimentary`, `waived`
+
+---
+
+## Finance domain
+
+- `FinanceAccount`, append-only `FinanceTransaction`, journal, ledger, revenue summary, outstanding summary, transaction-volume summary are built.
 - Revenue/volume/account-share pct fields are computed backend-side.
 - Canonical export batches and mapped accounting export profiles are built.
 - Mapped export execution, reconciliation, drift detection, and regeneration are backend-owned.
-- Admin finance KPI surfaces use backend summary endpoints only. No finance math remains in React.
-- `AdminFinanceDashboardPage` at `/admin/finance/dashboard` is live from backend read models.
-- Booking finance commands are live through backend-owned golf booking endpoints:
-  - `PATCH /api/golf/bookings/{booking_id}/payment-status`
-  - `POST /api/golf/bookings/{booking_id}/post-charge`
-  - `POST /api/golf/bookings/{booking_id}/record-payment`
+- Admin finance KPI surfaces use backend summary endpoints only. No finance math in React.
+- Finance close-day wizard: Exceptions → Generate Batch → Reconcile → Export → Audit Trail.
+- `GET /api/finance/exceptions?date=YYYY-MM-DD` — tenant-scoped finance exceptions endpoint.
+- Drift detection blocks the Export step when `reconciliation.matches_live_state === false`.
 
-### Orders and POS
+---
 
-- Partial
-- Player ordering, admin order queue, explicit charge posting, explicit settlement recording, and POS terminal are live.
-- GL-06 normalized order and halfway mutation ownership and invalidation around shared hooks.
-- POS terminal (`/admin/pos-terminal`) is nested inside the router-owned `AdminLayout`.
-- These surfaces remain operational extensions, not primary system pillars.
+## Superadmin domain
 
-### Communications
-
-- Partial
-- Admin news-post CRUD exists.
-- Published posts are available to player-facing read flows.
-- Player home reads backend news posts.
-
-### SA - Superadmin
-
-- Partial
-- Distinct superadmin route group and persistent shell exist.
-- Onboarding progression is backend-owned. Frontend sends step intent only.
+- Distinct superadmin route group and persistent shell.
+- Onboarding progression is backend-owned; frontend sends step intent only.
 - Club registry, club creation, and onboarding workspace (Basic Info, Finance, Rules, Modules) are live.
 - Rules step reads real club-scoped rule sets and pricing matrices.
 - Modules step reads the canonical backend module catalog and persists validated club module configuration.
-- Superadmin nav has three live routes:
-  - Overview (`/superadmin/overview`)
-  - Clubs (`/superadmin/clubs`)
-  - Accounting Profiles (`/superadmin/accounting-profiles`)
-- Runtime superadmin landing is `/superadmin/clubs`.
 - Superadmin can bridge into existing club-scoped admin workspaces after selecting a club.
+- `/superadmin/accounting-profiles` — accounting profile management route is live.
+- Superadmin accounting template upload + profile bind: NOT YET BUILT (see LIVE_STATE.md).
 
-### Player
+---
 
-- Partial
+## Player domain
+
 - Player home, player ordering, and member booking creation are live.
-- Player booking flow uses the live tee-sheet read model plus `POST /api/golf/bookings` with `source="member_portal"`.
-- Backend player booking read model exists and player home consumes it directly.
+- Player booking flow uses live tee-sheet read model plus `POST /api/golf/bookings` with `source="member_portal"`.
+- Backend player booking read model exists; player home consumes it directly.
 - `/player/profile` consumes a dedicated backend self-profile contract.
-- Recently fixed:
-  - player home no longer mounts a blocking full-screen scrim on initial load
-  - player order creation now succeeds against the live backend after enum binding alignment
+- Player mobile-tab navigation is driven by backend bootstrap menu truth across all player pages.
 
-## Admin Navigation - Current Baseline
+---
 
-Superseding note as of 2026-04-13:
-- Primary admin navigation is lifecycle-weighted: Today · Tee Sheet · People · Finance · Performance · Operations · Settings.
-- Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
-- `AdminSidebar` is the visible primary-nav contract and may intentionally hide valid direct-link admin routes that remain in bootstrap `menu_items` for access control.
-- Access-only admin routes currently include `/admin/targets`.
+## Admin navigation baseline
 
-Current implementation baseline:
-- `AdminSidebar` is lifecycle-weighted with collapsible groups.
+Primary admin navigation is lifecycle-weighted: Today · Tee Sheet · People · Finance · Performance · Operations · Settings.
+
+Backend `MENU_ITEMS` in `session_bootstrap_service.py` is the shell/access contract.
+
+`AdminSidebar` is the visible primary-nav contract and may intentionally hide valid direct-link admin routes that remain in bootstrap `menu_items` for access control.
+
+Current sidebar structure:
 - Ungrouped (always visible): Today (`/admin/dashboard`), Settings (`/admin/settings`).
 - Golf group (collapsible): Golf Summary, Tee Sheet.
 - People group (collapsible): People Summary, Members.
 - Finance group (collapsible): Finance Summary, Close Day.
 - My Club group (collapsible): Performance, Communications.
-- Operations group (collapsible): Halfway, Pro Shop, POS Terminal, Order Queue.
-- Groups start open when the current route falls within them and can be toggled closed.
-- Group membership is driven by `PRIMARY_NAV_GROUPS` against backend-provided or fallback `menu_items`.
-- Backend `MENU_ITEMS` in `session_bootstrap_service.py` remains the canonical nav registry.
-- Access-only key `targets` is filtered from the sidebar but retained in bootstrap for `ProtectedRoute` access enforcement.
-- `pos` is labeled `Commerce` in the module catalog.
+- Operations group (collapsible, module-driven): Halfway, Pro Shop, POS Terminal, Order Queue.
+- Groups open when current route falls within them; can be toggled closed.
+- `pos` is labelled `Commerce` in the module catalog.
+- `targets` key is filtered from sidebar but retained in bootstrap for `ProtectedRoute` access enforcement.
 
-## Approved Hardening Direction
+---
 
-Target admin information architecture should trend toward:
-
-- Today
-- Tee Sheet
-- People
-- Finance
-- Performance
-- Operations (conditional)
-- Settings
-
-Optional module grouping appears only when required by enabled modules.
-
-The approved direction is:
-- workflow-weighted navigation
-- module demotion for non-core surfaces
-- tee sheet as operational cockpit
-- finance as close-day and accounting-handoff engine
-- settings as structured configuration journey, not a monolithic CRUD/admin page
-
-Current landing status:
-- PR1-PR9 are landed and live.
-- Cleanup slices GL-01 through GL-07 are landed in code and targeted validation.
-- GL-08 is the next protected slice: Golf Settings and Finance Close-Day ownership cleanup.
-
-## Current Route Surface
-
-Superseding route naming note as of 2026-04-13:
-- `/admin/dashboard` is the Today workspace.
-- Legacy `/admin/select-club` redirects to canonical `/select-club`.
-- `/admin/golf/dashboard` and `/admin/finance/dashboard` remain visible summary routes in grouped admin navigation.
-- `/admin/people/dashboard` is the canonical People Summary route and is shown in the People sidebar group.
-- `/admin/reports` is the Performance hub.
-- `/admin/settings/profile` is a legacy route redirected into `/admin/settings`.
+## Route surface
 
 ### Admin
 
-- `/admin/dashboard` - overview: action alerts, quick actions, targets, recent activity
-- `/admin/golf/dashboard` - golf domain dashboard
-- `/admin/golf/tee-sheet` - operational tee sheet
-- `/admin/golf/settings` - guided golf settings setup
-- `/admin/people/dashboard` - people summary dashboard
-- `/admin/members` - member directory and operational member management
-- `/admin/finance/dashboard` - finance summary dashboard
-- `/admin/finance` - close-day workflow
-- `/admin/reports` - reports and analytics
-- `/admin/halfway` - halfway house operations
-- `/admin/pro-shop` - pro shop
-- `/admin/pos-terminal` - POS terminal
-- `/admin/orders` - order queue
-- `/admin/settings` - settings hub
-- `/admin/settings/club` - legacy settings entry route redirected to `/admin/settings`
-- `/admin/settings/profile` - legacy redirect to `/admin/settings`
-- `/admin/settings/modules` - read-only module visibility
-- `/admin/communications` - news posts and communications
-- `/admin/targets` - club targets
+| Route | Surface |
+|---|---|
+| `/admin/dashboard` | Today workspace |
+| `/admin/golf/dashboard` | Golf domain summary |
+| `/admin/golf/tee-sheet` | Operational tee sheet |
+| `/admin/golf/settings` | Guided golf settings setup |
+| `/admin/people/dashboard` | People summary (access-only) |
+| `/admin/members` | Member directory |
+| `/admin/finance/dashboard` | Finance summary |
+| `/admin/finance` | Close Day workflow |
+| `/admin/reports` | Performance hub |
+| `/admin/halfway` | Halfway house operations |
+| `/admin/pro-shop` | Pro shop |
+| `/admin/pos-terminal` | POS terminal |
+| `/admin/orders` | Order queue |
+| `/admin/settings` | Settings hub |
+| `/admin/settings/modules` | Module visibility (read-only) |
+| `/admin/targets` | Club targets (access-only) |
+| `/admin/communications` | News posts |
+| `/admin/settings/club` | Legacy redirect → `/admin/settings` |
+| `/admin/settings/profile` | Legacy redirect → `/admin/settings` |
 
 ### Superadmin
 
-- `/superadmin/overview`
-- `/superadmin/clubs`
-- `/superadmin/accounting-profiles`
+| Route | Surface |
+|---|---|
+| `/superadmin/overview` | Fleet entry |
+| `/superadmin/clubs` | Club setup workspace |
+| `/superadmin/accounting-profiles` | Accounting profile management |
 
 ### Player
 
-- `/player/home`
-- `/player/book`
-- `/player/order`
-- `/player/profile`
+| Route | Surface |
+|---|---|
+| `/player/home` | Player home |
+| `/player/book` | Booking flow |
+| `/player/order` | Ordering |
+| `/player/profile` | Self-profile |
 
-## Layout and UI Authority
+---
 
-- Admin shell is router-owned and persistent across `/admin/*` navigation.
-- Superadmin shell is router-owned and persistent across `/superadmin/*` navigation.
-- `ProtectedRoute` wraps the layout, not individual admin or superadmin pages.
+## Layout and UI authority
+
+- Admin shell: router-owned, persistent across `/admin/*`. `ProtectedRoute` wraps the layout, not individual pages.
+- Superadmin shell: router-owned, persistent across `/superadmin/*`.
 - Admin and superadmin pages render content areas only.
-- Benchmark references remain:
-  - `frontend/src/ui-benchmarks/`
-  - `frontend/src/design-system/greenlink-design-system.md`
+- Benchmark UI references: `frontend/src/ui-benchmarks/`, `frontend/src/design-system/greenlink-design-system.md`.
 
-## Current Validation Posture
+---
 
-- Frontend typecheck is currently green.
-- Targeted Vitest is green for completed cleanup slices and follow-up fixes.
-- Backend targeted pytest is green for targets, finance read models, and order foundation after the recent migration/enum fixes.
-- Full-suite recertification should happen again after GL-08 and before protected-surface work proceeds further.
+## Frontend invalidation pattern
+
+`frontend/src/features/operational-read-models/invalidation.ts` — `invalidateClubOperationalReadModels()` is the canonical function for busting all cross-domain read model caches after any booking write operation. Use this; do not scatter individual `invalidateQueries` calls across mutation handlers.
