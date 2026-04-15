@@ -1,6 +1,6 @@
 # GreenLink — Live State
 
-Last updated: 2026-04-14
+Last updated: 2026-04-15
 
 This file tracks what is built, what is partial, what is pending, and what is not started. It is the living complement to `docs/MASTER_SYSTEM.md`. Update it whenever the build state changes.
 
@@ -36,7 +36,7 @@ Built and live:
 - Pricing editor includes playerType, holes, season, day_type, time_band dimensions.
 
 Not built:
-- Refund/correction path in tee-sheet finance actions.
+- Refund/correction path. `FinanceTransactionType` enum has `charge`, `payment`, `adjustment` only — no `refund` or `correction`. No backend model, service, or endpoint. Frontend `finance.ts` already declares `"refund"` in `FinanceTransactionType` ahead of backend.
 - `/admin/golf/bookings` — dedicated booking-management read model (deferred until backend truth exists).
 
 ### Finance — PARTIAL
@@ -62,7 +62,7 @@ Built and live:
 
 These surfaces remain operational extensions, not primary system pillars.
 
-### Superadmin — PARTIAL
+### Superadmin — COMPLETE (current scope)
 
 Built and live:
 - Distinct superadmin route group and persistent shell.
@@ -71,9 +71,7 @@ Built and live:
 - Modules step reads backend module catalog and persists validated club module configuration.
 - Superadmin bridge into club-scoped admin workspaces.
 - `/superadmin/accounting-profiles` route and page are live.
-
-Not built:
-- Superadmin accounting template upload + profile bind (PR9 — NOT STARTED).
+- Accounting template upload + profile bind: `AccountingTemplateService` (backend, 438 lines) — CSV parse with canonical field alias matching, sample layout generation, profile create/toggle-active/bind. `SuperadminAccountingProfilesPage` (frontend, 667 lines) — CSV upload, template parse, JSON helper upload, mapping config editor, club filter, profile list, bind. Backend tests: `test_accounting_profiles_superadmin.py`. Frontend tests: `superadmin-accounting-profiles-page.test.tsx`.
 
 ### Communications — PARTIAL
 
@@ -97,16 +95,16 @@ Not built:
 
 ---
 
-## Pending: migrations not yet run
+## Pending: migrations not yet verified as applied
 
-The following Alembic migrations are committed but **not yet applied** against the live database:
+The following Alembic migrations are committed and correctly chained in the migration history. Whether they have been applied against the running database cannot be confirmed without DB access. Run `alembic current` to verify head state.
 
 | Migration | What it adds |
 |---|---|
 | `202604130002_booking_fee_snapshot.py` | `bookings.fee_amount`, `bookings.fee_currency` |
 | `202604130003_pricing_matrix_dimensions.py` | `pricing_rules.player_type`, `pricing_rules.holes`, `pricing_rules.season`, `bookings.holes` |
 
-**Demo seed fee resolution will not work until these migrations are run.**
+**Fee resolution and pricing dimension features will not function correctly until these migrations are applied.**
 
 ---
 
@@ -114,8 +112,7 @@ The following Alembic migrations are committed but **not yet applied** against t
 
 | Item | Description |
 |---|---|
-| PR9 | Superadmin accounting template upload + profile bind. Scope not yet defined. |
-| Refund/correction | Backend-owned refund/correction intents exposed in tee-sheet and finance daily resolution flow. |
+| Refund/correction | Backend-owned refund/correction intents exposed in tee-sheet and finance daily resolution flow. No backend model, service, or endpoint. Frontend type is ahead of backend — `"refund"` declared in `FinanceTransactionType` but not in backend enum. |
 
 ---
 
@@ -126,14 +123,12 @@ The following Alembic migrations are committed but **not yet applied** against t
 | Refund/correction has no path | Tee sheet finance actions, close-day reconciliation | High |
 | Today page is not a full shift-start work queue | Will surface more exception types (member/account exceptions, outstanding finance exceptions) once data is seeded | Medium |
 | Filter burden on tee sheet | Dense-day scanning still asks operators to manage a lot of surface state | Medium |
-| Duplicate `/admin/select-club` route | Competes with canonical `/select-club`; no live nav points to it | Low |
-| Dead legacy page-level shell | `frontend/src/pages/admin-shell-page.tsx` is no longer router-wired | Low |
 
 ---
 
 ## Validation posture
 
-As of 2026-04-14:
+As of 2026-04-15:
 - Frontend typecheck: green.
 - Backend targeted pytest: green (pricing matrix, booking creation, booking finance, rule evaluation, golf settings, operational rules foundations).
 - Full-suite recertification recommended before any protected-surface work beyond PR9.
@@ -152,7 +147,7 @@ As of 2026-04-14:
 | PR6 | Golf guided setup + draft/publish/rollback on rule sets + pricing | COMPLETE |
 | PR7 | Finance Close Day wizard | COMPLETE (2026-04-10) |
 | PR8 | Performance hub (reports + targets merged, action bridges) | COMPLETE (2026-04-10) |
-| PR9 | Superadmin accounting template upload + profile bind | NOT STARTED |
+| PR9 | Superadmin accounting template upload + profile bind | COMPLETE (2026-04-15) |
 
 ## Hardening slice status (GL-01–GL-08)
 
@@ -163,4 +158,4 @@ As of 2026-04-14:
 | GL-03 | Restore superadmin accounting profiles nav | COMPLETE |
 | GL-04–06 | UX cleanup slices 1–4, settings navigation | COMPLETE |
 | GL-07 | Members workspace ownership cleanup | COMPLETE |
-| GL-08 | Golf Settings and Finance Close-Day ownership cleanup | STATUS UNKNOWN — verify against code |
+| GL-08 | Golf Settings and Finance Close-Day ownership cleanup | COMPLETE — both pages are content-area-only via `AdminWorkspace`; no page-level shell. |

@@ -1,6 +1,6 @@
 # GreenLink — Master System File
 
-Last updated: 2026-04-14
+Last updated: 2026-04-15
 
 ## Canonical role
 
@@ -311,7 +311,7 @@ Booking fields relevant to pricing:
 - Modules step reads the canonical backend module catalog and persists validated club module configuration.
 - Superadmin can bridge into existing club-scoped admin workspaces after selecting a club.
 - `/superadmin/accounting-profiles` — accounting profile management route is live.
-- Superadmin accounting template upload + profile bind: NOT YET BUILT (see LIVE_STATE.md).
+- Superadmin accounting template upload + profile bind: BUILT. `AccountingTemplateService` handles CSV parse, sample-layout generation, profile creation, active toggle, and club binding. See LIVE_STATE.md for build status detail.
 
 ---
 
