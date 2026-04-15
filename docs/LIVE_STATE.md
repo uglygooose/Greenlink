@@ -1,6 +1,6 @@
 # GreenLink — Live State
 
-Last updated: 2026-04-15 (post-B5)
+Last updated: 2026-04-15 (post-C7)
 
 This file tracks what is built, what is partial, what is pending, and what is not started. It is the living complement to `docs/MASTER_SYSTEM.md`. Update it whenever the build state changes.
 
@@ -180,3 +180,25 @@ As of 2026-04-15 (post-B5):
 | B3 | Migration/deployment truth pass — Alembic chain verified, test regressions fixed | COMPLETE (2026-04-15) |
 | B4 | Seeded-pressure hardening — arrivals-due signal on Today page | COMPLETE (2026-04-15) |
 | B5 | Final doc truth pass | COMPLETE (2026-04-15) |
+
+## Architecture correction pass (C-series)
+
+Targets `AdminGolfTeeSheetPage` and the tee-sheet feature surface. All corrections enforce `docs/ENGINEERING_STANDARDS.md`: subtraction-first, backend ownership, single-source utilities, no page-level exports, canonical invalidation, no fragmented state for the same concept.
+
+**Affected files:** `admin-golf-tee-sheet-page.tsx`, `sheet-shared.tsx`, `booking-management-drawer.tsx`, `admin-golf-tee-sheet-page.test.tsx`
+
+**Net change through C7:** ~160 lines removed (455 deleted, 292 added — additions are relocated/centralized functions in `sheet-shared.tsx`).
+
+| Slice | Description | Status |
+|---|---|---|
+| C1 | Delete spec/patch comments from page, sheet-shared, drawer | COMPLETE (2026-04-15) |
+| C2 | Delete 12 duplicated private helpers from page; move `ARRIVALS_DUE_WINDOW_MINUTES`, `slotHasArrivalsDue`, `bookingIsUnresolved` to sheet-shared with FROZEN comment; delete `deriveBookingNextAction` re-export from page | COMPLETE (2026-04-15) |
+| C3 | Relocate `nearestBucketTime`, `LIFECYCLE_TRANSITIONS`, `updateSlotFromBookings`, `normalizeOptimisticParticipants`, `optimisticallyTransitionBooking` from page to sheet-shared; page now exports only `AdminGolfTeeSheetPage` | COMPLETE (2026-04-15) |
+| C4 | Remove 5 inline finance predicates (`canPostCharge`, `canRecordPayment`, `canMarkComplimentary`, `canMarkWaived`, `canPostRefund`) from drawer `.map()`; add as canonical exports to sheet-shared with FROZEN comment; update drawer to import them | COMPLETE (2026-04-15) |
+| C5 | Verify batch check-in and batch no-show invalidation paths — both use raw API calls but call `await invalidate()` explicitly; canonical invalidation confirmed, no code change required | COMPLETE (2026-04-15) |
+| C6 | Collapse 4 drawer feedback `useState` calls (`drawerFeedbackMessage`, `drawerFeedbackTone`, `drawerFeedbackField`, `drawerFeedbackBookingId`) into one `useState<DrawerFeedback \| null>`; delete dependent `useEffect`; add `tone` field to `DrawerFeedback` type; update all ~40 call sites and JSX props atomically | COMPLETE (2026-04-15) |
+| C7 | Collapse 4 identical lifecycle `useMutation` blocks (cancel, check-in, complete, no-show) into a single `makeLifecycleMutation(action, apiFn)` factory; 4 one-liner replacements | COMPLETE (2026-04-15) |
+| C8 | Consolidate shared finance mutation error/success handlers across `paymentStatusMutation`, `postChargeMutation`, `recordPaymentMutation`, `postRefundMutation` | PENDING |
+| C9 | Remove `party_summary.staff_count` recomputation from `updateSlotFromBookings` (zero consumers confirmed) | PENDING |
+
+**Validation posture through C7:** typecheck clean, 275/275 tests passing.

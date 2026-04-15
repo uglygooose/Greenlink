@@ -4,6 +4,13 @@ import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import { BookingExtrasControls } from "./booking-extras-controls";
 import { BookingPartyEditor, type DraftParticipant } from "./booking-party-editor";
 import { useDrawerAccessibility } from "./use-drawer-accessibility";
+import {
+  canMarkComplimentary,
+  canMarkWaived,
+  canPostCharge,
+  canPostRefund,
+  canRecordPayment,
+} from "./sheet-shared";
 import type { BookingParticipantType, BookingPaymentStatus, BookingSummary } from "../../types/bookings";
 import type { ClubPersonEntry } from "../../types/people";
 import type { TeeSheetSlotView } from "../../types/tee-sheet";
@@ -379,16 +386,6 @@ export function BookingManagementDrawer({
             const hasChargeOverride = chargeOverride.length > 0;
             const showAmountError =
               feedbackTone === "error" && feedbackField === "amount" && feedbackBookingId === booking.id;
-            const canPostCharge =
-              booking.payment_status !== "paid" &&
-              booking.payment_status !== "complimentary" &&
-              booking.payment_status !== "waived";
-            const canRecordPayment = booking.payment_status === "pending";
-            const canMarkComplimentary =
-              booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
-            const canMarkWaived =
-              booking.payment_status !== "waived" && booking.payment_status !== "paid";
-            const canPostRefund = booking.payment_status === "paid";
 
             const bookingPrimaryName = primaryName(booking.participants);
 
@@ -508,7 +505,7 @@ export function BookingManagementDrawer({
                     <div className="flex gap-2">
                       <ActionButton
                         ariaLabel="Post Charge"
-                        disabled={!canPostCharge || (!hasResolvedAmount && !hasChargeOverride) || isPending || isSaving || isFinancePending}
+                        disabled={!canPostCharge(booking) || (!hasResolvedAmount && !hasChargeOverride) || isPending || isSaving || isFinancePending}
                         icon="receipt_long"
                         isPending={isPostChargePending}
                         label="Post Charge"
@@ -518,7 +515,7 @@ export function BookingManagementDrawer({
                       />
                       <ActionButton
                         ariaLabel="Record Payment"
-                        disabled={!canRecordPayment || isPending || isSaving || isFinancePending}
+                        disabled={!canRecordPayment(booking) || isPending || isSaving || isFinancePending}
                         icon="payments"
                         isPending={isRecordPaymentPending}
                         label="Record Payment"
@@ -532,7 +529,7 @@ export function BookingManagementDrawer({
                     <div className="flex gap-1 border-t border-slate-100 pt-2">
                       <ActionButton
                         ariaLabel="Mark Complimentary"
-                        disabled={!canMarkComplimentary || isPending || isSaving || isFinancePending}
+                        disabled={!canMarkComplimentary(booking) || isPending || isSaving || isFinancePending}
                         icon="redeem"
                         isPending={isComplimentaryPending}
                         label="Complimentary"
@@ -542,7 +539,7 @@ export function BookingManagementDrawer({
                       />
                       <ActionButton
                         ariaLabel="Mark Waived"
-                        disabled={!canMarkWaived || isPending || isSaving || isFinancePending}
+                        disabled={!canMarkWaived(booking) || isPending || isSaving || isFinancePending}
                         icon="remove_circle"
                         isPending={isWaivedPending}
                         label="Waive"
@@ -552,7 +549,7 @@ export function BookingManagementDrawer({
                       />
                       <ActionButton
                         ariaLabel="Post Refund"
-                        disabled={!canPostRefund || isPending || isSaving || isFinancePending}
+                        disabled={!canPostRefund(booking) || isPending || isSaving || isFinancePending}
                         icon="undo"
                         isPending={isPostRefundPending}
                         label="Refund"

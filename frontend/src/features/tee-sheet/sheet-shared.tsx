@@ -2,13 +2,14 @@ import { memo, type DragEvent, type ReactNode } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type {
+  BookingParticipantSummary,
   BookingParticipantType,
   BookingPaymentStatus,
   StartLane,
 } from "../../types/bookings";
 import type { BookingRuleAppliesTo } from "../../types/operations";
 import type { ClubPersonEntry, ClubMembershipRole, ClubMembershipStatus } from "../../types/people";
-import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../types/tee-sheet";
+import type { TeeSheetDayResponse, TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../types/tee-sheet";
 
 export type Action = "cancel" | "check_in" | "complete" | "no_show";
 export type QuickAction = Action;
@@ -890,4 +891,167 @@ export const OpenPlayerSlotContent = memo(function OpenPlayerSlotContent({
 
 export function primaryType(value: BookingRuleAppliesTo): BookingParticipantType {
   return value === "staff" ? "staff" : "member";
+}
+
+// FROZEN — backend gap. Do not extend, branch, or duplicate.
+// Replace when backend read model exposes computed flags
+// (is_at_risk, is_arrivals_due, next_action, is_unresolved).
+
+export const ARRIVALS_DUE_WINDOW_MINUTES = 90;
+
+export function minutesUntilSlot(slotDatetime: string, referenceDatetime: string | null | undefined): number | null {
+  if (!referenceDatetime) return null;
+  const slotMillis = Date.parse(slotDatetime);
+  const referenceMillis = Date.parse(referenceDatetime);
+  if (Number.isNaN(slotMillis) || Number.isNaN(referenceMillis)) return null;
+  return Math.floor((slotMillis - referenceMillis) / 60_000);
+}
+
+export function slotHasArrivalsDue(slot: TeeSheetSlotView, referenceDatetime: string | null | undefined): boolean {
+  return slot.bookings.some((booking) => {
+    if (deriveBookingNextAction(booking, referenceDatetime) !== "ready_to_check_in") return false;
+    const minutes = minutesUntilSlot(booking.slot_datetime, referenceDatetime);
+    return minutes !== null && minutes >= 0 && minutes <= ARRIVALS_DUE_WINDOW_MINUTES;
+  });
+}
+
+export function bookingIsUnresolved(booking: Pick<TeeSheetBookingView, "payment_status" | "status">): boolean {
+  return booking.payment_status === "pending" && (booking.status === "checked_in" || booking.status === "completed");
+}
+
+// FROZEN — backend gap. Do not extend, branch, or duplicate.
+// Replace when backend read model exposes computed finance eligibility flags
+// (can_post_charge, can_record_payment, can_mark_complimentary, can_mark_waived, can_post_refund).
+
+export function canPostCharge(booking: { payment_status?: BookingPaymentStatus | null }): boolean {
+  return (
+    booking.payment_status !== "paid" &&
+    booking.payment_status !== "complimentary" &&
+    booking.payment_status !== "waived"
+  );
+}
+
+export function canRecordPayment(booking: { payment_status?: BookingPaymentStatus | null }): boolean {
+  return booking.payment_status === "pending";
+}
+
+export function canMarkComplimentary(booking: { payment_status?: BookingPaymentStatus | null }): boolean {
+  return booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
+}
+
+export function canMarkWaived(booking: { payment_status?: BookingPaymentStatus | null }): boolean {
+  return booking.payment_status !== "waived" && booking.payment_status !== "paid";
+}
+
+export function canPostRefund(booking: { payment_status?: BookingPaymentStatus | null }): boolean {
+  return booking.payment_status === "paid";
+}
+
+export function nearestBucketTime(
+  buckets: Array<{ localTime: string }>,
+  timezone?: string | null,
+): string | null {
+  if (buckets.length === 0) return null;
+
+  const targetMinutes = clockMinutes(nowTimeKey(timezone));
+  let nearest = timeKey(buckets[0].localTime);
+  let nearestDistance = Math.abs(clockMinutes(nearest) - targetMinutes);
+
+  for (const bucket of buckets.slice(1)) {
+    const candidate = timeKey(bucket.localTime);
+    const candidateDistance = Math.abs(clockMinutes(candidate) - targetMinutes);
+    if (candidateDistance < nearestDistance) {
+      nearest = candidate;
+      nearestDistance = candidateDistance;
+    }
+  }
+
+  return nearest;
+}
+
+export const LIFECYCLE_TRANSITIONS: Record<Action, { from: TeeSheetBookingView["status"]; to: TeeSheetBookingView["status"] }> = {
+  cancel: { from: "reserved", to: "cancelled" },
+  check_in: { from: "reserved", to: "checked_in" },
+  complete: { from: "checked_in", to: "completed" },
+  no_show: { from: "reserved", to: "no_show" },
+};
+
+export function normalizeOptimisticParticipants(
+  participants: BookingParticipantSummary[],
+): BookingParticipantSummary[] {
+  return participants.map((participant, index) => ({
+    ...participant,
+    is_primary: index === 0,
+    sort_order: index,
+  }));
+}
+
+export function updateSlotFromBookings(slot: TeeSheetSlotView, bookings: TeeSheetBookingView[]): TeeSheetSlotView {
+  const playerCapacity = slot.occupancy.player_capacity ?? 4;
+  const memberCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "member").length,
+    0,
+  );
+  const guestCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "guest").length,
+    0,
+  );
+  const staffCount = bookings.reduce(
+    (sum, booking) => sum + booking.participants.filter((participant) => participant.participant_type === "staff").length,
+    0,
+  );
+  const reservedPlayers = bookings
+    .filter((booking) => booking.status === "reserved")
+    .reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
+  const checkedInPlayers = bookings
+    .filter((booking) => booking.status === "checked_in")
+    .reduce((sum, booking) => sum + bookingPlayerCount(booking), 0);
+  const reservedBookings = bookings.filter((booking) => booking.status === "reserved").length;
+  const confirmedBookings = bookings.filter((booking) => booking.status === "checked_in").length;
+  return {
+    ...slot,
+    bookings,
+    occupancy: {
+      ...slot.occupancy,
+      occupied_player_count: checkedInPlayers,
+      reserved_player_count: reservedPlayers,
+      confirmed_booking_count: confirmedBookings,
+      reserved_booking_count: reservedBookings,
+      remaining_player_capacity:
+        playerCapacity == null ? slot.occupancy.remaining_player_capacity : Math.max(playerCapacity - checkedInPlayers - reservedPlayers, 0),
+    },
+    party_summary: {
+      ...slot.party_summary,
+      member_count: memberCount,
+      guest_count: guestCount,
+      staff_count: staffCount,
+      total_players: memberCount + guestCount + staffCount,
+      has_activity: memberCount + guestCount + staffCount > 0,
+    },
+  };
+}
+
+export function optimisticallyTransitionBooking(
+  day: TeeSheetDayResponse | undefined,
+  bookingId: string,
+  action: Action,
+): TeeSheetDayResponse | undefined {
+  if (!day) return day;
+
+  const transition = LIFECYCLE_TRANSITIONS[action];
+  let changed = false;
+  const nextRows = day.rows.map((row) => ({
+    ...row,
+    slots: row.slots.map((slot) => {
+      if (!slot.bookings.some((booking) => booking.id === bookingId)) return slot;
+      const nextBookings = slot.bookings.map((booking) => {
+        if (booking.id !== bookingId || booking.status !== transition.from) return booking;
+        changed = true;
+        return { ...booking, status: transition.to };
+      });
+      return changed ? updateSlotFromBookings(slot, nextBookings) : slot;
+    }),
+  }));
+
+  return changed ? { ...day, rows: nextRows } : day;
 }
