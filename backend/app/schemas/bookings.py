@@ -483,3 +483,34 @@ class BookingPaymentRecordResult(BaseModel):
     transaction: FinanceTransactionResponse | None = None
     balance: Decimal | None = None
     failures: list[BookingFinanceMutationFailureDetail] = Field(default_factory=list)
+
+
+class BookingRefundInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal | None = Field(default=None, gt=0)
+    description: str | None = Field(default=None, max_length=255)
+
+
+class BookingRefundRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    acting_user_id: uuid.UUID
+    amount: Decimal | None = None
+    description: str | None = None
+
+
+class BookingRefundDecision(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+
+
+class BookingRefundResult(BaseModel):
+    booking_id: uuid.UUID
+    decision: BookingRefundDecision
+    refund_applied: bool = False
+    booking: BookingSummary | None = None
+    transaction: FinanceTransactionResponse | None = None
+    balance: Decimal | None = None
+    failures: list[BookingFinanceMutationFailureDetail] = Field(default_factory=list)

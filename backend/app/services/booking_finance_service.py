@@ -24,6 +24,8 @@ from app.schemas.bookings import (
     BookingPaymentRecordResult,
     BookingPaymentStatusUpdateRequest,
     BookingPaymentStatusUpdateResult,
+    BookingRefundRequest,
+    BookingRefundResult,
     BookingSummary,
 )
 from app.schemas.finance import FinanceTransactionCreateRequest, FinanceTransactionResponse
@@ -405,6 +407,128 @@ class BookingFinanceService:
             booking_id=hydrated.id,
             decision="allowed",
             settlement_applied=True,
+            booking=BookingSummary.model_validate(hydrated),
+            transaction=created.transaction,
+            balance=created.balance,
+            failures=[],
+        )
+
+    def post_refund(
+        self,
+        *,
+        club_id: uuid.UUID,
+        payload: BookingRefundRequest,
+    ) -> BookingRefundResult:
+        booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
+        if booking is None:
+            return BookingRefundResult(
+                booking_id=payload.booking_id,
+                decision="blocked",
+                refund_applied=False,
+                failures=[
+                    BookingFinanceMutationFailureDetail(
+                        code="booking_not_found",
+                        message="booking_id was not found in the selected club",
+                        field="booking_id",
+                    )
+                ],
+            )
+
+        if booking.payment_status != BookingPaymentStatus.PAID:
+            return BookingRefundResult(
+                booking_id=booking.id,
+                decision="blocked",
+                refund_applied=False,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingFinanceMutationFailureDetail(
+                        code="booking_not_paid",
+                        message="Refunds can only be posted against paid bookings",
+                        field="booking_id",
+                        current_status=booking.status,
+                        current_payment_status=booking.payment_status,
+                    )
+                ],
+            )
+
+        charge_transaction = self._load_transaction_for_booking(
+            club_id=club_id,
+            booking_id=booking.id,
+            transaction_type=FinanceTransactionType.CHARGE,
+        )
+        if charge_transaction is None:
+            return BookingRefundResult(
+                booking_id=booking.id,
+                decision="blocked",
+                refund_applied=False,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingFinanceMutationFailureDetail(
+                        code="booking_charge_not_found",
+                        message="No charge transaction found for this booking — cannot post a refund",
+                        field="booking_id",
+                        current_status=booking.status,
+                        current_payment_status=booking.payment_status,
+                    )
+                ],
+            )
+
+        finance_account = self._load_finance_account(
+            club_id=club_id,
+            account_id=charge_transaction.account_id,
+        )
+        if finance_account is None:
+            return BookingRefundResult(
+                booking_id=booking.id,
+                decision="blocked",
+                refund_applied=False,
+                booking=BookingSummary.model_validate(booking),
+                failures=[
+                    BookingFinanceMutationFailureDetail(
+                        code="booking_finance_account_not_found",
+                        message="Linked finance account was not found for this booking",
+                        field="booking_id",
+                        current_status=booking.status,
+                        current_payment_status=booking.payment_status,
+                    )
+                ],
+            )
+
+        # Refund amount: explicit override or defaults to the full original charge.
+        # Stored as a positive amount (credit to member account, reversing some or
+        # all of the original charge effect).
+        refund_amount = payload.amount if payload.amount is not None else abs(charge_transaction.amount)
+        description = (
+            payload.description.strip()
+            if payload.description and payload.description.strip()
+            else f"Refund for booking {str(booking.id)[:8]}"
+        )
+
+        created = self.ledger_service.create_transaction(
+            club_id=club_id,
+            payload=FinanceTransactionCreateRequest(
+                account_id=finance_account.id,
+                amount=refund_amount,
+                type=FinanceTransactionType.REFUND,
+                source=FinanceTransactionSource.BOOKING,
+                reference_id=booking.id,
+                description=description,
+            ),
+        )
+
+        # Revert payment status to PENDING: the booking now has an open financial
+        # position that requires close-day review (partial re-charge, account credit
+        # application, or explicit waive decision).
+        booking.payment_status = BookingPaymentStatus.PENDING
+        self.db.add(booking)
+        self.db.commit()
+
+        hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)
+        assert hydrated is not None
+        return BookingRefundResult(
+            booking_id=hydrated.id,
+            decision="allowed",
+            refund_applied=True,
             booking=BookingSummary.model_validate(hydrated),
             transaction=created.transaction,
             balance=created.balance,

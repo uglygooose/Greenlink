@@ -161,6 +161,7 @@ class FinanceTransactionType(StrEnum):
     CHARGE = "charge"
     PAYMENT = "payment"
     ADJUSTMENT = "adjustment"
+    REFUND = "refund"
 
 
 class FinanceTransactionSource(StrEnum):

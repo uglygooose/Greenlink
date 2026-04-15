@@ -55,6 +55,9 @@ from app.schemas.bookings import (
     BookingPaymentStatusUpdateInput,
     BookingPaymentStatusUpdateRequest,
     BookingPaymentStatusUpdateResult,
+    BookingRefundInput,
+    BookingRefundRequest,
+    BookingRefundResult,
     PlayerBookingReadModelResponse,
 )
 from app.schemas.operations import (
@@ -435,6 +438,29 @@ def record_booking_payment(
         payload=BookingPaymentRecordRequest(
             booking_id=booking_id,
             acting_user_id=current_user.id,
+        ),
+    )
+
+
+@router.post("/bookings/{booking_id}/post-refund", response_model=BookingRefundResult)
+def post_booking_refund(
+    booking_id: uuid.UUID,
+    payload: BookingRefundInput,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BookingRefundResult:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = BookingFinanceService(db)
+    return service.post_refund(
+        club_id=context.selected_club.id,
+        payload=BookingRefundRequest(
+            booking_id=booking_id,
+            acting_user_id=current_user.id,
+            amount=payload.amount,
+            description=payload.description,
         ),
     )
 
