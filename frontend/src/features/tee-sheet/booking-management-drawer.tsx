@@ -40,7 +40,8 @@ interface BookingManagementDrawerProps {
   onRecordPayment: (bookingId: string) => void;
   onMarkComplimentary: (bookingId: string) => void;
   onMarkWaived: (bookingId: string) => void;
-  pendingFinanceAction: "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived" | null;
+  onPostRefund: (bookingId: string) => void;
+  pendingFinanceAction: "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived" | "post_refund" | null;
   pendingFinanceBookingId: string | null;
   pendingAction: "cancel" | "check_in" | "complete" | "no_show" | null;
   pendingBookingId: string | null;
@@ -291,6 +292,7 @@ export function BookingManagementDrawer({
   onMarkWaived,
   onNoShow,
   onPostCharge,
+  onPostRefund,
   onRecordPayment,
   pendingFinanceAction,
   pendingFinanceBookingId,
@@ -367,6 +369,7 @@ export function BookingManagementDrawer({
             const isRecordPaymentPending = isFinancePending && pendingFinanceAction === "record_payment";
             const isComplimentaryPending = isFinancePending && pendingFinanceAction === "mark_complimentary";
             const isWaivedPending = isFinancePending && pendingFinanceAction === "mark_waived";
+            const isPostRefundPending = isFinancePending && pendingFinanceAction === "post_refund";
             const isEditing = editingBookingId === booking.id;
             const isSaving = savingBookingId === booking.id;
             const chargeAmount = chargeDrafts[booking.id] ?? "";
@@ -385,6 +388,7 @@ export function BookingManagementDrawer({
               booking.payment_status !== "complimentary" && booking.payment_status !== "paid";
             const canMarkWaived =
               booking.payment_status !== "waived" && booking.payment_status !== "paid";
+            const canPostRefund = booking.payment_status === "paid";
 
             const bookingPrimaryName = primaryName(booking.participants);
 
@@ -544,6 +548,16 @@ export function BookingManagementDrawer({
                         label="Waive"
                         onClick={() => onMarkWaived(booking.id)}
                         pendingLabel="Updating..."
+                        variant="ghost"
+                      />
+                      <ActionButton
+                        ariaLabel="Post Refund"
+                        disabled={!canPostRefund || isPending || isSaving || isFinancePending}
+                        icon="undo"
+                        isPending={isPostRefundPending}
+                        label="Refund"
+                        onClick={() => onPostRefund(booking.id)}
+                        pendingLabel="Refunding..."
                         variant="ghost"
                       />
                     </div>

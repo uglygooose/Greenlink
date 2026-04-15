@@ -10,6 +10,8 @@ import type {
   BookingPaymentRecordResult,
   BookingPaymentStatusUpdateInput,
   BookingPaymentStatusUpdateResult,
+  BookingRefundInput,
+  BookingRefundResult,
   PlayerBookingReadModelResponse,
   BookingUpdateInput,
   BookingUpdateResult,
@@ -359,6 +361,19 @@ export function recordBookingPayment(
     accessToken,
     selectedClubId,
     body: JSON.stringify({}),
+  });
+}
+
+export function postBookingRefund(
+  bookingId: string,
+  payload: BookingRefundInput,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<BookingRefundResult> {
+  return apiRequest<BookingRefundResult>(`/api/golf/bookings/${bookingId}/post-refund`, {
+    method: "POST",
+    accessToken,
+    selectedClubId,
+    body: JSON.stringify(payload),
   });
 }
 

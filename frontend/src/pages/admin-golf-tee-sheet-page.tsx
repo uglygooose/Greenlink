@@ -10,6 +10,7 @@ import {
   markBookingNoShow,
   moveBooking,
   postBookingCharge,
+  postBookingRefund,
   recordBookingPayment,
   updateBookingPaymentStatus,
   updateBooking,
@@ -65,6 +66,7 @@ import type {
   BookingParticipantSummary,
   BookingPaymentRecordResult,
   BookingPaymentStatusUpdateResult,
+  BookingRefundResult,
   BookingParticipantType,
   BookingSummary,
   BookingUpdateInput,
@@ -95,7 +97,7 @@ type Dragged = {
   slotDatetime: string;
 };
 type ViewFilter = "all" | "closed" | "golf_day" | "open" | "unpaid" | "no_shows" | "arrivals_due" | "unresolved" | "warnings";
-type FinanceAction = "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived";
+type FinanceAction = "post_charge" | "record_payment" | "mark_complimentary" | "mark_waived" | "post_refund";
 type CommandPaletteItem =
   | {
       id: string;
@@ -782,7 +784,7 @@ function bookingFeedback(result: BookingCreateResult | BookingUpdateResult): { m
 }
 
 function bookingFinanceFeedback(
-  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult,
+  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult | BookingRefundResult,
 ): DrawerFeedback {
   const failure = result.failures[0];
   if (!failure) {
@@ -824,7 +826,7 @@ function bookingFinanceFeedback(
 
 function bookingFinanceSuccessMessage(
   action: FinanceAction,
-  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult,
+  result: BookingPaymentStatusUpdateResult | BookingChargePostResult | BookingPaymentRecordResult | BookingRefundResult,
 ): string {
   switch (action) {
     case "post_charge":
@@ -843,6 +845,10 @@ function bookingFinanceSuccessMessage(
       return "update_applied" in result && result.update_applied
         ? "Booking marked waived. Tee sheet refreshed from backend state."
         : "Booking was already marked waived.";
+    case "post_refund":
+      return "refund_applied" in result && result.refund_applied
+        ? "Refund posted. Booking returned to unpaid — review in close-day exceptions."
+        : "Refund could not be applied.";
   }
 }
 
@@ -1554,6 +1560,32 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     },
   });
 
+  const postRefundMutation = useMutation({
+    mutationFn: (bookingId: string) =>
+      postBookingRefund(bookingId, {}, { accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
+    onSuccess: async (result) => {
+      if (result.decision === "blocked") {
+        const feedback = bookingFinanceFeedback(result);
+        setDrawerFeedbackField(feedback.field);
+        setDrawerFeedbackBookingId(feedback.bookingId);
+        setDrawerFeedbackTone("error");
+        setDrawerFeedbackMessage(feedback.message);
+        return;
+      }
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
+      setDrawerFeedbackTone("info");
+      setDrawerFeedbackMessage(bookingFinanceSuccessMessage("post_refund", result));
+      await invalidate();
+    },
+    onError: (error) => {
+      setDrawerFeedbackField(null);
+      setDrawerFeedbackBookingId(null);
+      setDrawerFeedbackTone("error");
+      setDrawerFeedbackMessage(asMessage(error));
+    },
+  });
+
   const moveMutation = useMutation({
     mutationFn: ({ bookingId, participantId, target }: { bookingId: string; participantId?: string | null; target: LaneSlot }) =>
       moveBooking(
@@ -1683,7 +1715,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       ? "post_charge"
       : recordPaymentMutation.isPending
         ? "record_payment"
-        : null;
+        : postRefundMutation.isPending
+          ? "post_refund"
+          : null;
   const pendingFinanceBookingId =
     paymentStatusMutation.isPending
       ? paymentStatusMutation.variables?.bookingId ?? null
@@ -1691,7 +1725,9 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         ? postChargeMutation.variables?.bookingId ?? null
         : recordPaymentMutation.isPending
           ? recordPaymentMutation.variables ?? null
-          : null;
+          : postRefundMutation.isPending
+            ? postRefundMutation.variables ?? null
+            : null;
   const movingBookingId = moveMutation.isPending ? moveMutation.variables?.bookingId ?? null : null;
   const savingBookingId = updateMutation.isPending ? updateMutation.variables?.bookingId ?? null : null;
   const directory = directoryQuery.data ?? [];
@@ -3501,6 +3537,12 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 setDrawerFeedbackMessage(null);
                 setDrawerFeedbackTone(null);
                 paymentStatusMutation.mutate({ bookingId, paymentStatus: "waived" });
+              }}
+              onPostRefund={(bookingId) => {
+                setNotice(null);
+                setDrawerFeedbackMessage(null);
+                setDrawerFeedbackTone(null);
+                postRefundMutation.mutate(bookingId);
               }}
               onNoShow={(bookingId) => {
                 setNotice(null);

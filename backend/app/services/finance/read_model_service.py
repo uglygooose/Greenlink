@@ -305,6 +305,17 @@ class FinanceReadModelService:
         )
         unpaid_bookings = list(self.db.execute(unpaid_bookings_stmt).scalars().all())
 
+        # Detect which of the unpaid bookings have a REFUND transaction (refund follow-up).
+        unpaid_booking_ids = {b.id for b in unpaid_bookings}
+        refunded_booking_ids: set[uuid.UUID] = set()
+        if unpaid_booking_ids:
+            refund_stmt = select(FinanceTransaction.reference_id).where(
+                FinanceTransaction.club_id == club_id,
+                FinanceTransaction.type == FinanceTransactionType.REFUND,
+                FinanceTransaction.reference_id.in_(unpaid_booking_ids),
+            )
+            refunded_booking_ids = set(self.db.scalars(refund_stmt).all())
+
         # Unresolved orders: not collected and not cancelled, created on the target date.
         order_day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
         order_day_end_utc = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(UTC)
@@ -320,9 +331,16 @@ class FinanceReadModelService:
         )
         unresolved_orders = list(self.db.execute(unresolved_orders_stmt).scalars().all())
 
+        unpaid_booking_summaries = [
+            FinanceUnpaidBookingSummary.model_validate(b).model_copy(
+                update={"has_refund_transaction": b.id in refunded_booking_ids}
+            )
+            for b in unpaid_bookings
+        ]
+
         return FinanceExceptionsResponse(
             date=target_date,
-            unpaid_bookings=[FinanceUnpaidBookingSummary.model_validate(b) for b in unpaid_bookings],
+            unpaid_bookings=unpaid_booking_summaries,
             unresolved_orders=[FinanceUnresolvedOrderSummary.model_validate(o) for o in unresolved_orders],
             total_exception_count=len(unpaid_bookings) + len(unresolved_orders),
         )

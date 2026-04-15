@@ -137,6 +137,11 @@ def test_superadmin_can_complete_finance_step_and_advance_to_rules(
                     "credit_account_code": "9990-ADJUST",
                     "description_prefix": "Adjust",
                 },
+                "refund": {
+                    "debit_account_code": "4000-SALES",
+                    "credit_account_code": "1100-AR",
+                    "description_prefix": "Refund",
+                },
             },
         },
         created_by_person_id=root.person_id,

@@ -48,4 +48,5 @@ class AdminDashboardSummaryResponse(BaseModel):
     active_targets: list[DashboardTargetContext] = []
     unpaid_bookings_today: int = 0
     no_show_risk_count: int = 0
+    arrivals_due_count: int = 0
     close_day_ready: bool = True

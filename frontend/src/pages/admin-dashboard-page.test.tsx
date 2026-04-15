@@ -37,6 +37,7 @@ const baseSummaryData = {
   active_targets: [],
   unpaid_bookings_today: 0,
   no_show_risk_count: 0,
+  arrivals_due_count: 0,
   close_day_ready: true,
 };
 
@@ -120,6 +121,19 @@ describe("AdminDashboardPage", () => {
     expect(screen.getByText(/2 reserved bookings have passed their start time/i)).toBeInTheDocument();
     const noShowLinks = screen.getAllByRole("link", { name: /no-show risk/i });
     expect(noShowLinks[0]).toHaveAttribute("href", "/admin/golf/tee-sheet?filter=no-shows");
+  });
+
+  test("shows arrivals due alert chip and work card when arrivals_due_count > 0", () => {
+    mockUseAdminDashboardSummaryQuery.mockReturnValue({
+      data: { ...baseSummaryData, arrivals_due_count: 5 },
+      isLoading: false,
+    });
+    renderPage();
+    expect(screen.getByRole("link", { name: /arrivals due/i })).toBeInTheDocument();
+    expect(screen.getByText("Arrivals due soon")).toBeInTheDocument();
+    expect(screen.getByText(/5 reserved bookings are due to arrive in the next 90 minutes/i)).toBeInTheDocument();
+    const chip = screen.getByRole("link", { name: /arrivals due/i });
+    expect(chip).toHaveAttribute("href", "/admin/golf/tee-sheet?filter=arrivals-due");
   });
 
   test("shows Close Day blocked chip when close_day_ready is false", () => {

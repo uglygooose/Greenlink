@@ -106,6 +106,11 @@ def _profile_payload(club_id: uuid.UUID, **overrides: object) -> dict[str, objec
                     "credit_account_code": "9990-ADJUST",
                     "description_prefix": "Adjust",
                 },
+                "refund": {
+                    "debit_account_code": "4000-SALES",
+                    "credit_account_code": "1100-AR",
+                    "description_prefix": "Refund",
+                },
             },
         },
     }

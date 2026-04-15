@@ -38,5 +38,6 @@ export interface AdminDashboardSummary {
   active_targets: DashboardTargetContext[];
   unpaid_bookings_today: number;
   no_show_risk_count: number;
+  arrivals_due_count: number;
   close_day_ready: boolean;
 }

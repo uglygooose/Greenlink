@@ -23,6 +23,7 @@ function timeAgo(iso: string): string {
 }
 
 function activityIcon(entry: DashboardActivityItem): { icon: string; className: string } {
+  if (entry.type === "refund") return { icon: "undo", className: "bg-amber-50 text-amber-600" };
   if (entry.source === "booking") return { icon: "golf_course", className: "bg-blue-50 text-blue-600" };
   if (entry.source === "pos") return { icon: "point_of_sale", className: "bg-emerald-50 text-emerald-600" };
   if (entry.source === "order") return { icon: "restaurant", className: "bg-amber-50 text-amber-600" };
@@ -96,6 +97,7 @@ function TodayLayout(): JSX.Element {
 
   const unpaidCount = summary?.unpaid_bookings_today ?? 0;
   const noShowCount = summary?.no_show_risk_count ?? 0;
+  const arrivalsCount = summary?.arrivals_due_count ?? 0;
   const closeDayReady = summary?.close_day_ready ?? true;
   const teeOccupancy = summary?.tee_occupancy ?? null;
   const occupancyPct = teeOccupancy?.occupancy_pct ?? null;
@@ -103,6 +105,17 @@ function TodayLayout(): JSX.Element {
   const activeTargets = summary?.active_targets ?? [];
 
   const workCards: WorkCardProps[] = [];
+
+  if (arrivalsCount > 0) {
+    workCards.push({
+      icon: "directions_walk",
+      iconClass: "bg-blue-100 text-blue-700",
+      title: "Arrivals due soon",
+      detail: `${arrivalsCount} reserved booking${arrivalsCount === 1 ? "" : "s"} ${arrivalsCount === 1 ? "is" : "are"} due to arrive in the next 90 minutes.`,
+      actionLabel: "Check In",
+      href: "/admin/golf/tee-sheet?filter=arrivals-due",
+    });
+  }
 
   if (unpaidCount > 0) {
     workCards.push({
@@ -150,6 +163,14 @@ function TodayLayout(): JSX.Element {
             <div className="h-9 w-48 animate-pulse rounded-full bg-slate-100" />
           ) : (
             <>
+              {arrivalsCount > 0 && (
+                <AlertChip
+                  count={arrivalsCount}
+                  href="/admin/golf/tee-sheet?filter=arrivals-due"
+                  label="arrivals due"
+                  tone="blue"
+                />
+              )}
               {unpaidCount > 0 && (
                 <AlertChip
                   count={unpaidCount}
@@ -176,7 +197,7 @@ function TodayLayout(): JSX.Element {
                   <MaterialSymbol className="text-[16px]" icon="arrow_forward" />
                 </Link>
               )}
-              {unpaidCount === 0 && noShowCount === 0 && closeDayReady && (
+              {unpaidCount === 0 && noShowCount === 0 && arrivalsCount === 0 && closeDayReady && (
                 <span className="flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-800">
                   <MaterialSymbol className="text-[16px]" icon="check_circle" />
                   All clear — no outstanding issues

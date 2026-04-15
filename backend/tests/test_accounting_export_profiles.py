@@ -139,6 +139,11 @@ def _profile_payload(**overrides: object) -> dict[str, object]:
                     "credit_account_code": "9990-ADJUST",
                     "description_prefix": "Adjust",
                 },
+                "refund": {
+                    "debit_account_code": "4000-SALES",
+                    "credit_account_code": "1100-AR",
+                    "description_prefix": "Refund",
+                },
             },
         },
     }

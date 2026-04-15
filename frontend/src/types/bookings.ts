@@ -131,7 +131,7 @@ export interface BookingFinanceTransactionDetail {
   club_id: string;
   account_id: string;
   amount: string;
-  type: "charge" | "payment" | "adjustment";
+  type: "charge" | "payment" | "adjustment" | "refund";
   source: "booking" | "order" | "pos" | "manual";
   reference_id: string | null;
   description: string;
@@ -169,6 +169,21 @@ export interface BookingPaymentRecordResult {
   booking_id: string;
   decision: "allowed" | "blocked";
   settlement_applied: boolean;
+  booking: BookingSummary | null;
+  transaction: BookingFinanceTransactionDetail | null;
+  balance: string | null;
+  failures: BookingFinanceMutationFailureDetail[];
+}
+
+export interface BookingRefundInput {
+  amount?: string | null;
+  description?: string | null;
+}
+
+export interface BookingRefundResult {
+  booking_id: string;
+  decision: "allowed" | "blocked";
+  refund_applied: boolean;
   booking: BookingSummary | null;
   transaction: BookingFinanceTransactionDetail | null;
   balance: string | null;

@@ -437,6 +437,7 @@ class FinanceUnpaidBookingSummary(BaseModel):
     party_size: int
     fee_label: str | None = None
     primary_person_id: uuid.UUID | None = None
+    has_refund_transaction: bool = False
 
 
 class FinanceUnresolvedOrderSummary(BaseModel):

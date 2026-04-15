@@ -121,6 +121,7 @@ function renderDrawer({
       onMarkWaived={vi.fn()}
       onNoShow={vi.fn()}
       onPostCharge={onPostCharge}
+      onPostRefund={vi.fn()}
       onRecordPayment={vi.fn()}
       pendingAction={null}
       pendingBookingId={null}
@@ -210,6 +211,7 @@ describe("BookingManagementDrawer finance actions", () => {
         onMarkWaived={vi.fn()}
         onNoShow={vi.fn()}
         onPostCharge={vi.fn()}
+        onPostRefund={vi.fn()}
         onRecordPayment={vi.fn()}
         pendingAction={null}
         pendingBookingId={null}
@@ -239,5 +241,65 @@ describe("BookingManagementDrawer finance actions", () => {
     fireEvent.click(screen.getByRole("button", { name: /Post Charge/i }));
 
     expect(onPostCharge).toHaveBeenCalledWith("booking-1", undefined);
+  });
+
+  test("enables Post Refund only when the booking is paid", () => {
+    renderDrawer({ paymentStatus: "paid" });
+    expect(screen.getByRole("button", { name: /Post Refund/i })).toBeEnabled();
+  });
+
+  test("disables Post Refund when the booking is not paid", () => {
+    renderDrawer({ paymentStatus: "pending" });
+    expect(screen.getByRole("button", { name: /Post Refund/i })).toBeDisabled();
+  });
+
+  test("calls onPostRefund with the booking id when Post Refund is clicked", () => {
+    const onPostRefund = vi.fn();
+    render(
+      <BookingManagementDrawer
+        colorCode="#1b4d8f"
+        directory={[]}
+        editCaddieFlag={false}
+        editCartFlag={false}
+        editingBookingId={null}
+        editParticipants={[]}
+        feedbackBookingId={null}
+        feedbackField={null}
+        feedbackMessage={null}
+        feedbackTone={null}
+        laneLabel="1st Tee"
+        onCancel={vi.fn()}
+        onCheckIn={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+        onEditAddParticipant={vi.fn()}
+        onEditCancel={vi.fn()}
+        onEditCaddieFlagChange={vi.fn()}
+        onEditChangeParticipant={vi.fn()}
+        onEditCartFlagChange={vi.fn()}
+        onEditRemoveParticipant={vi.fn()}
+        onEditSave={vi.fn()}
+        onEditStart={vi.fn()}
+        onFinanceInputChange={vi.fn()}
+        onMarkComplimentary={vi.fn()}
+        onMarkWaived={vi.fn()}
+        onNoShow={vi.fn()}
+        onPostCharge={vi.fn()}
+        onPostRefund={onPostRefund}
+        onRecordPayment={vi.fn()}
+        pendingAction={null}
+        pendingBookingId={null}
+        pendingFinanceAction={null}
+        pendingFinanceBookingId={null}
+        savingBookingId={null}
+        selectedDate="2026-03-30"
+        showFinanceActions={true}
+        slot={buildSlot(buildBooking("paid"))}
+        teeLabel="Blue"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Post Refund/i }));
+    expect(onPostRefund).toHaveBeenCalledWith("booking-1");
   });
 });

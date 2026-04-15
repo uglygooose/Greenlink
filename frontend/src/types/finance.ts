@@ -332,6 +332,7 @@ export interface FinanceUnpaidBooking {
   party_size: number;
   fee_label: string | null;
   primary_person_id: string | null;
+  has_refund_transaction: boolean;
 }
 
 export interface FinanceUnresolvedOrder {

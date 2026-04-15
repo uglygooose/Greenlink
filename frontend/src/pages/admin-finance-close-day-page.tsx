@@ -390,15 +390,22 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
                             {formatTime(booking.slot_datetime)}
                             {booking.fee_label ? ` · ${booking.fee_label}` : ""}
                           </p>
-                          <p className="text-xs text-slate-500">Party of {booking.party_size}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-slate-500">Party of {booking.party_size}</p>
+                            {booking.has_refund_transaction ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                                Refund follow-up
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <NavLink
-                          aria-label={`Resolve unpaid booking at ${formatTime(booking.slot_datetime)} on tee sheet`}
+                          aria-label={`${booking.has_refund_transaction ? "Review" : "Resolve"} unpaid booking at ${formatTime(booking.slot_datetime)} on tee sheet`}
                           className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
                           to={teeSheetHref("unpaid", closeDateStr, booking.course_id)}
                         >
                           <MaterialSymbol icon="open_in_new" />
-                          Resolve on Tee Sheet
+                          {booking.has_refund_transaction ? "Review on Tee Sheet" : "Resolve on Tee Sheet"}
                         </NavLink>
                       </div>
                     ))}

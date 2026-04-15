@@ -57,16 +57,31 @@ function renderPage(): void {
   );
 }
 
+function buildUnpaidBooking(
+  overrides: Partial<{
+    id: string;
+    course_id: string;
+    slot_datetime: string;
+    party_size: number;
+    fee_label: string | null;
+    primary_person_id: string | null;
+    has_refund_transaction: boolean;
+  }> = {},
+) {
+  return {
+    id: overrides.id ?? "b-1",
+    course_id: overrides.course_id ?? "course-1",
+    slot_datetime: overrides.slot_datetime ?? "2026-04-10T06:00:00Z",
+    party_size: overrides.party_size ?? 2,
+    fee_label: overrides.fee_label ?? null,
+    primary_person_id: overrides.primary_person_id ?? null,
+    has_refund_transaction: overrides.has_refund_transaction ?? false,
+  };
+}
+
 function buildExceptions(
   overrides: Partial<{
-    unpaid_bookings: Array<{
-      id: string;
-      course_id: string;
-      slot_datetime: string;
-      party_size: number;
-      fee_label: string | null;
-      primary_person_id: string | null;
-    }>;
+    unpaid_bookings: ReturnType<typeof buildUnpaidBooking>[];
     unresolved_orders: object[];
   }> = {},
 ) {
@@ -249,14 +264,7 @@ describe("AdminFinancePage - Close Day wizard", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          {
-            id: "b-1",
-            course_id: "course-1",
-            slot_datetime: "2026-04-10T06:00:00Z",
-            party_size: 2,
-            fee_label: "Member Rate",
-            primary_person_id: null,
-          },
+          buildUnpaidBooking({ id: "b-1", course_id: "course-1", party_size: 2, fee_label: "Member Rate" }),
         ],
         unresolved_orders: [],
       }),
@@ -276,14 +284,7 @@ describe("AdminFinancePage - Close Day wizard", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          {
-            id: "b-1",
-            course_id: "course-2",
-            slot_datetime: "2026-04-10T06:00:00Z",
-            party_size: 4,
-            fee_label: "Weekend Rate",
-            primary_person_id: null,
-          },
+          buildUnpaidBooking({ id: "b-1", course_id: "course-2", party_size: 4, fee_label: "Weekend Rate" }),
         ],
         unresolved_orders: [],
       }),
@@ -306,22 +307,8 @@ describe("AdminFinancePage - Close Day wizard", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          {
-            id: "b-1",
-            course_id: "course-2",
-            slot_datetime: "2026-04-10T06:00:00Z",
-            party_size: 4,
-            fee_label: "Weekend Rate",
-            primary_person_id: null,
-          },
-          {
-            id: "b-2",
-            course_id: "course-2",
-            slot_datetime: "2026-04-10T07:00:00Z",
-            party_size: 2,
-            fee_label: "Guest Rate",
-            primary_person_id: null,
-          },
+          buildUnpaidBooking({ id: "b-1", course_id: "course-2", party_size: 4, fee_label: "Weekend Rate", slot_datetime: "2026-04-10T06:00:00Z" }),
+          buildUnpaidBooking({ id: "b-2", course_id: "course-2", party_size: 2, fee_label: "Guest Rate", slot_datetime: "2026-04-10T07:00:00Z" }),
         ],
       }),
       isLoading: false,
@@ -340,22 +327,8 @@ describe("AdminFinancePage - Close Day wizard", () => {
     mockUseFinanceExceptionsQuery.mockReturnValue({
       data: buildExceptions({
         unpaid_bookings: [
-          {
-            id: "b-1",
-            course_id: "course-1",
-            slot_datetime: "2026-04-10T06:00:00Z",
-            party_size: 4,
-            fee_label: "Weekend Rate",
-            primary_person_id: null,
-          },
-          {
-            id: "b-2",
-            course_id: "course-2",
-            slot_datetime: "2026-04-10T07:00:00Z",
-            party_size: 2,
-            fee_label: "Guest Rate",
-            primary_person_id: null,
-          },
+          buildUnpaidBooking({ id: "b-1", course_id: "course-1", party_size: 4, fee_label: "Weekend Rate", slot_datetime: "2026-04-10T06:00:00Z" }),
+          buildUnpaidBooking({ id: "b-2", course_id: "course-2", party_size: 2, fee_label: "Guest Rate", slot_datetime: "2026-04-10T07:00:00Z" }),
         ],
       }),
       isLoading: false,
@@ -368,6 +341,28 @@ describe("AdminFinancePage - Close Day wizard", () => {
 
     expect(screen.queryByRole("link", { name: /view all unpaid on tee sheet/i })).not.toBeInTheDocument();
     expect(screen.getByText(/open each unpaid booking from its row/i)).toBeInTheDocument();
+  });
+
+  test("shows refund follow-up badge and changes link text for bookings with a refund transaction", () => {
+    mockUseFinanceExceptionsQuery.mockReturnValue({
+      data: buildExceptions({
+        unpaid_bookings: [
+          buildUnpaidBooking({ id: "b-1", course_id: "course-1", fee_label: "Member Rate", has_refund_transaction: true }),
+          buildUnpaidBooking({ id: "b-2", course_id: "course-1", fee_label: "Guest Rate", has_refund_transaction: false }),
+        ],
+        unresolved_orders: [],
+      }),
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText(/Refund follow-up/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review unpaid booking.*on tee sheet/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /resolve unpaid booking.*on tee sheet/i })).toBeInTheDocument();
   });
 
   test("Next button is enabled and navigates to Generate Batch step when no exceptions", () => {

@@ -72,6 +72,7 @@ class AdminDashboardService:
         active_targets = self._get_active_targets(club_id)
         unpaid_bookings_today = self._get_unpaid_bookings_today(club_id)
         no_show_risk_count = self._get_no_show_risk_count(club_id)
+        arrivals_due_count = self._get_arrivals_due_count(club_id)
         close_day_ready = unpaid_bookings_today == 0 and no_show_risk_count == 0
         return AdminDashboardSummaryResponse(
             member_count=member_count,
@@ -81,6 +82,7 @@ class AdminDashboardService:
             active_targets=active_targets,
             unpaid_bookings_today=unpaid_bookings_today,
             no_show_risk_count=no_show_risk_count,
+            arrivals_due_count=arrivals_due_count,
             close_day_ready=close_day_ready,
         )
 
@@ -284,6 +286,33 @@ class AdminDashboardService:
                 Booking.slot_datetime >= today_start_utc,
                 Booking.slot_datetime < today_end_utc,
                 Booking.slot_datetime < now_utc,
+            )
+        )
+        return count or 0
+
+    def _get_arrivals_due_count(self, club_id: uuid.UUID) -> int:
+        """Count of today's reserved bookings due within the next 90 minutes."""
+        club_config = self.db.scalar(
+            select(ClubConfig).where(ClubConfig.club_id == club_id)
+        )
+        if club_config is None:
+            return 0
+        zone = ZoneInfo(club_config.timezone)
+        today = datetime.now(zone).date()
+        today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        now_utc = datetime.now(UTC)
+        window_end_utc = now_utc + timedelta(minutes=90)
+        count = self.db.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(
+                Booking.club_id == club_id,
+                Booking.status == BookingStatus.RESERVED,
+                Booking.slot_datetime >= today_start_utc,
+                Booking.slot_datetime < today_end_utc,
+                Booking.slot_datetime >= now_utc,
+                Booking.slot_datetime <= window_end_utc,
             )
         )
         return count or 0
