@@ -1,6 +1,6 @@
 # GreenLink — Live State
 
-Last updated: 2026-04-15
+Last updated: 2026-04-15 (post-B1)
 
 This file tracks what is built, what is partial, what is pending, and what is not started. It is the living complement to `docs/MASTER_SYSTEM.md`. Update it whenever the build state changes.
 
@@ -36,7 +36,7 @@ Built and live:
 - Pricing editor includes playerType, holes, season, day_type, time_band dimensions.
 
 Not built:
-- Refund/correction path. `FinanceTransactionType` enum has `charge`, `payment`, `adjustment` only — no `refund` or `correction`. No backend model, service, or endpoint. Frontend `finance.ts` already declares `"refund"` in `FinanceTransactionType` ahead of backend.
+- Refund/correction frontend surface. Backend is live (see Finance section below); tee-sheet drawer action and close-day exception display are not yet wired (SLICE B2).
 - `/admin/golf/bookings` — dedicated booking-management read model (deferred until backend truth exists).
 
 ### Finance — PARTIAL
@@ -50,9 +50,10 @@ Built and live:
 - Drift detection blocks Export step.
 - `AdminFinanceDashboardPage` at `/admin/finance/dashboard`.
 - Tee-sheet and orders deep-link handoffs from finance exceptions.
+- `FinanceTransactionType.REFUND` — append-only refund transaction type. `POST /api/golf/bookings/{id}/post-refund` endpoint live. Refunded bookings revert to `payment_status=PENDING` and surface in the existing exceptions query. Migration `202604150001_finance_refund_transaction_type.py` chains from `202604130003`. Frontend type drift resolved (`finance.ts` `"refund"` now matches backend enum).
 
 Not built:
-- Refund/correction handling as a first-class day-close resolution path.
+- Refund/correction close-day surface. Backend is live; close-day UI wiring is SLICE B2. Refunded bookings already surface in the existing exceptions query (payment_status=PENDING) — the operator can see them, but there is no dedicated refund entry in the exceptions panel yet.
 
 ### Orders and POS — PARTIAL
 
@@ -112,7 +113,7 @@ The following Alembic migrations are committed and correctly chained in the migr
 
 | Item | Description |
 |---|---|
-| Refund/correction | Backend-owned refund/correction intents exposed in tee-sheet and finance daily resolution flow. No backend model, service, or endpoint. Frontend type is ahead of backend — `"refund"` declared in `FinanceTransactionType` but not in backend enum. |
+| Refund/correction frontend wiring | Tee-sheet drawer "Post Refund" action and close-day exceptions refund display. Backend is complete — `POST /api/golf/bookings/{id}/post-refund` is live. Frontend type drift resolved. Remaining work is SLICE B2 (UI surface only). |
 
 ---
 
@@ -120,7 +121,7 @@ The following Alembic migrations are committed and correctly chained in the migr
 
 | Gap | Where it will hurt | Priority |
 |---|---|---|
-| Refund/correction has no path | Tee sheet finance actions, close-day reconciliation | High |
+| Refund/correction has no frontend entry point | Tee-sheet drawer and close-day exceptions panel not yet wired to `POST /api/golf/bookings/{id}/post-refund` | High |
 | Today page is not a full shift-start work queue | Will surface more exception types (member/account exceptions, outstanding finance exceptions) once data is seeded | Medium |
 | Filter burden on tee sheet | Dense-day scanning still asks operators to manage a lot of surface state | Medium |
 

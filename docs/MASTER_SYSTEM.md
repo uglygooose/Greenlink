@@ -280,6 +280,7 @@ Booking finance commands:
 - `PATCH /api/golf/bookings/{id}/payment-status`
 - `POST /api/golf/bookings/{id}/post-charge`
 - `POST /api/golf/bookings/{id}/record-payment`
+- `POST /api/golf/bookings/{id}/post-refund`
 
 Booking fields relevant to pricing:
 - `holes` — 9 or 18, resolved at booking creation by `BookingCommercialService.resolve_booking_holes()`
@@ -299,6 +300,7 @@ Booking fields relevant to pricing:
 - Finance close-day wizard: Exceptions → Generate Batch → Reconcile → Export → Audit Trail.
 - `GET /api/finance/exceptions?date=YYYY-MM-DD` — tenant-scoped finance exceptions endpoint.
 - Drift detection blocks the Export step when `reconciliation.matches_live_state === false`.
+- Refund/correction: `POST /api/golf/bookings/{id}/post-refund` — backend-owned, append-only refund. Creates a `FinanceTransactionType.REFUND` entry (positive amount, credit to member account). Requires booking in PAID status. Reverts `payment_status → PENDING` so the booking surfaces in the exceptions queue for close-day resolution. No frontend finance math — all logic is backend-owned.
 
 ---
 
