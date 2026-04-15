@@ -1,0 +1,7 @@
+- Did this add frontend business logic?
+- Did this duplicate logic?
+- Did this increase state complexity?
+- Did this add files without removing complexity?
+- Did this violate backend ownership?
+- Did this scatter mutations or invalidation?
+- Did this preserve existing working flows?
