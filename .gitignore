@@ -36,5 +36,5 @@ test.db
 .DS_Store
 Thumbs.db
 
-# Claude Code session-specific settings (permission allowlists accumulate per machine).
-.claude/settings.json
+# Claude Code tooling — settings, lock files, worktrees are machine-local only.
+.claude/
