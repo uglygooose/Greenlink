@@ -381,8 +381,8 @@ export function bookingChipClass(
   nextAction?: BookingNextAction | null,
 ): string {
   const base = compact
-    ? "flex min-h-[2.75rem] w-full flex-col justify-between overflow-hidden rounded-[14px] px-2.5 py-2 text-left transition-all select-none"
-    : "flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-all select-none";
+    ? "flex min-h-[2.75rem] w-full flex-col justify-between overflow-hidden rounded-[14px] px-2.5 py-2 text-left transition-colors select-none"
+    : "flex min-h-[3.5rem] w-full flex-col justify-between overflow-hidden rounded-[16px] px-3 py-2 text-left transition-colors select-none";
   if (nextAction === "at_risk") {
     return `${base} cursor-pointer bg-error-container/20 hover:bg-error-container/30`;
   }
@@ -594,7 +594,6 @@ export const InlineBookingContextPanel = memo(function InlineBookingContextPanel
   previousProps.directoryEntry?.person.id === nextProps.directoryEntry?.person.id &&
   previousProps.directoryEntry?.membership.role === nextProps.directoryEntry?.membership.role &&
   previousProps.directoryEntry?.membership.status === nextProps.directoryEntry?.membership.status &&
-  previousProps.onOpenFullView === nextProps.onOpenFullView &&
   previousProps.onQuickAction === nextProps.onQuickAction &&
   previousProps.compact === nextProps.compact
 ));
@@ -804,7 +803,7 @@ export const OccupiedBookingCard = memo(function OccupiedBookingCard({
         className={[
           bookingChipClass(booking, compact, nextAction),
           participantTypeBorderClass(bookingPrimaryType(booking)),
-          movingBookingId === booking.id ? "opacity-50" : "",
+          movingBookingId === booking.id ? "opacity-50 !transition-none" : "",
           "w-full",
         ].join(" ")}
         draggable

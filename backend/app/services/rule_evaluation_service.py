@@ -32,6 +32,7 @@ from app.schemas.rule_evaluation import (
 class RuleEvaluationService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._rule_sets_cache: dict[uuid.UUID, list[BookingRuleSet]] = {}
 
     def evaluate(self, context: NormalizedRuleContext) -> RuleEvaluationResult:
         candidate_rule_sets = self._load_rule_sets(context.club_id)
@@ -267,17 +268,19 @@ class RuleEvaluationService:
         )
 
     def _load_rule_sets(self, club_id: uuid.UUID) -> list[BookingRuleSet]:
-        statement = (
-            select(BookingRuleSet)
-            .options(selectinload(BookingRuleSet.rules))
-            .where(BookingRuleSet.club_id == club_id, BookingRuleSet.active.is_(True))
-            .order_by(
-                BookingRuleSet.priority.desc(),
-                BookingRuleSet.created_at.asc(),
-                BookingRuleSet.id.asc(),
+        if club_id not in self._rule_sets_cache:
+            statement = (
+                select(BookingRuleSet)
+                .options(selectinload(BookingRuleSet.rules))
+                .where(BookingRuleSet.club_id == club_id, BookingRuleSet.active.is_(True))
+                .order_by(
+                    BookingRuleSet.priority.desc(),
+                    BookingRuleSet.created_at.asc(),
+                    BookingRuleSet.id.asc(),
+                )
             )
-        )
-        return list(self.db.scalars(statement).unique().all())
+            self._rule_sets_cache[club_id] = list(self.db.scalars(statement).unique().all())
+        return self._rule_sets_cache[club_id]
 
     def _mismatch_reason(self, ruleset: BookingRuleSet, context: NormalizedRuleContext) -> str | None:
         if not self._matches_datetime(ruleset, context.effective_datetime):

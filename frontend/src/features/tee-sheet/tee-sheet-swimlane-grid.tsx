@@ -39,10 +39,8 @@ type SwimLaneRow = {
 };
 
 type TeeSheetSwimLaneGridProps = {
-  activeDropKey: string | null;
   checkingInAllBucket: string | null;
   columns: TeeSheetBucket[];
-  dragged: { bookingId: string; rowKey: string; slotDatetime: string } | null;
   dropAllowed: (target: LaneSlot) => boolean;
   dropKey: (slot: LaneSlot) => string;
   highlightedSlotKey: string | null;
@@ -54,7 +52,6 @@ type TeeSheetSwimLaneGridProps = {
   onOpenCreate: (slot: LaneSlot) => void;
   onOpenManage: (slot: LaneSlot) => void;
   onQuickAction: (action: QuickAction, bookingId: string) => void;
-  onSetActiveDropKey: (value: string | null) => void;
   onStartDrag: (event: DragEvent<HTMLElement>, bookingId: string, slot: LaneSlot) => void;
   onToggleBookingExpansion: (slot: LaneSlot, booking: TeeSheetBookingView) => void;
   pendingAction: Action | null;
@@ -99,10 +96,8 @@ function swimLaneKey(startLane: StartLane | null): string {
 }
 
 function TeeSheetSwimLaneGridComponent({
-  activeDropKey,
   checkingInAllBucket,
   columns,
-  dragged,
   dropAllowed,
   dropKey,
   highlightedSlotKey,
@@ -114,7 +109,6 @@ function TeeSheetSwimLaneGridComponent({
   onOpenCreate,
   onOpenManage,
   onQuickAction,
-  onSetActiveDropKey,
   onStartDrag,
   onToggleBookingExpansion,
   pendingAction,
@@ -461,7 +455,6 @@ function TeeSheetSwimLaneGridComponent({
                     const slot = rowSlots.get(bucket.slotDatetime) ?? null;
                     const slotKey = slot ? dropKey(slot) : `${row.laneKey}:${bucket.slotDatetime}`;
                     const isHighlighted = highlightedSlotKey === slotKey;
-                    const isActiveDrop = slot ? activeDropKey === dropKey(slot) : false;
                     const reservedBlock = slot ? slot.slot.display_status === "blocked" || slot.slot.display_status === "reserved" : false;
                     const bookingSegments = slot ? slotBookingSegments(slot.slot) : [];
                     const bookingCards = bookingSegments.filter((segment) => segment.kind === "booking");
@@ -484,7 +477,6 @@ function TeeSheetSwimLaneGridComponent({
                           }
                           activeDropCellRef.current = event.currentTarget;
                           event.currentTarget.classList.add("tee-sheet-drop-target");
-                          onSetActiveDropKey(dropKey(slot));
                         }}
                         onDragLeave={(event) => {
                           if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -492,7 +484,6 @@ function TeeSheetSwimLaneGridComponent({
                           if (activeDropCellRef.current === event.currentTarget) {
                             activeDropCellRef.current = null;
                           }
-                          onSetActiveDropKey(null);
                         }}
                         onDragOver={(event) => {
                           if (!slot || !dropAllowed(slot)) return;
@@ -505,8 +496,7 @@ function TeeSheetSwimLaneGridComponent({
                           if (activeDropCellRef.current === event.currentTarget) {
                             activeDropCellRef.current = null;
                           }
-                          onSetActiveDropKey(null);
-                          if (slot && dropAllowed(slot) && dragged) onMoveBooking(slot);
+                          if (slot && dropAllowed(slot)) onMoveBooking(slot);
                         }}
                         style={{ height: rowHeight, left: LEFT_RAIL_WIDTH + virtualColumn.start, width: virtualColumn.size }}
                       >
@@ -528,7 +518,6 @@ function TeeSheetSwimLaneGridComponent({
                               </p>
                               <p className="truncate text-xs font-semibold">{detail(slot.slot)}</p>
                             </div>
-                            {isActiveDrop ? <span className="text-xs font-semibold text-primary">Drop here</span> : null}
                           </div>
                         ) : (
                           <div
@@ -556,33 +545,32 @@ function TeeSheetSwimLaneGridComponent({
                             </div>
 
                             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                              {bookingCards.map((segment) =>
-                                segment.kind === "booking" ? (() => {
-                                  const isExpanded = isBookingExpanded(slot, segment.booking);
-                                  return (
-                                    <OccupiedBookingCard
-                                      booking={segment.booking}
-                                      compact={false}
-                                      expanded={isExpanded}
-                                      expandedContainerRef={isExpanded ? setExpandedBookingCardElement : null}
-                                      expandedContent={isExpanded ? renderExpandedBookingPanel(slot, segment.booking, false) : null}
-                                      key={`${segment.booking.id}-${segment.startColumn}-${segment.span}`}
-                                      movingBookingId={movingBookingId}
-                                      onEndDrag={onEndDrag}
-                                      onQuickAction={onQuickAction}
-                                      onStartDrag={onStartDrag}
-                                      onToggleExpand={onToggleBookingExpansion}
-                                      participantNames={segment.participantNames}
-                                      pendingAction={pendingAction}
-                                      pendingBookingId={pendingBookingId}
-                                      referenceDatetime={referenceDatetime}
-                                      slot={slot}
-                                      span={segment.span}
-                                      startColumn={segment.startColumn}
-                                    />
-                                  );
-                                })() : null,
-                              )}
+                              {bookingCards.map((segment) => {
+                                if (segment.kind !== "booking") return null;
+                                const isExpanded = isBookingExpanded(slot, segment.booking);
+                                return (
+                                  <OccupiedBookingCard
+                                    booking={segment.booking}
+                                    compact={false}
+                                    expanded={isExpanded}
+                                    expandedContainerRef={isExpanded ? setExpandedBookingCardElement : null}
+                                    expandedContent={isExpanded ? renderExpandedBookingPanel(slot, segment.booking, false) : null}
+                                    key={`${segment.booking.id}-${segment.startColumn}-${segment.span}`}
+                                    movingBookingId={movingBookingId}
+                                    onEndDrag={onEndDrag}
+                                    onQuickAction={onQuickAction}
+                                    onStartDrag={onStartDrag}
+                                    onToggleExpand={onToggleBookingExpansion}
+                                    participantNames={segment.participantNames}
+                                    pendingAction={pendingAction}
+                                    pendingBookingId={pendingBookingId}
+                                    referenceDatetime={referenceDatetime}
+                                    slot={slot}
+                                    span={segment.span}
+                                    startColumn={segment.startColumn}
+                                  />
+                                );
+                              })}
 
                               {bookingCards.length === 0 && createAllowed ? (
                                 <button

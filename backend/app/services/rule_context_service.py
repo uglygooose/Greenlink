@@ -32,13 +32,20 @@ WEEKDAY_NAMES = (
 class RuleContextService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._club_config_cache: dict[uuid.UUID, ClubConfig | None] = {}
+        self._course_cache: dict[tuple[uuid.UUID, uuid.UUID], Course] = {}
+        self._tee_cache: dict[uuid.UUID, Tee] = {}
 
     def normalize_context(self, raw: RuleContextInput) -> NormalizedRuleContext:
         club = self.db.get(Club, raw.club_id)
         if club is None:
             raise NotFoundError("Club not found")
 
-        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == raw.club_id))
+        if raw.club_id not in self._club_config_cache:
+            self._club_config_cache[raw.club_id] = self.db.scalar(
+                select(ClubConfig).where(ClubConfig.club_id == raw.club_id)
+            )
+        club_config = self._club_config_cache[raw.club_id]
         canonical_timezone = club_config.timezone if club_config is not None else club.timezone
         timezone_name = self._resolve_timezone_name(raw.timezone, canonical_timezone)
         zone = self._load_timezone(timezone_name)
@@ -138,18 +145,23 @@ class RuleContextService:
             ) from exc
 
     def _load_course(self, course_id: uuid.UUID, club_id: uuid.UUID) -> Course:
-        course = self.db.scalar(select(Course).where(Course.id == course_id, Course.club_id == club_id))
-        if course is None:
-            raise NotFoundError("Course not found")
-        return course
+        key = (course_id, club_id)
+        if key not in self._course_cache:
+            course = self.db.scalar(select(Course).where(Course.id == course_id, Course.club_id == club_id))
+            if course is None:
+                raise NotFoundError("Course not found")
+            self._course_cache[key] = course
+        return self._course_cache[key]
 
     def _load_tee(self, tee_id: uuid.UUID, club_id: uuid.UUID) -> Tee:
-        tee = self.db.scalar(
-            select(Tee).options(selectinload(Tee.course)).where(Tee.id == tee_id)
-        )
-        if tee is None or tee.course.club_id != club_id:
-            raise NotFoundError("Tee not found")
-        return tee
+        if tee_id not in self._tee_cache:
+            tee = self.db.scalar(
+                select(Tee).options(selectinload(Tee.course)).where(Tee.id == tee_id)
+            )
+            if tee is None or tee.course.club_id != club_id:
+                raise NotFoundError("Tee not found")
+            self._tee_cache[tee_id] = tee
+        return self._tee_cache[tee_id]
 
     def _resolve_day_type(
         self,

@@ -111,10 +111,8 @@ describe("TeeSheetSwimLaneGrid", () => {
     try {
       render(
         <TeeSheetSwimLaneGrid
-          activeDropKey={null}
           checkingInAllBucket={null}
           columns={buildColumns()}
-          dragged={null}
           dropAllowed={() => true}
           dropKey={(slot) => `${slot.rowKey}:${slot.slot.slot_datetime}`}
           highlightedSlotKey={null}
@@ -126,7 +124,6 @@ describe("TeeSheetSwimLaneGrid", () => {
           onOpenCreate={vi.fn()}
           onOpenManage={vi.fn()}
           onQuickAction={vi.fn()}
-          onSetActiveDropKey={vi.fn()}
           onStartDrag={vi.fn()}
           onToggleBookingExpansion={vi.fn()}
           pendingAction={null}
@@ -151,10 +148,8 @@ describe("TeeSheetSwimLaneGrid", () => {
   test("renders booking cards as draggable booking-level move surfaces", () => {
     render(
       <TeeSheetSwimLaneGrid
-        activeDropKey={null}
         checkingInAllBucket={null}
         columns={buildColumns()}
-        dragged={null}
         dropAllowed={() => true}
         dropKey={(slot) => `${slot.rowKey}:${slot.slot.slot_datetime}`}
         highlightedSlotKey={null}
@@ -166,7 +161,6 @@ describe("TeeSheetSwimLaneGrid", () => {
         onOpenCreate={vi.fn()}
         onOpenManage={vi.fn()}
         onQuickAction={vi.fn()}
-        onSetActiveDropKey={vi.fn()}
         onStartDrag={vi.fn()}
         onToggleBookingExpansion={vi.fn()}
         pendingAction={null}

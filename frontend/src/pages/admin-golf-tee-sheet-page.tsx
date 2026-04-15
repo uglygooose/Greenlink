@@ -18,6 +18,7 @@ import { ApiError } from "../api/client";
 import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import { useCoursesQuery, useTeesQuery } from "../features/golf-settings/hooks";
+import { invalidateClubOperationalReadModels } from "../features/operational-read-models/invalidation";
 import { useClubDirectoryQuery } from "../features/people/hooks";
 import { BookingCreateDrawer } from "../features/tee-sheet/booking-create-drawer";
 import { BookingManagementDrawer } from "../features/tee-sheet/booking-management-drawer";
@@ -967,7 +968,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const draggedRef = useRef<Dragged | null>(null);
   const activeTableDropLaneCellRef = useRef<HTMLTableCellElement | null>(null);
-  const [activeDropKey, setActiveDropKey] = useState<string | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const [searchInputValue, setSearchInputValue] = useState("");
   // 5.5: Compound filter state replaces single ViewFilter.
   const [filters, setFilters] = useState<TeeSheetFilterState>(() => ({
@@ -1284,8 +1285,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     guardedSelectedClubId && courseId ? teeSheetKeys.day(guardedSelectedClubId, courseId, selectedDate, membershipType, teeId) : null;
 
   async function invalidate(): Promise<void> {
-    if (!currentDayKey) return;
-    await queryClient.invalidateQueries({ queryKey: currentDayKey });
+    await invalidateClubOperationalReadModels(queryClient, guardedSelectedClubId);
   }
 
   function rollbackLifecycleContext(context?: { previousDay: TeeSheetDayResponse | undefined }): void {
@@ -1573,7 +1573,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
         optimisticallyMoveBooking(current, bookingId, target, participantId),
       );
       setDragged(null);
-      setActiveDropKey(null);
       await queryClient.cancelQueries({ queryKey: currentDayKey });
       return { previousDay };
     },
@@ -1603,7 +1602,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     onError: (error, _variables, context) => {
       if (currentDayKey && context?.previousDay) queryClient.setQueryData(currentDayKey, context.previousDay);
       setDragged(null);
-      setActiveDropKey(null);
       setNotice({ tone: "error", message: asMessage(error) });
     },
   });
@@ -1629,13 +1627,21 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
     const compactThreshold = 88;
     const syncToolbarCompact = (): void => {
-      setToolbarCompact(window.scrollY > compactThreshold);
+      if (scrollRafRef.current !== null) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        setToolbarCompact(window.scrollY > compactThreshold);
+      });
     };
 
-    syncToolbarCompact();
+    setToolbarCompact(window.scrollY > compactThreshold);
     window.addEventListener("scroll", syncToolbarCompact, { passive: true });
     return () => {
       window.removeEventListener("scroll", syncToolbarCompact);
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
     };
   }, [configuredForSheet]);
 
@@ -1774,6 +1780,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
             slotDatetime: slot.slot.slot_datetime,
           }
     ));
+  }, []);
+
+  const dropKey = useCallback((slot: LaneSlot): string => {
+    return `${slot.rowKey}:${slot.slot.slot_datetime}`;
   }, []);
 
   const navigateToBookingContext = useCallback((slot: LaneSlot, booking: TeeSheetBookingView): void => {
@@ -1915,10 +1925,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     };
   }
 
-  function dropKey(slot: LaneSlot): string {
-    return `${slot.rowKey}:${slot.slot.slot_datetime}`;
-  }
-
   const dropAllowed = useCallback((target: LaneSlot): boolean => {
     const d = draggedRef.current;
     return Boolean(d && canDrop(target.slot) && !(d.rowKey === target.rowKey && d.slotDatetime === target.slot.slot_datetime));
@@ -1948,10 +1954,14 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", bookingId);
       try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1;
-        canvas.height = 1;
-        event.dataTransfer.setDragImage(canvas, 0, 0);
+        const timeLabel = slot.slot.local_time.slice(0, 5);
+        const ghost = document.createElement("div");
+        ghost.textContent = `Moving · ${timeLabel}`;
+        ghost.style.cssText =
+          "position:fixed;top:-9999px;left:-9999px;background:#1a5c3e;color:#fff;font-size:12px;font-weight:600;padding:6px 12px;border-radius:20px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.25);";
+        document.body.appendChild(ghost);
+        event.dataTransfer.setDragImage(ghost, 20, 20);
+        requestAnimationFrame(() => document.body.removeChild(ghost));
       } catch {
         // setDragImage is best-effort; ignore if unavailable
       }
@@ -1972,7 +1982,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     draggedRef.current = null;
     setDragged(null);
     clearActiveTableDropTarget();
-    setActiveDropKey(null);
   }, [clearActiveTableDropTarget]);
 
   // Stable wrappers so TeeSheetSwimLaneGrid never gets new function references on
@@ -2478,7 +2487,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                      <>
                         {!toolbarCompact ? (
                         <div
-                          className={`grid rounded-[24px] border border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-on-surface shadow-[0_20px_45px_-32px_rgba(5,150,105,0.45)] transition-all duration-200 ${toolbarCompact ? "gap-2 px-4 py-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]" : "gap-3 px-5 py-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]"}`}
+                          className={`grid rounded-[24px] border border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-on-surface shadow-[0_20px_45px_-32px_rgba(5,150,105,0.45)] transition-[padding,gap] duration-150 ${toolbarCompact ? "gap-2 px-4 py-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]" : "gap-3 px-5 py-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]"}`}
                           data-compact={toolbarCompact ? "true" : "false"}
                           data-testid="operate-header"
                         >
@@ -2513,13 +2522,13 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 </Link>
                               </div>
                             </div>
-                            <div className={`rounded-2xl border border-emerald-100 bg-white/75 text-slate-600 transition-all duration-200 ${toolbarCompact ? "hidden" : "px-4 py-3 text-sm"}`}>
+                            <div className={`rounded-2xl border border-emerald-100 bg-white/75 text-slate-600 ${toolbarCompact ? "hidden" : "px-4 py-3 text-sm"}`}>
                               The live booking canvas stays primary. Filters, day movement, and exception handling remain above the sheet without overpowering it.
                             </div>
                           </div>
 
                           <div className="grid gap-3 sm:grid-cols-3 xl:content-start">
-                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass("neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                            <div className={`rounded-2xl border shadow-sm transition-[padding] duration-150 ${summaryChipClass("neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
                               <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
                                 <MaterialSymbol className="text-sm text-emerald-600" icon="grid_view" />
                                 <span>Occupancy</span>
@@ -2529,7 +2538,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 <span className="pb-1 text-xs text-slate-500">{configuredForSheet ? `${occupiedSlots}/${totalSlots} slots` : "No data"}</span>
                               </div>
                             </div>
-                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass(unpaidBookingsCount > 0 ? "warning" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                            <div className={`rounded-2xl border shadow-sm transition-[padding] duration-150 ${summaryChipClass(unpaidBookingsCount > 0 ? "warning" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
                               <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
                                 <MaterialSymbol className="text-sm text-amber-500" icon="payments" />
                                 <span>Unpaid</span>
@@ -2539,7 +2548,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                                 <span className="pb-1 text-xs text-slate-500">Bookings needing payment</span>
                               </div>
                             </div>
-                            <div className={`rounded-2xl border shadow-sm transition-all duration-200 ${summaryChipClass(alertSignals > 0 ? "danger" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
+                            <div className={`rounded-2xl border shadow-sm transition-[padding] duration-150 ${summaryChipClass(alertSignals > 0 ? "danger" : "neutral")} ${toolbarCompact ? "px-3 py-2.5" : "px-4 py-3"}`}>
                               <div className={`flex items-center gap-2 font-bold uppercase tracking-[0.18em] text-slate-500 ${toolbarCompact ? "text-[10px]" : "text-[11px]"}`}>
                                 <MaterialSymbol className="text-sm text-rose-500" icon="warning" />
                                 <span>Warnings</span>
@@ -3268,10 +3277,8 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                 </section>
                 ) : (
                   <TeeSheetSwimLaneGrid
-                    activeDropKey={activeDropKey}
                     checkingInAllBucket={checkingInAllBucket}
                     columns={filteredBuckets}
-                    dragged={dragged}
                     dropAllowed={dropAllowed}
                     dropKey={dropKey}
                     highlightedSlotKey={highlightedSlotKey}
@@ -3283,7 +3290,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
                     onOpenCreate={openCreate}
                     onOpenManage={openManage}
                     onQuickAction={handleInlineQuickAction}
-                    onSetActiveDropKey={setActiveDropKey}
                     onStartDrag={startDrag}
                     onToggleBookingExpansion={toggleBookingExpansion}
                     pendingAction={pendingAction}
