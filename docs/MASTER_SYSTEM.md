@@ -44,15 +44,55 @@ Lifecycle weighting takes precedence over domain grouping in UX structure.
 
 ## Non-negotiable rules
 
+### Architecture
 - Backend owns logic. Frontend sends intent only.
 - No duplicated business rules between backend and frontend.
 - No hidden side effects.
 - No domain mixing at data/service boundaries.
-- Tee sheet is a read model.
-- Orders are not payments.
-- Admin and superadmin shells are router-owned persistent layouts.
-- Benchmark UI references remain the visual authority.
+- Tee sheet is a read model. Do not write tee-sheet state directly from the frontend.
+- Orders are not payments. Order placement, charge posting, and settlement recording are distinct concerns.
 - Pricing authority is backend-owned: superadmin defines dimensional rules → backend resolves fee → staff executes. No frontend pricing logic.
+
+### Execution discipline
+- Do not refactor unrelated code during correction work.
+- Controlled architectural rebuilds are allowed only when explicitly scoped to a declared initiative.
+- Rebuild work must be feature-flagged where practical, delivered in narrow PR-sized slices, and non-breaking to existing production-safe flows until replacement is validated.
+- "Narrow slices only" does NOT prohibit replacing broken logic, duplicate surfaces, dead navigation, or low-value flows when that replacement is the declared purpose of the slice.
+- Do not preserve broken logic or bad UX structure merely because it already exists.
+
+### Shell and routing
+- Admin and superadmin shells are router-owned persistent layouts. `ProtectedRoute` wraps the layout, not individual pages.
+- Admin and superadmin pages render content areas only.
+- Do not reintroduce page-level `AdminShell` or `SuperadminShell`.
+- All `/admin/*` routes — including `/admin/pos-terminal` — are nested inside `AdminLayout`.
+- All new live admin routes must be present in the backend bootstrap `menu_items` contract.
+
+### UI
+- Benchmark UI files are the visual authority. Adapt benchmark structure where useful; do not redesign the visual system.
+- Do not invent a new design system or unrelated UI patterns during correction work.
+- UX flow, navigation structure, and configuration journey may be rebuilt entirely if the visual language remains aligned.
+
+### Finance
+- No frontend financial calculations. React must not compute finance totals, balances, arrears, revenue, outstanding values, transaction-volume KPIs, chart widths, or proportions.
+- Finance KPI displays and chart bars must use backend read-model endpoints and their pre-computed `pct` fields only (`revenue_share_pct`, `volume_share_pct`, `accounts_*_pct`). Never derive these client-side.
+- If a backend finance summary does not exist for a metric, remove the metric or show a neutral unavailable state.
+- Finance is a first-class system pillar, not a secondary dashboard. It assists club operations and reconciles into the client accounting system — it is not an accounting-system replacement.
+
+### Player
+- No fake booking data in player UI. Do not create placeholder booking arrays to fill empty states.
+- If a backend member-booking read model does not exist, show loading or empty state only.
+
+### Superadmin club management
+- Pause and reactivate: `PATCH /superadmin/clubs/{id}/status` with `{ active: bool }`.
+- Hard delete: `DELETE /superadmin/clubs/{id}` — blocked for live clubs (`registry_status == "active"`). Must clear non-cascading FK columns before deleting the club row. Requires confirmation modal in UI.
+- Superadmin actions that are club-specific must carry a concrete club selection into the destination route; do not drop users into unscoped admin pages.
+- Superadmin may bridge into existing club-scoped `/admin/*` workspaces after selecting a club; do not duplicate finance, rules, or dashboard surfaces inside superadmin when the admin workspace already exists.
+- Superadmin owns structural setup, module enablement, finance/accounting alignment, and major configuration authority. Club admin owns controlled operational configuration within those guardrails.
+
+### Onboarding
+- Onboarding progression is backend-only. Frontend must not set current, next, or previous onboarding steps or state directly.
+- Frontend sends step intent only. Backend validates transitions, rejects invalid progression, and returns resulting state.
+- Superadmin onboarding must trend toward club readiness and go-live validity, not generic form completion.
 
 ---
 
