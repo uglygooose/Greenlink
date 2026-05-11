@@ -1,5 +1,7 @@
 # Local Development
 
+> Last reviewed in Phase 1 on 2026-05-11. Code-grounded sections may have drifted; raise drift in `docs/DRIFT_LOG.md` if found. The "Current implementation includes" / "Current major gaps" sections at the bottom of this file in particular pre-date Phase 1 and were not re-verified against current code — consult `docs/LIVE_STATE.md` for current scope.
+
 ## Prerequisites
 
 - Python 3.12+

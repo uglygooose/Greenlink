@@ -6,17 +6,16 @@ GreenLink is a club-scoped golf operations platform built with a FastAPI backend
 
 - `backend/` FastAPI app, SQLAlchemy models, Alembic migrations, tests, and bootstrap tooling.
 - `frontend/` React, TypeScript, Vite, React Router, TanStack Query, and the current admin/player app.
-- `docs/` retained system references, contracts, decisions, and local runbooks.
+- `docs/` live state, drift log, phase log, engineering standards, and the local development runbook.
 
-## Current references
+## Documentation
 
-- System authority: `docs/MASTER_SYSTEM.md`
-- Build plan and progress: `GreenLink-Master-Build-Plan.txt`
-- Execution rules: `CODEX-EXECUTION-RULES.txt`
-- Current snapshot: `SYSTEM_STATUS.md`
-- Local setup and runtime commands: `docs/runbooks/local-development.md`
-- Core backend contracts: `docs/contracts/`
-- Architectural decision records: `docs/decisions/`
+- `docs/LIVE_STATE.md` — current state of the system (canonical, regenerated from code).
+- `docs/DRIFT_LOG.md` — record of drifts between docs and code, and their resolutions.
+- `docs/PHASE_LOG.md` — record of structured review phases.
+- `docs/ENGINEERING_STANDARDS.md` — coding standards.
+- `docs/ARCHITECTURE_REVIEW_CHECKLIST.md` — review checklist.
+- `docs/runbooks/local-development.md` — local dev runbook.
 
 ## Local defaults
 
