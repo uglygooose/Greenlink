@@ -18,6 +18,53 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 4 — Bundled cleanups A–E (2026-05-11)
+
+- **Scope**: Five isolated, low-risk cleanups — Item A (remove unused `@dnd-kit/core` dep), Item B (collapse two 4-line wrapper-page indirections), Item C (add missing `club_invitations` Alembic migration), Item D (move backend hardcoded dev defaults to env-only), Item E (add `dist/**` exclusion to ESLint config).
+- **Files touched**:
+  - **Item A**: `frontend/package.json` (-1 line: `@dnd-kit/core` dep removed), `frontend/package-lock.json` (npm install: -3 packages, lockfile reshuffle).
+  - **Item B**:
+    - Renamed `frontend/src/pages/admin-finance-close-day-page.tsx` → `frontend/src/pages/admin-finance-page.tsx`; renamed export `AdminFinanceCloseDayPage` → `AdminFinancePage`. (Old wrapper at `admin-finance-page.tsx` deleted as part of the rename.)
+    - Renamed `frontend/src/pages/admin-finance-close-day-page.test.tsx` → `frontend/src/pages/admin-finance-page.test.tsx`. No internal edits needed — the test already imported `AdminFinancePage` from `./admin-finance-page` (it was always testing the wrapper, which transitively rendered the inner page).
+    - Renamed `frontend/src/pages/admin-golf-settings-guided-page.tsx` → `frontend/src/pages/admin-golf-settings-page.tsx`; renamed export `AdminGolfSettingsGuidedPage` → `AdminGolfSettingsPage`.
+    - Renamed `frontend/src/pages/admin-golf-settings-guided-page.test.tsx` → `frontend/src/pages/admin-golf-settings-page.test.tsx`; updated internal import path and component name (4 occurrences).
+    - **Deleted** the obsolete 51-line shim test `frontend/src/pages/admin-golf-settings-page.test.tsx` (pre-existing). Its sole purpose was to test that the now-removed wrapper rendered the inner page; no purpose after the collapse. Test count drops by 1 (275 → 274).
+  - **Item C**:
+    - Created `backend/alembic/versions/202605110001_club_invitations.py` (123 lines). Creates the `clubinvitationstatus` Postgres enum (`pending`/`accepted`/`revoked`/`expired`) and the `club_invitations` table with 16 columns, 6 FK constraints (CASCADE on club/person/membership, SET NULL on linked/accepted, RESTRICT on invited_by), and 6 indexes including a unique index on `token_hash`. Hand-written (no `--autogenerate`).
+    - `docs/LIVE_STATE.md` updated: migration head `202604150001` → `202605110001`, migration count `22` → `23`, removed the `club_invitations missing migration` follow-up entry.
+  - **Item D**:
+    - `backend/app/config/settings.py`: removed 4 hardcoded defaults (`secret_key`, `database_url`, `object_storage_access_key`, `object_storage_secret_key`) — each now required from env. Removed the `DEFAULT_DATABASE_URL` module constant.
+    - `backend/.env.example`: rewrote secret + storage values to clearly-placeholder strings (`replace-with-...`) with `# REQUIRED.` comments. Kept the local-docker-compose URL as the working `GREENLINK_DATABASE_URL` default since copying example→`.env` should boot against the local stack.
+    - `backend/alembic.ini`: `sqlalchemy.url` changed to placeholder (`postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME`) with a comment pointing at `alembic/env.py:18` which overrides via `set_main_option` from `Settings.database_url` at runtime. No alembic behaviour change.
+    - `backend/tests/conftest.py`: added an `os.environ.setdefault(...)` block at the top — runs BEFORE the first `from app.* import …` so Settings() instantiation can succeed in CI (where `.env` is absent). Test-only values: `pytest-only-secret-not-for-production`, real Postgres URL (overridden by `db_session` fixture anyway), and `pytest-only` storage keys.
+    - `backend/.env`: regenerated from the new `.env.example`. Gitignored — not committed.
+  - **Item E**: `frontend/eslint.config.js` — added `{ ignores: ["dist/**"] }` as the first entry of the exported array. Minimal change, no other globs added.
+  - `docs/PHASE_LOG.md` (this entry).
+- **Outcome per item**: all PASS.
+  - **Item A**: 0 `@dnd-kit` references in src/index.html/vite.config.ts; `npm install` removed 3 transitive packages (356 → 353); build/lint/typecheck/vitest/pytest all green.
+  - **Item B**: zero stale `AdminFinanceCloseDayPage` / `AdminGolfSettingsGuidedPage` / `admin-finance-close-day-page` / `admin-golf-settings-guided-page` references in `frontend/src`. Test count: 275 → 274 (expected: -1 obsolete shim). Vitest passed 274/274 when run alone.
+  - **Item C**: `alembic upgrade head` ran cleanly (`202604150001 → 202605110001`). `\d club_invitations` shows the table with 16 columns matching the model exactly: types, nullability, FK targets/actions, all 6 indexes (including the `UNIQUE btree (token_hash)`). Pytest 191/191 — confirms `Base.metadata.create_all()` in conftest produces a schema compatible with the new migration.
+  - **Item D**: `Settings()` raises on missing env vars now. App boot smoke: `uv run python -c "from app.main import app"` succeeds against the regenerated placeholder `.env`. Alembic still finds the head and reports `202605110001`. Pytest 191/191 — the conftest `setdefault` block correctly supplies test env values before any app import.
+  - **Item E**: `npm run build && npm run lint` reports 0 errors / 13 warnings (down from 1100+ when `dist/` is on disk). Vitest 274/274. Typecheck clean.
+- **Decisions made**:
+  - **Item B file naming**: per the prompt, kept the wrapper file names (`admin-finance-page.tsx`, `admin-golf-settings-page.tsx`) because they match the routes (`/admin/finance`, `/admin/golf/settings`). Promoted the real implementation into those names. The old "guided/close-day" descriptive names are gone.
+  - **Item B obsolete-shim deletion**: the 51-line `admin-golf-settings-page.test.tsx` (the wrapper-shim test, not the real golf-settings test) was deleted outright. Its only assertion was that the wrapper renders the mocked inner page; after the collapse there's no wrapper, no inner page, just one page. No real coverage lost.
+  - **Item B contention false-positive**: first vitest run (in parallel with the Item B pytest) hit a 5s timeout on `admin-golf-tee-sheet-page.test.tsx` (a file I didn't touch). Running vitest alone produced 274/274. Diagnosis: pytest + vitest sharing CPU caused a real test to exceed the 5s default timeout. **Lesson learned: don't run pytest and vitest in parallel.** Carried into subsequent items as a Hard Rule corollary.
+  - **Item C enum types**: the `clubmembershiprole` Postgres enum already existed (created by `202603270001_foundation_scaffold`). The migration references it via `postgresql.ENUM(..., create_type=False)` and does NOT call `.create()` for it. The new `clubinvitationstatus` enum is created with `checkfirst=True` for idempotence. Downgrade drops the new enum but leaves `clubmembershiprole` (still used by other tables).
+  - **Item D scope of "required"**: removed defaults ONLY for genuinely-sensitive values: `secret_key`, `database_url`, `object_storage_access_key`, `object_storage_secret_key`. Left defaults for non-secrets: `env`, `project_name`, `access_token_ttl_minutes`, `refresh_token_ttl_days`, `redis_url`, `allowed_origins`, `log_level`, `secure_cookies`, `object_storage_endpoint`, `object_storage_bucket`, `object_storage_region`. The prompt's recommendation was "remove the defaults entirely, make them required" but applying that to e.g. `project_name` would be over-zealous.
+  - **Item D `DATABASE_URL` in `.env.example`**: kept the working local-docker-compose URL (`postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink`) rather than a "never accidentally works" placeholder, because copying example → `.env` should leave a working local-dev setup. The example file is for human reference; placing junk in `DATABASE_URL` would force every developer to fix one specific line before anything boots.
+  - **Item D `conftest.py` mechanism**: chose `os.environ.setdefault` (per the prompt's "acceptable" option) over a pytest fixture (the prompt's "cleanest" option). Rationale: `setdefault` runs at module-import time, which is before pytest's collection hooks fire and before any `from app.* import …` triggers `Settings()`. A fixture wouldn't have run early enough. The fixture path would require deferring all top-level app imports inside conftest — a larger restructure than the prompt warrants.
+  - **Item E exclusion glob minimalism**: per the prompt's "be MINIMAL", added only `dist/**`. Did not add `node_modules/**` (ESLint flat-config ignores it by default) or `*.config.js` (speculative; we want config files linted).
+- **Follow-ups created**: none from Phase 4 itself.
+- **Notes**:
+  - This phase closes out four of Phase 0's "Obvious smells" findings: unused `@dnd-kit/core` (E), wrapper pages (D — bookkeeping note: Phase 0 listed this under "Duplicate implementations"), hardcoded dev defaults (F), missing `dist/` exclusion (which surfaced in Phase 3 retrospect, not in Phase 0). Item C closes out the `club_invitations missing migration` entry from Phase 1's `LIVE_STATE.md` "Known follow-ups".
+  - Final verification chain (run after Item E):
+    - Backend: `uv run ruff check .` clean, `uv run ruff format --check .` clean (226/226), `uv run pytest -q` 191/191.
+    - Frontend: `npm run lint` 0 errors / 13 warnings (unchanged from Phase 3 — those 13 warnings are still deferred), `npm run typecheck` clean, `npm run test -- --reporter=basic` 36 files / 274 tests, `npm run build` 8.11s success.
+  - The 13 frontend `react-hooks/exhaustive-deps` warnings remain — still deferred per Phase 3 decision. Not in Phase 4 scope.
+  - The 811 kB JS bundle warning persists — not in Phase 4 scope.
+  - Phase 4 did NOT touch CI yet (it's blocked by the user's GitHub billing issue). When CI is restored, the next push should be the first green CI run since 30 March.
+---
 ### Phase 3 — CI to green (2026-05-11)
 
 - **Scope**: Resolve every backend ruff error / unformatted-file violation and every frontend ESLint error so CI gates pass. Also fix the pydantic-settings env-format incompatibility in `backend/.env.example` (drift surfaced in Phase 2).

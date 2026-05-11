@@ -4,6 +4,18 @@ import os
 import re
 from collections.abc import Generator
 
+# Settings has no hardcoded defaults for secrets / database URL — provide test-only
+# fallbacks BEFORE any app import triggers Settings(). Real values are loaded from
+# backend/.env or the shell environment when present; setdefault only fills the gap
+# when neither is set (e.g. CI without a .env file).
+os.environ.setdefault("GREENLINK_SECRET_KEY", "pytest-only-secret-not-for-production")
+os.environ.setdefault(
+    "GREENLINK_DATABASE_URL",
+    "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink",
+)
+os.environ.setdefault("GREENLINK_OBJECT_STORAGE_ACCESS_KEY", "pytest-only")
+os.environ.setdefault("GREENLINK_OBJECT_STORAGE_SECRET_KEY", "pytest-only")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text

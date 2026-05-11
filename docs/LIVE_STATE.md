@@ -251,8 +251,8 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 
 ## Database
 
-- Migration head: `202604150001` (`backend/alembic/versions/202604150001_finance_refund_transaction_type.py`).
-- Migration count: 22 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
+- Migration head: `202605110001` (`backend/alembic/versions/202605110001_club_invitations.py`).
+- Migration count: 23 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
 - Models live in: `backend/app/models/`.
 - Tables (from `__tablename__` declarations):
   - `accounting_export_profiles` (`backend/app/models/finance/accounting_export_profile.py:14`)
@@ -387,7 +387,6 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 ## Known follow-ups (code-evidenced only)
 
 - **C9 — staff_count recomputation in tee sheet read model.** Frontend re-derives `party_summary.staff_count` locally; backend should be the source. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:1027`.
-- **`club_invitations` table has no migration.** Model `backend/app/models/club_invitation.py:21` declares the table; no file under `backend/alembic/versions/` references `club_invitations`. Verified via `grep -rn club_invitations backend/alembic/versions/` returning zero matches.
 - **Tee-sheet read model lacks `next_action` / arrivals-due / unresolved flags.** Frontend derives them from raw booking state. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:896-898` (`// FROZEN — backend gap. … Replace when backend read model exposes computed flags (is_at_risk, is_arrivals_due, next_action, is_unresolved).`).
 - **Booking read model lacks finance eligibility flags.** Frontend derives `canPostCharge` / `canRecordPayment` / `canMarkComplimentary` / `canMarkWaived` / `canPostRefund` from `payment_status`. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:922-924` (`// FROZEN — backend gap. … Replace when backend read model exposes computed finance eligibility flags …`).
 
