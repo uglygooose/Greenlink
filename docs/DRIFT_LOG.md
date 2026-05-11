@@ -17,6 +17,38 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-11 — CI on main has been red since at least 30 March
+
+- **Surfaced by**: Phase 2 verification (lint failures locally) + GitHub Actions history review.
+- **Claim**: `.github/workflows/ci.yml` defines a CI pipeline (backend: uv sync → ruff check → ruff format check → pytest; frontend: npm install → lint → typecheck → test). Repo presents as having a working CI gate.
+- **Reality**: Every visible workflow run on `main` since at least 30 March 2026 has failed. 24/24 most-recent runs are red. Run durations of 3–7 seconds indicate failure in the first lint step before tests are ever executed. Phase 2 confirmed locally: 364 ruff errors + 91 files needing format on backend; 48 lint errors + 13 warnings on frontend.
+- **Evidence**: GitHub Actions history at https://github.com/uglygooose/Greenlink/actions; local `uv run ruff check .` (364 errors) and `npm run lint` (48 errors) in Phase 2.
+- **Resolution**: Phase 3 scope is now "get CI to green." All other cleanup work is deferred until CI provides a real signal.
+---
+### 2026-05-11 — `pricing_rules.player_type` / `season` stored as VARCHAR, models declare Enum
+
+- **Surfaced by**: Phase 2 bootstrap. Inherited deferred check from Phase 1.
+- **Claim**: Phase 1's deferred drift list flagged this without verification.
+- **Reality**: Confirmed and reproducible from a clean migration apply. Migration `backend/alembic/versions/202604130003_pricing_matrix_dimensions.py:38-46,48-56` adds both columns as `sa.String(length=64)` / `sa.String(length=32)` with text server defaults. Models `backend/app/models/pricing_rule.py:32-35,41-45` declare them as `Mapped[PricingPlayerType]` / `Mapped[PricingSeason]` wrapped in `Enum(...)`. DB stores `character varying`; SQLAlchemy expects Postgres enum. For contrast, `day_type` and `time_band` ARE stored as proper Postgres enums (`pricingdaytype`, `pricingtimeband` in `pg_type`).
+- **Evidence**: `docker compose exec postgres psql -U greenlink -d greenlink -c "SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name='pricing_rules' AND column_name IN ('player_type','season','day_type','time_band');"` returns `player_type | character varying | varchar`, `season | character varying | varchar`, `day_type | USER-DEFINED | pricingdaytype`, `time_band | USER-DEFINED | pricingtimeband`. Backend tests do NOT catch this drift — `backend/tests/conftest.py:62-67` builds the test schema via `Base.metadata.create_all()` from models (which produces enums), not from Alembic.
+- **Resolution**: Recorded. Fix is out of scope for Phase 2 (would require a model change OR a new migration to convert the columns). Deferred to a later phase.
+---
+### 2026-05-11 — `news_posts.body` model/DB type drift — DISMISSED
+
+- **Surfaced by**: Phase 2 bootstrap. Inherited deferred check from Phase 1.
+- **Claim**: Phase 1 deferred-drift list said "`news_posts.body` TEXT vs String divergence".
+- **Reality**: No drift. Model declares `body: Mapped[str] = mapped_column(nullable=False)` at `backend/app/models/news_post.py:29`. SQLAlchemy 2.0 renders unbounded `Mapped[str]` as `TEXT` on Postgres, which matches the DB column type (`text`).
+- **Evidence**: `information_schema.columns` query returns `news_posts | body | text | (no max length) | text`. Model has no explicit `String(N)` length.
+- **Resolution**: Recorded as dismissed. No follow-up needed.
+---
+### 2026-05-11 — `pydantic-settings` 2.13 vs `.env.example` `GREENLINK_ALLOWED_ORIGINS` format
+
+- **Surfaced by**: Phase 2 bootstrap. Backend `from app.main import app` import failed.
+- **Claim**: `.env.example:8` ships `GREENLINK_ALLOWED_ORIGINS=http://localhost:5173` (comma-separated style). `backend/app/config/settings.py:39-44` defines a `@field_validator("allowed_origins", mode="before")` that splits comma-separated strings into a list.
+- **Reality**: Locked `pydantic-settings==2.13.1` (`backend/uv.lock`) JSON-decodes complex (list-typed) env values inside its dotenv source *before* the `before` validator runs (`pydantic_settings/sources/providers/dotenv.py:108` → `base.py:550`). `http://localhost:5173` is not valid JSON, so loading the `Settings()` model raises `SettingsError: error parsing value for field "allowed_origins"`. The shipped `.env.example` cannot produce a usable runtime with the pinned dependency.
+- **Evidence**: `uv run python -c "from app.main import app"` raised `pydantic_settings.exceptions.SettingsError` from `prepare_field_value` → `decode_complex_value` → `json.loads`. Phase 2 worked around by editing `backend/.env` to `GREENLINK_ALLOWED_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]`.
+- **Resolution**: Local-only workaround applied to `backend/.env` (gitignored). Real fix options for a later phase: (a) update `.env.example` to use JSON list format, (b) pin `pydantic-settings` below the version that introduced the strict JSON-first decode, or (c) configure `Settings` to skip JSON decode for complex env values. None of those are in scope here.
+---
 ### 2026-05-11 — Phantom C8/C9/C10 work claimed in deleted external project docs
 
 - **Surfaced by**: Phase 0 orientation.
