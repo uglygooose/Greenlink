@@ -41,6 +41,8 @@ remove spec/patch comments
 
 If nothing was removed, the change is wrong.
 
+*Applies at phase boundaries. During a rebuild burst (per PRODUCT.md §11), old surfaces delete as new ones land — the subtraction is preserved across the burst as a whole, not necessarily per commit.*
+
 4. State rules
 No duplicated state for same concept
 No storing derived values in state
@@ -96,4 +98,6 @@ Do NOT create new files unless:
 
 it reduces complexity
 it removes duplication
-it clarifies ownershi
+it clarifies ownership
+
+*Rebuild bursts (per PRODUCT.md §11) create many new files in batch as part of replacing customer-facing surfaces. The "reduces complexity" exception covers this case explicitly.*

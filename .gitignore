@@ -38,3 +38,4 @@ Thumbs.db
 
 # Claude Code tooling — settings, lock files, worktrees are machine-local only.
 .claude/
+*:Zone.Identifier

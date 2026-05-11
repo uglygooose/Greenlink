@@ -18,6 +18,23 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 4.8 — Engineering docs aligned with PRODUCT.md (2026-05-11)
+
+- **Scope**: address drift findings from Phase 4.7's read-only check. HIGH drift in `docs/ARCHITECTURE_REVIEW_CHECKLIST.md` (rebuild discipline), LOW drift in `docs/ENGINEERING_STANDARDS.md` (rebuild-aware clarifications + truncation fix). Stage `.gitignore` rule for Windows Zone.Identifier sidecar files added by user.
+- **Files touched**:
+  - `docs/ARCHITECTURE_REVIEW_CHECKLIST.md`
+  - `docs/ENGINEERING_STANDARDS.md`
+  - `.gitignore`
+  - `docs/PHASE_LOG.md` (this entry)
+- **Changes**:
+  - `ARCHITECTURE_REVIEW_CHECKLIST.md`: split "preserve existing flows" question into backend-extension version and frontend-rebuild version. Backend extension preserves; frontend rebuild explicitly does not. Two new questions for frontend rebuild work (ground-up vs incremental patch; old code deletes as new lands).
+  - `ENGINEERING_STANDARDS.md` rules 3 and 11: added rebuild-aware clarification (italicised note) that the rules apply at phase boundaries during a rebuild burst, not per commit.
+  - `ENGINEERING_STANDARDS.md` line 99: fixed pre-existing truncation (`clarifies ownershi` → `clarifies ownership`).
+  - `.gitignore`: added `*:Zone.Identifier` to ignore Windows Mark-of-the-Web sidecar files created when copying through the `\\wsl.localhost\` path.
+- **Outcome**: engineering docs now align with PRODUCT.md §11 rebuild discipline. No silent contradictions between canonical product direction and review/standards docs.
+- **Follow-ups**: Phase 5 (schema integrity) is the next concrete phase.
+- **Notes**: If during Phase 7/10/12 the rebuild discipline reveals further drift in either document, address in a follow-up phase rather than silently. PRODUCT.md is the source of truth; review docs follow.
+---
 ### Phase 4.7 — PRODUCT.md canonical commit (2026-05-11)
 
 - **Scope**: commit `docs/PRODUCT.md` (499-line canonical product document) and link from `README.md`. Drift-check against `docs/ENGINEERING_STANDARDS.md` and `docs/ARCHITECTURE_REVIEW_CHECKLIST.md` performed (read-only).
