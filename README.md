@@ -10,6 +10,7 @@ GreenLink is a club-scoped golf operations platform built with a FastAPI backend
 
 ## Documentation
 
+- `docs/PRODUCT.md` — canonical product document: what GreenLink is, the two USPs, v1 build list, rebuild plan.
 - `docs/LIVE_STATE.md` — current state of the system (canonical, regenerated from code).
 - `docs/DRIFT_LOG.md` — record of drifts between docs and code, and their resolutions.
 - `docs/PHASE_LOG.md` — record of structured review phases.

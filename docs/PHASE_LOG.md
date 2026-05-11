@@ -18,6 +18,26 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 4.7 — PRODUCT.md canonical commit (2026-05-11)
+
+- **Scope**: commit `docs/PRODUCT.md` (499-line canonical product document) and link from `README.md`. Drift-check against `docs/ENGINEERING_STANDARDS.md` and `docs/ARCHITECTURE_REVIEW_CHECKLIST.md` performed (read-only).
+- **Files touched**:
+  - `docs/PRODUCT.md` (created)
+  - `docs/PHASE_LOG.md` (appended)
+  - `README.md` (Documentation section)
+- **Outcome**: canonical product document is in the repo. v1 scope, rebuild plan, and v1/v2/v3 maturity tiers are now code-grounded reference. Drift report against existing engineering docs filed for user review.
+- **Decisions made**:
+  - v1 = "the basic done pristinely plus the USPs visibly deepened." Bridge logic applies where the standard isn't built (export instead of API, link-out instead of push).
+  - Every customer-facing surface is rebuilt ground-up by Claude Design. Backend extends; frontend rebuilds.
+  - Masters of golf is the visual north star for the rebuild.
+  - Milestones drive timeline, not calendar dates.
+- **Follow-ups created**:
+  - **HIGH-severity drift**: `docs/ARCHITECTURE_REVIEW_CHECKLIST.md:7` ("Did this preserve existing working flows?") directly contradicts `docs/PRODUCT.md` §11's commitment to rebuild every customer-facing surface ground-up. The checklist's "preserve" framing was written when the repo was in correction-pass mode (Phase 1 era), not rebuild mode. User decides whether/when to revise.
+  - **LOW-severity drift**: `docs/ENGINEERING_STANDARDS.md` rule 11 (file creation: "Do NOT create new files unless it reduces complexity, removes duplication, or clarifies ownership") and rule 3 (subtraction: "If nothing was removed, the change is wrong") are phrased for incremental work and don't anticipate wholesale-rebuild bursts. Reasonable reading is compatible with PRODUCT.md §11 (a rebuild reduces complexity, and old surfaces delete as new ones land), but the literal wording could prompt unnecessary review friction during Phases 7, 10, 12.
+  - Phase 5 (schema integrity) is the next concrete phase — fix `pricing_rules` enum-vs-VARCHAR drift, switch conftest from `Base.metadata.create_all()` to actual Alembic migrations.
+  - Phase 6 (Claude Design burst 1: design system + foundation surfaces) follows Phase 5.
+- **Notes**: PRODUCT.md is canonical. Future product reasoning refers back to it. If PRODUCT.md disagrees with code, code wins (drift goes to `docs/DRIFT_LOG.md`); if PRODUCT.md disagrees with future product reasoning, PRODUCT.md wins unless explicitly revised here.
+---
 ### Phase 4 — Bundled cleanups A–E (2026-05-11)
 
 - **Scope**: Five isolated, low-risk cleanups — Item A (remove unused `@dnd-kit/core` dep), Item B (collapse two 4-line wrapper-page indirections), Item C (add missing `club_invitations` Alembic migration), Item D (move backend hardcoded dev defaults to env-only), Item E (add `dist/**` exclusion to ESLint config).
