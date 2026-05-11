@@ -82,13 +82,13 @@ export interface OrderLifecycleMutationResult {
   failures: OrderLifecycleMutationFailureDetail[];
 }
 
-export interface OrderPreparingResult extends OrderLifecycleMutationResult {}
+export type OrderPreparingResult = OrderLifecycleMutationResult;
 
-export interface OrderReadyResult extends OrderLifecycleMutationResult {}
+export type OrderReadyResult = OrderLifecycleMutationResult;
 
-export interface OrderCollectedResult extends OrderLifecycleMutationResult {}
+export type OrderCollectedResult = OrderLifecycleMutationResult;
 
-export interface OrderCancelResult extends OrderLifecycleMutationResult {}
+export type OrderCancelResult = OrderLifecycleMutationResult;
 
 export interface OrderChargePostFailureDetail {
   code: string;

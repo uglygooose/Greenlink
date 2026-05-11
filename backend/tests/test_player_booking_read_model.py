@@ -33,7 +33,9 @@ def _create_club(db: Session, *, slug: str) -> Club:
     return club
 
 
-def _create_user(db: Session, *, email: str, role: ClubMembershipRole, club: Club) -> tuple[User, ClubMembership]:
+def _create_user(
+    db: Session, *, email: str, role: ClubMembershipRole, club: Club
+) -> tuple[User, ClubMembership]:
     local = email.split("@")[0]
     person = Person(
         first_name=local.title(),
@@ -209,14 +211,15 @@ def test_member_booking_read_model_returns_upcoming_and_history(
     assert payload["upcoming"][0]["primary_participant_name"] == "Avery Player"
     assert payload["upcoming"][0]["participant_names"] == ["Avery Player", "Chris Guest"]
     assert payload["upcoming"][0]["party_size"] == 2
-    assert [item["id"] for item in payload["history"]] == [str(cancelled_future.id), payload["history"][1]["id"]]
+    assert [item["id"] for item in payload["history"]] == [
+        str(cancelled_future.id),
+        payload["history"][1]["id"],
+    ]
     assert payload["history"][0]["status"] == "cancelled"
     assert payload["history"][1]["status"] == "completed"
 
 
-def test_player_booking_read_model_is_member_only(
-    client: TestClient, db_session: Session
-) -> None:
+def test_player_booking_read_model_is_member_only(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"player-auth-{uuid.uuid4().hex[:6]}")
     admin, _membership = _create_user(
         db_session,

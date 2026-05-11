@@ -205,25 +205,25 @@ export interface BookingLifecycleMutationResult {
   failures: BookingLifecycleMutationFailureDetail[];
 }
 
-export interface BookingCancelFailureDetail extends BookingLifecycleMutationFailureDetail {}
+export type BookingCancelFailureDetail = BookingLifecycleMutationFailureDetail;
 
 export interface BookingCancelResult extends BookingLifecycleMutationResult {
   failures: BookingCancelFailureDetail[];
 }
 
-export interface BookingCheckInFailureDetail extends BookingLifecycleMutationFailureDetail {}
+export type BookingCheckInFailureDetail = BookingLifecycleMutationFailureDetail;
 
 export interface BookingCheckInResult extends BookingLifecycleMutationResult {
   failures: BookingCheckInFailureDetail[];
 }
 
-export interface BookingCompleteFailureDetail extends BookingLifecycleMutationFailureDetail {}
+export type BookingCompleteFailureDetail = BookingLifecycleMutationFailureDetail;
 
 export interface BookingCompleteResult extends BookingLifecycleMutationResult {
   failures: BookingCompleteFailureDetail[];
 }
 
-export interface BookingNoShowFailureDetail extends BookingLifecycleMutationFailureDetail {}
+export type BookingNoShowFailureDetail = BookingLifecycleMutationFailureDetail;
 
 export interface BookingNoShowResult extends BookingLifecycleMutationResult {
   failures: BookingNoShowFailureDetail[];

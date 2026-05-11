@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import cast, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
@@ -106,9 +106,15 @@ class FinanceReadModelService:
         return FinanceRevenueSummaryResponse(
             timezone=timezone_name,
             reference_datetime=normalized_reference_datetime,
-            day=self._to_revenue_period_summary(windows[FinanceSummaryPeriod.DAY], period_totals[FinanceSummaryPeriod.DAY]),
-            week=self._to_revenue_period_summary(windows[FinanceSummaryPeriod.WEEK], period_totals[FinanceSummaryPeriod.WEEK]),
-            month=self._to_revenue_period_summary(windows[FinanceSummaryPeriod.MONTH], period_totals[FinanceSummaryPeriod.MONTH]),
+            day=self._to_revenue_period_summary(
+                windows[FinanceSummaryPeriod.DAY], period_totals[FinanceSummaryPeriod.DAY]
+            ),
+            week=self._to_revenue_period_summary(
+                windows[FinanceSummaryPeriod.WEEK], period_totals[FinanceSummaryPeriod.WEEK]
+            ),
+            month=self._to_revenue_period_summary(
+                windows[FinanceSummaryPeriod.MONTH], period_totals[FinanceSummaryPeriod.MONTH]
+            ),
         )
 
     def get_transaction_volume_summary(
@@ -135,7 +141,9 @@ class FinanceReadModelService:
         period_totals = {
             period: {
                 "total_transaction_count": 0,
-                "by_type": defaultdict(lambda: {"transaction_count": 0, "total_absolute_amount": ZERO}),
+                "by_type": defaultdict(
+                    lambda: {"transaction_count": 0, "total_absolute_amount": ZERO}
+                ),
             }
             for period in FinanceSummaryPeriod
         }
@@ -177,7 +185,9 @@ class FinanceReadModelService:
             self.db.scalars(select(FinanceAccount).where(FinanceAccount.club_id == club_id)).all()
         )
         transactions = list(
-            self.db.scalars(select(FinanceTransaction).where(FinanceTransaction.club_id == club_id)).all()
+            self.db.scalars(
+                select(FinanceTransaction).where(FinanceTransaction.club_id == club_id)
+            ).all()
         )
 
         balances_by_account: dict[uuid.UUID, Decimal] = {account.id: ZERO for account in accounts}
@@ -188,7 +198,10 @@ class FinanceReadModelService:
             balances_by_account[transaction.account_id] = (
                 balances_by_account.get(transaction.account_id, ZERO) + transaction.amount
             )
-            if transaction.source == FinanceTransactionSource.ORDER and transaction.reference_id is not None:
+            if (
+                transaction.source == FinanceTransactionSource.ORDER
+                and transaction.reference_id is not None
+            ):
                 order_net_by_reference[transaction.reference_id] += transaction.amount
             if transaction.type == FinanceTransactionType.CHARGE and transaction.amount < 0:
                 pending_item_count += 1
@@ -201,7 +214,9 @@ class FinanceReadModelService:
             start=ZERO,
         )
 
-        unpaid_order_balances = [abs(balance) for balance in order_net_by_reference.values() if balance < 0]
+        unpaid_order_balances = [
+            abs(balance) for balance in order_net_by_reference.values() if balance < 0
+        ]
 
         total_accounts = len(accounts)
         hundred = Decimal("100")
@@ -253,9 +268,15 @@ class FinanceReadModelService:
             else local_day.replace(month=local_day.month + 1, day=1)
         )
         windows = {
-            FinanceSummaryPeriod.DAY: self._summary_window(FinanceSummaryPeriod.DAY, local_day, next_day, zone),
-            FinanceSummaryPeriod.WEEK: self._summary_window(FinanceSummaryPeriod.WEEK, week_start, next_week, zone),
-            FinanceSummaryPeriod.MONTH: self._summary_window(FinanceSummaryPeriod.MONTH, month_start, next_month, zone),
+            FinanceSummaryPeriod.DAY: self._summary_window(
+                FinanceSummaryPeriod.DAY, local_day, next_day, zone
+            ),
+            FinanceSummaryPeriod.WEEK: self._summary_window(
+                FinanceSummaryPeriod.WEEK, week_start, next_week, zone
+            ),
+            FinanceSummaryPeriod.MONTH: self._summary_window(
+                FinanceSummaryPeriod.MONTH, month_start, next_month, zone
+            ),
         }
         return club.timezone, normalized_reference_datetime, windows
 
@@ -266,8 +287,12 @@ class FinanceReadModelService:
         exclusive_end_local_date: date,
         zone: ZoneInfo,
     ) -> SummaryWindow:
-        start_utc = datetime.combine(start_local_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
-        end_utc = datetime.combine(exclusive_end_local_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        start_utc = datetime.combine(start_local_date, datetime.min.time(), tzinfo=zone).astimezone(
+            UTC
+        )
+        end_utc = datetime.combine(
+            exclusive_end_local_date, datetime.min.time(), tzinfo=zone
+        ).astimezone(UTC)
         return SummaryWindow(
             period=period,
             start_local_date=start_local_date,
@@ -289,8 +314,12 @@ class FinanceReadModelService:
         zone = ZoneInfo(club.timezone)
 
         # Day window in club local time → UTC bounds for slot_datetime comparison.
-        day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
-        day_end_utc = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(
+            UTC
+        )
+        day_end_utc = datetime.combine(
+            target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone
+        ).astimezone(UTC)
 
         unpaid_bookings_stmt = (
             select(Booking)
@@ -317,8 +346,12 @@ class FinanceReadModelService:
             refunded_booking_ids = set(self.db.scalars(refund_stmt).all())
 
         # Unresolved orders: not collected and not cancelled, created on the target date.
-        order_day_start_utc = datetime.combine(target_date, datetime.min.time(), tzinfo=zone).astimezone(UTC)
-        order_day_end_utc = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone).astimezone(UTC)
+        order_day_start_utc = datetime.combine(
+            target_date, datetime.min.time(), tzinfo=zone
+        ).astimezone(UTC)
+        order_day_end_utc = datetime.combine(
+            target_date + timedelta(days=1), datetime.min.time(), tzinfo=zone
+        ).astimezone(UTC)
         unresolved_orders_stmt = (
             select(Order)
             .where(
@@ -341,7 +374,9 @@ class FinanceReadModelService:
         return FinanceExceptionsResponse(
             date=target_date,
             unpaid_bookings=unpaid_booking_summaries,
-            unresolved_orders=[FinanceUnresolvedOrderSummary.model_validate(o) for o in unresolved_orders],
+            unresolved_orders=[
+                FinanceUnresolvedOrderSummary.model_validate(o) for o in unresolved_orders
+            ],
             total_exception_count=len(unpaid_bookings) + len(unresolved_orders),
         )
 
@@ -357,7 +392,9 @@ class FinanceReadModelService:
                 total_revenue=values["total_revenue"],
                 charge_count=values["charge_count"],
                 revenue_share_pct=(
-                    (values["total_revenue"] / total_revenue * Decimal("100")).quantize(Decimal("0.01"))
+                    (values["total_revenue"] / total_revenue * Decimal("100")).quantize(
+                        Decimal("0.01")
+                    )
                     if total_revenue > ZERO
                     else ZERO
                 ),
@@ -393,7 +430,9 @@ class FinanceReadModelService:
                 transaction_count=values["transaction_count"],
                 total_absolute_amount=values["total_absolute_amount"],
                 volume_share_pct=(
-                    (values["total_absolute_amount"] / total_absolute_amount * Decimal("100")).quantize(Decimal("0.01"))
+                    (
+                        values["total_absolute_amount"] / total_absolute_amount * Decimal("100")
+                    ).quantize(Decimal("0.01"))
                     if total_absolute_amount > ZERO
                     else ZERO
                 ),

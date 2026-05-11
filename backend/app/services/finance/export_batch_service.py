@@ -33,9 +33,9 @@ from app.schemas.finance import (
     FinanceExportBatchDownloadResult,
     FinanceExportBatchListResponse,
     FinanceExportBatchPreviewRow,
-    FinanceExportBatchRegenerateResult,
     FinanceExportBatchReconciliationResponse,
     FinanceExportBatchReconciliationSampleRow,
+    FinanceExportBatchRegenerateResult,
     FinanceExportBatchSummaryResponse,
     FinanceExportBatchVoidResult,
 )
@@ -193,7 +193,9 @@ class FinanceExportBatchService:
         batch_id: uuid.UUID,
     ) -> FinanceExportBatchReconciliationResponse:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
-        persisted_rows = [FinanceExportBatchPreviewRow.model_validate(row) for row in batch.payload_json]
+        persisted_rows = [
+            FinanceExportBatchPreviewRow.model_validate(row) for row in batch.payload_json
+        ]
         selected_transactions, _ = self._select_transactions(
             club_id=club_id,
             date_from=batch.date_from,
@@ -391,7 +393,9 @@ class FinanceExportBatchService:
                     account_customer_code=selected.account_customer_code,
                     transaction_type=transaction.type.value,
                     source=transaction.source.value,
-                    reference_id=str(transaction.reference_id) if transaction.reference_id else None,
+                    reference_id=str(transaction.reference_id)
+                    if transaction.reference_id
+                    else None,
                     description=transaction.description,
                     amount=self._decimal_string(amount),
                     debit_amount=self._decimal_string(debit_amount),
@@ -416,8 +420,7 @@ class FinanceExportBatchService:
         date_to: date,
     ) -> str:
         return (
-            f"greenlink-{export_profile.value}-"
-            f"{date_from.isoformat()}-to-{date_to.isoformat()}.csv"
+            f"greenlink-{export_profile.value}-{date_from.isoformat()}-to-{date_to.isoformat()}.csv"
         )
 
     def _to_summary(self, batch: FinanceExportBatch) -> FinanceExportBatchSummaryResponse:

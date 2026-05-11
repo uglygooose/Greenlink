@@ -166,7 +166,9 @@ def _seed_rules(db: Session, *, club: Club) -> None:
     db.commit()
 
 
-def _seed_slot_state(db: Session, *, club: Club, course: Course, tee: Tee, slot_datetime: datetime) -> None:
+def _seed_slot_state(
+    db: Session, *, club: Club, course: Course, tee: Tee, slot_datetime: datetime
+) -> None:
     db.add(
         TeeSheetSlotState(
             club_id=club.id,
@@ -242,7 +244,9 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     second_member = _create_user(db_session, email="update-second@example.com")
     club = _create_club(db_session, name="Update Club", slug="update-club")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    member_membership = _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    member_membership = _assign_membership(
+        db_session, user=member, club=club, role=ClubMembershipRole.MEMBER
+    )
     _assign_membership(db_session, user=second_member, club=club, role=ClubMembershipRole.MEMBER)
     course, tee = _seed_course_stack(db_session, club=club)
     _seed_club_config(db_session, club=club)
@@ -296,7 +300,10 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     assert payload["booking"]["cart_flag"] is False
     assert payload["booking"]["caddie_flag"] is True
     assert payload["booking"]["participants"][0]["display_name"] == second_member.person.full_name
-    assert [item["display_name"] for item in payload["booking"]["participants"][1:]] == ["Guest Alpha", "Guest Beta"]
+    assert [item["display_name"] for item in payload["booking"]["participants"][1:]] == [
+        "Guest Alpha",
+        "Guest Beta",
+    ]
 
     tee_sheet = client.get(
         "/api/golf/tee-sheet/day",
@@ -315,7 +322,10 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     assert first_slot["party_summary"]["guest_count"] == 2
     assert first_slot["bookings"][0]["cart_flag"] is False
     assert first_slot["bookings"][0]["caddie_flag"] is True
-    assert first_slot["bookings"][0]["participants"][0]["display_name"] == second_member.person.full_name
+    assert (
+        first_slot["bookings"][0]["participants"][0]["display_name"]
+        == second_member.person.full_name
+    )
 
     refreshed_booking = db_session.scalar(select(Booking).where(Booking.id == booking.id))
     assert refreshed_booking is not None
@@ -333,7 +343,9 @@ def test_booking_update_blocks_when_participant_lacks_membership(
     outsider = _create_user(db_session, email="update-outsider@example.com")
     club = _create_club(db_session, name="Update Validation Club", slug="update-validation-club")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    member_membership = _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    member_membership = _assign_membership(
+        db_session, user=member, club=club, role=ClubMembershipRole.MEMBER
+    )
     course, tee = _seed_course_stack(db_session, club=club)
     _seed_club_config(db_session, club=club)
     _seed_rules(db_session, club=club)
@@ -380,7 +392,9 @@ def test_booking_update_blocks_non_editable_statuses(
     member = _create_user(db_session, email="update-status-member@example.com")
     club = _create_club(db_session, name="Update Status Club", slug="update-status-club")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    member_membership = _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    member_membership = _assign_membership(
+        db_session, user=member, club=club, role=ClubMembershipRole.MEMBER
+    )
     course, tee = _seed_course_stack(db_session, club=club)
     _seed_club_config(db_session, club=club)
     _seed_rules(db_session, club=club)

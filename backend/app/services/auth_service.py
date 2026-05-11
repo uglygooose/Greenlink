@@ -12,8 +12,8 @@ from app.core.datetime import utc_now
 from app.core.exceptions import AppError, AuthenticationError, NotFoundError
 from app.core.security import (
     create_access_token,
-    hash_one_time_token,
     create_refresh_token,
+    hash_one_time_token,
     hash_password,
     hash_refresh_token,
     verify_password,
@@ -29,8 +29,14 @@ from app.models import (
     User,
     UserType,
 )
-from app.schemas.auth import InvitationAcceptRequest, LoginRequest, TokenResponse, UserIdentity
-from app.schemas.auth import InvitationActivateRequest, InvitationActivateResponse
+from app.schemas.auth import (
+    InvitationAcceptRequest,
+    InvitationActivateRequest,
+    InvitationActivateResponse,
+    LoginRequest,
+    TokenResponse,
+    UserIdentity,
+)
 
 REFRESH_COOKIE_NAME = "greenlink_refresh_token"
 
@@ -154,13 +160,22 @@ class AuthService:
         if invitation.linked_user_id is not None:
             raise AppError(
                 code="invitation_existing_user_login_required",
-                message="This invitation belongs to an existing user. Sign in first to complete access activation.",
+                message=(
+                    "This invitation belongs to an existing user. "
+                    "Sign in first to complete access activation."
+                ),
                 status_code=400,
             )
-        if self.db.scalar(select(User.id).where(User.email == invitation.normalized_email)) is not None:
+        if (
+            self.db.scalar(select(User.id).where(User.email == invitation.normalized_email))
+            is not None
+        ):
             raise AppError(
                 code="invitation_existing_user_login_required",
-                message="This invitation email is already linked to a user. Sign in first to complete access activation.",
+                message=(
+                    "This invitation email is already linked to a user. "
+                    "Sign in first to complete access activation."
+                ),
                 status_code=400,
             )
 
@@ -169,7 +184,9 @@ class AuthService:
         if person is None or membership is None:
             raise NotFoundError("Invitation provisioning target not found")
 
-        first_name, last_name = split_display_name(payload.display_name, fallback_email=invitation.email)
+        first_name, last_name = split_display_name(
+            payload.display_name, fallback_email=invitation.email
+        )
         person.first_name = first_name
         person.last_name = last_name
         person.full_name = build_full_name(first_name, last_name)
@@ -227,7 +244,10 @@ class AuthService:
                 message="This invitation belongs to a different user.",
                 status_code=403,
             )
-        if invitation.linked_user_id is None and current_user.email.lower() != invitation.normalized_email:
+        if (
+            invitation.linked_user_id is None
+            and current_user.email.lower() != invitation.normalized_email
+        ):
             raise AppError(
                 code="invitation_user_mismatch",
                 message="This invitation belongs to a different user.",

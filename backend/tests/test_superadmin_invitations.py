@@ -12,7 +12,6 @@ from app.models import (
     ClubInvitation,
     ClubInvitationStatus,
     ClubMembership,
-    ClubMembershipRole,
     ClubMembershipStatus,
     Person,
     User,
@@ -64,7 +63,9 @@ def _auth_headers(client: TestClient, email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def test_superadmin_can_invite_existing_linked_user(client: TestClient, db_session: Session) -> None:
+def test_superadmin_can_invite_existing_linked_user(
+    client: TestClient, db_session: Session
+) -> None:
     _create_user(db_session, email="root@example.com", user_type=UserType.SUPERADMIN)
     staff_user = _create_user(db_session, email="ops@example.com")
     club = _create_club(db_session, slug=f"invite-{uuid.uuid4().hex[:6]}")
@@ -85,7 +86,9 @@ def test_superadmin_can_invite_existing_linked_user(client: TestClient, db_sessi
     assert payload["accept_token"]
 
     membership = db_session.scalar(
-        db_session.query(ClubMembership).filter_by(club_id=club.id, person_id=staff_user.person_id).statement
+        db_session.query(ClubMembership)
+        .filter_by(club_id=club.id, person_id=staff_user.person_id)
+        .statement
     )
     assert membership is not None
     assert membership.status == ClubMembershipStatus.INVITED
@@ -111,7 +114,9 @@ def test_superadmin_can_invite_new_email_and_list_invitations(
     assert create_payload["accept_token"]
 
     invitation = db_session.scalar(
-        db_session.query(ClubInvitation).filter_by(club_id=club.id, email="new.staff@example.com").statement
+        db_session.query(ClubInvitation)
+        .filter_by(club_id=club.id, email="new.staff@example.com")
+        .statement
     )
     assert invitation is not None
     assert invitation.status == ClubInvitationStatus.PENDING

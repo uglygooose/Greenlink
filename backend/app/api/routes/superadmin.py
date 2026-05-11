@@ -13,8 +13,8 @@ from app.schemas.superadmin import (
     SuperadminAccountingProfileBindRequest,
     SuperadminAccountingProfileCreateRequest,
     SuperadminAccountingProfileListResponse,
-    SuperadminAccountingSampleLayoutResponse,
     SuperadminAccountingProfileSummary,
+    SuperadminAccountingSampleLayoutResponse,
     SuperadminAccountingTemplateParseResponse,
     SuperadminAssignmentCandidateListResponse,
     SuperadminClubAssignmentResponse,
@@ -56,7 +56,9 @@ def list_superadmin_accounting_profiles(
     return AccountingTemplateService(db).list_profiles(club_id=club_id)
 
 
-@router.get("/accounting-profiles/sample-layout", response_model=SuperadminAccountingSampleLayoutResponse)
+@router.get(
+    "/accounting-profiles/sample-layout", response_model=SuperadminAccountingSampleLayoutResponse
+)
 def get_superadmin_accounting_sample_layout(
     target_system: str = Query(...),
     _: User = Depends(get_current_superadmin),
@@ -65,7 +67,9 @@ def get_superadmin_accounting_sample_layout(
     return AccountingTemplateService(db).get_sample_layout(target_system=target_system)
 
 
-@router.post("/accounting-profiles/parse-template", response_model=SuperadminAccountingTemplateParseResponse)
+@router.post(
+    "/accounting-profiles/parse-template", response_model=SuperadminAccountingTemplateParseResponse
+)
 async def parse_superadmin_accounting_template(
     file: UploadFile = File(...),
     _: User = Depends(get_current_superadmin),
@@ -99,7 +103,9 @@ def create_superadmin_accounting_profile(
     )
 
 
-@router.patch("/accounting-profiles/{profile_id}/active", response_model=SuperadminAccountingProfileSummary)
+@router.patch(
+    "/accounting-profiles/{profile_id}/active", response_model=SuperadminAccountingProfileSummary
+)
 def update_superadmin_accounting_profile_active(
     profile_id: uuid.UUID,
     payload: SuperadminAccountingProfileActivationRequest,

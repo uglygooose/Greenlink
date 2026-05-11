@@ -23,7 +23,6 @@ from app.models import (
 )
 from app.models.finance.transaction import FinanceTransaction
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -142,7 +141,12 @@ def test_list_finance_accounts_returns_club_accounts(
     client: TestClient, db_session: Session
 ) -> None:
     club = _create_club(db_session, slug=f"fa-list-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"fa_admin_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club)
+    admin = _create_user(
+        db_session,
+        email=f"fa_admin_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
     _create_finance_account(db_session, club=club, account_code="ACC001")
     _create_finance_account(db_session, club=club, account_code="ACC002")
 
@@ -157,21 +161,28 @@ def test_list_finance_accounts_returns_club_accounts(
     assert codes == {"ACC001", "ACC002"}
 
 
-def test_list_finance_accounts_includes_balance(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_finance_accounts_includes_balance(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"fa-bal-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"fa_bal_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club)
+    admin = _create_user(
+        db_session,
+        email=f"fa_bal_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
     _, fa = _create_finance_account(db_session, club=club, account_code="BALTEST")
     _post_transaction(
-        db_session, club=club, account=fa,
+        db_session,
+        club=club,
+        account=fa,
         amount=Decimal("-100.00"),
         tx_type=FinanceTransactionType.CHARGE,
         source=FinanceTransactionSource.BOOKING,
         description="Green fee charge",
     )
     _post_transaction(
-        db_session, club=club, account=fa,
+        db_session,
+        club=club,
+        account=fa,
         amount=Decimal("60.00"),
         tx_type=FinanceTransactionType.PAYMENT,
         source=FinanceTransactionSource.POS,
@@ -188,12 +199,15 @@ def test_list_finance_accounts_includes_balance(
     assert account["transaction_count"] == 2
 
 
-def test_list_finance_accounts_is_club_scoped(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_finance_accounts_is_club_scoped(client: TestClient, db_session: Session) -> None:
     club_a = _create_club(db_session, slug=f"fa-scope-a-{uuid.uuid4().hex[:6]}")
     club_b = _create_club(db_session, slug=f"fa-scope-b-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"fa_scope_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club_a)
+    admin = _create_user(
+        db_session,
+        email=f"fa_scope_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club_a,
+    )
     _create_finance_account(db_session, club=club_a, account_code="A-001")
     _create_finance_account(db_session, club=club_b, account_code="B-001")
 
@@ -206,11 +220,14 @@ def test_list_finance_accounts_is_club_scoped(
     assert codes == ["A-001"]
 
 
-def test_list_finance_accounts_requires_staff(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_finance_accounts_requires_staff(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"fa-auth-{uuid.uuid4().hex[:6]}")
-    member = _create_user(db_session, email=f"fa_mem_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.MEMBER, club=club)
+    member = _create_user(
+        db_session,
+        email=f"fa_mem_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.MEMBER,
+        club=club,
+    )
 
     headers = _auth_headers(client, email=member.email)
     headers["X-Club-Id"] = str(club.id)
@@ -224,20 +241,35 @@ def test_list_finance_accounts_requires_staff(
 # ---------------------------------------------------------------------------
 
 
-def test_get_club_journal_returns_all_transactions(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_club_journal_returns_all_transactions(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"jnl-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"jnl_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club)
+    admin = _create_user(
+        db_session,
+        email=f"jnl_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
     _, fa1 = _create_finance_account(db_session, club=club, account_code="JNL-A")
     _, fa2 = _create_finance_account(db_session, club=club, account_code="JNL-B")
 
-    _post_transaction(db_session, club=club, account=fa1, amount=Decimal("-75.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.BOOKING,
-                      description="Green fee A")
-    _post_transaction(db_session, club=club, account=fa2, amount=Decimal("-35.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.ORDER,
-                      description="Food order B")
+    _post_transaction(
+        db_session,
+        club=club,
+        account=fa1,
+        amount=Decimal("-75.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.BOOKING,
+        description="Green fee A",
+    )
+    _post_transaction(
+        db_session,
+        club=club,
+        account=fa2,
+        amount=Decimal("-35.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.ORDER,
+        description="Food order B",
+    )
 
     headers = _auth_headers(client, email=admin.email)
     headers["X-Club-Id"] = str(club.id)
@@ -249,19 +281,34 @@ def test_get_club_journal_returns_all_transactions(
     assert len(data["entries"]) == 2
 
 
-def test_get_club_journal_ordered_newest_first(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_club_journal_ordered_newest_first(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"jnl-ord-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"jnl_ord_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club)
+    admin = _create_user(
+        db_session,
+        email=f"jnl_ord_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
     _, fa = _create_finance_account(db_session, club=club, account_code="ORD-001")
 
-    _post_transaction(db_session, club=club, account=fa, amount=Decimal("-10.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.MANUAL,
-                      description="First charge")
-    _post_transaction(db_session, club=club, account=fa, amount=Decimal("10.00"),
-                      tx_type=FinanceTransactionType.PAYMENT, source=FinanceTransactionSource.MANUAL,
-                      description="Second payment")
+    _post_transaction(
+        db_session,
+        club=club,
+        account=fa,
+        amount=Decimal("-10.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.MANUAL,
+        description="First charge",
+    )
+    _post_transaction(
+        db_session,
+        club=club,
+        account=fa,
+        amount=Decimal("10.00"),
+        tx_type=FinanceTransactionType.PAYMENT,
+        source=FinanceTransactionSource.MANUAL,
+        description="Second payment",
+    )
 
     headers = _auth_headers(client, email=admin.email)
     headers["X-Club-Id"] = str(club.id)
@@ -273,15 +320,24 @@ def test_get_club_journal_ordered_newest_first(
     assert entries[1]["description"] == "First charge"
 
 
-def test_get_club_journal_includes_account_code(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_club_journal_includes_account_code(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, slug=f"jnl-code-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"jnl_code_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club)
+    admin = _create_user(
+        db_session,
+        email=f"jnl_code_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club,
+    )
     _, fa = _create_finance_account(db_session, club=club, account_code="CODE-42")
-    _post_transaction(db_session, club=club, account=fa, amount=Decimal("-50.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.POS,
-                      description="POS charge")
+    _post_transaction(
+        db_session,
+        club=club,
+        account=fa,
+        amount=Decimal("-50.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.POS,
+        description="POS charge",
+    )
 
     headers = _auth_headers(client, email=admin.email)
     headers["X-Club-Id"] = str(club.id)
@@ -292,20 +348,35 @@ def test_get_club_journal_includes_account_code(
     assert entry["account_customer_code"] == "CODE-42"
 
 
-def test_get_club_journal_is_club_scoped(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_club_journal_is_club_scoped(client: TestClient, db_session: Session) -> None:
     club_a = _create_club(db_session, slug=f"jnl-sc-a-{uuid.uuid4().hex[:6]}")
     club_b = _create_club(db_session, slug=f"jnl-sc-b-{uuid.uuid4().hex[:6]}")
-    admin = _create_user(db_session, email=f"jnl_sc_{uuid.uuid4().hex[:6]}@test.com", role=ClubMembershipRole.CLUB_ADMIN, club=club_a)
+    admin = _create_user(
+        db_session,
+        email=f"jnl_sc_{uuid.uuid4().hex[:6]}@test.com",
+        role=ClubMembershipRole.CLUB_ADMIN,
+        club=club_a,
+    )
     _, fa_a = _create_finance_account(db_session, club=club_a, account_code="SC-A")
     _, fa_b = _create_finance_account(db_session, club=club_b, account_code="SC-B")
-    _post_transaction(db_session, club=club_a, account=fa_a, amount=Decimal("-20.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.MANUAL,
-                      description="Club A transaction")
-    _post_transaction(db_session, club=club_b, account=fa_b, amount=Decimal("-30.00"),
-                      tx_type=FinanceTransactionType.CHARGE, source=FinanceTransactionSource.MANUAL,
-                      description="Club B transaction")
+    _post_transaction(
+        db_session,
+        club=club_a,
+        account=fa_a,
+        amount=Decimal("-20.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.MANUAL,
+        description="Club A transaction",
+    )
+    _post_transaction(
+        db_session,
+        club=club_b,
+        account=fa_b,
+        amount=Decimal("-30.00"),
+        tx_type=FinanceTransactionType.CHARGE,
+        source=FinanceTransactionSource.MANUAL,
+        description="Club B transaction",
+    )
 
     headers = _auth_headers(client, email=admin.email)
     headers["X-Club-Id"] = str(club_a.id)

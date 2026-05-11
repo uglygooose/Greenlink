@@ -51,10 +51,17 @@ def upgrade() -> None:
 
     # bookings: lane identity and commercial hooks
     op.add_column("bookings", sa.Column("start_lane", start_lane_enum, nullable=True))
-    op.add_column("bookings", sa.Column("cart_flag", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("bookings", sa.Column("caddie_flag", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column(
+        "bookings", sa.Column("cart_flag", sa.Boolean(), nullable=False, server_default=sa.false())
+    )
+    op.add_column(
+        "bookings",
+        sa.Column("caddie_flag", sa.Boolean(), nullable=False, server_default=sa.false()),
+    )
     op.add_column("bookings", sa.Column("fee_label", sa.String(length=120), nullable=True))
-    op.add_column("bookings", sa.Column("payment_status", booking_payment_status_enum, nullable=True))
+    op.add_column(
+        "bookings", sa.Column("payment_status", booking_payment_status_enum, nullable=True)
+    )
 
     # tee_sheet_slot_states: drop old unique constraint, add start_lane, recreate constraint
     op.drop_constraint(

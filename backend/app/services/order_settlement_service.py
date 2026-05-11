@@ -146,9 +146,7 @@ class OrderSettlementService:
         booking = self._load_booking(order)
         if booking is not None:
             booking.payment_status = (
-                BookingPaymentStatus.PAID
-                if settlement_applied
-                else BookingPaymentStatus.PENDING
+                BookingPaymentStatus.PAID if settlement_applied else BookingPaymentStatus.PENDING
             )
             self.db.add(booking)
 

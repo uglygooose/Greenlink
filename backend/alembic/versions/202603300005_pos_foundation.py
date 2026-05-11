@@ -8,8 +8,9 @@ Create Date: 2026-03-30 21:00:00.000000
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "202603300005"
 down_revision = "202603300004"
@@ -75,7 +76,9 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("finance_transaction_id", name="uq_pos_transactions_finance_transaction_id"),
+        sa.UniqueConstraint(
+            "finance_transaction_id", name="uq_pos_transactions_finance_transaction_id"
+        ),
         sa.CheckConstraint(
             "total_amount >= 0",
             name="ck_pos_transactions_total_non_negative",

@@ -18,6 +18,56 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 3 — CI to green (2026-05-11)
+
+- **Scope**: Resolve every backend ruff error / unformatted-file violation and every frontend ESLint error so CI gates pass. Also fix the pydantic-settings env-format incompatibility in `backend/.env.example` (drift surfaced in Phase 2).
+- **Files touched**:
+  - `backend/.env.example` (Step 4 — JSON list format for `GREENLINK_ALLOWED_ORIGINS`).
+  - 91 backend `.py` files via `ruff format` (Step 1).
+  - 6 backend `.py` files via `ruff format` (Step 3 — post-E501-manual-wrap reformat).
+  - ~30 backend service files via manual E501 line-wraps (Step 3).
+  - 3 backend FastAPI route files via inline `# noqa: B008` on `Query()` defaults (Step 3, user-approved).
+  - 13 frontend files via unused-imports / dead-code removal, type alias conversions, ESM imports, vi.mock factory rewrite, `makeLifecycleMutation → useLifecycleMutation`, and test-fixture typing fixes (Steps 5–6).
+  - `docs/PHASE_LOG.md` (this entry).
+  - `docs/DRIFT_LOG.md` (resolution notes on Phase 2 entries).
+- **Outcome**:
+  - **Backend ruff check**: 364 → **0 errors** (`All checks passed!`).
+  - **Backend ruff format**: 91 unformatted → **0** (225/225 already formatted).
+  - **Backend pytest**: 191 passed across every test-run after every rule-isolated auto-fix pass (I001, UP035, UP017, F401, UP037). Final run after E501 manual sweep + reformat: 191 passed in 494s.
+  - **Frontend ESLint**: 48 errors → **0 errors**. 13 `react-hooks/exhaustive-deps` warnings remain (intentionally deferred — see Follow-ups). ESLint exits 0; CI's lint step passes.
+  - **Frontend typecheck**: clean.
+  - **Frontend vitest**: 37 files / 275 tests passed.
+  - **Frontend build**: `vite build` 5.48s, 160 modules. Bundle still 811 kB (no change — bundle-size optimisation is out of scope).
+  - **App boot smoke**: `GET /health` returned HTTP 200; port :8000 cleaned up post-test.
+  - **Diff**: 121 files changed, +2419 / −992. Of those, ~91 are `ruff format` whitespace/wrap-only; the remaining ~30 carry semantic changes.
+- **Decisions made**:
+  - **No unsafe-fixes used.** Step 2's `--fix` (safe-only) caused a test regression on first attempt because the format pass + safe-fix combined diff was too large to reason about. Reverted via `git checkout -- backend/` per Step 2 sub-step 4, then re-applied changes rule-by-rule (`uv run ruff check . --select <CODE> --fix`) with pytest after each. **No unsafe-fixes (`--unsafe-fixes`) were ever applied.**
+  - Rule application order and outcomes (each followed by pytest 191/191 unless noted):
+    - **Step 1 ruff format** — 91 files, mostly long-line wraps. Trimmed ruff check from 364 → 112.
+    - **I001** unsorted-imports — 34 fixes. 112 → 78. ✓
+    - **UP035** deprecated-import (`typing.Iterable` → `collections.abc.Iterable` in seed script) — 1 fix. Re-triggered 1 I001, cleaned up via re-sort. 78 → 77.
+    - **UP017** datetime-timezone-utc (`datetime.timezone.utc` → `datetime.UTC`) — 15 fixes. Re-triggered 6 I001 (now-unused `timezone` imports cleaned in the same pass). 77 → 68.
+    - **F401** unused-import — 26 fixes (cascaded from UP017's stale `timezone` imports). 68 → 42.
+    - **UP037** quoted-annotation — 9 fixes. All target files have `from __future__ import annotations`, so unquoting is a runtime no-op (verified by reading each file's header before applying). 42 → 33.
+    - **B008** Query()-in-defaults — 3 fixes via inline `# noqa: B008` in `app/api/comms/routes.py:64`, `app/api/finance/routes.py:92`, `app/api/finance/routes.py:122`. User-approved (see "Decisions"). 33 → 30.
+    - **E501** line-too-long — 30 manual wraps using implicit string concatenation (no behavioural change). All targets are long string literals inside service `failures=[…]` lists, log/print formatters, or accounting-template warnings. Final `ruff format` pass collapsed 6 of my wraps back into single lines where the new break point made the result fit cleanly. 30 → 0.
+  - **B008 inline-noqa was a per-line targeted exception, user-approved.** Justification: the same files (`app/api/comms/routes.py`, `app/api/finance/routes.py`) already use `# noqa: B008` on adjacent `Depends()` lines for the same rule. The 3 `Query()` lines were simply missed when the noqa-pattern was first introduced. Matches existing local convention; no per-file-ignore-glob edit needed (Hard Rule 2 preserved). The B008 exemption pattern in `[tool.ruff.lint.per-file-ignores]` for `app/api/routes/*.py` was NOT extended.
+  - **Frontend `handleVoidBatch` dead-code deletion was user-approved** (one specific case, not a sweep). Removed handler + `voidExportBatchMutation` + `useVoidFinanceExportBatchMutation` import — total ~17 lines. The void-batch capability remains in `features/finance/hooks.ts` for future wiring.
+  - **`makeLifecycleMutation` renamed to `useLifecycleMutation`** in `admin-golf-tee-sheet-page.tsx`. The C7 architecture pass introduced this factory; ESLint's `react-hooks/rules-of-hooks` correctly flagged that a function calling `useMutation` must follow custom-hook naming (`use*`). The 4 call sites within the component body satisfy hook rules. No behavioural change.
+  - **Test-file `any` → typed**: Test fixtures in `admin-golf-tee-sheet-page.test.tsx` and `golf-settings/hooks.test.tsx` had `: any` annotations on clone helpers, mock arg destructures, and `getQueryData<any>()` calls. Replaced with `TeeSheetDayResponse` (proper response type), `typeof teeSheetPayload` for clones, and `(...args: never[]) => unknown` for the multi-mutation harness. One inline booking fixture at line 1333 was missing `holes: 18` (now revealed by stricter typing) — added. Two `as` casts added on `(mutation.mutate as ...)` to keep the harness covariant. Tests pass unchanged: 275/275.
+  - **`tailwind.config.js` converted to ESM imports** for `@tailwindcss/forms` and `@tailwindcss/container-queries`. The file already used `export default {…}` (ESM) but `require()` for the plugins; ESLint correctly flagged `require()` in an ESM module. No config-file changes elsewhere.
+  - **Empty-interface idiom collapsed to `type` aliases** in `types/bookings.ts` (4 cases) and `types/orders.ts` (4 cases). TypeScript treats `interface X extends Y {}` and `type X = Y` identically for object-type cases — no behavioural change.
+  - **vi.mock factories given PascalCase function names** in `persistent-shell-layout.test.tsx`. The previous shape `() => ({ default: ({ children }) => { React.useEffect(...) ... } })` triggered `rules-of-hooks` because the inner function was named `default` (lowercase). Rewriting as `function MockAdminShell(...)` returned via `{ default: MockAdminShell }` satisfies the rule without changing test behaviour.
+- **Follow-ups created**:
+  - **13 `react-hooks/exhaustive-deps` warnings** remain (10 "wrap in useMemo" + 3 "missing dependency"). Per user direction: each requires per-component review against actual render/effect behaviour. **Address in later phases as we touch the affected files, not as a sweep.** Files: `features/orders/order-management-drawer.tsx:168`, `features/targets/hooks.ts:229`, `features/tee-sheet/booking-management-drawer.tsx:316`, `pages/admin-golf-settings-guided-page.tsx:425`, `pages/admin-golf-tee-sheet-page.tsx:1421` & `:2081`, `pages/admin-reports-page.test.tsx:59`, `pages/admin-targets-page.test.tsx:42`, `pages/superadmin-accounting-profiles-page.tsx:116-117`, `pages/superadmin-clubs-page.tsx:150` (×2), `pages/superadmin-overview-page.tsx:28`.
+  - **Frontend `dist/` artifact gotcha**: leaving `frontend/dist/` from a prior `npm run build` causes ESLint to lint the minified bundle (1100+ false errors before cleanup). Phase 3 deleted `dist/` before re-running lint. Consider whether `eslint.config.js` should explicitly exclude `dist/**` — currently it doesn't (Hard Rule 2 forbids the change here; flagging only).
+  - **Backend bundle considerations**: pricing_rules enum drift (DRIFT_LOG, still open), club_invitations missing migration (LIVE_STATE.md), 811 kB JS bundle code-split — all unchanged by Phase 3.
+- **Notes**:
+  - Test-suite-after-every-pass discipline caught the only real regression (Step 2's bulk `--fix` mixing format+I001+UP017+UP035+UP037+F401 in one pass produced enough E's to require revert). The rule-isolated re-attempt avoided this entirely.
+  - `ruff format` ran a second time after the E501 manual wraps because some wraps were narrow enough that the formatter chose to re-collapse them on a single line. No semantic difference; the final state is what the formatter chose given the now-shorter content.
+  - `react-hooks/rules-of-hooks` finding for `makeLifecycleMutation` is itself a useful artifact — it caught a real anti-pattern that C7's lifecycle-factory refactor introduced. The fix (rename to `useLifecycleMutation`) is now consistent with React's hook conventions, which means the function will also be auto-memoized correctly by the React DevTools and won't trigger ESLint complaints on future call-site additions.
+  - This phase touched both production source (services, route files, page components) and test fixtures. **Final pytest, vitest, typecheck, build, and smoke results all match baseline counts** (191 pytest, 275 vitest, 0 type errors, 5.48s build, 200 smoke).
+---
 ### Phase 2 — Local dev environment bootstrap (2026-05-11)
 
 - **Scope**: Wipe stale Postgres state; bring up Postgres + Redis via docker-compose; install backend deps via uv; apply Alembic migrations; verify deferred Phase 1 drifts; run backend pytest; install frontend deps; run frontend typecheck / lint / test / build; smoke-boot both servers.

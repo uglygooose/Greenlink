@@ -61,7 +61,7 @@ def list_published_news_feed(
 
 @router.get("/posts", response_model=NewsPostListResponse)
 def list_news_posts(
-    status: NewsPostStatus | None = Query(default=None),
+    status: NewsPostStatus | None = Query(default=None),  # noqa: B008
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008

@@ -14,7 +14,6 @@ import {
   useFinanceExportBatchReconciliationQuery,
   useFinanceExportBatchesQuery,
   useRegenerateFinanceExportBatchMutation,
-  useVoidFinanceExportBatchMutation,
 } from "../features/finance/hooks";
 import { useSession } from "../session/session-context";
 import type {
@@ -124,7 +123,6 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
   const accountingProfilesQuery = useAccountingExportProfilesQuery({ accessToken, selectedClubId });
 
   const createExportBatchMutation = useCreateFinanceExportBatchMutation();
-  const voidExportBatchMutation = useVoidFinanceExportBatchMutation();
   const regenerateExportBatchMutation = useRegenerateFinanceExportBatchMutation();
 
   const exceptions = exceptionsQuery.data;
@@ -206,20 +204,6 @@ export function AdminFinanceCloseDayPage(): JSX.Element {
       setNotice({ tone: "error", message: errorMessage(error, "Failed to export mapped batch.") });
     } finally {
       setIsDownloadingMapped(false);
-    }
-  }
-
-  async function handleVoidBatch(): Promise<void> {
-    if (!selectedBatch) return;
-    setNotice(null);
-    try {
-      const result = await voidExportBatchMutation.mutateAsync(selectedBatch.id);
-      setNotice({
-        tone: "info",
-        message: result.void_applied ? "Batch voided. Generate a new batch when ready." : "Batch was already voided.",
-      });
-    } catch (error) {
-      setNotice({ tone: "error", message: errorMessage(error, "Failed to void export batch.") });
     }
   }
 

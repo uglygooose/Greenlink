@@ -70,27 +70,33 @@ class ReportsService:
         account_person_ids = select(AccountCustomer.person_id).where(
             AccountCustomer.club_id == club_id
         )
-        no_account_count: int = self.db.scalar(
-            select(func.count())
-            .select_from(ClubMembership)
-            .where(
-                ClubMembership.club_id == club_id,
-                ClubMembership.status == ClubMembershipStatus.ACTIVE,
-                ClubMembership.person_id.notin_(account_person_ids),
+        no_account_count: int = (
+            self.db.scalar(
+                select(func.count())
+                .select_from(ClubMembership)
+                .where(
+                    ClubMembership.club_id == club_id,
+                    ClubMembership.status == ClubMembershipStatus.ACTIVE,
+                    ClubMembership.person_id.notin_(account_person_ids),
+                )
             )
-        ) or 0
+            or 0
+        )
 
         # Members who joined in the last 30 days
         thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
-        new_member_count: int = self.db.scalar(
-            select(func.count())
-            .select_from(ClubMembership)
-            .where(
-                ClubMembership.club_id == club_id,
-                ClubMembership.status == ClubMembershipStatus.ACTIVE,
-                ClubMembership.joined_at >= thirty_days_ago,
+        new_member_count: int = (
+            self.db.scalar(
+                select(func.count())
+                .select_from(ClubMembership)
+                .where(
+                    ClubMembership.club_id == club_id,
+                    ClubMembership.status == ClubMembershipStatus.ACTIVE,
+                    ClubMembership.joined_at >= thirty_days_ago,
+                )
             )
-        ) or 0
+            or 0
+        )
 
         return MemberBreakdown(
             total=total,

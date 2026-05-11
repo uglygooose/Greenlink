@@ -63,9 +63,7 @@ class BookingNoShowService:
                 failures=[
                     BookingNoShowFailureDetail(
                         code="booking_status_not_no_show_eligible",
-                        message=(
-                            "Only reserved bookings may transition to no_show in this phase"
-                        ),
+                        message=("Only reserved bookings may transition to no_show in this phase"),
                         field="booking_id",
                         current_status=booking.status,
                     )

@@ -117,12 +117,15 @@ class LedgerService:
         results = []
         for account in accounts:
             balance = self._compute_balance(club_id=club_id, account_id=account.id)
-            tx_count = self.db.scalar(
-                select(func.count()).where(
-                    FinanceTransaction.club_id == club_id,
-                    FinanceTransaction.account_id == account.id,
+            tx_count = (
+                self.db.scalar(
+                    select(func.count()).where(
+                        FinanceTransaction.club_id == club_id,
+                        FinanceTransaction.account_id == account.id,
+                    )
                 )
-            ) or 0
+                or 0
+            )
             results.append(
                 FinanceAccountSummaryResponse(
                     id=account.id,
@@ -146,13 +149,12 @@ class LedgerService:
         club_id: uuid.UUID,
         limit: int = 50,
     ) -> FinanceClubJournalResponse:
-        from sqlalchemy import join as sa_join
 
         from app.models import AccountCustomer
 
-        total_count = self.db.scalar(
-            select(func.count()).where(FinanceTransaction.club_id == club_id)
-        ) or 0
+        total_count = (
+            self.db.scalar(select(func.count()).where(FinanceTransaction.club_id == club_id)) or 0
+        )
 
         rows = list(
             self.db.execute(

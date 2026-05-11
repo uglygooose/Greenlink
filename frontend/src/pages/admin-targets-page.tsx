@@ -1,4 +1,3 @@
-import { MaterialSymbol } from "../components/benchmark/material-symbol";
 import AdminWorkspace from "../components/shell/AdminWorkspace";
 import {
   normalizeTargetPeriodRange,

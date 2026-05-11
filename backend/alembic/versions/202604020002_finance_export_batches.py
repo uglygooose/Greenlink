@@ -8,6 +8,7 @@ Create Date: 2026-04-02
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "202604020002"
@@ -20,7 +21,9 @@ def upgrade() -> None:
     op.create_table(
         "finance_export_batches",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("club_id", sa.Uuid(), sa.ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "club_id", sa.Uuid(), sa.ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column(
             "export_profile",
             sa.Enum("journal_basic", name="financeexportprofile", create_type=True),
@@ -55,8 +58,12 @@ def upgrade() -> None:
         sa.Column("total_credits", sa.Numeric(12, 2), nullable=False, server_default="0.00"),
         sa.Column("metadata_json", sa.JSON(), nullable=False),
         sa.Column("payload_json", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_finance_export_batches_club_id", "finance_export_batches", ["club_id"])

@@ -582,7 +582,9 @@ def test_collected_order_can_post_finance_charge_with_order_reference(
     assert persisted_order.finance_charge_transaction_id is not None
 
     persisted_transaction = db_session.scalar(
-        select(FinanceTransaction).where(FinanceTransaction.id == persisted_order.finance_charge_transaction_id)
+        select(FinanceTransaction).where(
+            FinanceTransaction.id == persisted_order.finance_charge_transaction_id
+        )
     )
     assert persisted_transaction is not None
     assert persisted_transaction.reference_id == uuid.UUID(order_id)
@@ -648,7 +650,9 @@ def test_repeated_order_finance_posting_is_idempotent_safe(
     _create_finance_account(db_session, club=club, account_customer=account_customer)
 
     headers = _auth_headers(client, admin.email, str(club.id))
-    created = _create_order(client, headers=headers, person_id=customer.id, item_name="Coffee", unit_price="18.00")
+    created = _create_order(
+        client, headers=headers, person_id=customer.id, item_name="Coffee", unit_price="18.00"
+    )
     order_id = created["order"]["id"]
 
     assert client.post(f"/api/orders/{order_id}/preparing", headers=headers).status_code == 200

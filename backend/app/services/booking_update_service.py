@@ -12,10 +12,7 @@ from app.models import (
     Booking,
     BookingParticipant,
     BookingParticipantType,
-    BookingRuleAppliesTo,
     BookingStatus,
-    ClubConfig,
-    ClubMembership,
     Course,
     StartLane,
     TeeSheetSlotState,
@@ -109,11 +106,16 @@ class BookingUpdateService:
         assert primary_participant is not None
 
         applies_to = payload.applies_to or derive_applies_to(primary_participant.participant_type)
-        membership_role, pricing_player_type = self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
-            primary_participant.club_membership_id,
-            participant_type=primary_participant.participant_type,
+        membership_role, pricing_player_type = (
+            self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
+                primary_participant.club_membership_id,
+                participant_type=primary_participant.participant_type,
+            )
         )
-        course_holes = self.db.scalar(select(Course.holes).where(Course.id == booking.course_id)) or booking.holes
+        course_holes = (
+            self.db.scalar(select(Course.holes).where(Course.id == booking.course_id))
+            or booking.holes
+        )
         try:
             booking_holes = self.booking_commercial_service.resolve_booking_holes(
                 course_holes=course_holes,

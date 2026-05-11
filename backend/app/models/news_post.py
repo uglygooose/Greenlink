@@ -3,13 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
 from app.models.enums import NewsPostStatus, NewsPostVisibility
-from app.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class NewsPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):

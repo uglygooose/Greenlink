@@ -44,29 +44,49 @@ def _pricing_dimension_specificity(
     season: PricingSeason,
     time_band: PricingTimeBand,
 ) -> int:
-    return int(day_type != PricingDayType.ANY) + int(season != PricingSeason.ANY) + int(time_band != PricingTimeBand.ANY)
+    return (
+        int(day_type != PricingDayType.ANY)
+        + int(season != PricingSeason.ANY)
+        + int(time_band != PricingTimeBand.ANY)
+    )
 
 
-def _pricing_rules_overlap(left: "PricingRuleWriteRequest", right: "PricingRuleWriteRequest") -> bool:
+def _pricing_rules_overlap(left: PricingRuleWriteRequest, right: PricingRuleWriteRequest) -> bool:
     if left.applies_to != right.applies_to:
         return False
     if left.player_type != right.player_type:
         return False
     if left.holes != right.holes:
         return False
-    if left.day_type != PricingDayType.ANY and right.day_type != PricingDayType.ANY and left.day_type != right.day_type:
+    if (
+        left.day_type != PricingDayType.ANY
+        and right.day_type != PricingDayType.ANY
+        and left.day_type != right.day_type
+    ):
         return False
-    if left.season != PricingSeason.ANY and right.season != PricingSeason.ANY and left.season != right.season:
+    if (
+        left.season != PricingSeason.ANY
+        and right.season != PricingSeason.ANY
+        and left.season != right.season
+    ):
         return False
-    if left.time_band != PricingTimeBand.ANY and right.time_band != PricingTimeBand.ANY and left.time_band != right.time_band:
+    if (
+        left.time_band != PricingTimeBand.ANY
+        and right.time_band != PricingTimeBand.ANY
+        and left.time_band != right.time_band
+    ):
         return False
     if left.time_band == right.time_band == PricingTimeBand.CUSTOM:
         return left.time_band_ref == right.time_band_ref
     return True
 
 
-def _pricing_rule_dominates(left: "PricingRuleWriteRequest", right: "PricingRuleWriteRequest") -> bool:
-    if left.applies_to != right.applies_to or left.player_type != right.player_type or left.holes != right.holes:
+def _pricing_rule_dominates(left: PricingRuleWriteRequest, right: PricingRuleWriteRequest) -> bool:
+    if (
+        left.applies_to != right.applies_to
+        or left.player_type != right.player_type
+        or left.holes != right.holes
+    ):
         return False
     if right.day_type != PricingDayType.ANY and left.day_type != right.day_type:
         return False
@@ -88,7 +108,7 @@ def _pricing_rule_dominates(left: "PricingRuleWriteRequest", right: "PricingRule
     )
 
 
-def _validate_pricing_rule_conflicts(rules: list["PricingRuleWriteRequest"]) -> None:
+def _validate_pricing_rule_conflicts(rules: list[PricingRuleWriteRequest]) -> None:
     active_rules = [rule for rule in rules if rule.active]
     for index, left in enumerate(active_rules):
         for other_index, right in enumerate(active_rules[index + 1 :], start=index + 1):
@@ -106,17 +126,25 @@ def _validate_pricing_player_type_bucket(
     applies_to: PricingRuleAppliesTo,
     player_type: PricingPlayerType,
 ) -> None:
-    if player_type in {
-        PricingPlayerType.SCHOLAR,
-        PricingPlayerType.STUDENT,
-        PricingPlayerType.PENSIONER,
-        PricingPlayerType.MEMBER_STANDARD,
-    } and applies_to != PricingRuleAppliesTo.MEMBER:
+    if (
+        player_type
+        in {
+            PricingPlayerType.SCHOLAR,
+            PricingPlayerType.STUDENT,
+            PricingPlayerType.PENSIONER,
+            PricingPlayerType.MEMBER_STANDARD,
+        }
+        and applies_to != PricingRuleAppliesTo.MEMBER
+    ):
         raise ValueError("player_type requires applies_to member")
-    if player_type in {
-        PricingPlayerType.VISITOR_AFFILIATED,
-        PricingPlayerType.VISITOR_NON_AFFILIATED,
-    } and applies_to != PricingRuleAppliesTo.GUEST:
+    if (
+        player_type
+        in {
+            PricingPlayerType.VISITOR_AFFILIATED,
+            PricingPlayerType.VISITOR_NON_AFFILIATED,
+        }
+        and applies_to != PricingRuleAppliesTo.GUEST
+    ):
         raise ValueError("visitor player_type requires applies_to guest")
     if player_type == PricingPlayerType.STAFF_COURTESY and applies_to != PricingRuleAppliesTo.STAFF:
         raise ValueError("staff_courtesy player_type requires applies_to staff")
@@ -169,7 +197,9 @@ class ClubConfigUpsertRequest(BaseModel):
                 details.append(f"missing: {', '.join(missing_days)}")
             if extra_days:
                 details.append(f"extra: {', '.join(extra_days)}")
-            raise ValueError(f"Operating hours must define all weekdays exactly ({'; '.join(details)})")
+            raise ValueError(
+                f"Operating hours must define all weekdays exactly ({'; '.join(details)})"
+            )
         return value
 
 
@@ -396,7 +426,7 @@ class PricingMatrixCreateRequest(BaseModel):
     rules: list[PricingRuleWriteRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_rule_conflicts(self) -> "PricingMatrixCreateRequest":
+    def validate_rule_conflicts(self) -> PricingMatrixCreateRequest:
         _validate_pricing_rule_conflicts(self.rules)
         return self
 

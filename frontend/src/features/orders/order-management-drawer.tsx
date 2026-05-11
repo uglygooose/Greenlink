@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import { useRecordPaymentMutation } from "./hooks";
-import type { OrderDetail, OrderSettlementResult, OrderStatus, TenderType } from "../../types/orders";
+import type { OrderDetail, OrderStatus, TenderType } from "../../types/orders";
 
 type FeedbackTone = "error" | "info";
 type LifecycleAction = "preparing" | "ready" | "collected" | "cancel" | "post_charge";

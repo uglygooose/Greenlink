@@ -23,12 +23,10 @@ from app.models import (
     FinanceAccount,
     FinanceAccountStatus,
     FinanceTransaction,
-    FinanceTransactionSource,
     FinanceTransactionType,
     Person,
     User,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrored from test_booking_finance_actions.py — not extracted to
@@ -86,7 +84,15 @@ def _create_club_with_config(db: Session, *, name: str, slug: str) -> Club:
             timezone="Africa/Johannesburg",
             operating_hours={
                 day: {"open": "06:00", "close": "18:00", "closed": False}
-                for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+                for day in [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                ]
             },
             booking_window_days=14,
             cancellation_policy_hours=24,
@@ -98,7 +104,9 @@ def _create_club_with_config(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -111,8 +119,16 @@ def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembers
     return membership
 
 
-def _create_account_customer(db: Session, *, club: Club, person: Person, account_code: str) -> AccountCustomer:
-    ac = AccountCustomer(club_id=club.id, person_id=person.id, account_code=account_code, active=True, billing_metadata={})
+def _create_account_customer(
+    db: Session, *, club: Club, person: Person, account_code: str
+) -> AccountCustomer:
+    ac = AccountCustomer(
+        club_id=club.id,
+        person_id=person.id,
+        account_code=account_code,
+        active=True,
+        billing_metadata={},
+    )
     db.add(ac)
     db.commit()
     db.refresh(ac)
@@ -126,7 +142,9 @@ def _create_finance_account(
     account_customer: AccountCustomer,
     status: FinanceAccountStatus = FinanceAccountStatus.ACTIVE,
 ) -> FinanceAccount:
-    account = FinanceAccount(club_id=club.id, account_customer_id=account_customer.id, status=status)
+    account = FinanceAccount(
+        club_id=club.id, account_customer_id=account_customer.id, status=status
+    )
     db.add(account)
     db.commit()
     db.refresh(account)
@@ -184,10 +202,14 @@ def _post_charge_and_record_payment(
     booking_id: str,
     amount: str = "450.00",
 ) -> None:
-    charge = client.post(f"/api/golf/bookings/{booking_id}/post-charge", headers=headers, json={"amount": amount})
+    charge = client.post(
+        f"/api/golf/bookings/{booking_id}/post-charge", headers=headers, json={"amount": amount}
+    )
     assert charge.status_code == 200
     assert charge.json()["decision"] == "allowed"
-    payment = client.post(f"/api/golf/bookings/{booking_id}/record-payment", headers=headers, json={})
+    payment = client.post(
+        f"/api/golf/bookings/{booking_id}/record-payment", headers=headers, json={}
+    )
     assert payment.status_code == 200
     assert payment.json()["decision"] == "allowed"
 
@@ -197,7 +219,9 @@ def _post_charge_and_record_payment(
 # ---------------------------------------------------------------------------
 
 
-def test_post_refund_full_amount_against_paid_booking(client: TestClient, db_session: Session) -> None:
+def test_post_refund_full_amount_against_paid_booking(
+    client: TestClient, db_session: Session
+) -> None:
     """Full refund on a paid booking: appends REFUND transaction, reverts to PENDING."""
     admin = _create_user(db_session, email="refund-full-admin@example.com")
     customer = _create_person(db_session, email="refund-full-customer@example.com")
@@ -206,7 +230,9 @@ def test_post_refund_full_amount_against_paid_booking(client: TestClient, db_ses
     ac = _create_account_customer(db_session, club=club, person=customer, account_code="REF-001")
     _create_finance_account(db_session, club=club, account_customer=ac)
     course = _create_course(db_session, club=club, name="West")
-    booking = _create_booking(db_session, club=club, course=course, person=customer, fee_amount="450.00")
+    booking = _create_booking(
+        db_session, club=club, course=course, person=customer, fee_amount="450.00"
+    )
     headers = _auth_headers(client, admin.email, str(club.id))
     _post_charge_and_record_payment(client, headers, str(booking.id), amount="450.00")
 
@@ -246,23 +272,32 @@ def test_post_refund_full_amount_against_paid_booking(client: TestClient, db_ses
     assert persisted.payment_status == BookingPaymentStatus.PENDING
 
 
-def test_post_refund_partial_amount_against_paid_booking(client: TestClient, db_session: Session) -> None:
+def test_post_refund_partial_amount_against_paid_booking(
+    client: TestClient, db_session: Session
+) -> None:
     """Partial refund (e.g. overcharge correction) appends REFUND for the delta."""
     admin = _create_user(db_session, email="refund-partial-admin@example.com")
     customer = _create_person(db_session, email="refund-partial-customer@example.com")
-    club = _create_club_with_config(db_session, name="Refund Partial Club", slug="refund-partial-club")
+    club = _create_club_with_config(
+        db_session, name="Refund Partial Club", slug="refund-partial-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     ac = _create_account_customer(db_session, club=club, person=customer, account_code="REF-002")
     _create_finance_account(db_session, club=club, account_customer=ac)
     course = _create_course(db_session, club=club, name="East")
-    booking = _create_booking(db_session, club=club, course=course, person=customer, fee_amount="500.00")
+    booking = _create_booking(
+        db_session, club=club, course=course, person=customer, fee_amount="500.00"
+    )
     headers = _auth_headers(client, admin.email, str(club.id))
     _post_charge_and_record_payment(client, headers, str(booking.id), amount="500.00")
 
     response = client.post(
         f"/api/golf/bookings/{booking.id}/post-refund",
         headers=headers,
-        json={"amount": "50.00", "description": "Overcharge correction — member should have paid 450"},
+        json={
+            "amount": "50.00",
+            "description": "Overcharge correction — member should have paid 450",
+        },
     )
     assert response.status_code == 200
     payload = response.json()
@@ -275,16 +310,22 @@ def test_post_refund_partial_amount_against_paid_booking(client: TestClient, db_
     assert payload["balance"] == "50.00"
 
 
-def test_post_refund_defaults_to_full_charge_when_amount_omitted(client: TestClient, db_session: Session) -> None:
+def test_post_refund_defaults_to_full_charge_when_amount_omitted(
+    client: TestClient, db_session: Session
+) -> None:
     """Omitting amount defaults to the full original charge amount."""
     admin = _create_user(db_session, email="refund-default-admin@example.com")
     customer = _create_person(db_session, email="refund-default-customer@example.com")
-    club = _create_club_with_config(db_session, name="Refund Default Club", slug="refund-default-club")
+    club = _create_club_with_config(
+        db_session, name="Refund Default Club", slug="refund-default-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     ac = _create_account_customer(db_session, club=club, person=customer, account_code="REF-003")
     _create_finance_account(db_session, club=club, account_customer=ac)
     course = _create_course(db_session, club=club, name="South")
-    booking = _create_booking(db_session, club=club, course=course, person=customer, fee_amount="380.00")
+    booking = _create_booking(
+        db_session, club=club, course=course, person=customer, fee_amount="380.00"
+    )
     headers = _auth_headers(client, admin.email, str(club.id))
     _post_charge_and_record_payment(client, headers, str(booking.id), amount="380.00")
 
@@ -304,15 +345,21 @@ def test_post_refund_blocked_when_booking_not_paid(client: TestClient, db_sessio
     """Refund is blocked if the booking is not in PAID state (e.g. still PENDING)."""
     admin = _create_user(db_session, email="refund-notpaid-admin@example.com")
     customer = _create_person(db_session, email="refund-notpaid-customer@example.com")
-    club = _create_club_with_config(db_session, name="Refund NotPaid Club", slug="refund-notpaid-club")
+    club = _create_club_with_config(
+        db_session, name="Refund NotPaid Club", slug="refund-notpaid-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     ac = _create_account_customer(db_session, club=club, person=customer, account_code="REF-004")
     _create_finance_account(db_session, club=club, account_customer=ac)
     course = _create_course(db_session, club=club, name="North")
     # Booking has a charge posted (PENDING) but payment not yet recorded
-    booking = _create_booking(db_session, club=club, course=course, person=customer, fee_amount="200.00")
+    booking = _create_booking(
+        db_session, club=club, course=course, person=customer, fee_amount="200.00"
+    )
     headers = _auth_headers(client, admin.email, str(club.id))
-    charge = client.post(f"/api/golf/bookings/{booking.id}/post-charge", headers=headers, json={"amount": "200.00"})
+    charge = client.post(
+        f"/api/golf/bookings/{booking.id}/post-charge", headers=headers, json={"amount": "200.00"}
+    )
     assert charge.json()["decision"] == "allowed"
 
     response = client.post(
@@ -328,7 +375,9 @@ def test_post_refund_blocked_when_booking_not_paid(client: TestClient, db_sessio
     assert "booking_not_paid" in failure_codes
 
 
-def test_post_refund_blocked_for_booking_not_in_club(client: TestClient, db_session: Session) -> None:
+def test_post_refund_blocked_for_booking_not_in_club(
+    client: TestClient, db_session: Session
+) -> None:
     """Refund is blocked if the booking does not belong to the selected club."""
     admin = _create_user(db_session, email="refund-wrongclub-admin@example.com")
     customer = _create_person(db_session, email="refund-wrongclub-customer@example.com")
@@ -337,7 +386,9 @@ def test_post_refund_blocked_for_booking_not_in_club(client: TestClient, db_sess
     _assign_membership(db_session, user=admin, club=club_a, role=ClubMembershipRole.CLUB_ADMIN)
     _assign_membership(db_session, user=admin, club=club_b, role=ClubMembershipRole.CLUB_ADMIN)
     course_b = _create_course(db_session, club=club_b, name="North B")
-    booking_in_b = _create_booking(db_session, club=club_b, course=course_b, person=customer, fee_amount="300.00")
+    booking_in_b = _create_booking(
+        db_session, club=club_b, course=course_b, person=customer, fee_amount="300.00"
+    )
 
     # Request uses club_a headers but booking belongs to club_b
     headers_a = _auth_headers(client, admin.email, str(club_a.id))
@@ -353,16 +404,22 @@ def test_post_refund_blocked_for_booking_not_in_club(client: TestClient, db_sess
     assert "booking_not_found" in failure_codes
 
 
-def test_post_refund_preserves_existing_transactions(client: TestClient, db_session: Session) -> None:
+def test_post_refund_preserves_existing_transactions(
+    client: TestClient, db_session: Session
+) -> None:
     """Existing CHARGE and PAYMENT transactions are not mutated — append-only discipline."""
     admin = _create_user(db_session, email="refund-immutable-admin@example.com")
     customer = _create_person(db_session, email="refund-immutable-customer@example.com")
-    club = _create_club_with_config(db_session, name="Refund Immutable Club", slug="refund-immutable-club")
+    club = _create_club_with_config(
+        db_session, name="Refund Immutable Club", slug="refund-immutable-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     ac = _create_account_customer(db_session, club=club, person=customer, account_code="REF-005")
     _create_finance_account(db_session, club=club, account_customer=ac)
     course = _create_course(db_session, club=club, name="Central")
-    booking = _create_booking(db_session, club=club, course=course, person=customer, fee_amount="600.00")
+    booking = _create_booking(
+        db_session, club=club, course=course, person=customer, fee_amount="600.00"
+    )
     headers = _auth_headers(client, admin.email, str(club.id))
     _post_charge_and_record_payment(client, headers, str(booking.id), amount="600.00")
 

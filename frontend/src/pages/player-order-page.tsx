@@ -7,7 +7,7 @@ import { UserAvatar } from "../components/benchmark/user-avatar";
 import { useCreateOrderMutation, useOrderMenuQuery } from "../features/orders/hooks";
 import { buildPlayerTabItems } from "./player-tab-items";
 import { useSession } from "../session/session-context";
-import type { OrderCreateInput, OrderCreateResult, OrderMenuItem } from "../types/orders";
+import type { OrderCreateInput, OrderCreateResult } from "../types/orders";
 
 function initials(name: string | undefined): string {
   return (

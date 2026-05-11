@@ -46,7 +46,9 @@ class BookingStateService:
         booking_state = booking_state or BookingStateSnapshotInput()
         warnings: list[ContextNotice] = []
 
-        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == context.club_id))
+        club_config = self.db.scalar(
+            select(ClubConfig).where(ClubConfig.club_id == context.club_id)
+        )
         slot_interval_minutes = slot.slot_interval_minutes
         slot_interval_source = "input"
         if slot_interval_minutes is None:
@@ -58,7 +60,10 @@ class BookingStateService:
                 warnings.append(
                     ContextNotice(
                         code="slot_interval_unresolved",
-                        message="Slot interval is unresolved because no slot interval was supplied and club config is missing",
+                        message=(
+                            "Slot interval is unresolved because no slot interval "
+                            "was supplied and club config is missing"
+                        ),
                     )
                 )
         normalized_slot = SlotCandidate(
@@ -93,7 +98,9 @@ class BookingStateService:
         slot_state: TeeSheetSlotState | None,
         slot_interval_minutes: int | None = None,
     ) -> AvailabilityDecisionInput:
-        party_input, booking_state_input = self.build_inputs_from_persisted_state(bookings=bookings, slot_state=slot_state)
+        party_input, booking_state_input = self.build_inputs_from_persisted_state(
+            bookings=bookings, slot_state=slot_state
+        )
         return self.build_decision_input(
             context,
             slot=SlotCandidateInput(slot_interval_minutes=slot_interval_minutes),
@@ -142,17 +149,25 @@ class BookingStateService:
             ),
             BookingStateSnapshotInput(
                 occupancy={
-                    "player_capacity": slot_state.player_capacity if slot_state is not None else None,
+                    "player_capacity": slot_state.player_capacity
+                    if slot_state is not None
+                    else None,
                     "occupied_player_count": occupied_player_count,
                     "reserved_player_count": reserved_player_count,
                     "confirmed_booking_count": confirmed_booking_count,
                     "reserved_booking_count": reserved_booking_count,
                 },
                 manually_blocked=slot_state.manually_blocked if slot_state is not None else False,
-                reserved_state_active=slot_state.reserved_state_active if slot_state is not None else False,
-                competition_controlled=slot_state.competition_controlled if slot_state is not None else False,
+                reserved_state_active=slot_state.reserved_state_active
+                if slot_state is not None
+                else False,
+                competition_controlled=slot_state.competition_controlled
+                if slot_state is not None
+                else False,
                 event_controlled=slot_state.event_controlled if slot_state is not None else False,
-                externally_unavailable=slot_state.externally_unavailable if slot_state is not None else False,
+                externally_unavailable=slot_state.externally_unavailable
+                if slot_state is not None
+                else False,
                 blocked_reason=slot_state.blocked_reason if slot_state is not None else None,
             ),
         )
@@ -172,7 +187,10 @@ class BookingStateService:
             warnings.append(
                 ContextNotice(
                     code="requested_player_count_unresolved",
-                    message="Requested player count was not supplied and could not be derived from party buckets",
+                    message=(
+                        "Requested player count was not supplied "
+                        "and could not be derived from party buckets"
+                    ),
                 )
             )
 
@@ -183,13 +201,16 @@ class BookingStateService:
                 staff_count=party.staff_count,
                 requested_player_count=requested_player_count,
                 requester_applies_to=party.requester_applies_to or context.applies_to,
-                requester_membership_role=party.requester_membership_role or context.membership_role,
+                requester_membership_role=party.requester_membership_role
+                or context.membership_role,
                 bucket_counts_complete=complete,
             ),
             warnings,
         )
 
-    def _normalize_booking_state(self, booking_state: BookingStateSnapshotInput) -> BookingStateSnapshot:
+    def _normalize_booking_state(
+        self, booking_state: BookingStateSnapshotInput
+    ) -> BookingStateSnapshot:
         occupancy = booking_state.occupancy
         remaining_player_capacity = None
         if (
@@ -198,7 +219,9 @@ class BookingStateService:
             and occupancy.reserved_player_count is not None
         ):
             remaining_player_capacity = max(
-                occupancy.player_capacity - occupancy.occupied_player_count - occupancy.reserved_player_count,
+                occupancy.player_capacity
+                - occupancy.occupied_player_count
+                - occupancy.reserved_player_count,
                 0,
             )
 

@@ -162,9 +162,7 @@ class OrderService:
     ) -> list[Order]:
         open_status_rank = case(
             (
-                Order.status.in_(
-                    [OrderStatus.PLACED, OrderStatus.PREPARING, OrderStatus.READY]
-                ),
+                Order.status.in_([OrderStatus.PLACED, OrderStatus.PREPARING, OrderStatus.READY]),
                 0,
             ),
             else_=1,

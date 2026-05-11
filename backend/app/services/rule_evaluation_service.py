@@ -14,8 +14,8 @@ from app.models import (
     BookingRuleType,
     PricingDayType,
     PricingMatrix,
-    PricingSeason,
     PricingRule,
+    PricingSeason,
     PricingTimeBand,
 )
 from app.schemas.rule_context import ContextNotice, NormalizedRuleContext
@@ -61,8 +61,12 @@ class RuleEvaluationService:
             for rule in sorted_rules:
                 section_name, payload = self._section_payload(rule)
                 if strategy == BookingRuleConflictStrategy.FIRST_MATCH:
-                    self._apply_override(section_name, payload, booking_constraints, limits, time_restrictions)
-                    applicable_rules.append(self._applied_trace(ruleset, rule, "first_match_applied"))
+                    self._apply_override(
+                        section_name, payload, booking_constraints, limits, time_restrictions
+                    )
+                    applicable_rules.append(
+                        self._applied_trace(ruleset, rule, "first_match_applied")
+                    )
                     stop_after_current = True
                     continue
 
@@ -76,7 +80,9 @@ class RuleEvaluationService:
                     )
                     if blocked == self._payload_keys(section_name, payload):
                         ignored_rules.append(
-                            self._ignored_trace(ruleset, rule, "higher_priority_override_already_applied")
+                            self._ignored_trace(
+                                ruleset, rule, "higher_priority_override_already_applied"
+                            )
                         )
                         continue
                     self._apply_override(
@@ -87,21 +93,33 @@ class RuleEvaluationService:
                         time_restrictions,
                         blocked_keys=blocked,
                     )
-                    applied_reason = "override_applied" if not blocked else "override_applied_with_partial_conflict"
+                    applied_reason = (
+                        "override_applied"
+                        if not blocked
+                        else "override_applied_with_partial_conflict"
+                    )
                     applicable_rules.append(self._applied_trace(ruleset, rule, applied_reason))
                     continue
 
-                merged = self._apply_merge(section_name, payload, booking_constraints, limits, time_restrictions)
+                merged = self._apply_merge(
+                    section_name, payload, booking_constraints, limits, time_restrictions
+                )
                 if merged:
                     applicable_rules.append(self._applied_trace(ruleset, rule, "merge_applied"))
                 else:
-                    ignored_rules.append(self._ignored_trace(ruleset, rule, "merge_conflict_preserved_higher_priority"))
+                    ignored_rules.append(
+                        self._ignored_trace(
+                            ruleset, rule, "merge_conflict_preserved_higher_priority"
+                        )
+                    )
 
             if stop_after_current:
                 for remaining_ruleset in candidate_rule_sets[index + 1 :]:
                     for remaining_rule in self._sort_rules(remaining_ruleset.rules):
                         ignored_rules.append(
-                            self._ignored_trace(remaining_ruleset, remaining_rule, "first_match_stopped")
+                            self._ignored_trace(
+                                remaining_ruleset, remaining_rule, "first_match_stopped"
+                            )
                         )
                 break
 
@@ -122,7 +140,9 @@ class RuleEvaluationService:
             select(PricingMatrix)
             .options(selectinload(PricingMatrix.rules))
             .where(PricingMatrix.club_id == context.club_id, PricingMatrix.active.is_(True))
-            .order_by(PricingMatrix.name.asc(), PricingMatrix.created_at.asc(), PricingMatrix.id.asc())
+            .order_by(
+                PricingMatrix.name.asc(), PricingMatrix.created_at.asc(), PricingMatrix.id.asc()
+            )
         )
         matrices = list(self.db.scalars(statement).unique().all())
 
@@ -141,13 +161,17 @@ class RuleEvaluationService:
                     ignored_rules.append(self._pricing_trace(matrix, rule, "applies_to_mismatch"))
                     continue
                 if context.pricing_player_type is None:
-                    unresolved_rules.append(self._pricing_trace(matrix, rule, "pricing_player_type_unresolved"))
+                    unresolved_rules.append(
+                        self._pricing_trace(matrix, rule, "pricing_player_type_unresolved")
+                    )
                     continue
                 if rule.player_type != context.pricing_player_type:
                     ignored_rules.append(self._pricing_trace(matrix, rule, "player_type_mismatch"))
                     continue
                 if context.holes is None:
-                    unresolved_rules.append(self._pricing_trace(matrix, rule, "pricing_holes_unresolved"))
+                    unresolved_rules.append(
+                        self._pricing_trace(matrix, rule, "pricing_holes_unresolved")
+                    )
                     continue
                 if rule.holes != context.holes:
                     ignored_rules.append(self._pricing_trace(matrix, rule, "holes_mismatch"))
@@ -163,22 +187,33 @@ class RuleEvaluationService:
                     ignored_rules.append(self._pricing_trace(matrix, rule, "time_band_mismatch"))
                     continue
                 if time_band_outcome == "ignored_custom_ref_mismatch":
-                    ignored_rules.append(self._pricing_trace(matrix, rule, "custom_time_band_ref_mismatch"))
+                    ignored_rules.append(
+                        self._pricing_trace(matrix, rule, "custom_time_band_ref_mismatch")
+                    )
                     continue
                 if time_band_outcome == "unresolved_missing_rule_ref":
-                    unresolved_rules.append(self._pricing_trace(matrix, rule, "custom_time_band_rule_missing_ref"))
+                    unresolved_rules.append(
+                        self._pricing_trace(matrix, rule, "custom_time_band_rule_missing_ref")
+                    )
                     warnings.append(
                         ContextNotice(
                             code="custom_time_band_rule_missing_ref",
-                            message="A custom pricing rule is missing time_band_ref and could not be matched deterministically",
+                            message=(
+                                "A custom pricing rule is missing time_band_ref "
+                                "and could not be matched deterministically"
+                            ),
                         )
                     )
                     continue
                 if time_band_outcome == "unresolved_missing_context_ref":
-                    unresolved_rules.append(self._pricing_trace(matrix, rule, "custom_time_band_context_ref_missing"))
+                    unresolved_rules.append(
+                        self._pricing_trace(matrix, rule, "custom_time_band_context_ref_missing")
+                    )
                     continue
                 if time_band_outcome == "unresolved_missing_context_band":
-                    unresolved_rules.append(self._pricing_trace(matrix, rule, "custom_time_band_context_missing"))
+                    unresolved_rules.append(
+                        self._pricing_trace(matrix, rule, "custom_time_band_context_missing")
+                    )
                     continue
 
                 candidate = PricingCandidate(
@@ -201,9 +236,13 @@ class RuleEvaluationService:
 
         selected_candidates = candidates
         if candidates:
-            highest_specificity = max(candidate_specificity[candidate.rule_id] for candidate in candidates)
+            highest_specificity = max(
+                candidate_specificity[candidate.rule_id] for candidate in candidates
+            )
             selected_candidates = [
-                candidate for candidate in candidates if candidate_specificity[candidate.rule_id] == highest_specificity
+                candidate
+                for candidate in candidates
+                if candidate_specificity[candidate.rule_id] == highest_specificity
             ]
             if len(selected_candidates) > 1:
                 warnings.append(
@@ -263,8 +302,10 @@ class RuleEvaluationService:
         return context.season is not None and rule.season == context.season
 
     def _pricing_specificity(self, rule: PricingRule) -> int:
-        return int(rule.day_type != PricingDayType.ANY) + int(rule.season != PricingSeason.ANY) + int(
-            rule.time_band != PricingTimeBand.ANY
+        return (
+            int(rule.day_type != PricingDayType.ANY)
+            + int(rule.season != PricingSeason.ANY)
+            + int(rule.time_band != PricingTimeBand.ANY)
         )
 
     def _load_rule_sets(self, club_id: uuid.UUID) -> list[BookingRuleSet]:
@@ -282,7 +323,9 @@ class RuleEvaluationService:
             self._rule_sets_cache[club_id] = list(self.db.scalars(statement).unique().all())
         return self._rule_sets_cache[club_id]
 
-    def _mismatch_reason(self, ruleset: BookingRuleSet, context: NormalizedRuleContext) -> str | None:
+    def _mismatch_reason(
+        self, ruleset: BookingRuleSet, context: NormalizedRuleContext
+    ) -> str | None:
         if not self._matches_datetime(ruleset, context.effective_datetime):
             return "effective_datetime_outside_ruleset_window"
         if context.applies_to and ruleset.applies_to != context.applies_to:
@@ -305,9 +348,14 @@ class RuleEvaluationService:
         if ruleset.scope_type == BookingRuleScopeType.CLUB:
             return True
         if ruleset.scope_type == BookingRuleScopeType.COURSE:
-            return scope_context.course_ref is not None and ruleset.scope_ref_id == scope_context.course_ref
+            return (
+                scope_context.course_ref is not None
+                and ruleset.scope_ref_id == scope_context.course_ref
+            )
         if ruleset.scope_type == BookingRuleScopeType.TEE:
-            return scope_context.tee_ref is not None and ruleset.scope_ref_id == scope_context.tee_ref
+            return (
+                scope_context.tee_ref is not None and ruleset.scope_ref_id == scope_context.tee_ref
+            )
         if ruleset.scope_type == BookingRuleScopeType.MEMBERSHIP_ROLE:
             return (
                 scope_context.membership_role_ref is not None
@@ -321,7 +369,9 @@ class RuleEvaluationService:
         return False
 
     def _sort_rules(self, rules: list[BookingRule]) -> list[BookingRule]:
-        return sorted(rules, key=lambda item: (item.evaluation_order, item.created_at, str(item.id)))
+        return sorted(
+            rules, key=lambda item: (item.evaluation_order, item.created_at, str(item.id))
+        )
 
     def _section_payload(self, rule: BookingRule) -> tuple[str, dict[str, Any]]:
         if rule.type == BookingRuleType.ADVANCE_WINDOW:
@@ -407,7 +457,9 @@ class RuleEvaluationService:
             return {"time_restrictions:windows"} if target.get("windows") else set()
         return {f"{section_name}:{key}" for key in payload if key in target}
 
-    def _applied_trace(self, ruleset: BookingRuleSet, rule: BookingRule, reason: str) -> AppliedRuleTrace:
+    def _applied_trace(
+        self, ruleset: BookingRuleSet, rule: BookingRule, reason: str
+    ) -> AppliedRuleTrace:
         return AppliedRuleTrace(
             rule_set_id=ruleset.id,
             rule_set_name=ruleset.name,
@@ -423,7 +475,9 @@ class RuleEvaluationService:
             config=dict(rule.config),
         )
 
-    def _ignored_trace(self, ruleset: BookingRuleSet, rule: BookingRule, reason: str) -> IgnoredRuleTrace:
+    def _ignored_trace(
+        self, ruleset: BookingRuleSet, rule: BookingRule, reason: str
+    ) -> IgnoredRuleTrace:
         return IgnoredRuleTrace(
             rule_set_id=ruleset.id,
             rule_set_name=ruleset.name,
@@ -438,7 +492,9 @@ class RuleEvaluationService:
             reason=reason,
         )
 
-    def _pricing_trace(self, matrix: PricingMatrix, rule: PricingRule, reason: str) -> PricingIgnoredTrace:
+    def _pricing_trace(
+        self, matrix: PricingMatrix, rule: PricingRule, reason: str
+    ) -> PricingIgnoredTrace:
         return PricingIgnoredTrace(
             matrix_id=matrix.id,
             matrix_name=matrix.name,

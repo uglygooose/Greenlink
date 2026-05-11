@@ -17,7 +17,10 @@ class TeeSheetSlotState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "tee_sheet_slot_states"
     __table_args__ = (
         UniqueConstraint(
-            "course_id", "tee_id", "start_lane", "slot_datetime",
+            "course_id",
+            "tee_id",
+            "start_lane",
+            "slot_datetime",
             name="uq_tee_sheet_slot_states_scope_slot",
         ),
     )

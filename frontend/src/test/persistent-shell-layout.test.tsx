@@ -14,8 +14,8 @@ let adminShellUnmounts = 0;
 let superadminShellMounts = 0;
 let superadminShellUnmounts = 0;
 
-vi.mock("../components/shell/AdminShell", () => ({
-  default: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => {
+vi.mock("../components/shell/AdminShell", () => {
+  function MockAdminShell({ children, title }: { children: React.ReactNode; title: React.ReactNode }): JSX.Element {
     React.useEffect(() => {
       adminShellMounts += 1;
       return () => {
@@ -29,11 +29,12 @@ vi.mock("../components/shell/AdminShell", () => ({
         {children}
       </div>
     );
-  },
-}));
+  }
+  return { default: MockAdminShell };
+});
 
-vi.mock("../components/shell/SuperadminShell", () => ({
-  default: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => {
+vi.mock("../components/shell/SuperadminShell", () => {
+  function MockSuperadminShell({ children, title }: { children: React.ReactNode; title: React.ReactNode }): JSX.Element {
     React.useEffect(() => {
       superadminShellMounts += 1;
       return () => {
@@ -47,8 +48,9 @@ vi.mock("../components/shell/SuperadminShell", () => ({
         {children}
       </div>
     );
-  },
-}));
+  }
+  return { default: MockSuperadminShell };
+});
 
 function AdminDashboardStub(): JSX.Element {
   return (

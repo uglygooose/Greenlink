@@ -8,6 +8,7 @@ Create Date: 2026-04-02
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "202604020001"
@@ -20,13 +21,22 @@ def upgrade() -> None:
     op.create_table(
         "news_posts",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("club_id", sa.Uuid(), sa.ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("author_person_id", sa.Uuid(), sa.ForeignKey("people.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "club_id", sa.Uuid(), sa.ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+        ),
+        sa.Column(
+            "author_person_id",
+            sa.Uuid(),
+            sa.ForeignKey("people.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column(
             "visibility",
-            sa.Enum("public", "members_only", "internal", name="newspostvisibility", create_type=True),
+            sa.Enum(
+                "public", "members_only", "internal", name="newspostvisibility", create_type=True
+            ),
             nullable=False,
             server_default="members_only",
         ),
@@ -38,8 +48,12 @@ def upgrade() -> None:
         ),
         sa.Column("pinned", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_news_posts_club_id", "news_posts", ["club_id"])

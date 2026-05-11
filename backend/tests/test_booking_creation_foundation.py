@@ -73,7 +73,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -204,7 +206,9 @@ def _seed_pricing_matrix(db: Session, *, club: Club, price: str = "325.00") -> N
     db.commit()
 
 
-def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClient, db_session: Session) -> None:
+def test_booking_create_allows_write_and_surfaces_in_tee_sheet(
+    client: TestClient, db_session: Session
+) -> None:
     admin = _create_user(db_session, email="booking-admin@example.com")
     member = _create_user(db_session, email="booking-member@example.com")
     club = _create_club(db_session, name="Create Club", slug="create-club")
@@ -266,8 +270,14 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(client: TestClien
     assert payload["booking"]["status"] == "reserved"
     assert payload["booking"]["cart_flag"] is True
     assert payload["booking"]["caddie_flag"] is True
-    assert any(item["code"] == "slot_capacity_available" for item in payload["availability"]["resolved_checks"])
-    assert all(item["code"] == "live_concurrency_not_evaluated" for item in payload["availability"]["unresolved_checks"])
+    assert any(
+        item["code"] == "slot_capacity_available"
+        for item in payload["availability"]["resolved_checks"]
+    )
+    assert all(
+        item["code"] == "live_concurrency_not_evaluated"
+        for item in payload["availability"]["unresolved_checks"]
+    )
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 1
 
     tee_sheet = client.get(
@@ -438,9 +448,7 @@ def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_
     assert tee_sheet.status_code == 200
     rows = tee_sheet.json()["rows"]
     target_row = next(
-        row
-        for row in rows
-        if row["tee_id"] == str(tee.id) and row["start_lane"] == "hole_10"
+        row for row in rows if row["tee_id"] == str(tee.id) and row["start_lane"] == "hole_10"
     )
     target_slot = next(
         slot
@@ -453,12 +461,16 @@ def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_
     assert target_slot["bookings"][0]["start_lane"] == "hole_10"
 
 
-def test_booking_create_blocks_when_slot_capacity_is_exceeded(client: TestClient, db_session: Session) -> None:
+def test_booking_create_blocks_when_slot_capacity_is_exceeded(
+    client: TestClient, db_session: Session
+) -> None:
     admin = _create_user(db_session, email="capacity-admin@example.com")
     member = _create_user(db_session, email="capacity-member@example.com")
     club = _create_club(db_session, name="Capacity Club", slug="capacity-club")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    member_membership = _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
+    member_membership = _assign_membership(
+        db_session, user=member, club=club, role=ClubMembershipRole.MEMBER
+    )
     course, tee = _seed_course_stack(db_session, club=club)
     _seed_club_config(db_session, club=club)
     _seed_rules(db_session, club=club)
@@ -538,7 +550,9 @@ def test_booking_create_blocks_when_slot_capacity_is_exceeded(client: TestClient
 
     assert payload["decision"] == "blocked"
     assert payload["booking"] is None
-    assert any(item["code"] == "slot_capacity_exceeded" for item in payload["availability"]["blockers"])
+    assert any(
+        item["code"] == "slot_capacity_exceeded" for item in payload["availability"]["blockers"]
+    )
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 1
 
 
@@ -579,7 +593,10 @@ def test_booking_create_returns_indeterminate_when_slot_state_is_incomplete(
 
     assert payload["decision"] == "indeterminate"
     assert payload["booking"] is None
-    assert any(item["code"] == "occupancy_state_incomplete" for item in payload["availability"]["unresolved_checks"])
+    assert any(
+        item["code"] == "occupancy_state_incomplete"
+        for item in payload["availability"]["unresolved_checks"]
+    )
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 0
 
 

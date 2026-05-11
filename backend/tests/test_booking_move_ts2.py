@@ -42,7 +42,6 @@ from app.models import (
     User,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -83,8 +82,13 @@ def _setup_club(db: Session, *, name: str, slug: str) -> tuple[Club, Course, Tee
             operating_hours={
                 day: {"open": "06:00", "close": "12:00", "closed": False}
                 for day in [
-                    "monday", "tuesday", "wednesday", "thursday",
-                    "friday", "saturday", "sunday",
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
                 ]
             },
             booking_window_days=14,
@@ -198,9 +202,9 @@ def _auth_headers(client: TestClient, email: str, club_id: str) -> dict[str, str
 
 # Johannesburg is UTC+2
 # 06:00 local = 04:00 UTC
-SLOT_0600 = datetime(2026, 4, 6, 4, 0, tzinfo=UTC)   # 06:00 local Monday
+SLOT_0600 = datetime(2026, 4, 6, 4, 0, tzinfo=UTC)  # 06:00 local Monday
 SLOT_0630 = datetime(2026, 4, 6, 4, 30, tzinfo=UTC)  # 06:30 local Monday
-SLOT_0700 = datetime(2026, 4, 6, 5, 0, tzinfo=UTC)   # 07:00 local Monday
+SLOT_0700 = datetime(2026, 4, 6, 5, 0, tzinfo=UTC)  # 07:00 local Monday
 SLOT_NEXT_DAY = datetime(2026, 4, 7, 4, 0, tzinfo=UTC)  # Tuesday
 
 
@@ -214,8 +218,13 @@ def test_move_booking_valid_time_change(client: TestClient, db_session: Session)
     club, course, tee = _setup_club(db_session, name="Move Club A", slug="move-club-a")
     admin = _create_admin(db_session, email="move-admin-a@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=2,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=2,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -229,9 +238,7 @@ def test_move_booking_valid_time_change(client: TestClient, db_session: Session)
     assert payload["decision"] == "allowed"
 
 
-def test_move_capacity_is_lane_aware(
-    client: TestClient, db_session: Session
-) -> None:
+def test_move_capacity_is_lane_aware(client: TestClient, db_session: Session) -> None:
     club, course, tee = _setup_club(db_session, name="Move Club M", slug="move-club-m")
     admin = _create_admin(db_session, email="move-admin-m@example.com", club=club)
     booking = _create_booking(
@@ -268,24 +275,26 @@ def test_move_capacity_is_lane_aware(
             primary_person_id=other_user.person_id,
         )
     )
-    db_session.add_all([
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_1,
-            slot_datetime=SLOT_0630,
-            player_capacity=4,
-        ),
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_10,
-            slot_datetime=SLOT_0630,
-            player_capacity=4,
-        ),
-    ])
+    db_session.add_all(
+        [
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_1,
+                slot_datetime=SLOT_0630,
+                player_capacity=4,
+            ),
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_10,
+                slot_datetime=SLOT_0630,
+                player_capacity=4,
+            ),
+        ]
+    )
     db_session.commit()
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -300,9 +309,7 @@ def test_move_capacity_is_lane_aware(
     assert payload["booking"]["start_lane"] == "hole_10"
 
 
-def test_move_block_state_is_lane_aware(
-    client: TestClient, db_session: Session
-) -> None:
+def test_move_block_state_is_lane_aware(client: TestClient, db_session: Session) -> None:
     club, course, tee = _setup_club(db_session, name="Move Club N", slug="move-club-n")
     admin = _create_admin(db_session, email="move-admin-n@example.com", club=club)
     booking = _create_booking(
@@ -315,25 +322,27 @@ def test_move_block_state_is_lane_aware(
         start_lane=StartLane.HOLE_1,
         party_size=1,
     )
-    db_session.add_all([
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_1,
-            slot_datetime=SLOT_0630,
-            player_capacity=4,
-        ),
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_10,
-            slot_datetime=SLOT_0630,
-            manually_blocked=True,
-            blocked_reason="10th tee closed",
-        ),
-    ])
+    db_session.add_all(
+        [
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_1,
+                slot_datetime=SLOT_0630,
+                player_capacity=4,
+            ),
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_10,
+                slot_datetime=SLOT_0630,
+                manually_blocked=True,
+                blocked_reason="10th tee closed",
+            ),
+        ]
+    )
     db_session.commit()
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -362,9 +371,14 @@ def test_move_booking_valid_lane_change(client: TestClient, db_session: Session)
     club, course, tee = _setup_club(db_session, name="Move Club B", slug="move-club-b")
     admin = _create_admin(db_session, email="move-admin-b@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        start_lane=StartLane.HOLE_1, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        start_lane=StartLane.HOLE_1,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -388,9 +402,14 @@ def test_move_checked_in_booking_is_allowed(client: TestClient, db_session: Sess
     club, course, tee = _setup_club(db_session, name="Move Club C", slug="move-club-c")
     admin = _create_admin(db_session, email="move-admin-c@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        status=BookingStatus.CHECKED_IN, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        status=BookingStatus.CHECKED_IN,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -405,7 +424,9 @@ def test_move_checked_in_booking_is_allowed(client: TestClient, db_session: Sess
     assert payload["transition_applied"] is True
 
 
-def test_move_selected_participant_creates_independent_booking(client: TestClient, db_session: Session) -> None:
+def test_move_selected_participant_creates_independent_booking(
+    client: TestClient, db_session: Session
+) -> None:
     club, course, tee = _setup_club(db_session, name="Move Club Split", slug="move-club-split")
     admin = _create_admin(db_session, email="move-admin-split@example.com", club=club)
     booking = _create_booking(
@@ -453,14 +474,8 @@ def test_move_selected_participant_creates_independent_booking(client: TestClien
     assert payload["booking"]["slot_datetime"] == SLOT_0630.isoformat().replace("+00:00", "Z")
     assert payload["booking"]["participants"][0]["display_name"] == "Guest One"
 
-    source = db_session.scalar(
-        select(Booking)
-        .where(Booking.id == booking.id)
-    )
-    moved = db_session.scalar(
-        select(Booking)
-        .where(Booking.id == payload["booking_id"])
-    )
+    source = db_session.scalar(select(Booking).where(Booking.id == booking.id))
+    moved = db_session.scalar(select(Booking).where(Booking.id == payload["booking_id"]))
     assert source is not None
     assert moved is not None
     db_session.refresh(source)
@@ -476,7 +491,9 @@ def test_move_selected_participant_creates_independent_booking(client: TestClien
 def test_move_selected_participant_rejects_unknown_participant_id(
     client: TestClient, db_session: Session
 ) -> None:
-    club, course, tee = _setup_club(db_session, name="Move Club Participant", slug="move-club-participant")
+    club, course, tee = _setup_club(
+        db_session, name="Move Club Participant", slug="move-club-participant"
+    )
     admin = _create_admin(db_session, email="move-admin-participant@example.com", club=club)
     booking = _create_booking(
         db_session,
@@ -514,8 +531,13 @@ def test_move_blocked_target_manually_blocked(client: TestClient, db_session: Se
     club, course, tee = _setup_club(db_session, name="Move Club D", slug="move-club-d")
     admin = _create_admin(db_session, email="move-admin-d@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=1,
     )
     db_session.add(
         TeeSheetSlotState(
@@ -543,13 +565,20 @@ def test_move_blocked_target_manually_blocked(client: TestClient, db_session: Se
     assert "Course maintenance" in payload["failures"][0]["message"]
 
 
-def test_move_blocked_target_competition_controlled(client: TestClient, db_session: Session) -> None:
+def test_move_blocked_target_competition_controlled(
+    client: TestClient, db_session: Session
+) -> None:
     """Move to a competition-controlled slot is rejected."""
     club, course, tee = _setup_club(db_session, name="Move Club E", slug="move-club-e")
     admin = _create_admin(db_session, email="move-admin-e@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=1,
     )
     db_session.add(
         TeeSheetSlotState(
@@ -581,8 +610,13 @@ def test_move_blocked_capacity_exceeded(client: TestClient, db_session: Session)
 
     # Booking to be moved (party_size=2)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=2,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=2,
     )
     # Target slot already has 3 players, capacity is 4 — moving 2 would overflow
     other_user = _create_user(db_session, email="move-other-f@example.com")
@@ -596,16 +630,24 @@ def test_move_blocked_capacity_exceeded(client: TestClient, db_session: Session)
     )
     db_session.flush()
     existing_booking = Booking(
-        club_id=club.id, course_id=course.id, tee_id=tee.id,
-        slot_datetime=SLOT_0630, slot_interval_minutes=30,
-        status=BookingStatus.RESERVED, source=BookingSource.ADMIN,
-        party_size=3, primary_person_id=other_user.person_id,
+        club_id=club.id,
+        course_id=course.id,
+        tee_id=tee.id,
+        slot_datetime=SLOT_0630,
+        slot_interval_minutes=30,
+        status=BookingStatus.RESERVED,
+        source=BookingSource.ADMIN,
+        party_size=3,
+        primary_person_id=other_user.person_id,
     )
     db_session.add(existing_booking)
     db_session.add(
         TeeSheetSlotState(
-            club_id=club.id, course_id=course.id, tee_id=tee.id,
-            slot_datetime=SLOT_0630, player_capacity=4,
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            slot_datetime=SLOT_0630,
+            player_capacity=4,
         )
     )
     db_session.commit()
@@ -628,8 +670,13 @@ def test_move_blocked_crosses_day_boundary(client: TestClient, db_session: Sessi
     club, course, tee = _setup_club(db_session, name="Move Club G", slug="move-club-g")
     admin = _create_admin(db_session, email="move-admin-g@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -649,9 +696,14 @@ def test_move_blocked_no_op(client: TestClient, db_session: Session) -> None:
     club, course, tee = _setup_club(db_session, name="Move Club H", slug="move-club-h")
     admin = _create_admin(db_session, email="move-admin-h@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        start_lane=StartLane.HOLE_1, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        start_lane=StartLane.HOLE_1,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -675,9 +727,14 @@ def test_move_blocked_cancelled_booking(client: TestClient, db_session: Session)
     club, course, tee = _setup_club(db_session, name="Move Club I", slug="move-club-i")
     admin = _create_admin(db_session, email="move-admin-i@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        status=BookingStatus.CANCELLED, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        status=BookingStatus.CANCELLED,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -698,9 +755,14 @@ def test_move_blocked_completed_booking(client: TestClient, db_session: Session)
     club, course, tee = _setup_club(db_session, name="Move Club J", slug="move-club-j")
     admin = _create_admin(db_session, email="move-admin-j@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        status=BookingStatus.COMPLETED, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        status=BookingStatus.COMPLETED,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -721,9 +783,14 @@ def test_move_blocked_no_show_booking(client: TestClient, db_session: Session) -
     club, course, tee = _setup_club(db_session, name="Move Club K", slug="move-club-k")
     admin = _create_admin(db_session, email="move-admin-k@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600,
-        status=BookingStatus.NO_SHOW, party_size=1,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        status=BookingStatus.NO_SHOW,
+        party_size=1,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))
@@ -745,8 +812,13 @@ def test_move_capacity_not_enforced_when_no_slot_state(
     club, course, tee = _setup_club(db_session, name="Move Club L", slug="move-club-l")
     admin = _create_admin(db_session, email="move-admin-l@example.com", club=club)
     booking = _create_booking(
-        db_session, club=club, course=course, tee=tee,
-        person_id=admin.person_id, slot_datetime=SLOT_0600, party_size=8,
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=admin.person_id,
+        slot_datetime=SLOT_0600,
+        party_size=8,
     )
 
     headers = _auth_headers(client, admin.email, str(club.id))

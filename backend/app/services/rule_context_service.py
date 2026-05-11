@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timezone
+from datetime import UTC
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError, NotFoundError
-from app.models import Club, ClubConfig, Course, PricingDayType, PricingPlayerType, PricingSeason, PricingTimeBand, Tee
+from app.models import (
+    Club,
+    ClubConfig,
+    Course,
+    PricingDayType,
+    PricingPlayerType,
+    PricingSeason,
+    PricingTimeBand,
+    Tee,
+)
 from app.schemas.rule_context import (
     ContextNotice,
     DayTypeResolution,
@@ -71,16 +80,22 @@ class RuleContextService:
             course = tee.course
 
         effective_datetime = (
-            raw.effective_datetime.astimezone(timezone.utc) if raw.effective_datetime is not None else None
+            raw.effective_datetime.astimezone(UTC) if raw.effective_datetime is not None else None
         )
         reference_datetime = (
-            raw.reference_datetime.astimezone(timezone.utc) if raw.reference_datetime is not None else None
+            raw.reference_datetime.astimezone(UTC) if raw.reference_datetime is not None else None
         )
-        local_effective = effective_datetime.astimezone(zone) if effective_datetime is not None else None
-        local_reference = reference_datetime.astimezone(zone) if reference_datetime is not None else None
+        local_effective = (
+            effective_datetime.astimezone(zone) if effective_datetime is not None else None
+        )
+        local_reference = (
+            reference_datetime.astimezone(zone) if reference_datetime is not None else None
+        )
 
         day_type_resolution = self._resolve_day_type(raw.day_type, local_effective)
-        time_band_resolution = self._resolve_time_band(raw.time_band, raw.time_band_ref, local_effective)
+        time_band_resolution = self._resolve_time_band(
+            raw.time_band, raw.time_band_ref, local_effective
+        )
         warnings.extend(day_type_resolution.warnings)
         warnings.extend(time_band_resolution.warnings)
 
@@ -95,17 +110,27 @@ class RuleContextService:
                 raw.applies_to,
                 raw.membership_role,
             ),
-            holes=raw.holes if raw.holes is not None else course.holes if course is not None else None,
+            holes=raw.holes
+            if raw.holes is not None
+            else course.holes
+            if course is not None
+            else None,
             season=self._resolve_season(raw.season, local_effective),
             effective_datetime=effective_datetime,
             reference_datetime=reference_datetime,
             timezone=timezone_name,
             local_date=local_effective.date() if local_effective is not None else None,
-            local_time=local_effective.timetz().replace(tzinfo=None) if local_effective is not None else None,
-            local_day_name=WEEKDAY_NAMES[local_effective.weekday()] if local_effective is not None else None,
+            local_time=local_effective.timetz().replace(tzinfo=None)
+            if local_effective is not None
+            else None,
+            local_day_name=WEEKDAY_NAMES[local_effective.weekday()]
+            if local_effective is not None
+            else None,
             reference_local_date=local_reference.date() if local_reference is not None else None,
             reference_local_time=(
-                local_reference.timetz().replace(tzinfo=None) if local_reference is not None else None
+                local_reference.timetz().replace(tzinfo=None)
+                if local_reference is not None
+                else None
             ),
             day_type=day_type_resolution.value,
             time_band=time_band_resolution.value,
@@ -117,7 +142,9 @@ class RuleContextService:
                 course_ref=str(course.id) if course is not None else None,
                 tee_ref=str(tee.id) if tee is not None else None,
                 applies_to_bucket_ref=raw.applies_to.value if raw.applies_to is not None else None,
-                membership_role_ref=raw.membership_role.value if raw.membership_role is not None else None,
+                membership_role_ref=raw.membership_role.value
+                if raw.membership_role is not None
+                else None,
             ),
             warnings=warnings,
             unsupported=[],
@@ -147,7 +174,9 @@ class RuleContextService:
     def _load_course(self, course_id: uuid.UUID, club_id: uuid.UUID) -> Course:
         key = (course_id, club_id)
         if key not in self._course_cache:
-            course = self.db.scalar(select(Course).where(Course.id == course_id, Course.club_id == club_id))
+            course = self.db.scalar(
+                select(Course).where(Course.id == course_id, Course.club_id == club_id)
+            )
             if course is None:
                 raise NotFoundError("Course not found")
             self._course_cache[key] = course
@@ -195,7 +224,10 @@ class RuleContextService:
             warnings=[
                 ContextNotice(
                     code="public_holiday_unresolved",
-                    message="Day type fell back to weekday/weekend because no holiday provider is configured",
+                    message=(
+                        "Day type fell back to weekday/weekend "
+                        "because no holiday provider is configured"
+                    ),
                 )
             ],
         )
@@ -207,7 +239,11 @@ class RuleContextService:
         local_effective,
     ) -> TimeBandResolution:
         if supplied_time_band is not None:
-            contract = "custom_ref_required" if supplied_time_band == PricingTimeBand.CUSTOM else "supplied"
+            contract = (
+                "custom_ref_required"
+                if supplied_time_band == PricingTimeBand.CUSTOM
+                else "supplied"
+            )
             return TimeBandResolution(
                 value=supplied_time_band,
                 source="supplied",
@@ -234,12 +270,16 @@ class RuleContextService:
             warnings=[],
         )
 
-    def _resolve_season(self, supplied_season: PricingSeason | None, local_effective) -> PricingSeason | None:
+    def _resolve_season(
+        self, supplied_season: PricingSeason | None, local_effective
+    ) -> PricingSeason | None:
         if supplied_season is not None:
             return supplied_season
         if local_effective is None:
             return None
-        return PricingSeason.PEAK if local_effective.month in {12, 1, 2, 3} else PricingSeason.OFF_PEAK
+        return (
+            PricingSeason.PEAK if local_effective.month in {12, 1, 2, 3} else PricingSeason.OFF_PEAK
+        )
 
     def _resolve_pricing_player_type(
         self,

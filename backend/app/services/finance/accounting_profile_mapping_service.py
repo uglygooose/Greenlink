@@ -6,9 +6,7 @@ import io
 import json
 import re
 import uuid
-from datetime import datetime
-from decimal import Decimal
-from decimal import InvalidOperation
+from decimal import Decimal, InvalidOperation
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -50,7 +48,9 @@ class AccountingProfileMappingService:
             self.db.scalars(
                 select(AccountingExportProfile)
                 .where(AccountingExportProfile.club_id == club_id)
-                .order_by(AccountingExportProfile.is_active.desc(), AccountingExportProfile.name.asc())
+                .order_by(
+                    AccountingExportProfile.is_active.desc(), AccountingExportProfile.name.asc()
+                )
             ).all()
         )
         return AccountingExportProfileListResponse(
@@ -145,7 +145,9 @@ class AccountingProfileMappingService:
                 status_code=400,
             )
 
-        mapped_rows, validation_errors = self._build_validated_mapped_rows(batch=batch, profile=profile)
+        mapped_rows, validation_errors = self._build_validated_mapped_rows(
+            batch=batch, profile=profile
+        )
         generated_at = utc_now()
         output_mode = self._output_mode(profile.target_system)
         file_name = self._mapped_file_name(
@@ -184,7 +186,9 @@ class AccountingProfileMappingService:
         batch_id: uuid.UUID,
         profile_id: uuid.UUID,
     ) -> AccountingMappedExportDownloadResult:
-        preview = self.build_mapped_export_preview(club_id=club_id, batch_id=batch_id, profile_id=profile_id)
+        preview = self.build_mapped_export_preview(
+            club_id=club_id, batch_id=batch_id, profile_id=profile_id
+        )
         if preview.validation_errors:
             raise AppError(
                 code="accounting_export_validation_failed",
@@ -273,7 +277,9 @@ class AccountingProfileMappingService:
     ) -> tuple[list[AccountingMappedExportPreviewRow], list[AccountingMappedExportValidationError]]:
         validation_errors: list[AccountingMappedExportValidationError] = []
         try:
-            config = AccountingExportProfileMappingConfig.model_validate(profile.mapping_config_json)
+            config = AccountingExportProfileMappingConfig.model_validate(
+                profile.mapping_config_json
+            )
         except ValidationError as exc:
             return [], self._collect_model_validation_errors(
                 exc,
@@ -307,7 +313,9 @@ class AccountingProfileMappingService:
         )
         return mapped_rows, validation_errors
 
-    def _to_profile_response(self, profile: AccountingExportProfile) -> AccountingExportProfileResponse:
+    def _to_profile_response(
+        self, profile: AccountingExportProfile
+    ) -> AccountingExportProfileResponse:
         return AccountingExportProfileResponse(
             id=profile.id,
             club_id=profile.club_id,
@@ -315,7 +323,9 @@ class AccountingProfileMappingService:
             name=profile.name,
             target_system=profile.target_system,
             is_active=profile.is_active,
-            mapping_config=AccountingExportProfileMappingConfig.model_validate(profile.mapping_config_json),
+            mapping_config=AccountingExportProfileMappingConfig.model_validate(
+                profile.mapping_config_json
+            ),
             created_by_person_id=profile.created_by_person_id,
             created_at=profile.created_at,
             updated_at=profile.updated_at,
@@ -341,7 +351,8 @@ class AccountingProfileMappingService:
                     debit_account_code=mapping.debit_account_code,
                     credit_account_code=mapping.credit_account_code,
                     amount=self._decimal_string(abs(Decimal(row.amount))),
-                    customer_account_code=row.account_customer_code or config.fallback_customer_code,
+                    customer_account_code=row.account_customer_code
+                    or config.fallback_customer_code,
                     source_type=row.source,
                 )
             )
@@ -370,8 +381,7 @@ class AccountingProfileMappingService:
                     self._validation_error(
                         code="accounting_export_reference_prefix_invalid",
                         message=(
-                            f"Mapped row {row_index} reference must start with "
-                            f"'{reference_prefix}'"
+                            f"Mapped row {row_index} reference must start with '{reference_prefix}'"
                         ),
                         row_index=row_index,
                         field="reference",
@@ -463,7 +473,10 @@ class AccountingProfileMappingService:
                     validation_errors.append(
                         self._validation_error(
                             code="accounting_export_pastel_reference_too_long",
-                            message=f"Mapped row {row_index} reference exceeds the Pastel-like 20 character limit",
+                            message=(
+                                f"Mapped row {row_index} reference exceeds "
+                                "the Pastel-like 20 character limit"
+                            ),
                             row_index=row_index,
                             field="reference",
                         )
@@ -492,7 +505,10 @@ class AccountingProfileMappingService:
                     validation_errors.append(
                         self._validation_error(
                             code="accounting_export_sage_description_too_long",
-                            message=f"Mapped row {row_index} description exceeds the Sage-like 60 character limit",
+                            message=(
+                                f"Mapped row {row_index} description exceeds "
+                                "the Sage-like 60 character limit"
+                            ),
                             row_index=row_index,
                             field="description",
                         )
@@ -501,7 +517,10 @@ class AccountingProfileMappingService:
                     validation_errors.append(
                         self._validation_error(
                             code="accounting_export_sage_reference_too_long",
-                            message=f"Mapped row {row_index} reference exceeds the Sage-like 30 character limit",
+                            message=(
+                                f"Mapped row {row_index} reference exceeds "
+                                "the Sage-like 30 character limit"
+                            ),
                             row_index=row_index,
                             field="reference",
                         )

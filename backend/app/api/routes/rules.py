@@ -13,7 +13,11 @@ from app.api.routes.club_access import (
     require_operations_write,
     resolve_required_club_context,
 )
-from app.api.routes.operations_support import load_rule_set, replace_booking_rules, to_rule_set_response
+from app.api.routes.operations_support import (
+    load_rule_set,
+    replace_booking_rules,
+    to_rule_set_response,
+)
 from app.auth.dependencies import get_current_user, get_db
 from app.models import (
     BookingRuleAppliesTo,
@@ -170,12 +174,16 @@ def list_rule_sets(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_read(current_user, context)
     assert context.selected_club is not None
-    rule_sets = db.scalars(
-        select(BookingRuleSet)
-        .options(selectinload(BookingRuleSet.rules))
-        .where(BookingRuleSet.club_id == context.selected_club.id)
-        .order_by(BookingRuleSet.priority.asc(), BookingRuleSet.name.asc())
-    ).unique().all()
+    rule_sets = (
+        db.scalars(
+            select(BookingRuleSet)
+            .options(selectinload(BookingRuleSet.rules))
+            .where(BookingRuleSet.club_id == context.selected_club.id)
+            .order_by(BookingRuleSet.priority.asc(), BookingRuleSet.name.asc())
+        )
+        .unique()
+        .all()
+    )
     return [to_rule_set_response(item) for item in rule_sets]
 
 
@@ -207,10 +215,14 @@ def create_rule_set(
     replace_booking_rules(db, ruleset, payload.rules)
     if should_publish:
         db.commit()
-        return GolfSettingsService(db).publish_rule_set(
-            context.selected_club.id,
-            ruleset.id,
-        ).rule_set
+        return (
+            GolfSettingsService(db)
+            .publish_rule_set(
+                context.selected_club.id,
+                ruleset.id,
+            )
+            .rule_set
+        )
     db.commit()
     db.expire_all()
     return to_rule_set_response(load_rule_set(db, ruleset.id, context.selected_club.id))
@@ -241,10 +253,14 @@ def update_rule_set(
     replace_booking_rules(db, ruleset, payload.rules)
     if should_publish:
         db.commit()
-        return GolfSettingsService(db).publish_rule_set(
-            context.selected_club.id,
-            ruleset.id,
-        ).rule_set
+        return (
+            GolfSettingsService(db)
+            .publish_rule_set(
+                context.selected_club.id,
+                ruleset.id,
+            )
+            .rule_set
+        )
     db.commit()
     db.expire_all()
     return to_rule_set_response(load_rule_set(db, ruleset.id, context.selected_club.id))

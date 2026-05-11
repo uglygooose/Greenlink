@@ -394,7 +394,9 @@ def test_settlement_is_idempotent_and_scoped_to_selected_club(
     _create_finance_account(db_session, club=club_a, account_customer=account_customer)
 
     headers_a = _auth_headers(client, admin_a.email, str(club_a.id))
-    order_id = _create_order(client, headers=headers_a, person_id=customer.id, item_name="Coffee", unit_price="18.00")
+    order_id = _create_order(
+        client, headers=headers_a, person_id=customer.id, item_name="Coffee", unit_price="18.00"
+    )
     _collect_order(client, headers=headers_a, order_id=order_id)
     _post_charge(client, headers=headers_a, order_id=order_id)
 

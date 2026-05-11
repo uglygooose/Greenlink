@@ -21,9 +21,9 @@ from app.schemas.people import (
     PersonIntegrityResponse,
     PersonResponse,
     PersonSearchResponse,
+    PersonUpdateRequest,
     SelfProfileResponse,
     SelfProfileUpdateRequest,
-    PersonUpdateRequest,
 )
 from app.services.bulk_intake_service import BulkIntakeService
 from app.services.people_integrity_service import PeopleIntegrityService
@@ -262,7 +262,9 @@ def get_self_profile(
         club_id = context.selected_club.id
         club_name = context.selected_club.name
     service = PeopleService(db)
-    person = service.ensure_person_access(person_id=current_user.person_id, club_id=club_id, user=current_user)
+    person = service.ensure_person_access(
+        person_id=current_user.person_id, club_id=club_id, user=current_user
+    )
     return service.to_self_profile_response(
         person=person,
         account_email=current_user.email,

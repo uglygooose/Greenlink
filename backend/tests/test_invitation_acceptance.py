@@ -85,10 +85,14 @@ def test_new_user_can_accept_invitation_and_activate_membership(
     assert accept.json()["user"]["email"] == "new.accept@example.com"
     assert "greenlink_refresh_token" in client.cookies
 
-    user = db_session.scalar(db_session.query(User).filter_by(email="new.accept@example.com").statement)
+    user = db_session.scalar(
+        db_session.query(User).filter_by(email="new.accept@example.com").statement
+    )
     assert user is not None
     membership = db_session.scalar(
-        db_session.query(ClubMembership).filter_by(club_id=club.id, person_id=user.person_id).statement
+        db_session.query(ClubMembership)
+        .filter_by(club_id=club.id, person_id=user.person_id)
+        .statement
     )
     assert membership is not None
     assert membership.status == ClubMembershipStatus.ACTIVE
@@ -149,7 +153,9 @@ def test_existing_linked_user_can_activate_invitation_after_login(
     assert activate.json()["membership_status"] == "active"
 
     membership = db_session.scalar(
-        db_session.query(ClubMembership).filter_by(club_id=club.id, person_id=staff_user.person_id).statement
+        db_session.query(ClubMembership)
+        .filter_by(club_id=club.id, person_id=staff_user.person_id)
+        .statement
     )
     assert membership is not None
     assert membership.role == ClubMembershipRole.CLUB_ADMIN

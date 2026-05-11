@@ -32,7 +32,9 @@ class PlayerBookingReadModelService:
         history_limit: int = 10,
     ) -> PlayerBookingReadModelResponse:
         normalized_reference = (
-            reference_datetime.astimezone(UTC) if reference_datetime is not None else datetime.now(UTC)
+            reference_datetime.astimezone(UTC)
+            if reference_datetime is not None
+            else datetime.now(UTC)
         )
         upcoming_rows = self._load_upcoming_rows(
             club_id=club.id,
@@ -129,7 +131,9 @@ class PlayerBookingReadModelService:
             tee_name=tee_name,
             start_lane=booking.start_lane,
             party_size=booking.party_size,
-            primary_participant_name=primary_participant.display_name if primary_participant else None,
+            primary_participant_name=primary_participant.display_name
+            if primary_participant
+            else None,
             participant_names=participant_names,
             fee_label=booking.fee_label,
             fee_amount=booking.fee_amount,

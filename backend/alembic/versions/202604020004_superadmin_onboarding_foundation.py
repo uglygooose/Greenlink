@@ -7,9 +7,9 @@ Create Date: 2026-04-02 19:20:00.000000
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "202604020004"
 down_revision = "202604020003"
@@ -32,9 +32,7 @@ def upgrade() -> None:
         ),
     )
     op.execute(
-        sa.text(
-            "UPDATE clubs SET onboarding_state = 'live' WHERE onboarding_state = 'active'"
-        )
+        sa.text("UPDATE clubs SET onboarding_state = 'live' WHERE onboarding_state = 'active'")
     )
     op.alter_column(
         "clubs",

@@ -34,9 +34,13 @@ def upgrade() -> None:
         sa.Column("staff_count", sa.Integer(), nullable=True),
         sa.Column("manually_blocked", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("reserved_state_active", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("competition_controlled", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "competition_controlled", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
         sa.Column("event_controlled", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("externally_unavailable", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "externally_unavailable", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
         sa.Column("blocked_reason", sa.String(length=255), nullable=True),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column(
@@ -49,7 +53,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["tee_id"], ["tees.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("course_id", "tee_id", "slot_datetime", name="uq_tee_sheet_slot_states_scope_slot"),
+        sa.UniqueConstraint(
+            "course_id", "tee_id", "slot_datetime", name="uq_tee_sheet_slot_states_scope_slot"
+        ),
     )
     op.create_index(
         "ix_tee_sheet_slot_states_slot_datetime",

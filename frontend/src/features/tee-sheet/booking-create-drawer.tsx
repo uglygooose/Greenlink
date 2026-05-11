@@ -58,7 +58,6 @@ function participantReadyCount(participants: DraftParticipant[], directory: Club
 
 export function BookingCreateDrawer({
   caddieFlag,
-  colorCode,
   creating,
   cartFlag,
   directory,
@@ -75,7 +74,6 @@ export function BookingCreateDrawer({
   participants,
   selectedDate,
   slot,
-  teeLabel,
 }: BookingCreateDrawerProps): JSX.Element {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);

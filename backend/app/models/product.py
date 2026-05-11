@@ -14,9 +14,7 @@ from app.models.mixins import UUIDPrimaryKeyMixin
 
 class Product(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "products"
-    __table_args__ = (
-        CheckConstraint("price >= 0", name="ck_products_price_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("price >= 0", name="ck_products_price_non_negative"),)
 
     club_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clubs.id", ondelete="CASCADE"),

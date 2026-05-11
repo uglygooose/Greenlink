@@ -17,7 +17,6 @@ import { invalidateClubOperationalReadModels } from "../operational-read-models/
 import type {
   OrderChargePostResult,
   OrderCreateInput,
-  OrderCreateResult,
   OrderDetail,
   OrderLifecycleMutationResult,
   OrderMenuItem,

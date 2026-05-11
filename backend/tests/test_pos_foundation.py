@@ -21,7 +21,6 @@ from app.models import (
 )
 from app.models.product import Product
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -171,7 +170,9 @@ def test_list_products_returns_active_only(client: TestClient, db_session: Sessi
     _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
 
     _create_product(db_session, club=club, name="Active Item", price=Decimal("10.00"), active=True)
-    _create_product(db_session, club=club, name="Inactive Item", price=Decimal("5.00"), active=False)
+    _create_product(
+        db_session, club=club, name="Inactive Item", price=Decimal("5.00"), active=False
+    )
 
     headers = _auth_headers(client, email=staff_user.email)
     headers["X-Club-Id"] = str(club.id)
@@ -192,7 +193,9 @@ def test_list_products_can_include_inactive_for_admin_catalog(
     _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
 
     _create_product(db_session, club=club, name="Logo Cap", price=Decimal("25.00"), active=True)
-    _create_product(db_session, club=club, name="Retired Polo", price=Decimal("49.00"), active=False)
+    _create_product(
+        db_session, club=club, name="Retired Polo", price=Decimal("49.00"), active=False
+    )
 
     headers = _auth_headers(client, email=staff_user.email)
     headers["X-Club-Id"] = str(club.id)
@@ -291,7 +294,9 @@ def test_create_pos_transaction_member_account(client: TestClient, db_session: S
     staff_user = _create_user(db_session, email=f"pos_acc_staff_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
 
-    member_person = _create_person(db_session, email=f"pos_member_p_{uuid.uuid4().hex[:6]}@test.com")
+    member_person = _create_person(
+        db_session, email=f"pos_member_p_{uuid.uuid4().hex[:6]}@test.com"
+    )
     account_customer = _create_account_customer(
         db_session, club=club, person=member_person, account_code="POS001"
     )
@@ -359,7 +364,9 @@ def test_create_pos_transaction_member_account_no_finance_account(
 
 
 def test_create_pos_transaction_with_product_id(client: TestClient, db_session: Session) -> None:
-    club = _create_club(db_session, name="POS ProductId Club", slug=f"pos-pid-{uuid.uuid4().hex[:6]}")
+    club = _create_club(
+        db_session, name="POS ProductId Club", slug=f"pos-pid-{uuid.uuid4().hex[:6]}"
+    )
     staff_user = _create_user(db_session, email=f"pos_pid_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
     product = _create_product(db_session, club=club, name="Golf Glove", price=Decimal("22.00"))
@@ -462,7 +469,9 @@ def test_create_pos_transaction_blocks_inactive_product(
 
 
 def test_create_pos_transaction_line_totals(client: TestClient, db_session: Session) -> None:
-    club = _create_club(db_session, name="POS LineTotal Club", slug=f"pos-lt-{uuid.uuid4().hex[:6]}")
+    club = _create_club(
+        db_session, name="POS LineTotal Club", slug=f"pos-lt-{uuid.uuid4().hex[:6]}"
+    )
     staff_user = _create_user(db_session, email=f"pos_lt_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=staff_user, club=club, role=ClubMembershipRole.CLUB_STAFF)
 

@@ -7,7 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models import BookingRule, BookingRuleSet, Club, ClubConfig, Course, PricingMatrix, PricingRule, Tee
+from app.models import (
+    BookingRule,
+    BookingRuleSet,
+    Club,
+    ClubConfig,
+    Course,
+    PricingMatrix,
+    PricingRule,
+    Tee,
+)
 from app.schemas.operations import (
     BookingRuleResponse,
     BookingRuleSetResponse,
@@ -54,7 +63,9 @@ def get_or_create_club_config(db: Session, club_id: uuid.UUID) -> ClubConfig:
 
 
 def ensure_course_name_available(db: Session, club_id: uuid.UUID, course_name: str) -> None:
-    existing = db.scalar(select(Course.id).where(Course.club_id == club_id, Course.name == course_name))
+    existing = db.scalar(
+        select(Course.id).where(Course.club_id == club_id, Course.name == course_name)
+    )
     if existing is not None:
         raise ConflictError("Course name already exists for this club")
 
@@ -97,7 +108,9 @@ def replace_booking_rules(db: Session, ruleset: BookingRuleSet, payload_rules) -
             BookingRule(
                 ruleset_id=ruleset.id,
                 type=item.type,
-                evaluation_order=item.evaluation_order if item.evaluation_order is not None else index,
+                evaluation_order=item.evaluation_order
+                if item.evaluation_order is not None
+                else index,
                 config=dict(item.config),
                 active=item.active,
             )
@@ -168,7 +181,10 @@ def to_rule_set_response(ruleset: BookingRuleSet) -> BookingRuleSetResponse:
                 created_at=rule.created_at,
                 updated_at=rule.updated_at,
             )
-            for rule in sorted(ruleset.rules, key=lambda item: (item.evaluation_order, item.created_at, str(item.id)))
+            for rule in sorted(
+                ruleset.rules,
+                key=lambda item: (item.evaluation_order, item.created_at, str(item.id)),
+            )
         ],
         created_at=ruleset.created_at,
         updated_at=ruleset.updated_at,

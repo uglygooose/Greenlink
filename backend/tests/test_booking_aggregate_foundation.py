@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,9 @@ def _create_person(db: Session, *, first_name: str, last_name: str, email: str) 
     return person
 
 
-def test_booking_aggregate_persists_primary_person_and_ordered_participants(db_session: Session) -> None:
+def test_booking_aggregate_persists_primary_person_and_ordered_participants(
+    db_session: Session,
+) -> None:
     club = Club(name="Booking Club", slug="booking-club", timezone="Africa/Johannesburg")
     db_session.add(club)
     db_session.flush()
@@ -59,13 +61,17 @@ def test_booking_aggregate_persists_primary_person_and_ordered_participants(db_s
         active=True,
     )
     db_session.add(tee)
-    primary_person = _create_person(db_session, first_name="Alex", last_name="Member", email="alex.member@example.com")
-    guest_person = _create_person(db_session, first_name="Jamie", last_name="Guest", email="jamie.guest@example.com")
+    primary_person = _create_person(
+        db_session, first_name="Alex", last_name="Member", email="alex.member@example.com"
+    )
+    guest_person = _create_person(
+        db_session, first_name="Jamie", last_name="Guest", email="jamie.guest@example.com"
+    )
     booking = Booking(
         club_id=club.id,
         course_id=course.id,
         tee_id=tee.id,
-        slot_datetime=datetime(2026, 4, 1, 6, 0, tzinfo=timezone.utc),
+        slot_datetime=datetime(2026, 4, 1, 6, 0, tzinfo=UTC),
         slot_interval_minutes=10,
         status=BookingStatus.RESERVED,
         source=BookingSource.ADMIN,
@@ -104,7 +110,9 @@ def test_booking_aggregate_persists_primary_person_and_ordered_participants(db_s
     assert booking.participants[1].participant_type == BookingParticipantType.GUEST
 
 
-def test_booking_state_service_maps_persisted_bookings_into_decision_input(db_session: Session) -> None:
+def test_booking_state_service_maps_persisted_bookings_into_decision_input(
+    db_session: Session,
+) -> None:
     club = Club(name="State Club", slug="state-club", timezone="Africa/Johannesburg")
     db_session.add(club)
     db_session.flush()
@@ -112,7 +120,7 @@ def test_booking_state_service_maps_persisted_bookings_into_decision_input(db_se
     db_session.add(course)
     db_session.flush()
 
-    slot_datetime = datetime(2026, 4, 1, 6, 0, tzinfo=timezone.utc)
+    slot_datetime = datetime(2026, 4, 1, 6, 0, tzinfo=UTC)
     reserved_booking = Booking(
         club_id=club.id,
         course_id=course.id,
@@ -231,7 +239,9 @@ def test_booking_state_service_maps_persisted_bookings_into_decision_input(db_se
             contract="supplied",
             time_band_ref=None,
         ),
-        scope_context=NormalizedScopeContext(club_ref=str(club.id), course_ref=str(course.id), tee_ref=None),
+        scope_context=NormalizedScopeContext(
+            club_ref=str(club.id), course_ref=str(course.id), tee_ref=None
+        ),
         warnings=[],
         unsupported=[],
     )

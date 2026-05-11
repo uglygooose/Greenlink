@@ -4,8 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, event, func
-from sqlalchemy import Enum
+from sqlalchemy import Enum, ForeignKey, Numeric, String, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base

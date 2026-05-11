@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -121,7 +121,7 @@ def test_list_published_news_feed_allows_members_and_filters_visible_posts(
         visibility=NewsPostVisibility.MEMBERS_ONLY,
         status=NewsPostStatus.PUBLISHED,
         pinned=True,
-        published_at=datetime(2026, 4, 2, 9, 0, tzinfo=timezone.utc),
+        published_at=datetime(2026, 4, 2, 9, 0, tzinfo=UTC),
     )
     _create_post(
         db_session,
@@ -131,7 +131,7 @@ def test_list_published_news_feed_allows_members_and_filters_visible_posts(
         body="Visible to everyone",
         visibility=NewsPostVisibility.PUBLIC,
         status=NewsPostStatus.PUBLISHED,
-        published_at=datetime(2026, 4, 2, 8, 0, tzinfo=timezone.utc),
+        published_at=datetime(2026, 4, 2, 8, 0, tzinfo=UTC),
     )
     _create_post(
         db_session,
@@ -150,7 +150,7 @@ def test_list_published_news_feed_allows_members_and_filters_visible_posts(
         body="Staff only",
         visibility=NewsPostVisibility.INTERNAL,
         status=NewsPostStatus.PUBLISHED,
-        published_at=datetime(2026, 4, 2, 7, 0, tzinfo=timezone.utc),
+        published_at=datetime(2026, 4, 2, 7, 0, tzinfo=UTC),
     )
 
     headers = _auth_headers(client, email=member.email)
@@ -195,9 +195,7 @@ def test_create_news_post_uses_current_user_person_as_author(
     assert data["author"]["person_id"] == str(admin_user.person_id)
 
 
-def test_staff_user_cannot_create_news_posts(
-    client: TestClient, db_session: Session
-) -> None:
+def test_staff_user_cannot_create_news_posts(client: TestClient, db_session: Session) -> None:
     club = _create_club(
         db_session,
         name="Comms Staff Club",
@@ -222,4 +220,6 @@ def test_staff_user_cannot_create_news_posts(
     )
 
     assert response.status_code == 403
-    assert response.json()["message"] == "Club admin access is required for club configuration changes"
+    assert (
+        response.json()["message"] == "Club admin access is required for club configuration changes"
+    )

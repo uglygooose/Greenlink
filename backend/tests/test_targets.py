@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.domain.people.normalization import build_full_name, normalize_email
-from app.models import Club, ClubMembership, ClubMembershipRole, ClubMembershipStatus, Person, User, UserType
+from app.models import (
+    Club,
+    ClubMembership,
+    ClubMembershipRole,
+    ClubMembershipStatus,
+    Person,
+    User,
+    UserType,
+)
 
 
 def _create_user(db: Session, *, email: str, user_type: UserType = UserType.USER) -> User:

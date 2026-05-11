@@ -7,7 +7,15 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.operations_support import to_pricing_matrix_response, to_rule_set_response
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models import BookingRule, BookingRuleSet, ClubSetting, Course, PricingMatrix, PricingRule, Tee
+from app.models import (
+    BookingRule,
+    BookingRuleSet,
+    ClubSetting,
+    Course,
+    PricingMatrix,
+    PricingRule,
+    Tee,
+)
 from app.schemas.operations import (
     BookingRuleSetCreateRequest,
     BookingRuleWriteRequest,
@@ -159,21 +167,27 @@ class GolfSettingsService:
         )
 
     def _has_courses(self, club_id: uuid.UUID) -> bool:
-        return self.db.scalar(select(Course.id).where(Course.club_id == club_id).limit(1)) is not None
+        return (
+            self.db.scalar(select(Course.id).where(Course.club_id == club_id).limit(1)) is not None
+        )
 
     def _has_tees(self, club_id: uuid.UUID) -> bool:
         return (
-            self.db.scalar(select(Tee.id).join(Tee.course).where(Course.club_id == club_id).limit(1))
+            self.db.scalar(
+                select(Tee.id).join(Tee.course).where(Course.club_id == club_id).limit(1)
+            )
             is not None
         )
 
     def _has_active_rule_set(self, club_id: uuid.UUID) -> bool:
         return (
             self.db.scalar(
-                select(BookingRuleSet.id).where(
+                select(BookingRuleSet.id)
+                .where(
                     BookingRuleSet.club_id == club_id,
                     BookingRuleSet.active.is_(True),
-                ).limit(1)
+                )
+                .limit(1)
             )
             is not None
         )
@@ -181,10 +195,12 @@ class GolfSettingsService:
     def _has_active_pricing_matrix(self, club_id: uuid.UUID) -> bool:
         return (
             self.db.scalar(
-                select(PricingMatrix.id).where(
+                select(PricingMatrix.id)
+                .where(
                     PricingMatrix.club_id == club_id,
                     PricingMatrix.active.is_(True),
-                ).limit(1)
+                )
+                .limit(1)
             )
             is not None
         )
@@ -279,7 +295,10 @@ class GolfSettingsService:
                     config=dict(rule.config),
                     active=rule.active,
                 )
-                for rule in sorted(ruleset.rules, key=lambda item: (item.evaluation_order, item.created_at, str(item.id)))
+                for rule in sorted(
+                    ruleset.rules,
+                    key=lambda item: (item.evaluation_order, item.created_at, str(item.id)),
+                )
             ],
         )
         self._set_snapshot(
@@ -320,7 +339,9 @@ class GolfSettingsService:
             },
         )
 
-    def _restore_rule_snapshot(self, club_id: uuid.UUID, snapshot: dict[str, object]) -> BookingRuleSet:
+    def _restore_rule_snapshot(
+        self, club_id: uuid.UUID, snapshot: dict[str, object]
+    ) -> BookingRuleSet:
         payload = BookingRuleSetCreateRequest.model_validate(snapshot.get("payload", {}))
         source_id = self._parse_snapshot_id(snapshot.get("source_id"))
         target = self._load_rule_set_optional(club_id, source_id)
@@ -341,7 +362,9 @@ class GolfSettingsService:
         self._deactivate_other_rule_sets(club_id, keep_id=target.id)
         return target
 
-    def _restore_pricing_snapshot(self, club_id: uuid.UUID, snapshot: dict[str, object]) -> PricingMatrix:
+    def _restore_pricing_snapshot(
+        self, club_id: uuid.UUID, snapshot: dict[str, object]
+    ) -> PricingMatrix:
         payload = PricingMatrixCreateRequest.model_validate(snapshot.get("payload", {}))
         source_id = self._parse_snapshot_id(snapshot.get("source_id"))
         target = self._load_pricing_matrix_optional(club_id, source_id)
@@ -368,7 +391,9 @@ class GolfSettingsService:
                 BookingRule(
                     ruleset_id=ruleset.id,
                     type=item.type,
-                    evaluation_order=item.evaluation_order if item.evaluation_order is not None else index,
+                    evaluation_order=item.evaluation_order
+                    if item.evaluation_order is not None
+                    else index,
                     config=dict(item.config),
                     active=item.active,
                 )

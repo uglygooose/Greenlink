@@ -47,7 +47,9 @@ class Settings(BaseSettings):
     @classmethod
     def validate_database_url(cls, value: str) -> str:
         if not value.startswith("postgresql"):
-            raise ValueError("GreenLink requires a PostgreSQL database URL for runtime and migrations")
+            raise ValueError(
+                "GreenLink requires a PostgreSQL database URL for runtime and migrations"
+            )
         return value
 
 

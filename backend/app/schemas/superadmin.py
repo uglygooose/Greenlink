@@ -75,8 +75,8 @@ class SuperadminRulesSetupSummary(BaseModel):
     pricing_matrix_count: int
     active_pricing_matrix_count: int
     setup_complete: bool
-    rule_sets: list["SuperadminRuleSetSummary"]
-    pricing_matrices: list["SuperadminPricingMatrixSummary"]
+    rule_sets: list[SuperadminRuleSetSummary]
+    pricing_matrices: list[SuperadminPricingMatrixSummary]
 
 
 class SuperadminRuleSetSummary(BaseModel):

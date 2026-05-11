@@ -87,7 +87,9 @@ class HalfwayService:
                     Order.status.in_(tuple(_ACTIVE_STATUSES)),
                 )
                 .order_by(Order.created_at.asc())
-            ).unique().all()
+            )
+            .unique()
+            .all()
         )
         total = len(orders)
         display = [self._order_service.to_order_summary(o) for o in orders[:_QUEUE_DISPLAY_LIMIT]]

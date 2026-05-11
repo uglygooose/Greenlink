@@ -147,7 +147,9 @@ def test_superadmin_can_create_and_filter_accounting_profiles_by_club(
         ),
     )
     listed_all = client.get("/api/superadmin/accounting-profiles", headers=headers)
-    listed_a = client.get(f"/api/superadmin/accounting-profiles?club_id={club_a.id}", headers=headers)
+    listed_a = client.get(
+        f"/api/superadmin/accounting-profiles?club_id={club_a.id}", headers=headers
+    )
 
     assert created_a.status_code == 201
     assert created_b.status_code == 201
@@ -179,7 +181,13 @@ def test_superadmin_can_toggle_and_bind_accounting_profiles(
     second = client.post(
         "/api/superadmin/accounting-profiles",
         headers=headers,
-        json=_profile_payload(club.id, code="pastel_ops", name="Pastel Ops", is_active=False, target_system="pastel_like"),
+        json=_profile_payload(
+            club.id,
+            code="pastel_ops",
+            name="Pastel Ops",
+            is_active=False,
+            target_system="pastel_like",
+        ),
     )
     toggle = client.patch(
         f"/api/superadmin/accounting-profiles/{second.json()['id']}/active",
@@ -209,7 +217,9 @@ def test_superadmin_can_toggle_and_bind_accounting_profiles(
 
     profiles = {
         str(profile.id): profile
-        for profile in db_session.query(AccountingExportProfile).filter(AccountingExportProfile.club_id == club.id).all()
+        for profile in db_session.query(AccountingExportProfile)
+        .filter(AccountingExportProfile.club_id == club.id)
+        .all()
     }
     assert profiles[first.json()["id"]].is_active is False
     assert profiles[second.json()["id"]].is_active is False

@@ -13,7 +13,7 @@ from app.api.routes.club_access import (
 )
 from app.api.routes.operations_support import get_or_create_club_config
 from app.auth.dependencies import get_current_user, get_db
-from app.models import ClubConfig, User
+from app.models import User
 from app.schemas.operations import ClubConfigResponse, ClubConfigUpsertRequest
 
 router = APIRouter()
@@ -28,7 +28,9 @@ def get_club_config(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_read(current_user, context)
     assert context.selected_club is not None
-    return ClubConfigResponse.model_validate(get_or_create_club_config(db, context.selected_club.id))
+    return ClubConfigResponse.model_validate(
+        get_or_create_club_config(db, context.selected_club.id)
+    )
 
 
 @router.put("/config", response_model=ClubConfigResponse)

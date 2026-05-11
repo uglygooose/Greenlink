@@ -63,7 +63,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["tee_id"], ["tees.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["primary_person_id"], ["people.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["primary_membership_id"], ["club_memberships.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["primary_membership_id"], ["club_memberships.id"], ondelete="SET NULL"
+        ),
         sa.CheckConstraint("party_size > 0", name="ck_bookings_party_size_positive"),
         sa.CheckConstraint("slot_interval_minutes > 0", name="ck_bookings_slot_interval_positive"),
         sa.PrimaryKeyConstraint("id"),
@@ -89,8 +91,12 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["booking_id"], ["bookings.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["person_id"], ["people.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["club_membership_id"], ["club_memberships.id"], ondelete="SET NULL"),
-        sa.CheckConstraint("sort_order >= 0", name="ck_booking_participants_sort_order_non_negative"),
+        sa.ForeignKeyConstraint(
+            ["club_membership_id"], ["club_memberships.id"], ondelete="SET NULL"
+        ),
+        sa.CheckConstraint(
+            "sort_order >= 0", name="ck_booking_participants_sort_order_non_negative"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 

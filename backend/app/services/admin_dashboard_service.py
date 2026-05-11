@@ -102,29 +102,35 @@ class AdminDashboardService:
     ) -> tuple[DashboardTeeOccupancy, list[DashboardNotice]]:
         warnings: list[DashboardNotice] = []
 
-        club_config = self.db.scalar(
-            select(ClubConfig).where(ClubConfig.club_id == club_id)
-        )
+        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == club_id))
         if club_config is None:
-            return DashboardTeeOccupancy(booked_slots=0, total_slots=0, occupancy_pct=None), warnings
+            return DashboardTeeOccupancy(
+                booked_slots=0, total_slots=0, occupancy_pct=None
+            ), warnings
 
         zone = ZoneInfo(club_config.timezone)
         today = datetime.now(zone).date()
 
-        course_count: int = self.db.scalar(
-            select(func.count())
-            .select_from(Course)
-            .where(Course.club_id == club_id)
-        ) or 0
+        course_count: int = (
+            self.db.scalar(
+                select(func.count()).select_from(Course).where(Course.club_id == club_id)
+            )
+            or 0
+        )
 
         if course_count == 0:
             warnings.append(
                 DashboardNotice(
                     code="no_courses_configured",
-                    message="No courses are configured for this club. Set up a course to enable tee sheet bookings.",
+                    message=(
+                        "No courses are configured for this club. "
+                        "Set up a course to enable tee sheet bookings."
+                    ),
                 )
             )
-            return DashboardTeeOccupancy(booked_slots=0, total_slots=0, occupancy_pct=None), warnings
+            return DashboardTeeOccupancy(
+                booked_slots=0, total_slots=0, occupancy_pct=None
+            ), warnings
 
         slot_times = _slot_time_count(
             today,
@@ -138,38 +144,51 @@ class AdminDashboardService:
             warnings.append(
                 DashboardNotice(
                     code="tee_sheet_closed_today",
-                    message=f"The tee sheet is closed today ({day_name}). Check operating hours in club settings.",
+                    message=(
+                        f"The tee sheet is closed today ({day_name}). "
+                        "Check operating hours in club settings."
+                    ),
                 )
             )
-            return DashboardTeeOccupancy(booked_slots=0, total_slots=0, occupancy_pct=None), warnings
+            return DashboardTeeOccupancy(
+                booked_slots=0, total_slots=0, occupancy_pct=None
+            ), warnings
 
         # Count active tees across all courses for this club.
         # Each tee appears once per start lane (Hole 1 + Hole 10 = 2 lanes).
         # Clubs with no configured tees fall back to course-sheet mode (1 row × 2 lanes per course).
-        active_tee_count: int = self.db.scalar(
-            select(func.count())
-            .select_from(Tee)
-            .join(Course, Course.id == Tee.course_id)
-            .where(Course.club_id == club_id, Tee.active.is_(True))
-        ) or 0
+        active_tee_count: int = (
+            self.db.scalar(
+                select(func.count())
+                .select_from(Tee)
+                .join(Course, Course.id == Tee.course_id)
+                .where(Course.club_id == club_id, Tee.active.is_(True))
+            )
+            or 0
+        )
 
         row_count = (active_tee_count * 2) if active_tee_count > 0 else (max(1, course_count) * 2)
         total_slots = slot_times * row_count
 
         # Today's UTC window derived from the club's local date.
         today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
-        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(
+            today + timedelta(days=1), time.min, tzinfo=zone
+        ).astimezone(UTC)
 
-        booked_slots: int = self.db.scalar(
-            select(func.count())
-            .select_from(Booking)
-            .where(
-                Booking.club_id == club_id,
-                Booking.slot_datetime >= today_start_utc,
-                Booking.slot_datetime < today_end_utc,
-                Booking.status.in_(tuple(LIVE_OCCUPANCY_STATUSES)),
+        booked_slots: int = (
+            self.db.scalar(
+                select(func.count())
+                .select_from(Booking)
+                .where(
+                    Booking.club_id == club_id,
+                    Booking.slot_datetime >= today_start_utc,
+                    Booking.slot_datetime < today_end_utc,
+                    Booking.status.in_(tuple(LIVE_OCCUPANCY_STATUSES)),
+                )
             )
-        ) or 0
+            or 0
+        )
 
         occupancy_pct = round(booked_slots / total_slots * 100) if total_slots > 0 else None
         return (
@@ -243,15 +262,15 @@ class AdminDashboardService:
 
     def _get_unpaid_bookings_today(self, club_id: uuid.UUID) -> int:
         """Count of today's reserved or checked-in bookings with payment_status=pending."""
-        club_config = self.db.scalar(
-            select(ClubConfig).where(ClubConfig.club_id == club_id)
-        )
+        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == club_id))
         if club_config is None:
             return 0
         zone = ZoneInfo(club_config.timezone)
         today = datetime.now(zone).date()
         today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
-        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(
+            today + timedelta(days=1), time.min, tzinfo=zone
+        ).astimezone(UTC)
         count = self.db.scalar(
             select(func.count())
             .select_from(Booking)
@@ -267,15 +286,15 @@ class AdminDashboardService:
 
     def _get_no_show_risk_count(self, club_id: uuid.UUID) -> int:
         """Count of today's reserved bookings whose start time has already passed."""
-        club_config = self.db.scalar(
-            select(ClubConfig).where(ClubConfig.club_id == club_id)
-        )
+        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == club_id))
         if club_config is None:
             return 0
         zone = ZoneInfo(club_config.timezone)
         today = datetime.now(zone).date()
         today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
-        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(
+            today + timedelta(days=1), time.min, tzinfo=zone
+        ).astimezone(UTC)
         now_utc = datetime.now(UTC)
         count = self.db.scalar(
             select(func.count())
@@ -292,15 +311,15 @@ class AdminDashboardService:
 
     def _get_arrivals_due_count(self, club_id: uuid.UUID) -> int:
         """Count of today's reserved bookings due within the next 90 minutes."""
-        club_config = self.db.scalar(
-            select(ClubConfig).where(ClubConfig.club_id == club_id)
-        )
+        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == club_id))
         if club_config is None:
             return 0
         zone = ZoneInfo(club_config.timezone)
         today = datetime.now(zone).date()
         today_start_utc = datetime.combine(today, time.min, tzinfo=zone).astimezone(UTC)
-        today_end_utc = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+        today_end_utc = datetime.combine(
+            today + timedelta(days=1), time.min, tzinfo=zone
+        ).astimezone(UTC)
         now_utc = datetime.now(UTC)
         window_end_utc = now_utc + timedelta(minutes=90)
         count = self.db.scalar(

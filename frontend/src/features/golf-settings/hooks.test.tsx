@@ -58,7 +58,7 @@ function buildQueryClient(): QueryClient {
 
 type MutationScenario = {
   name: string;
-  useHook: () => { mutate: (...args: any[]) => void };
+  useHook: () => { mutate: (...args: never[]) => unknown };
   apiMock: ReturnType<typeof vi.fn>;
   payload?: unknown;
   expectedApiArgs: unknown[];
@@ -68,7 +68,7 @@ function MutationHarness({
   useHook,
   payload,
 }: {
-  useHook: () => { mutate: (...args: any[]) => void };
+  useHook: () => { mutate: (...args: never[]) => unknown };
   payload?: unknown;
 }): JSX.Element {
   const mutation = useHook();
@@ -77,10 +77,10 @@ function MutationHarness({
     <button
       onClick={() => {
         if (payload === undefined) {
-          mutation.mutate();
+          (mutation.mutate as () => void)();
           return;
         }
-        mutation.mutate(payload);
+        (mutation.mutate as (variables: unknown) => void)(payload);
       }}
       type="button"
     >

@@ -136,7 +136,10 @@ class BookingFinanceService:
                 ],
             )
 
-        if booking.payment_status in {BookingPaymentStatus.COMPLIMENTARY, BookingPaymentStatus.WAIVED}:
+        if booking.payment_status in {
+            BookingPaymentStatus.COMPLIMENTARY,
+            BookingPaymentStatus.WAIVED,
+        }:
             return BookingChargePostResult(
                 booking_id=booking.id,
                 decision="blocked",
@@ -145,7 +148,10 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_payment_status_not_chargeable",
-                        message="Complimentary or waived bookings cannot post a finance charge in this phase",
+                        message=(
+                            "Complimentary or waived bookings cannot post a finance "
+                            "charge in this phase"
+                        ),
                         field="payment_status",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -162,7 +168,9 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_payment_status_locked",
-                        message="Paid bookings cannot post an additional finance charge in this phase",
+                        message=(
+                            "Paid bookings cannot post an additional finance charge in this phase"
+                        ),
                         field="payment_status",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -182,7 +190,9 @@ class BookingFinanceService:
                 posting_applied=False,
                 booking=BookingSummary.model_validate(booking),
                 transaction=FinanceTransactionResponse.model_validate(existing_charge),
-                balance=self._compute_balance(club_id=club_id, account_id=existing_charge.account_id),
+                balance=self._compute_balance(
+                    club_id=club_id, account_id=existing_charge.account_id
+                ),
                 failures=[],
             )
 
@@ -199,7 +209,10 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_charge_amount_unresolved",
-                        message="Resolved booking price is unavailable. Use an override amount or fix pricing setup first.",
+                        message=(
+                            "Resolved booking price is unavailable. "
+                            "Use an override amount or fix pricing setup first."
+                        ),
                         field="amount",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -217,7 +230,10 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_finance_account_not_found",
-                        message="Booking requires an active finance account before posting a charge in this phase",
+                        message=(
+                            "Booking requires an active finance account "
+                            "before posting a charge in this phase"
+                        ),
                         field="booking_id",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -291,7 +307,10 @@ class BookingFinanceService:
                 ],
             )
 
-        if booking.payment_status in {BookingPaymentStatus.COMPLIMENTARY, BookingPaymentStatus.WAIVED}:
+        if booking.payment_status in {
+            BookingPaymentStatus.COMPLIMENTARY,
+            BookingPaymentStatus.WAIVED,
+        }:
             return BookingPaymentRecordResult(
                 booking_id=booking.id,
                 decision="blocked",
@@ -300,7 +319,9 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_payment_status_not_payable",
-                        message="Complimentary or waived bookings cannot record payment in this phase",
+                        message=(
+                            "Complimentary or waived bookings cannot record payment in this phase"
+                        ),
                         field="payment_status",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -320,7 +341,9 @@ class BookingFinanceService:
                 settlement_applied=False,
                 booking=BookingSummary.model_validate(booking),
                 transaction=FinanceTransactionResponse.model_validate(existing_payment),
-                balance=self._compute_balance(club_id=club_id, account_id=existing_payment.account_id),
+                balance=self._compute_balance(
+                    club_id=club_id, account_id=existing_payment.account_id
+                ),
                 failures=[],
             )
 
@@ -465,7 +488,9 @@ class BookingFinanceService:
                 failures=[
                     BookingFinanceMutationFailureDetail(
                         code="booking_charge_not_found",
-                        message="No charge transaction found for this booking — cannot post a refund",
+                        message=(
+                            "No charge transaction found for this booking — cannot post a refund"
+                        ),
                         field="booking_id",
                         current_status=booking.status,
                         current_payment_status=booking.payment_status,
@@ -497,7 +522,9 @@ class BookingFinanceService:
         # Refund amount: explicit override or defaults to the full original charge.
         # Stored as a positive amount (credit to member account, reversing some or
         # all of the original charge effect).
-        refund_amount = payload.amount if payload.amount is not None else abs(charge_transaction.amount)
+        refund_amount = (
+            payload.amount if payload.amount is not None else abs(charge_transaction.amount)
+        )
         description = (
             payload.description.strip()
             if payload.description and payload.description.strip()
@@ -542,7 +569,9 @@ class BookingFinanceService:
             .where(Booking.id == booking_id, Booking.club_id == club_id)
         )
 
-    def _resolve_finance_account(self, *, club_id: uuid.UUID, booking: Booking) -> FinanceAccount | None:
+    def _resolve_finance_account(
+        self, *, club_id: uuid.UUID, booking: Booking
+    ) -> FinanceAccount | None:
         if booking.primary_person_id is None:
             return None
         return self.db.scalar(
@@ -556,7 +585,9 @@ class BookingFinanceService:
             )
         )
 
-    def _load_finance_account(self, *, club_id: uuid.UUID, account_id: uuid.UUID) -> FinanceAccount | None:
+    def _load_finance_account(
+        self, *, club_id: uuid.UUID, account_id: uuid.UUID
+    ) -> FinanceAccount | None:
         return self.db.scalar(
             select(FinanceAccount).where(
                 FinanceAccount.id == account_id,

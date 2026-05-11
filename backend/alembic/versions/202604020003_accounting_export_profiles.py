@@ -7,9 +7,9 @@ Create Date: 2026-04-02 16:00:00.000000
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "202604020003"
 down_revision = "202604020002"
@@ -28,8 +28,18 @@ def upgrade() -> None:
         sa.Column("mapping_config_json", sa.JSON(), nullable=False),
         sa.Column("created_by_person_id", sa.UUID(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["club_id"], ["clubs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["created_by_person_id"], ["people.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
@@ -50,6 +60,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_accounting_export_profiles_created_by_person_id", table_name="accounting_export_profiles")
+    op.drop_index(
+        "ix_accounting_export_profiles_created_by_person_id",
+        table_name="accounting_export_profiles",
+    )
     op.drop_index("ix_accounting_export_profiles_club_id", table_name="accounting_export_profiles")
     op.drop_table("accounting_export_profiles")

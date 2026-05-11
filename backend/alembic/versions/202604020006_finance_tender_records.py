@@ -45,7 +45,9 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("amount > 0", name="ck_finance_tender_records_amount_positive"),
         sa.ForeignKeyConstraint(["account_id"], ["finance_accounts.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["charge_transaction_id"], ["finance_transactions.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["charge_transaction_id"], ["finance_transactions.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["club_id"], ["clubs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["settlement_transaction_id"],

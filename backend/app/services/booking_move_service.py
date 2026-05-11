@@ -33,10 +33,9 @@ from app.models import (
     ClubConfig,
     Course,
     StartLane,
-    TeeSheetSlotState,
     Tee,
+    TeeSheetSlotState,
 )
-from app.services.booking_state_service import LIVE_OCCUPANCY_STATUSES
 from app.schemas.bookings import (
     BookingMoveDecision,
     BookingMoveFailureDetail,
@@ -44,6 +43,7 @@ from app.schemas.bookings import (
     BookingMoveResult,
     BookingSummary,
 )
+from app.services.booking_state_service import LIVE_OCCUPANCY_STATUSES
 
 MOVEABLE_STATUSES = {BookingStatus.RESERVED, BookingStatus.CHECKED_IN}
 
@@ -79,9 +79,7 @@ class BookingMoveService:
                 failures=[
                     BookingMoveFailureDetail(
                         code="booking_status_not_moveable",
-                        message=(
-                            "Only reserved or checked_in bookings may be moved"
-                        ),
+                        message=("Only reserved or checked_in bookings may be moved"),
                         field="booking_id",
                         current_status=booking.status,
                     )
@@ -103,9 +101,7 @@ class BookingMoveService:
                 ],
             )
 
-        club_config = self.db.scalar(
-            select(ClubConfig).where(ClubConfig.club_id == club_id)
-        )
+        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == club_id))
         if club_config is None:
             return BookingMoveResult(
                 booking_id=booking.id,
@@ -114,7 +110,9 @@ class BookingMoveService:
                 failures=[
                     BookingMoveFailureDetail(
                         code="club_config_not_found",
-                        message="Club configuration is missing — cannot validate same-day constraint",
+                        message=(
+                            "Club configuration is missing — cannot validate same-day constraint"
+                        ),
                     )
                 ],
             )
@@ -127,9 +125,7 @@ class BookingMoveService:
         )
         current_start_lane = self._normalize_start_lane(booking.start_lane)
         target_tee_id = (
-            payload.target_tee_id
-            if payload.target_tee_id is not None
-            else booking.tee_id
+            payload.target_tee_id if payload.target_tee_id is not None else booking.tee_id
         )
         target_slot_datetime = payload.target_slot_datetime.astimezone(UTC)
         moving_party_size = self._moving_party_size(booking=booking, participant=participant)
@@ -219,8 +215,7 @@ class BookingMoveService:
                         BookingMoveFailureDetail(
                             code="target_slot_manually_blocked",
                             message=(
-                                slot_state.blocked_reason
-                                or "Target slot is manually blocked"
+                                slot_state.blocked_reason or "Target slot is manually blocked"
                             ),
                             field="target_slot_datetime",
                         )
@@ -331,7 +326,11 @@ class BookingMoveService:
         if payload.participant_id is None:
             return None
         return next(
-            (participant for participant in booking.participants if participant.id == payload.participant_id),
+            (
+                participant
+                for participant in booking.participants
+                if participant.id == payload.participant_id
+            ),
             None,
         )
 

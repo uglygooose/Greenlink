@@ -284,7 +284,9 @@ def test_finance_transactions_are_immutable_and_accounts_are_unique(
         db_session.commit()
     db_session.rollback()
 
-    persisted = db_session.scalar(select(FinanceTransaction).where(FinanceTransaction.id == transaction.id))
+    persisted = db_session.scalar(
+        select(FinanceTransaction).where(FinanceTransaction.id == transaction.id)
+    )
     assert persisted is not None
     db_session.delete(persisted)
     with pytest.raises(ValueError, match="immutable"):

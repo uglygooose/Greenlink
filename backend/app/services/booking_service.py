@@ -12,14 +12,9 @@ from app.models import (
     Booking,
     BookingParticipant,
     BookingParticipantType,
-    BookingRuleAppliesTo,
     BookingStatus,
     ClubConfig,
-    ClubMembership,
-    ClubMembershipRole,
-    ClubMembershipStatus,
     Course,
-    Person,
     StartLane,
     Tee,
     TeeSheetSlotState,
@@ -114,9 +109,11 @@ class BookingService:
         assert primary_participant is not None
 
         applies_to = payload.applies_to or derive_applies_to(primary_participant.participant_type)
-        membership_role, pricing_player_type = self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
-            primary_participant.club_membership_id,
-            participant_type=primary_participant.participant_type,
+        membership_role, pricing_player_type = (
+            self.booking_commercial_service.resolve_pricing_player_type_for_membership_id(
+                primary_participant.club_membership_id,
+                participant_type=primary_participant.participant_type,
+            )
         )
         try:
             booking_holes = self.booking_commercial_service.resolve_booking_holes(
@@ -242,7 +239,9 @@ class BookingService:
                 availability=availability,
                 failures=failures,
             )
-        commercial_snapshot = self.booking_commercial_service.snapshot_from_availability(availability)
+        commercial_snapshot = self.booking_commercial_service.snapshot_from_availability(
+            availability
+        )
 
         booking = Booking(
             club_id=club_id,
@@ -287,9 +286,7 @@ class BookingService:
         if requested_interval is not None:
             return requested_interval
         return self.db.scalar(
-            select(ClubConfig.default_slot_interval_minutes).where(
-                ClubConfig.club_id == club_id
-            )
+            select(ClubConfig.default_slot_interval_minutes).where(ClubConfig.club_id == club_id)
         )
 
     def _load_slot_bookings(

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.exceptions import NotFoundError
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -18,7 +18,6 @@ from app.models.enums import TenderType
 from app.models.pos_transaction import PosTransaction, PosTransactionItem
 from app.models.product import Product
 from app.schemas.finance import FinanceTransactionCreateRequest
-from app.core.exceptions import NotFoundError
 from app.schemas.pos import (
     PosProductCreateRequest,
     PosProductResponse,
@@ -47,9 +46,7 @@ class PosService:
         if not include_inactive:
             stmt = stmt.where(Product.active.is_(True))
         products = list(
-            self.db.scalars(
-                stmt.order_by(Product.category.asc(), Product.name.asc())
-            ).all()
+            self.db.scalars(stmt.order_by(Product.category.asc(), Product.name.asc())).all()
         )
         return [PosProductResponse.model_validate(p) for p in products]
 
@@ -195,7 +192,9 @@ class PosService:
                 "tender_type": payload.tender_type.value,
                 "total_amount": str(total_amount),
                 "item_count": len(normalized_items),
-                "finance_transaction_id": str(finance_transaction_id) if finance_transaction_id else None,
+                "finance_transaction_id": str(finance_transaction_id)
+                if finance_transaction_id
+                else None,
             },
             correlation_id=None,
             club_id=club_id,

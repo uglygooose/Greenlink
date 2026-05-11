@@ -153,7 +153,7 @@ def _auth_headers(client: TestClient, *, email: str, club_id: uuid.UUID) -> dict
 
 # South Africa is UTC+2 so 2026-04-10T06:00:00 SAST = 2026-04-10T04:00:00 UTC
 _TARGET_DATE = "2026-04-10"
-_SLOT_UTC = datetime(2026, 4, 10, 6, 0, 0, tzinfo=UTC)   # 08:00 SAST on target date
+_SLOT_UTC = datetime(2026, 4, 10, 6, 0, 0, tzinfo=UTC)  # 08:00 SAST on target date
 _ORDER_UTC = datetime(2026, 4, 10, 8, 0, 0, tzinfo=UTC)  # 10:00 SAST on target date
 _NEXT_DAY_UTC = datetime(2026, 4, 11, 4, 0, 0, tzinfo=UTC)  # 06:00 SAST next day (outside window)
 
@@ -164,26 +164,66 @@ def test_exceptions_returns_unpaid_bookings_and_unresolved_orders(
 ) -> None:
     slug = f"exc-happy-{uuid.uuid4().hex[:6]}"
     club = _create_club(db_session, slug=slug)
-    admin = _create_user(db_session, email=f"exc_admin_{uuid.uuid4().hex[:6]}@test.com", club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    admin = _create_user(
+        db_session,
+        email=f"exc_admin_{uuid.uuid4().hex[:6]}@test.com",
+        club=club,
+        role=ClubMembershipRole.CLUB_ADMIN,
+    )
     player = _create_person(db_session, email=f"exc_player_{uuid.uuid4().hex[:6]}@test.com")
     course = _create_course(db_session, club=club)
     headers = _auth_headers(client, email=admin.email, club_id=club.id)
 
     # Unpaid booking on target date — should appear
-    _create_booking(db_session, club=club, course=course, person=player, slot_datetime=_SLOT_UTC, payment_status=BookingPaymentStatus.PENDING)
+    _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        person=player,
+        slot_datetime=_SLOT_UTC,
+        payment_status=BookingPaymentStatus.PENDING,
+    )
     # Paid booking on target date — should NOT appear
-    _create_booking(db_session, club=club, course=course, person=player, slot_datetime=_SLOT_UTC, payment_status=BookingPaymentStatus.PAID)
+    _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        person=player,
+        slot_datetime=_SLOT_UTC,
+        payment_status=BookingPaymentStatus.PAID,
+    )
     # Cancelled booking (unpaid) on target date — should NOT appear
-    _create_booking(db_session, club=club, course=course, person=player, slot_datetime=_SLOT_UTC, payment_status=BookingPaymentStatus.PENDING, status=BookingStatus.CANCELLED)
+    _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        person=player,
+        slot_datetime=_SLOT_UTC,
+        payment_status=BookingPaymentStatus.PENDING,
+        status=BookingStatus.CANCELLED,
+    )
     # Unpaid booking on next day — should NOT appear
-    _create_booking(db_session, club=club, course=course, person=player, slot_datetime=_NEXT_DAY_UTC, payment_status=BookingPaymentStatus.PENDING)
+    _create_booking(
+        db_session,
+        club=club,
+        course=course,
+        person=player,
+        slot_datetime=_NEXT_DAY_UTC,
+        payment_status=BookingPaymentStatus.PENDING,
+    )
 
     # Unresolved order on target date — should appear
-    _create_order(db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.PLACED)
+    _create_order(
+        db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.PLACED
+    )
     # Collected order on target date — should NOT appear
-    _create_order(db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.COLLECTED)
+    _create_order(
+        db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.COLLECTED
+    )
     # Cancelled order on target date — should NOT appear
-    _create_order(db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.CANCELLED)
+    _create_order(
+        db_session, club=club, person=player, created_at=_ORDER_UTC, status=OrderStatus.CANCELLED
+    )
 
     response = client.get(f"/api/finance/exceptions?date={_TARGET_DATE}", headers=headers)
     assert response.status_code == 200
@@ -202,7 +242,12 @@ def test_exceptions_returns_empty_when_no_exceptions(
 ) -> None:
     slug = f"exc-empty-{uuid.uuid4().hex[:6]}"
     club = _create_club(db_session, slug=slug)
-    admin = _create_user(db_session, email=f"exc_empty_admin_{uuid.uuid4().hex[:6]}@test.com", club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    admin = _create_user(
+        db_session,
+        email=f"exc_empty_admin_{uuid.uuid4().hex[:6]}@test.com",
+        club=club,
+        role=ClubMembershipRole.CLUB_ADMIN,
+    )
     headers = _auth_headers(client, email=admin.email, club_id=club.id)
 
     response = client.get(f"/api/finance/exceptions?date={_TARGET_DATE}", headers=headers)
@@ -223,13 +268,27 @@ def test_exceptions_tenant_isolation(
     slug_b = f"exc-iso-b-{uuid.uuid4().hex[:6]}"
     club_a = _create_club(db_session, slug=slug_a)
     club_b = _create_club(db_session, slug=slug_b)
-    admin_a = _create_user(db_session, email=f"exc_iso_a_{uuid.uuid4().hex[:6]}@test.com", club=club_a, role=ClubMembershipRole.CLUB_ADMIN)
+    admin_a = _create_user(
+        db_session,
+        email=f"exc_iso_a_{uuid.uuid4().hex[:6]}@test.com",
+        club=club_a,
+        role=ClubMembershipRole.CLUB_ADMIN,
+    )
     player = _create_person(db_session, email=f"exc_iso_player_{uuid.uuid4().hex[:6]}@test.com")
     course_b = _create_course(db_session, club=club_b)
 
     # Unpaid booking and unresolved order belong to club_b, not club_a
-    _create_booking(db_session, club=club_b, course=course_b, person=player, slot_datetime=_SLOT_UTC, payment_status=BookingPaymentStatus.PENDING)
-    _create_order(db_session, club=club_b, person=player, created_at=_ORDER_UTC, status=OrderStatus.PLACED)
+    _create_booking(
+        db_session,
+        club=club_b,
+        course=course_b,
+        person=player,
+        slot_datetime=_SLOT_UTC,
+        payment_status=BookingPaymentStatus.PENDING,
+    )
+    _create_order(
+        db_session, club=club_b, person=player, created_at=_ORDER_UTC, status=OrderStatus.PLACED
+    )
 
     # Query as admin of club_a — should see nothing from club_b
     headers_a = _auth_headers(client, email=admin_a.email, club_id=club_a.id)
@@ -248,5 +307,7 @@ def test_exceptions_requires_auth(
 ) -> None:
     slug = f"exc-noauth-{uuid.uuid4().hex[:6]}"
     club = _create_club(db_session, slug=slug)
-    response = client.get(f"/api/finance/exceptions?date={_TARGET_DATE}", headers={"X-Club-Id": str(club.id)})
+    response = client.get(
+        f"/api/finance/exceptions?date={_TARGET_DATE}", headers={"X-Club-Id": str(club.id)}
+    )
     assert response.status_code == 401

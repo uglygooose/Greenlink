@@ -50,7 +50,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -99,7 +101,10 @@ def test_club_admin_can_manage_operational_rules_foundation(
         headers=headers,
         json={
             "timezone": "UTC",
-            "operating_hours": {**VALID_OPERATING_HOURS, "monday": {"open": "05:30", "close": "18:30", "closed": False}},
+            "operating_hours": {
+                **VALID_OPERATING_HOURS,
+                "monday": {"open": "05:30", "close": "18:30", "closed": False},
+            },
             "booking_window_days": 21,
             "cancellation_policy_hours": 12,
             "default_slot_interval_minutes": 10,

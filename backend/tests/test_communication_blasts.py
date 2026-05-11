@@ -74,9 +74,7 @@ def _auth_headers(client: TestClient, *, email: str, password: str = "password12
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def test_create_blast_returns_draft_status(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_blast_returns_draft_status(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, name="Blast Club", slug=f"blast-{uuid.uuid4().hex[:6]}")
     admin = _create_user(db_session, email=f"blast_admin_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
@@ -104,9 +102,7 @@ def test_create_blast_returns_draft_status(
     assert data["recipient_count"] is None
 
 
-def test_list_blasts_returns_club_blasts_only(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_blasts_returns_club_blasts_only(client: TestClient, db_session: Session) -> None:
     club_a = _create_club(db_session, name="Blast Club A", slug=f"blast-a-{uuid.uuid4().hex[:6]}")
     club_b = _create_club(db_session, name="Blast Club B", slug=f"blast-b-{uuid.uuid4().hex[:6]}")
     admin_a = _create_user(db_session, email=f"blast_admin_a_{uuid.uuid4().hex[:6]}@test.com")
@@ -120,7 +116,12 @@ def test_list_blasts_returns_club_blasts_only(
     client.post(
         "/api/comms/blasts",
         headers=headers_a,
-        json={"subject": "Club A blast", "body": "Body A", "target_segment": "all", "channel": "in_app"},
+        json={
+            "subject": "Club A blast",
+            "body": "Body A",
+            "target_segment": "all",
+            "channel": "in_app",
+        },
     )
 
     # Create blast in club B
@@ -129,7 +130,12 @@ def test_list_blasts_returns_club_blasts_only(
     client.post(
         "/api/comms/blasts",
         headers=headers_b,
-        json={"subject": "Club B blast", "body": "Body B", "target_segment": "all", "channel": "in_app"},
+        json={
+            "subject": "Club B blast",
+            "body": "Body B",
+            "target_segment": "all",
+            "channel": "in_app",
+        },
     )
 
     # Admin A should only see their club's blasts
@@ -140,10 +146,10 @@ def test_list_blasts_returns_club_blasts_only(
     assert data["blasts"][0]["subject"] == "Club A blast"
 
 
-def test_staff_user_cannot_create_blast(
-    client: TestClient, db_session: Session
-) -> None:
-    club = _create_club(db_session, name="Staff Blast Club", slug=f"staff-blast-{uuid.uuid4().hex[:6]}")
+def test_staff_user_cannot_create_blast(client: TestClient, db_session: Session) -> None:
+    club = _create_club(
+        db_session, name="Staff Blast Club", slug=f"staff-blast-{uuid.uuid4().hex[:6]}"
+    )
     staff = _create_user(db_session, email=f"staff_blast_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=staff, club=club, role=ClubMembershipRole.CLUB_STAFF)
 
@@ -153,7 +159,12 @@ def test_staff_user_cannot_create_blast(
     response = client.post(
         "/api/comms/blasts",
         headers=headers,
-        json={"subject": "Unauthorized", "body": "Staff cannot send blasts.", "target_segment": "all", "channel": "in_app"},
+        json={
+            "subject": "Unauthorized",
+            "body": "Staff cannot send blasts.",
+            "target_segment": "all",
+            "channel": "in_app",
+        },
     )
     assert response.status_code == 403
 
@@ -161,7 +172,9 @@ def test_staff_user_cannot_create_blast(
 def test_send_blast_marks_sent_and_records_recipient_count(
     client: TestClient, db_session: Session
 ) -> None:
-    club = _create_club(db_session, name="Send Blast Club", slug=f"send-blast-{uuid.uuid4().hex[:6]}")
+    club = _create_club(
+        db_session, name="Send Blast Club", slug=f"send-blast-{uuid.uuid4().hex[:6]}"
+    )
     admin = _create_user(db_session, email=f"send_admin_{uuid.uuid4().hex[:6]}@test.com")
     member1 = _create_user(db_session, email=f"send_member1_{uuid.uuid4().hex[:6]}@test.com")
     member2 = _create_user(db_session, email=f"send_member2_{uuid.uuid4().hex[:6]}@test.com")
@@ -176,7 +189,12 @@ def test_send_blast_marks_sent_and_records_recipient_count(
     create_resp = client.post(
         "/api/comms/blasts",
         headers=headers,
-        json={"subject": "Members Notice", "body": "Notice body.", "target_segment": "members", "channel": "in_app"},
+        json={
+            "subject": "Members Notice",
+            "body": "Notice body.",
+            "target_segment": "members",
+            "channel": "in_app",
+        },
     )
     assert create_resp.status_code == 201
     blast_id = create_resp.json()["id"]
@@ -207,7 +225,12 @@ def test_send_blast_all_segment_includes_all_active_roles(
     create_resp = client.post(
         "/api/comms/blasts",
         headers=headers,
-        json={"subject": "All Hands", "body": "Club-wide notice.", "target_segment": "all", "channel": "in_app"},
+        json={
+            "subject": "All Hands",
+            "body": "Club-wide notice.",
+            "target_segment": "all",
+            "channel": "in_app",
+        },
     )
     blast_id = create_resp.json()["id"]
 
@@ -217,9 +240,7 @@ def test_send_blast_all_segment_includes_all_active_roles(
     assert send_resp.json()["recipient_count"] == 3
 
 
-def test_send_nonexistent_blast_returns_404(
-    client: TestClient, db_session: Session
-) -> None:
+def test_send_nonexistent_blast_returns_404(client: TestClient, db_session: Session) -> None:
     club = _create_club(db_session, name="404 Blast Club", slug=f"blast-404-{uuid.uuid4().hex[:6]}")
     admin = _create_user(db_session, email=f"blast_404_{uuid.uuid4().hex[:6]}@test.com")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
@@ -232,9 +253,7 @@ def test_send_nonexistent_blast_returns_404(
     assert response.status_code == 404
 
 
-def test_blast_from_another_club_is_not_accessible(
-    client: TestClient, db_session: Session
-) -> None:
+def test_blast_from_another_club_is_not_accessible(client: TestClient, db_session: Session) -> None:
     """Admin from club B cannot send a blast that belongs to club A."""
     club_a = _create_club(db_session, name="Tenant A", slug=f"tenant-a-{uuid.uuid4().hex[:6]}")
     club_b = _create_club(db_session, name="Tenant B", slug=f"tenant-b-{uuid.uuid4().hex[:6]}")
@@ -252,7 +271,12 @@ def test_blast_from_another_club_is_not_accessible(
     create_resp = client.post(
         "/api/comms/blasts",
         headers=headers_a,
-        json={"subject": "Club A secret", "body": "Do not share.", "target_segment": "all", "channel": "in_app"},
+        json={
+            "subject": "Club A secret",
+            "body": "Do not share.",
+            "target_segment": "all",
+            "channel": "in_app",
+        },
     )
     blast_id = create_resp.json()["id"]
 

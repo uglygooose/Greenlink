@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -270,7 +270,9 @@ def test_finance_export_download_is_stable_from_persisted_payload(
     batch_id = create.json()["batch"]["id"]
 
     first_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
-    second_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
+    second_download = client.get(
+        f"/api/finance/export-batches/{batch_id}/download", headers=headers
+    )
 
     assert first_download.status_code == 200
     assert second_download.status_code == 200
@@ -406,12 +408,16 @@ def test_voided_finance_export_batch_preserves_payload_and_void_metadata(
         },
     )
     batch_id = created.json()["batch"]["id"]
-    original_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
+    original_download = client.get(
+        f"/api/finance/export-batches/{batch_id}/download", headers=headers
+    )
 
     voided = client.post(f"/api/finance/export-batches/{batch_id}/void", headers=headers)
     voided_again = client.post(f"/api/finance/export-batches/{batch_id}/void", headers=headers)
     detail = client.get(f"/api/finance/export-batches/{batch_id}", headers=headers)
-    voided_download = client.get(f"/api/finance/export-batches/{batch_id}/download", headers=headers)
+    voided_download = client.get(
+        f"/api/finance/export-batches/{batch_id}/download", headers=headers
+    )
 
     assert voided.status_code == 200
     assert voided_again.status_code == 200

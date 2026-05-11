@@ -38,12 +38,16 @@ def list_pricing_matrices(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_read(current_user, context)
     assert context.selected_club is not None
-    matrices = db.scalars(
-        select(PricingMatrix)
-        .options(selectinload(PricingMatrix.rules))
-        .where(PricingMatrix.club_id == context.selected_club.id)
-        .order_by(PricingMatrix.name.asc())
-    ).unique().all()
+    matrices = (
+        db.scalars(
+            select(PricingMatrix)
+            .options(selectinload(PricingMatrix.rules))
+            .where(PricingMatrix.club_id == context.selected_club.id)
+            .order_by(PricingMatrix.name.asc())
+        )
+        .unique()
+        .all()
+    )
     return [to_pricing_matrix_response(item) for item in matrices]
 
 
@@ -68,10 +72,14 @@ def create_pricing_matrix(
     replace_pricing_rules(db, matrix, payload.rules)
     if should_publish:
         db.commit()
-        return GolfSettingsService(db).publish_pricing_matrix(
-            context.selected_club.id,
-            matrix.id,
-        ).pricing_matrix
+        return (
+            GolfSettingsService(db)
+            .publish_pricing_matrix(
+                context.selected_club.id,
+                matrix.id,
+            )
+            .pricing_matrix
+        )
     db.commit()
     db.expire_all()
     return to_pricing_matrix_response(load_pricing_matrix(db, matrix.id, context.selected_club.id))
@@ -95,10 +103,14 @@ def update_pricing_matrix(
     replace_pricing_rules(db, matrix, payload.rules)
     if should_publish:
         db.commit()
-        return GolfSettingsService(db).publish_pricing_matrix(
-            context.selected_club.id,
-            matrix.id,
-        ).pricing_matrix
+        return (
+            GolfSettingsService(db)
+            .publish_pricing_matrix(
+                context.selected_club.id,
+                matrix.id,
+            )
+            .pricing_matrix
+        )
     db.commit()
     db.expire_all()
     return to_pricing_matrix_response(load_pricing_matrix(db, matrix.id, context.selected_club.id))

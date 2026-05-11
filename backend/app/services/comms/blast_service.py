@@ -2,15 +2,27 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models.club_membership import ClubMembership
 from app.models.communication_blast import CommunicationBlast
-from app.models.enums import BlastChannel, BlastStatus, BlastTargetSegment, ClubMembershipRole, ClubMembershipStatus
+from app.models.enums import (
+    BlastChannel,
+    BlastStatus,
+    BlastTargetSegment,
+    ClubMembershipRole,
+    ClubMembershipStatus,
+)
 from app.models.person import Person
-from app.schemas.blasts import BlastAuthorResponse, BlastCreateRequest, BlastListResponse, BlastResponse, BlastSendResponse
+from app.schemas.blasts import (
+    BlastAuthorResponse,
+    BlastCreateRequest,
+    BlastListResponse,
+    BlastResponse,
+    BlastSendResponse,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -84,6 +96,7 @@ class BlastService:
         )
         if blast is None:
             from app.core.exceptions import NotFoundError
+
             raise NotFoundError("Blast not found")
 
         recipients = self._resolve_recipients(club_id, blast.target_segment)
@@ -92,7 +105,10 @@ class BlastService:
         if blast.channel == BlastChannel.EMAIL:
             note = self._attempt_email_delivery(blast, recipients)
         else:
-            note = f"In-app blast logged for {recipient_count} recipient(s). In-app delivery surface is a future evolution item."
+            note = (
+                f"In-app blast logged for {recipient_count} recipient(s). "
+                "In-app delivery surface is a future evolution item."
+            )
             _log.info(
                 "In-app blast id=%s club=%s segment=%s recipients=%d",
                 blast.id,
@@ -102,7 +118,7 @@ class BlastService:
             )
 
         blast.status = BlastStatus.SENT
-        blast.sent_at = datetime.now(timezone.utc)
+        blast.sent_at = datetime.now(UTC)
         blast.recipient_count = recipient_count
         blast.delivery_note = note
         self._db.flush()
@@ -114,12 +130,14 @@ class BlastService:
             delivery_note=note,
         )
 
-    def _resolve_recipients(
-        self, club_id: uuid.UUID, segment: BlastTargetSegment
-    ) -> list[Person]:
+    def _resolve_recipients(self, club_id: uuid.UUID, segment: BlastTargetSegment) -> list[Person]:
         role_filter: list[ClubMembershipRole] = []
         if segment == BlastTargetSegment.ALL:
-            role_filter = [ClubMembershipRole.MEMBER, ClubMembershipRole.CLUB_STAFF, ClubMembershipRole.CLUB_ADMIN]
+            role_filter = [
+                ClubMembershipRole.MEMBER,
+                ClubMembershipRole.CLUB_STAFF,
+                ClubMembershipRole.CLUB_ADMIN,
+            ]
         elif segment == BlastTargetSegment.MEMBERS:
             role_filter = [ClubMembershipRole.MEMBER]
         elif segment == BlastTargetSegment.STAFF:
@@ -144,11 +162,13 @@ class BlastService:
 
     def _attempt_email_delivery(self, blast: CommunicationBlast, recipients: list[Person]) -> str:
         from app.config import get_settings
+
         settings = get_settings()
         smtp_host = getattr(settings, "comms_smtp_host", None)
         if not smtp_host:
             _log.info(
-                "Email blast id=%s: no SMTP provider configured. Logging %d recipient(s) as tracked handoff.",
+                "Email blast id=%s: no SMTP provider configured. "
+                "Logging %d recipient(s) as tracked handoff.",
                 blast.id,
                 len(recipients),
             )
@@ -162,6 +182,7 @@ class BlastService:
         # SMTP configured — attempt delivery
         import smtplib
         from email.mime.text import MIMEText
+
         sent_count = 0
         failed_count = 0
         for person in recipients:

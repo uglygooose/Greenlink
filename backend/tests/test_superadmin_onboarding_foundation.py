@@ -231,7 +231,11 @@ def test_superadmin_can_assign_existing_linked_user_to_club(
     )
 
     assert response.status_code == 201
-    membership = db_session.query(ClubMembership).filter_by(club_id=club.id, person_id=staff_user.person_id).one()
+    membership = (
+        db_session.query(ClubMembership)
+        .filter_by(club_id=club.id, person_id=staff_user.person_id)
+        .one()
+    )
     assert membership.role == ClubMembershipRole.CLUB_STAFF
     assert membership.status == ClubMembershipStatus.ACTIVE
 

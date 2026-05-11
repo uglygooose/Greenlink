@@ -22,16 +22,24 @@ class AvailabilityService:
         self.db = db
         self.rule_evaluation_service = RuleEvaluationService(db)
 
-    def preview_slot_availability(self, decision_input: AvailabilityDecisionInput) -> AvailabilityPolicyResult:
+    def preview_slot_availability(
+        self, decision_input: AvailabilityDecisionInput
+    ) -> AvailabilityPolicyResult:
         context = decision_input.context
         rule_evaluation = self.rule_evaluation_service.evaluate(context)
         blockers: list[AvailabilityTrace] = []
         resolved_checks: list[AvailabilityTrace] = []
         unresolved_checks: list[AvailabilityTrace] = []
         informational_traces: list[AvailabilityTrace] = []
-        warnings: list[ContextNotice] = [*context.warnings, *decision_input.warnings, *rule_evaluation.pricing.warnings]
+        warnings: list[ContextNotice] = [
+            *context.warnings,
+            *decision_input.warnings,
+            *rule_evaluation.pricing.warnings,
+        ]
 
-        club_config = self.db.scalar(select(ClubConfig).where(ClubConfig.club_id == context.club_id))
+        club_config = self.db.scalar(
+            select(ClubConfig).where(ClubConfig.club_id == context.club_id)
+        )
         slot_policy: SlotPolicySummary | None = None
         if club_config is None:
             unresolved_checks.append(
@@ -121,7 +129,10 @@ class AvailabilityService:
         unresolved_checks.append(
             AvailabilityTrace(
                 code="live_concurrency_not_evaluated",
-                reason="Availability preview does not evaluate concurrent booking writes or inventory locking",
+                reason=(
+                    "Availability preview does not evaluate concurrent booking writes "
+                    "or inventory locking"
+                ),
             )
         )
         status = self._resolve_status(blockers, unresolved_checks)
@@ -204,8 +215,12 @@ class AvailabilityService:
         rule_evaluation,
         context: NormalizedRuleContext,
     ) -> tuple[str, AvailabilityTrace]:
-        advance_window_days = rule_evaluation.booking_constraints.get("advance_window", {}).get("days")
-        config_booking_window_days = slot_policy.booking_window_days if slot_policy is not None else None
+        advance_window_days = rule_evaluation.booking_constraints.get("advance_window", {}).get(
+            "days"
+        )
+        config_booking_window_days = (
+            slot_policy.booking_window_days if slot_policy is not None else None
+        )
         effective_booking_window_days = (
             advance_window_days if advance_window_days is not None else config_booking_window_days
         )
@@ -222,7 +237,10 @@ class AvailabilityService:
                 "unresolved",
                 AvailabilityTrace(
                     code="effective_datetime_missing",
-                    reason="Slot availability requires effective_datetime to evaluate the booking window",
+                    reason=(
+                        "Slot availability requires effective_datetime "
+                        "to evaluate the booking window"
+                    ),
                 ),
             )
         if context.reference_datetime is None:
@@ -230,7 +248,10 @@ class AvailabilityService:
                 "unresolved",
                 AvailabilityTrace(
                     code="advance_window_reference_required",
-                    reason="Advance window requires explicit reference_datetime for deterministic evaluation",
+                    reason=(
+                        "Advance window requires explicit reference_datetime "
+                        "for deterministic evaluation"
+                    ),
                     details={"booking_window_days": effective_booking_window_days},
                 ),
             )
@@ -244,10 +265,15 @@ class AvailabilityService:
                 "unresolved",
                 AvailabilityTrace(
                     code="advance_window_local_date_missing",
-                    reason="Advance window could not be checked because local dates are unavailable",
+                    reason=(
+                        "Advance window could not be checked because local dates are unavailable"
+                    ),
                 ),
             )
-        if requested_days_ahead.days < 0 or requested_days_ahead.days > effective_booking_window_days:
+        if (
+            requested_days_ahead.days < 0
+            or requested_days_ahead.days > effective_booking_window_days
+        ):
             return (
                 "blocked",
                 AvailabilityTrace(
@@ -271,7 +297,9 @@ class AvailabilityService:
             ),
         )
 
-    def _build_slot_policy(self, club_config: ClubConfig, context: NormalizedRuleContext) -> SlotPolicySummary:
+    def _build_slot_policy(
+        self, club_config: ClubConfig, context: NormalizedRuleContext
+    ) -> SlotPolicySummary:
         operating_window = (
             dict(club_config.operating_hours.get(context.local_day_name, {}))
             if context.local_day_name is not None

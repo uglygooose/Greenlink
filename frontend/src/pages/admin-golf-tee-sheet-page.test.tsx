@@ -10,12 +10,12 @@ import {
   markBookingNoShow,
   moveBooking,
   postBookingCharge,
-  recordBookingPayment,
   updateBookingPaymentStatus,
   updateBooking,
 } from "../api/operations";
 import { AdminGolfTeeSheetPage } from "./admin-golf-tee-sheet-page";
 import { deriveBookingNextAction, nearestBucketTime, nextActionBadgeProps, optimisticallyTransitionBooking, paymentTooltip } from "../features/tee-sheet/sheet-shared";
+import type { TeeSheetDayResponse } from "../types/tee-sheet";
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
@@ -92,11 +92,11 @@ function openFiltersView(): void {
   fireEvent.click(screen.getByTestId("filters-view-toggle"));
 }
 
-function cloneTeeSheetPayload(): any {
-  return JSON.parse(JSON.stringify(teeSheetPayload));
+function cloneTeeSheetPayload(): TeeSheetDayResponse {
+  return JSON.parse(JSON.stringify(teeSheetPayload)) as TeeSheetDayResponse;
 }
 
-function cloneDuplicateLanePayload(): any {
+function cloneDuplicateLanePayload(): TeeSheetDayResponse {
   const payload = cloneTeeSheetPayload();
   payload.rows.push(
     {
@@ -105,7 +105,7 @@ function cloneDuplicateLanePayload(): any {
       start_lane: "hole_1",
       label: "White",
       color_code: "#d9d9d9",
-      slots: payload.rows[0].slots.map((slot: any) => ({
+      slots: payload.rows[0].slots.map((slot) => ({
         ...slot,
         bookings: [],
         occupancy: {
@@ -132,7 +132,7 @@ function cloneDuplicateLanePayload(): any {
       start_lane: "hole_10",
       label: "White",
       color_code: "#d9d9d9",
-      slots: payload.rows[1].slots.map((slot: any) => ({
+      slots: payload.rows[1].slots.map((slot) => ({
         ...slot,
         bookings: [],
         occupancy: {
@@ -596,7 +596,7 @@ describe("AdminGolfTeeSheetPage", () => {
       isLoading: false,
       error: null,
     });
-    mockUseTeeSheetDayQuery.mockImplementation((args?: any) => ({
+    mockUseTeeSheetDayQuery.mockImplementation((args?: { courseId?: string; date?: string }) => ({
       data: { ...cloneTeeSheetPayload(), course_id: args?.courseId ?? "course-2", date: args?.date ?? "2026-04-13" },
       isLoading: false,
       error: null,
@@ -1334,6 +1334,7 @@ describe("AdminGolfTeeSheetPage", () => {
         id: "booking-3",
         status: "reserved",
         party_size: 1,
+        holes: 18,
         slot_datetime: "2026-03-30T04:00:00Z",
         start_lane: "hole_10",
         fee_label: "Member Rate",
@@ -1399,7 +1400,7 @@ describe("AdminGolfTeeSheetPage", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /check in booking booking-1/i })[0]);
 
     await waitFor(() => {
-      const optimistic = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      const optimistic = queryClient.getQueryData<TeeSheetDayResponse>(teeSheetDayKey(today))!;
       expect(optimistic.rows[0].slots[0].bookings[0].status).toBe("checked_in");
       expect(optimistic.rows[0].slots[0].occupancy.reserved_player_count).toBe(0);
       expect(optimistic.rows[0].slots[0].occupancy.occupied_player_count).toBe(2);
@@ -1408,7 +1409,7 @@ describe("AdminGolfTeeSheetPage", () => {
     rejectCheckIn(new Error("network down"));
 
     await waitFor(() => {
-      const rolledBack = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      const rolledBack = queryClient.getQueryData<TeeSheetDayResponse>(teeSheetDayKey(today))!;
       expect(rolledBack.rows[0].slots[0].bookings[0].status).toBe("reserved");
       expect(rolledBack.rows[0].slots[0].occupancy.reserved_player_count).toBe(2);
       expect(rolledBack.rows[0].slots[0].occupancy.occupied_player_count).toBe(0);
@@ -1444,15 +1445,15 @@ describe("AdminGolfTeeSheetPage", () => {
     fireEvent.drop(targetRow);
 
     await waitFor(() => {
-      const optimistic = queryClient.getQueryData<any>(teeSheetDayKey(today));
+      const optimistic = queryClient.getQueryData<TeeSheetDayResponse>(teeSheetDayKey(today))!;
       expect(optimistic.rows[0].slots[0].bookings).toHaveLength(1);
-      expect(optimistic.rows[0].slots[0].bookings[0].participants.map((participant: any) => participant.display_name)).toEqual(["Member One"]);
+      expect(optimistic.rows[0].slots[0].bookings[0].participants.map((participant) => participant.display_name)).toEqual(["Member One"]);
       expect(optimistic.rows[0].slots[0].bookings[0].party_size).toBe(1);
       expect(optimistic.rows[0].slots[0].occupancy.reserved_player_count).toBe(1);
 
       expect(optimistic.rows[1].slots[0].bookings).toHaveLength(1);
       expect(optimistic.rows[1].slots[0].bookings[0].id).toBe("booking-1:optimistic:participant-2");
-      expect(optimistic.rows[1].slots[0].bookings[0].participants.map((participant: any) => participant.display_name)).toEqual(["Guest One"]);
+      expect(optimistic.rows[1].slots[0].bookings[0].participants.map((participant) => participant.display_name)).toEqual(["Guest One"]);
       expect(optimistic.rows[1].slots[0].bookings[0].party_size).toBe(1);
       expect(optimistic.rows[1].slots[0].bookings[0].start_lane).toBe("hole_10");
       expect(optimistic.rows[1].slots[0].occupancy.reserved_player_count).toBe(1);

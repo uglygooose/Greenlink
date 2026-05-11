@@ -106,7 +106,9 @@ class BookingParticipantResolver:
                     failures.append(
                         BookingCreateFailureDetail(
                             code="membership_required",
-                            message="member and staff participants require an active club membership",
+                            message=(
+                                "member and staff participants require an active club membership"
+                            ),
                             field=f"participants[{index}].person_id",
                         )
                     )
@@ -118,7 +120,9 @@ class BookingParticipantResolver:
                     failures.append(
                         BookingCreateFailureDetail(
                             code="staff_membership_required",
-                            message="staff participants require a club staff or club admin membership",
+                            message=(
+                                "staff participants require a club staff or club admin membership"
+                            ),
                             field=f"participants[{index}].person_id",
                         )
                     )

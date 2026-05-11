@@ -7,7 +7,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import BookingParticipantType, BookingPaymentStatus, BookingRuleAppliesTo, BookingStatus, StartLane
+from app.models.enums import (
+    BookingParticipantType,
+    BookingPaymentStatus,
+    BookingRuleAppliesTo,
+    BookingStatus,
+    StartLane,
+)
 from app.schemas.availability import AvailabilityTrace
 from app.schemas.booking_state import (
     AvailabilityDecisionInput,

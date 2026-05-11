@@ -38,13 +38,11 @@ from app.schemas.bookings import (
     BookingChargePostResult,
     BookingCheckInRequest,
     BookingCheckInResult,
-    BookingCreateParticipantInput,
     BookingCompleteRequest,
     BookingCompleteResult,
+    BookingCreateParticipantInput,
     BookingCreateRequest,
     BookingCreateResult,
-    BookingUpdateRequest,
-    BookingUpdateResult,
     BookingMoveInput,
     BookingMoveRequest,
     BookingMoveResult,
@@ -58,6 +56,8 @@ from app.schemas.bookings import (
     BookingRefundInput,
     BookingRefundRequest,
     BookingRefundResult,
+    BookingUpdateRequest,
+    BookingUpdateResult,
     PlayerBookingReadModelResponse,
 )
 from app.schemas.operations import (
@@ -270,7 +270,9 @@ def publish_golf_pricing(
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     require_operations_write(current_user, context)
     assert context.selected_club is not None
-    return GolfSettingsService(db).publish_pricing_matrix(context.selected_club.id, payload.matrix_id)
+    return GolfSettingsService(db).publish_pricing_matrix(
+        context.selected_club.id, payload.matrix_id
+    )
 
 
 @router.post("/settings/pricing/rollback", response_model=GolfSettingsPricingMutationResult)
@@ -377,7 +379,9 @@ def update_booking(
     return service.update_booking(context.selected_club.id, booking_id=booking_id, payload=payload)
 
 
-@router.patch("/bookings/{booking_id}/payment-status", response_model=BookingPaymentStatusUpdateResult)
+@router.patch(
+    "/bookings/{booking_id}/payment-status", response_model=BookingPaymentStatusUpdateResult
+)
 def update_booking_payment_status(
     booking_id: uuid.UUID,
     payload: BookingPaymentStatusUpdateInput,

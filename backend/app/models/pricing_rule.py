@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.enum_utils import enum_values
 from app.models.enums import (
     PricingDayType,
     PricingPlayerType,
@@ -14,7 +15,6 @@ from app.models.enums import (
     PricingSeason,
     PricingTimeBand,
 )
-from app.models.enum_utils import enum_values
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 

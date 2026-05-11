@@ -23,10 +23,10 @@ from app.schemas.people import (
     ClubMembershipUpdateRequest,
     ClubPersonResponse,
     PersonCreateRequest,
-    SelfProfileResponse,
-    SelfProfileUpdateRequest,
     PersonResponse,
     PersonUpdateRequest,
+    SelfProfileResponse,
+    SelfProfileUpdateRequest,
 )
 
 

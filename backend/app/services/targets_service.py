@@ -96,7 +96,11 @@ class TargetsService:
             self.db.scalars(
                 select(ClubTarget)
                 .where(ClubTarget.club_id == club_id)
-                .order_by(ClubTarget.archived_at.is_not(None), ClubTarget.period_start.desc(), ClubTarget.created_at.desc())
+                .order_by(
+                    ClubTarget.archived_at.is_not(None),
+                    ClubTarget.period_start.desc(),
+                    ClubTarget.created_at.desc(),
+                )
             ).all()
         )
         return ClubTargetListResponse(
@@ -104,7 +108,9 @@ class TargetsService:
             total_count=len(targets),
         )
 
-    def create_target(self, *, club_id: uuid.UUID, payload: ClubTargetUpsertRequest) -> ClubTargetResponse:
+    def create_target(
+        self, *, club_id: uuid.UUID, payload: ClubTargetUpsertRequest
+    ) -> ClubTargetResponse:
         self._validate_payload(payload)
         duplicate = self.db.scalar(
             select(ClubTarget.id).where(
@@ -183,7 +189,9 @@ class TargetsService:
                 message="Target period end must be on or after the period start.",
                 status_code=400,
             )
-        domain = next((item for item in TARGET_DOMAIN_REGISTRY if item.key == payload.domain_key), None)
+        domain = next(
+            (item for item in TARGET_DOMAIN_REGISTRY if item.key == payload.domain_key), None
+        )
         if domain is None:
             raise AppError(
                 code="club_target_domain_invalid",

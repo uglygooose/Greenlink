@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
@@ -160,11 +160,17 @@ TEE_SEEDS: tuple[TeeSeed, ...] = (
 
 BOOKING_TEMPLATES: tuple[BookingTemplate, ...] = (
     BookingTemplate(time(hour=6, minute=40), "Blue", StartLane.HOLE_1, "member_pair", True, False),
-    BookingTemplate(time(hour=6, minute=50), "Blue", StartLane.HOLE_10, "member_guest", False, True),
+    BookingTemplate(
+        time(hour=6, minute=50), "Blue", StartLane.HOLE_10, "member_guest", False, True
+    ),
     BookingTemplate(time(hour=7, minute=0), "White", StartLane.HOLE_1, "fourball", True, False),
-    BookingTemplate(time(hour=7, minute=20), "White", StartLane.HOLE_10, "member_triple", False, False),
+    BookingTemplate(
+        time(hour=7, minute=20), "White", StartLane.HOLE_10, "member_triple", False, False
+    ),
     BookingTemplate(time(hour=7, minute=40), "Blue", StartLane.HOLE_1, "member_guest", True, True),
-    BookingTemplate(time(hour=8, minute=0), "White", StartLane.HOLE_1, "staff_hosted", False, False),
+    BookingTemplate(
+        time(hour=8, minute=0), "White", StartLane.HOLE_1, "staff_hosted", False, False
+    ),
     BookingTemplate(time(hour=8, minute=20), "Blue", StartLane.HOLE_10, "member_pair", True, False),
     BookingTemplate(time(hour=9, minute=0), "White", StartLane.HOLE_10, "fourball", False, False),
 )
@@ -189,7 +195,9 @@ def daterange(start_date: date, end_date: date) -> Iterable[date]:
         current += timedelta(days=1)
 
 
-def slot_datetimes_for_day(local_day: date, operating_hours: dict[str, dict[str, object]]) -> list[datetime]:
+def slot_datetimes_for_day(
+    local_day: date, operating_hours: dict[str, dict[str, object]]
+) -> list[datetime]:
     hours = operating_hours[local_day.strftime("%A").lower()]
     open_value = hours["open"]
     close_value = hours["close"]
@@ -237,7 +245,9 @@ def upsert_club_config(db, club: Club) -> ClubConfig:
 
 
 def upsert_course(db, club: Club) -> Course:
-    course = db.scalar(select(Course).where(Course.club_id == club.id, Course.name == DEMO_COURSE_NAME))
+    course = db.scalar(
+        select(Course).where(Course.club_id == club.id, Course.name == DEMO_COURSE_NAME)
+    )
     if course is None:
         course = Course(club_id=club.id, name=DEMO_COURSE_NAME, holes=18, active=True)
         db.add(course)
@@ -313,7 +323,11 @@ def upsert_person_and_membership(db, club: Club, seed: DemoPersonSeed) -> ClubMe
             membership_number=seed.membership_number,
             membership_metadata={
                 "demo_seed": True,
-                **({"pricing_player_type": seed.pricing_player_type.value} if seed.pricing_player_type else {}),
+                **(
+                    {"pricing_player_type": seed.pricing_player_type.value}
+                    if seed.pricing_player_type
+                    else {}
+                ),
             },
         )
         db.add(membership)
@@ -334,7 +348,11 @@ def upsert_person_and_membership(db, club: Club, seed: DemoPersonSeed) -> ClubMe
 
 
 def upsert_demo_pricing_matrix(db, club: Club) -> PricingMatrix:
-    matrix = db.scalar(select(PricingMatrix).where(PricingMatrix.club_id == club.id, PricingMatrix.name == "Demo Benchmark Pricing"))
+    matrix = db.scalar(
+        select(PricingMatrix).where(
+            PricingMatrix.club_id == club.id, PricingMatrix.name == "Demo Benchmark Pricing"
+        )
+    )
     if matrix is None:
         matrix = PricingMatrix(club_id=club.id, name="Demo Benchmark Pricing", active=True)
         db.add(matrix)
@@ -580,12 +598,16 @@ def upsert_demo_pricing_matrix(db, club: Club) -> PricingMatrix:
     db.add_all(rules)
     db.flush()
 
-    for other in db.scalars(select(PricingMatrix).where(PricingMatrix.club_id == club.id, PricingMatrix.id != matrix.id)):
+    for other in db.scalars(
+        select(PricingMatrix).where(PricingMatrix.club_id == club.id, PricingMatrix.id != matrix.id)
+    ):
         other.active = False
     return matrix
 
 
-def delete_existing_window_data(db, club: Club, course: Course, start_utc: datetime, end_utc: datetime) -> None:
+def delete_existing_window_data(
+    db, club: Club, course: Course, start_utc: datetime, end_utc: datetime
+) -> None:
     db.execute(
         delete(Booking).where(
             Booking.club_id == club.id,
@@ -604,13 +626,19 @@ def delete_existing_window_data(db, club: Club, course: Course, start_utc: datet
     )
 
 
-def block_reason(local_day: date, slot_time: time, tee_name: str, lane: StartLane) -> tuple[bool, bool, bool, str | None]:
+def block_reason(
+    local_day: date, slot_time: time, tee_name: str, lane: StartLane
+) -> tuple[bool, bool, bool, str | None]:
     weekday = local_day.strftime("%A").lower()
     if weekday == "monday" and slot_time == time(hour=6, minute=0) and lane == StartLane.HOLE_10:
         return True, False, False, "Frost delay buffer"
     if weekday == "wednesday" and slot_time == time(hour=11, minute=0) and tee_name == "White":
         return False, False, True, "Schools clinic hold"
-    if weekday == "saturday" and slot_time in {time(hour=7, minute=0), time(hour=7, minute=10), time(hour=7, minute=20)} and lane == StartLane.HOLE_10:
+    if (
+        weekday == "saturday"
+        and slot_time in {time(hour=7, minute=0), time(hour=7, minute=10), time(hour=7, minute=20)}
+        and lane == StartLane.HOLE_10
+    ):
         return False, True, False, "Competition crossover buffer"
     return False, False, False, None
 
@@ -628,11 +656,13 @@ def seed_slot_states(
     states: list[TeeSheetSlotState] = []
     for local_day in daterange(start_date, end_date):
         for slot_datetime in slot_datetimes_for_day(local_day, operating_hours):
-            slot_time = slot_datetime.astimezone(DEMO_TIMEZONE).time().replace(second=0, microsecond=0)
+            slot_time = (
+                slot_datetime.astimezone(DEMO_TIMEZONE).time().replace(second=0, microsecond=0)
+            )
             for tee in tees_by_name.values():
                 for lane in (StartLane.HOLE_1, StartLane.HOLE_10):
-                    manually_blocked, reserved_state_active, externally_unavailable, reason = block_reason(
-                        local_day, slot_time, tee.name, lane
+                    manually_blocked, reserved_state_active, externally_unavailable, reason = (
+                        block_reason(local_day, slot_time, tee.name, lane)
                     )
                     states.append(
                         TeeSheetSlotState(
@@ -704,7 +734,9 @@ def booking_participants_for_template(
 
     participants: list[BookingParticipant] = []
 
-    def member_participant(membership: ClubMembership, *, sort_order: int, is_primary: bool) -> BookingParticipant:
+    def member_participant(
+        membership: ClubMembership, *, sort_order: int, is_primary: bool
+    ) -> BookingParticipant:
         return BookingParticipant(
             person_id=membership.person_id,
             club_membership_id=membership.id,
@@ -715,7 +747,9 @@ def booking_participants_for_template(
             is_primary=is_primary,
         )
 
-    def staff_participant(membership: ClubMembership, *, sort_order: int, is_primary: bool) -> BookingParticipant:
+    def staff_participant(
+        membership: ClubMembership, *, sort_order: int, is_primary: bool
+    ) -> BookingParticipant:
         return BookingParticipant(
             person_id=membership.person_id,
             club_membership_id=membership.id,
@@ -820,7 +854,9 @@ def seed_bookings(
                     slot_datetime=local_datetime.astimezone(UTC),
                     slot_interval_minutes=SLOT_INTERVAL_MINUTES,
                     holes=course.holes,
-                    status=booking_status_for_date(local_day, template_index=template_index, today=today),
+                    status=booking_status_for_date(
+                        local_day, template_index=template_index, today=today
+                    ),
                     source=BookingSource.ADMIN,
                     party_size=len(participants),
                     primary_person_id=primary_membership.person_id,
@@ -886,7 +922,9 @@ def seed_demo_golf_data() -> None:
         )
 
         start_utc = datetime.combine(start_date, time.min, tzinfo=DEMO_TIMEZONE).astimezone(UTC)
-        end_utc = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=DEMO_TIMEZONE).astimezone(UTC)
+        end_utc = datetime.combine(
+            end_date + timedelta(days=1), time.min, tzinfo=DEMO_TIMEZONE
+        ).astimezone(UTC)
         delete_existing_window_data(db, club, course, start_utc, end_utc)
 
         slot_state_count = seed_slot_states(
@@ -916,12 +954,15 @@ def seed_demo_golf_data() -> None:
             .options(selectinload(Booking.participants))
             .where(Booking.club_id == club.id, Booking.course_id == course.id)
         ):
-            commercial_service.apply_snapshot(booking, commercial_service.snapshot_for_booking(booking))
+            commercial_service.apply_snapshot(
+                booking, commercial_service.snapshot_for_booking(booking)
+            )
         db.commit()
 
     print(
         f"Seeded demo golf data for {DEV_CLUB_SLUG}: "
-        f"1 course, {len(tees_by_name)} tees, {slot_state_count} slot states, {booking_count} bookings."
+        f"1 course, {len(tees_by_name)} tees, {slot_state_count} slot states, "
+        f"{booking_count} bookings."
     )
 
 

@@ -119,7 +119,9 @@ def _assign_membership(
     return membership
 
 
-def _create_account_customer(db: Session, *, club: Club, person: Person, account_code: str) -> AccountCustomer:
+def _create_account_customer(
+    db: Session, *, club: Club, person: Person, account_code: str
+) -> AccountCustomer:
     account_customer = AccountCustomer(
         club_id=club.id,
         person_id=person.id,
@@ -203,9 +205,13 @@ def test_booking_finance_actions_post_charge_and_record_payment_happy_path(
 ) -> None:
     admin = _create_user(db_session, email="booking-finance-admin@example.com")
     customer = _create_person(db_session, email="booking-finance-customer@example.com")
-    club = _create_club_with_config(db_session, name="Booking Finance Club", slug="booking-finance-club")
+    club = _create_club_with_config(
+        db_session, name="Booking Finance Club", slug="booking-finance-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    account_customer = _create_account_customer(db_session, club=club, person=customer, account_code="MEM-100")
+    account_customer = _create_account_customer(
+        db_session, club=club, person=customer, account_code="MEM-100"
+    )
     account = _create_finance_account(db_session, club=club, account_customer=account_customer)
     course = _create_course(db_session, club=club, name="North")
     booking = _create_booking(db_session, club=club, course=course, person=customer)
@@ -266,9 +272,13 @@ def test_booking_finance_actions_post_charge_uses_resolved_booking_fee_when_amou
 ) -> None:
     admin = _create_user(db_session, email="booking-finance-resolved-admin@example.com")
     customer = _create_person(db_session, email="booking-finance-resolved-customer@example.com")
-    club = _create_club_with_config(db_session, name="Booking Finance Resolved Club", slug="booking-finance-resolved-club")
+    club = _create_club_with_config(
+        db_session, name="Booking Finance Resolved Club", slug="booking-finance-resolved-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    account_customer = _create_account_customer(db_session, club=club, person=customer, account_code="MEM-110")
+    account_customer = _create_account_customer(
+        db_session, club=club, person=customer, account_code="MEM-110"
+    )
     _create_finance_account(db_session, club=club, account_customer=account_customer)
     course = _create_course(db_session, club=club, name="North")
     booking = _create_booking(
@@ -301,7 +311,9 @@ def test_booking_finance_actions_allow_marking_booking_complimentary(
 ) -> None:
     admin = _create_user(db_session, email="booking-finance-status-admin@example.com")
     customer = _create_person(db_session, email="booking-finance-status-customer@example.com")
-    club = _create_club_with_config(db_session, name="Booking Status Club", slug="booking-status-club")
+    club = _create_club_with_config(
+        db_session, name="Booking Status Club", slug="booking-status-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     course = _create_course(db_session, club=club, name="North")
     booking = _create_booking(db_session, club=club, course=course, person=customer)
@@ -355,7 +367,9 @@ def test_booking_finance_actions_are_scoped_to_the_selected_club(
     club_b = _create_club_with_config(db_session, name="Booking Club B", slug="booking-club-b")
     _assign_membership(db_session, user=admin_a, club=club_a, role=ClubMembershipRole.CLUB_ADMIN)
     _assign_membership(db_session, user=admin_b, club=club_b, role=ClubMembershipRole.CLUB_ADMIN)
-    account_customer = _create_account_customer(db_session, club=club_a, person=customer, account_code="MEM-200")
+    account_customer = _create_account_customer(
+        db_session, club=club_a, person=customer, account_code="MEM-200"
+    )
     _create_finance_account(db_session, club=club_a, account_customer=account_customer)
     course = _create_course(db_session, club=club_a, name="North")
     booking = _create_booking(db_session, club=club_a, course=course, person=customer)
@@ -381,9 +395,13 @@ def test_record_payment_clears_completed_pending_booking_from_finance_exceptions
 ) -> None:
     admin = _create_user(db_session, email="booking-finance-consistency-admin@example.com")
     customer = _create_person(db_session, email="booking-finance-consistency-customer@example.com")
-    club = _create_club_with_config(db_session, name="Booking Finance Consistency Club", slug="booking-finance-consistency-club")
+    club = _create_club_with_config(
+        db_session, name="Booking Finance Consistency Club", slug="booking-finance-consistency-club"
+    )
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
-    account_customer = _create_account_customer(db_session, club=club, person=customer, account_code="MEM-300")
+    account_customer = _create_account_customer(
+        db_session, club=club, person=customer, account_code="MEM-300"
+    )
     _create_finance_account(db_session, club=club, account_customer=account_customer)
     course = _create_course(db_session, club=club, name="North")
     booking = _create_booking(db_session, club=club, course=course, person=customer)

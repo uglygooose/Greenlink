@@ -42,16 +42,13 @@ import {
   canQuickAction,
   clockMinutes,
   deriveBookingNextAction,
-  detail,
   InlineBookingContextPanel,
   laneLabel,
   laneOrder,
-  LIFECYCLE_TRANSITIONS,
   minutesUntilSlot,
   nearestBucketTime,
   nextActionBadgeProps,
   normalizeOptimisticParticipants,
-  nowTimeKey,
   optimisticallyTransitionBooking,
   participantTypeBorderClass,
   paymentDotClass,
@@ -63,7 +60,6 @@ import {
   slotHasGolfDayControl,
   slotIsOpen,
   slotPlayerCount,
-  slotRemainingCapacity,
   slotSummaryClass,
   statusClass,
   statusLabel,
@@ -761,7 +757,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
   const [drafts, setDrafts] = useState<DraftParticipant[]>(initialDrafts("member"));
   const [createCartFlag, setCreateCartFlag] = useState(false);
   const [createCaddieFlag, setCreateCaddieFlag] = useState(false);
-  const [dragged, setDragged] = useState<Dragged | null>(null);
+  const [, setDragged] = useState<Dragged | null>(null);
   const draggedRef = useRef<Dragged | null>(null);
   const activeTableDropLaneCellRef = useRef<HTMLTableCellElement | null>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -1132,7 +1128,7 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     setNotice({ tone: result.transition_applied ? "success" : "info", message: result.transition_applied ? COPY[action].success : COPY[action].already });
   }
 
-  function makeLifecycleMutation(
+  function useLifecycleMutation(
     action: Action,
     apiFn: (id: string, auth: { accessToken: string; selectedClubId: string }) => Promise<BookingLifecycleMutationResult>,
   ) {
@@ -1155,10 +1151,10 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
     });
   }
 
-  const cancelMutation = makeLifecycleMutation("cancel", cancelBooking);
-  const checkInMutation = makeLifecycleMutation("check_in", checkInBooking);
-  const completeMutation = makeLifecycleMutation("complete", completeBooking);
-  const noShowMutation = makeLifecycleMutation("no_show", markBookingNoShow);
+  const cancelMutation = useLifecycleMutation("cancel", cancelBooking);
+  const checkInMutation = useLifecycleMutation("check_in", checkInBooking);
+  const completeMutation = useLifecycleMutation("complete", completeBooking);
+  const noShowMutation = useLifecycleMutation("no_show", markBookingNoShow);
 
   const createMutation = useMutation({
     mutationFn: (payload: BookingCreateInput) => createBooking(payload, { accessToken: accessToken as string, selectedClubId: selectedClubId as string }),
@@ -1375,10 +1371,6 @@ export function AdminGolfTeeSheetPage(): JSX.Element {
 
   const totalSlots = slots.length;
   const occupiedSlots = slots.filter((item) => item.slot.bookings.length > 0).length;
-  const checkedInBookings = slots.reduce((sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").length, 0);
-  const checkedInPlayers = slots.reduce((sum, item) => sum + item.slot.bookings.filter((booking) => booking.status === "checked_in").reduce((inner, booking) => inner + bookingPlayerCount(booking), 0), 0);
-  const openSlots = slots.filter((item) => canCreate(item.slot)).length;
-  const openPlayerCapacity = slots.reduce((sum, item) => sum + slotRemainingCapacity(item.slot), 0);
   const alertSignals = (teeSheetQuery.data?.warnings.length ?? 0) + statusCounts.warning + statusCounts.blocked;
   const occupancyPct = totalSlots === 0 ? 0 : Math.round((occupiedSlots / totalSlots) * 100);
   const unpaidBookingsCount = countBookings(

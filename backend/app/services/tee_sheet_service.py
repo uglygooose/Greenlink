@@ -8,7 +8,16 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Booking, BookingPaymentStatus, BookingStatus, ClubConfig, Course, StartLane, Tee, TeeSheetSlotState
+from app.models import (
+    Booking,
+    BookingPaymentStatus,
+    BookingStatus,
+    ClubConfig,
+    Course,
+    StartLane,
+    Tee,
+    TeeSheetSlotState,
+)
 from app.schemas.rule_context import ContextNotice, RuleContextInput
 from app.schemas.tee_sheet import (
     TeeSheetBookingParticipantSummary,
@@ -73,9 +82,7 @@ class TeeSheetService:
         bookings = self._load_bookings(query, slot_datetimes)
         rows: list[TeeSheetRow] = []
         for tee, start_lane in row_scopes:
-            row_key = (
-                f"{tee.id if tee is not None else f'course:{course.id}'}:{start_lane.value}"
-            )
+            row_key = f"{tee.id if tee is not None else f'course:{course.id}'}:{start_lane.value}"
             row_label = tee.name if tee is not None else f"{course.name} sheet"
             color_code = tee.color_code if tee is not None else None
             slots: list[TeeSheetSlotView] = []
@@ -154,8 +161,7 @@ class TeeSheetService:
                         unresolved_checks=availability.unresolved_checks,
                         warnings=availability.warnings,
                         bookings=[
-                            self._to_booking_summary(booking)
-                            for booking in visible_slot_bookings
+                            self._to_booking_summary(booking) for booking in visible_slot_bookings
                         ],
                         decision_input=decision_input,
                         booking_state=decision_input.booking_state,
@@ -212,13 +218,15 @@ class TeeSheetService:
             ],
         )
 
-    def _load_row_scopes(
-        self, query: TeeSheetDayQuery
-    ) -> list[tuple[Tee | None, StartLane]]:
-        lanes = [query.start_lane] if query.start_lane is not None else [
-            StartLane.HOLE_1,
-            StartLane.HOLE_10,
-        ]
+    def _load_row_scopes(self, query: TeeSheetDayQuery) -> list[tuple[Tee | None, StartLane]]:
+        lanes = (
+            [query.start_lane]
+            if query.start_lane is not None
+            else [
+                StartLane.HOLE_1,
+                StartLane.HOLE_10,
+            ]
+        )
         if query.tee_id is not None:
             tee = self.db.scalar(
                 select(Tee)

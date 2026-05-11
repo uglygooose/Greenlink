@@ -200,7 +200,7 @@ class FinanceExportBatchCreateRequest(BaseModel):
     date_to: date
 
     @model_validator(mode="after")
-    def validate_range(self) -> "FinanceExportBatchCreateRequest":
+    def validate_range(self) -> FinanceExportBatchCreateRequest:
         if self.date_to < self.date_from:
             raise ValueError("date_to must be on or after date_from")
         return self
@@ -352,7 +352,8 @@ class AccountingExportProfileMappingConfig(BaseModel):
         missing = set(FinanceTransactionType) - set(value.keys())
         if missing:
             raise ValueError(
-                f"transaction mappings are required for: {', '.join(sorted(item.value for item in missing))}"
+                "transaction mappings are required for: "
+                f"{', '.join(sorted(item.value for item in missing))}"
             )
         return value
 

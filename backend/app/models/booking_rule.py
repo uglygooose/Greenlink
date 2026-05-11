@@ -7,8 +7,8 @@ from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import BookingRuleType
 from app.models.enum_utils import enum_values
+from app.models.enums import BookingRuleType
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 

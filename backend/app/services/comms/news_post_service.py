@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.datetime import utc_now
 from app.core.exceptions import NotFoundError
-from app.models.enums import NewsPostStatus
-from app.models.enums import NewsPostVisibility
+from app.models.enums import NewsPostStatus, NewsPostVisibility
 from app.models.news_post import NewsPost
-from app.models.person import Person
 from app.schemas.comms import (
     NewsPostAuthorResponse,
     NewsPostCreateRequest,

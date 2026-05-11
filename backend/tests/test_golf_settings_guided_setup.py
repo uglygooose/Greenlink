@@ -40,7 +40,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -62,7 +64,9 @@ def _auth_headers(client: TestClient, email: str, club_id: str | None = None) ->
     return headers
 
 
-def _create_course(client: TestClient, headers: dict[str, str], *, name: str = "Championship") -> dict[str, str]:
+def _create_course(
+    client: TestClient, headers: dict[str, str], *, name: str = "Championship"
+) -> dict[str, str]:
     response = client.post(
         "/api/golf/courses",
         headers=headers,
@@ -72,7 +76,9 @@ def _create_course(client: TestClient, headers: dict[str, str], *, name: str = "
     return response.json()
 
 
-def _create_tee(client: TestClient, headers: dict[str, str], course_id: str, *, name: str = "Blue") -> dict[str, str]:
+def _create_tee(
+    client: TestClient, headers: dict[str, str], course_id: str, *, name: str = "Blue"
+) -> dict[str, str]:
     response = client.post(
         "/api/golf/tees",
         headers=headers,
@@ -346,7 +352,9 @@ def test_golf_settings_endpoints_respect_rbac_and_tenant_boundaries(
     other_club = _create_club(db_session, name="Club Two", slug="club-two")
     _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
     _assign_membership(db_session, user=member, club=club, role=ClubMembershipRole.MEMBER)
-    _assign_membership(db_session, user=other_admin, club=other_club, role=ClubMembershipRole.CLUB_ADMIN)
+    _assign_membership(
+        db_session, user=other_admin, club=other_club, role=ClubMembershipRole.CLUB_ADMIN
+    )
 
     headers = _auth_headers(client, admin.email, str(club.id))
     other_headers = _auth_headers(client, other_admin.email, str(other_club.id))

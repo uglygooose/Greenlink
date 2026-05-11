@@ -24,11 +24,36 @@ from app.services.finance.accounting_profile_mapping_service import AccountingPr
 
 CANONICAL_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "date": ("date", "entry date", "transaction date", "posting date", "doc date"),
-    "reference": ("reference", "ref", "document reference", "gl reference", "journal ref", "journal reference"),
+    "reference": (
+        "reference",
+        "ref",
+        "document reference",
+        "gl reference",
+        "journal ref",
+        "journal reference",
+    ),
     "description": ("description", "details", "narrative", "memo", "comment"),
-    "debit_account_code": ("debit", "debit account", "debit account code", "dr account", "debit nominal"),
-    "credit_account_code": ("credit", "credit account", "credit account code", "cr account", "credit nominal"),
-    "customer_account_code": ("customer", "customer code", "customer account", "account code", "member account"),
+    "debit_account_code": (
+        "debit",
+        "debit account",
+        "debit account code",
+        "dr account",
+        "debit nominal",
+    ),
+    "credit_account_code": (
+        "credit",
+        "credit account",
+        "credit account code",
+        "cr account",
+        "credit nominal",
+    ),
+    "customer_account_code": (
+        "customer",
+        "customer code",
+        "customer account",
+        "account code",
+        "member account",
+    ),
     "amount": ("amount", "value", "gross amount", "transaction amount"),
     "source_type": ("source", "source type", "module", "origin"),
 }
@@ -48,8 +73,26 @@ SAMPLE_LAYOUTS: dict[str, dict[str, object]] = {
             "source_type",
         ],
         "rows": [
-            ["2026-04-10", "GL-12345", "Charge Green fee", "1100-AR", "4000-SALES", "450.00", "MEM001", "booking"],
-            ["2026-04-10", "GL-12346", "Payment Green fee", "1000-BANK", "1100-AR", "450.00", "MEM001", "manual"],
+            [
+                "2026-04-10",
+                "GL-12345",
+                "Charge Green fee",
+                "1100-AR",
+                "4000-SALES",
+                "450.00",
+                "MEM001",
+                "booking",
+            ],
+            [
+                "2026-04-10",
+                "GL-12346",
+                "Payment Green fee",
+                "1000-BANK",
+                "1100-AR",
+                "450.00",
+                "MEM001",
+                "manual",
+            ],
         ],
         "notes": [
             "Generic Journal uses explicit headers in GreenLink canonical order.",
@@ -70,8 +113,26 @@ SAMPLE_LAYOUTS: dict[str, dict[str, object]] = {
             "SOURCE_TYPE",
         ],
         "rows": [
-            ["GL-12345", "2026-04-10", "CHARGE GREEN FEE", "1100-AR", "4000-SALES", "MEM001", "450.00", "BOOKING"],
-            ["GL-12346", "2026-04-10", "PAYMENT GREEN FEE", "1000-BANK", "1100-AR", "MEM001", "450.00", "MANUAL"],
+            [
+                "GL-12345",
+                "2026-04-10",
+                "CHARGE GREEN FEE",
+                "1100-AR",
+                "4000-SALES",
+                "MEM001",
+                "450.00",
+                "BOOKING",
+            ],
+            [
+                "GL-12346",
+                "2026-04-10",
+                "PAYMENT GREEN FEE",
+                "1000-BANK",
+                "1100-AR",
+                "MEM001",
+                "450.00",
+                "MANUAL",
+            ],
         ],
         "notes": [
             "Sage-like layouts are header-led and typically prefer uppercase account identifiers.",
@@ -83,8 +144,26 @@ SAMPLE_LAYOUTS: dict[str, dict[str, object]] = {
         "delimiter": ",",
         "headers": [],
         "rows": [
-            ["2026-04-10", "GL-12345", "1100AR", "4000SAL", "450.00", "MEM001", "Charge Green fee", "booking"],
-            ["2026-04-10", "GL-12346", "1000BNK", "1100AR", "450.00", "MEM001", "Payment Green fee", "manual"],
+            [
+                "2026-04-10",
+                "GL-12345",
+                "1100AR",
+                "4000SAL",
+                "450.00",
+                "MEM001",
+                "Charge Green fee",
+                "booking",
+            ],
+            [
+                "2026-04-10",
+                "GL-12346",
+                "1000BNK",
+                "1100AR",
+                "450.00",
+                "MEM001",
+                "Payment Green fee",
+                "manual",
+            ],
         ],
         "notes": [
             "Pastel-like layouts are usually headerless; column order is the contract.",
@@ -107,7 +186,11 @@ class AccountingTemplateService:
         statement = (
             select(AccountingExportProfile, Club)
             .join(Club, Club.id == AccountingExportProfile.club_id)
-            .order_by(Club.name.asc(), AccountingExportProfile.is_active.desc(), AccountingExportProfile.name.asc())
+            .order_by(
+                Club.name.asc(),
+                AccountingExportProfile.is_active.desc(),
+                AccountingExportProfile.name.asc(),
+            )
         )
         if club_id is not None:
             self._get_club(club_id)
@@ -206,7 +289,9 @@ class AccountingTemplateService:
         self.db.add(config)
         self.db.commit()
 
-    def parse_csv_template(self, *, file_bytes: bytes, file_name: str) -> SuperadminAccountingTemplateParseResponse:
+    def parse_csv_template(
+        self, *, file_bytes: bytes, file_name: str
+    ) -> SuperadminAccountingTemplateParseResponse:
         text = self._decode_bytes(file_bytes)
         rows = [row for row in csv.reader(io.StringIO(text)) if any(cell.strip() for cell in row)]
         if not rows:
@@ -224,7 +309,9 @@ class AccountingTemplateService:
             else [cell.strip() or self._column_label(index) for index, cell in enumerate(first_row)]
         )
         data_rows = rows[:3] if headerless else rows[1:4]
-        suggested_target_system = self._suggest_target_system(raw_headers=first_row, headerless=headerless)
+        suggested_target_system = self._suggest_target_system(
+            raw_headers=first_row, headerless=headerless
+        )
         suggested_mapping = self._suggest_mapping(
             headers=headers,
             raw_headers=first_row,
@@ -335,10 +422,23 @@ class AccountingTemplateService:
     ) -> list[str]:
         warnings: list[str] = []
         if headerless:
-            warnings.append("Headerless layout detected. This is treated as a Pastel-like sample and the column order becomes the contract.")
+            warnings.append(
+                "Headerless layout detected. This is treated as a Pastel-like sample "
+                "and the column order becomes the contract."
+            )
         if suggested_target_system == "sage_like":
-            warnings.append("Sage-like layout detected. Keep account codes uppercase and watch reference/description length limits.")
-        required_fields = {"date", "reference", "description", "debit_account_code", "credit_account_code", "amount"}
+            warnings.append(
+                "Sage-like layout detected. Keep account codes uppercase "
+                "and watch reference/description length limits."
+            )
+        required_fields = {
+            "date",
+            "reference",
+            "description",
+            "debit_account_code",
+            "credit_account_code",
+            "amount",
+        }
         missing = sorted(required_fields - set(suggested_mapping))
         if missing:
             warnings.append(f"Could not confidently match: {', '.join(missing)}.")
@@ -361,9 +461,15 @@ class AccountingTemplateService:
         if not populated:
             return False
         alpha_cells = sum(bool(re.search(r"[A-Za-z]", cell)) for cell in populated)
-        numeric_cells = sum(bool(re.fullmatch(r"[-+]?\d[\d,]*(\.\d+)?", cell)) for cell in populated)
+        numeric_cells = sum(
+            bool(re.fullmatch(r"[-+]?\d[\d,]*(\.\d+)?", cell)) for cell in populated
+        )
         date_cells = sum(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", cell)) for cell in populated)
-        return date_cells > 0 or numeric_cells >= max(1, len(populated) // 2) or alpha_cells < len(populated) // 2
+        return (
+            date_cells > 0
+            or numeric_cells >= max(1, len(populated) // 2)
+            or alpha_cells < len(populated) // 2
+        )
 
     def _normalize_header(self, value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()

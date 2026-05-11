@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { MaterialSymbol } from "../../components/benchmark/material-symbol";
 import type { StartLane } from "../../types/bookings";

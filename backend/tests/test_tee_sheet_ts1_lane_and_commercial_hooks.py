@@ -42,7 +42,6 @@ from app.models import (
     User,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -83,8 +82,13 @@ def _create_club_with_config(db: Session, *, name: str, slug: str) -> Club:
             operating_hours={
                 day: {"open": "06:00", "close": "07:00", "closed": False}
                 for day in [
-                    "monday", "tuesday", "wednesday", "thursday",
-                    "friday", "saturday", "sunday",
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
                 ]
             },
             booking_window_days=14,
@@ -297,30 +301,33 @@ def test_dual_lane_slot_states_coexist_at_same_time(
     slot_dt = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
 
     # Both lanes at same time — unique constraint must allow this
-    db_session.add_all([
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_1,
-            slot_datetime=slot_dt,
-            player_capacity=4,
-        ),
-        TeeSheetSlotState(
-            club_id=club.id,
-            course_id=course.id,
-            tee_id=tee.id,
-            start_lane=StartLane.HOLE_10,
-            slot_datetime=slot_dt,
-            player_capacity=4,
-            manually_blocked=True,
-            blocked_reason="10th tee closed for maintenance",
-        ),
-    ])
+    db_session.add_all(
+        [
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_1,
+                slot_datetime=slot_dt,
+                player_capacity=4,
+            ),
+            TeeSheetSlotState(
+                club_id=club.id,
+                course_id=course.id,
+                tee_id=tee.id,
+                start_lane=StartLane.HOLE_10,
+                slot_datetime=slot_dt,
+                player_capacity=4,
+                manually_blocked=True,
+                blocked_reason="10th tee closed for maintenance",
+            ),
+        ]
+    )
     db_session.commit()  # should not raise UniqueViolation
 
     # Verify both records exist
     from sqlalchemy import select
+
     states = db_session.scalars(
         select(TeeSheetSlotState).where(
             TeeSheetSlotState.course_id == course.id,
@@ -372,12 +379,38 @@ def test_booking_created_via_api_with_start_lane_appears_in_tee_sheet(
     )
     db_session.add(ruleset)
     db_session.flush()
-    db_session.add_all([
-        BookingRule(ruleset_id=ruleset.id, type=BookingRuleType.ADVANCE_WINDOW, evaluation_order=0, config={"days": 14}, active=True),
-        BookingRule(ruleset_id=ruleset.id, type=BookingRuleType.MAX_BOOKINGS_PER_DAY, evaluation_order=1, config={"count": 3}, active=True),
-        BookingRule(ruleset_id=ruleset.id, type=BookingRuleType.MAX_FUTURE_BOOKINGS, evaluation_order=2, config={"count": 4}, active=True),
-        BookingRule(ruleset_id=ruleset.id, type=BookingRuleType.GUEST_LIMIT, evaluation_order=3, config={"count": 2}, active=True),
-    ])
+    db_session.add_all(
+        [
+            BookingRule(
+                ruleset_id=ruleset.id,
+                type=BookingRuleType.ADVANCE_WINDOW,
+                evaluation_order=0,
+                config={"days": 14},
+                active=True,
+            ),
+            BookingRule(
+                ruleset_id=ruleset.id,
+                type=BookingRuleType.MAX_BOOKINGS_PER_DAY,
+                evaluation_order=1,
+                config={"count": 3},
+                active=True,
+            ),
+            BookingRule(
+                ruleset_id=ruleset.id,
+                type=BookingRuleType.MAX_FUTURE_BOOKINGS,
+                evaluation_order=2,
+                config={"count": 4},
+                active=True,
+            ),
+            BookingRule(
+                ruleset_id=ruleset.id,
+                type=BookingRuleType.GUEST_LIMIT,
+                evaluation_order=3,
+                config={"count": 2},
+                active=True,
+            ),
+        ]
+    )
     # TeeSheetSlotState required for slot_capacity_available check to resolve
     db_session.add(
         TeeSheetSlotState(
@@ -492,24 +525,26 @@ def test_same_time_bookings_are_projected_into_separate_lane_rows(
     )
     db_session.add_all([booking_hole_1, booking_hole_10])
     db_session.flush()
-    db_session.add_all([
-        BookingParticipant(
-            booking_id=booking_hole_1.id,
-            person_id=user.person_id,
-            participant_type=BookingParticipantType.MEMBER,
-            display_name="Lane One",
-            sort_order=0,
-            is_primary=True,
-        ),
-        BookingParticipant(
-            booking_id=booking_hole_10.id,
-            person_id=user.person_id,
-            participant_type=BookingParticipantType.MEMBER,
-            display_name="Lane Ten",
-            sort_order=0,
-            is_primary=True,
-        ),
-    ])
+    db_session.add_all(
+        [
+            BookingParticipant(
+                booking_id=booking_hole_1.id,
+                person_id=user.person_id,
+                participant_type=BookingParticipantType.MEMBER,
+                display_name="Lane One",
+                sort_order=0,
+                is_primary=True,
+            ),
+            BookingParticipant(
+                booking_id=booking_hole_10.id,
+                person_id=user.person_id,
+                participant_type=BookingParticipantType.MEMBER,
+                display_name="Lane Ten",
+                sort_order=0,
+                is_primary=True,
+            ),
+        ]
+    )
     db_session.commit()
 
     headers = _auth_headers(client, user.email, str(club.id))
@@ -529,7 +564,8 @@ def test_same_time_bookings_are_projected_into_separate_lane_rows(
     same_time_rows = [
         row
         for row in payload["rows"]
-        if row["tee_id"] == str(tee.id) and row["slots"][0]["slot_datetime"].startswith("2026-03-30T04:00:00")
+        if row["tee_id"] == str(tee.id)
+        and row["slots"][0]["slot_datetime"].startswith("2026-03-30T04:00:00")
     ]
     lane_rows = {row["start_lane"]: row for row in same_time_rows}
     assert "hole_1" in lane_rows

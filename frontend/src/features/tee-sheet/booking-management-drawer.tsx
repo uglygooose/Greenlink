@@ -140,9 +140,6 @@ function formatCurrencyAmount(amount: string | null | undefined, currency: strin
   }
 }
 
-const primaryButtonClassName =
-  "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary-dim disabled:cursor-not-allowed disabled:bg-slate-300";
-
 const secondaryButtonClassName =
   "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:text-slate-400";
 
@@ -273,7 +270,6 @@ function EditPanel({
 export function BookingManagementDrawer({
   editCaddieFlag,
   editCartFlag,
-  colorCode,
   directory,
   feedbackBookingId,
   feedbackField,
@@ -309,7 +305,6 @@ export function BookingManagementDrawer({
   selectedDate,
   showFinanceActions,
   slot,
-  teeLabel,
 }: BookingManagementDrawerProps): JSX.Element {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);

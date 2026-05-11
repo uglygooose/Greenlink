@@ -9,8 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
-from app.models.enums import BookingPaymentStatus, BookingSource, BookingStatus, StartLane
 from app.models.enum_utils import enum_values
+from app.models.enums import BookingPaymentStatus, BookingSource, BookingStatus, StartLane
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -47,7 +47,9 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=BookingSource.ADMIN,
     )
     party_size: Mapped[int] = mapped_column(Integer, nullable=False)
-    primary_person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL"))
+    primary_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id", ondelete="SET NULL")
+    )
     primary_membership_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("club_memberships.id", ondelete="SET NULL")
     )

@@ -65,7 +65,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -378,7 +380,9 @@ def test_booking_cancel_blocks_non_cancellable_checked_in_booking(
     assert persisted.status == BookingStatus.CHECKED_IN
 
 
-def test_booking_cancel_enforces_selected_club_scope(client: TestClient, db_session: Session) -> None:
+def test_booking_cancel_enforces_selected_club_scope(
+    client: TestClient, db_session: Session
+) -> None:
     admin_a = _create_user(db_session, email="cancel-tenant-a@example.com")
     admin_b = _create_user(db_session, email="cancel-tenant-b@example.com")
     member_a = _create_user(db_session, email="cancel-tenant-member@example.com")

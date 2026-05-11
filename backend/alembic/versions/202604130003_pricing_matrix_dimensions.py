@@ -44,7 +44,9 @@ def upgrade() -> None:
             server_default="member_standard",
         ),
     )
-    op.add_column("pricing_rules", sa.Column("holes", sa.Integer(), nullable=False, server_default="18"))
+    op.add_column(
+        "pricing_rules", sa.Column("holes", sa.Integer(), nullable=False, server_default="18")
+    )
     op.add_column(
         "pricing_rules",
         sa.Column(

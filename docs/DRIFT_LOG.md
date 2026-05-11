@@ -24,6 +24,7 @@ Each entry uses this format:
 - **Reality**: Every visible workflow run on `main` since at least 30 March 2026 has failed. 24/24 most-recent runs are red. Run durations of 3–7 seconds indicate failure in the first lint step before tests are ever executed. Phase 2 confirmed locally: 364 ruff errors + 91 files needing format on backend; 48 lint errors + 13 warnings on frontend.
 - **Evidence**: GitHub Actions history at https://github.com/uglygooose/Greenlink/actions; local `uv run ruff check .` (364 errors) and `npm run lint` (48 errors) in Phase 2.
 - **Resolution**: Phase 3 scope is now "get CI to green." All other cleanup work is deferred until CI provides a real signal.
+- **Update (Phase 3, 2026-05-11)**: Resolved locally. Backend `uv run ruff check .` returns "All checks passed!" (364 → 0), `uv run ruff format --check .` clean (91 → 0). Frontend `npm run lint` exits 0 with 13 `react-hooks/exhaustive-deps` warnings (errors: 48 → 0). All three test gates green: 191 pytest passed, 275 vitest passed, `tsc --noEmit` clean. CI verification on next push.
 ---
 ### 2026-05-11 — `pricing_rules.player_type` / `season` stored as VARCHAR, models declare Enum
 
@@ -48,6 +49,7 @@ Each entry uses this format:
 - **Reality**: Locked `pydantic-settings==2.13.1` (`backend/uv.lock`) JSON-decodes complex (list-typed) env values inside its dotenv source *before* the `before` validator runs (`pydantic_settings/sources/providers/dotenv.py:108` → `base.py:550`). `http://localhost:5173` is not valid JSON, so loading the `Settings()` model raises `SettingsError: error parsing value for field "allowed_origins"`. The shipped `.env.example` cannot produce a usable runtime with the pinned dependency.
 - **Evidence**: `uv run python -c "from app.main import app"` raised `pydantic_settings.exceptions.SettingsError` from `prepare_field_value` → `decode_complex_value` → `json.loads`. Phase 2 worked around by editing `backend/.env` to `GREENLINK_ALLOWED_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]`.
 - **Resolution**: Local-only workaround applied to `backend/.env` (gitignored). Real fix options for a later phase: (a) update `.env.example` to use JSON list format, (b) pin `pydantic-settings` below the version that introduced the strict JSON-first decode, or (c) configure `Settings` to skip JSON decode for complex env values. None of those are in scope here.
+- **Update (Phase 3, 2026-05-11)**: Resolved via option (a). `backend/.env.example:8` now ships `GREENLINK_ALLOWED_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]`. Verified by deleting local `backend/.env`, re-copying from `.env.example`, and running `uv run python -c "from app.main import app; print(app.title)"` — boot succeeds without further edits.
 ---
 ### 2026-05-11 — Phantom C8/C9/C10 work claimed in deleted external project docs
 

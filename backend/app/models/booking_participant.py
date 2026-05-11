@@ -6,20 +6,24 @@ from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import BookingParticipantType
 from app.models.enum_utils import enum_values
+from app.models.enums import BookingParticipantType
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class BookingParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "booking_participants"
-    __table_args__ = (CheckConstraint("sort_order >= 0", name="ck_booking_participants_sort_order_non_negative"),)
+    __table_args__ = (
+        CheckConstraint("sort_order >= 0", name="ck_booking_participants_sort_order_non_negative"),
+    )
 
     booking_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("bookings.id", ondelete="CASCADE"),
         nullable=False,
     )
-    person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL"))
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id", ondelete="SET NULL")
+    )
     club_membership_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("club_memberships.id", ondelete="SET NULL")
     )

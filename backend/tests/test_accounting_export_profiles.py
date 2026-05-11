@@ -11,14 +11,16 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.domain.people.normalization import build_full_name, normalize_email
-from app.models import ClubMembershipRole, FinanceTransactionSource, FinanceTransactionType
 from app.models import (
     AccountCustomer,
     AccountingExportProfile,
     Club,
     ClubMembership,
+    ClubMembershipRole,
     ClubMembershipStatus,
     FinanceAccount,
+    FinanceTransactionSource,
+    FinanceTransactionType,
     Person,
     User,
 )
@@ -37,10 +39,19 @@ def _create_user(db: Session, *, email: str, role: ClubMembershipRole, club: Clu
     )
     db.add(person)
     db.flush()
-    user = User(email=email, password_hash=hash_password("password123"), display_name=local, person_id=person.id)
+    user = User(
+        email=email,
+        password_hash=hash_password("password123"),
+        display_name=local,
+        person_id=person.id,
+    )
     db.add(user)
     db.flush()
-    db.add(ClubMembership(person_id=person.id, club_id=club.id, role=role, status=ClubMembershipStatus.ACTIVE))
+    db.add(
+        ClubMembership(
+            person_id=person.id, club_id=club.id, role=role, status=ClubMembershipStatus.ACTIVE
+        )
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -175,7 +186,9 @@ def test_accounting_export_profile_create_and_list(client, db_session: Session) 
     )
     headers = _auth_headers(client, email=admin.email, club_id=club.id)
 
-    created = client.post("/api/finance/accounting-profiles", headers=headers, json=_profile_payload())
+    created = client.post(
+        "/api/finance/accounting-profiles", headers=headers, json=_profile_payload()
+    )
     listed = client.get("/api/finance/accounting-profiles", headers=headers)
 
     assert created.status_code == 200
@@ -183,7 +196,12 @@ def test_accounting_export_profile_create_and_list(client, db_session: Session) 
     assert created.json()["target_system"] == "generic_journal"
     assert listed.status_code == 200
     assert listed.json()["total_count"] == 1
-    assert listed.json()["profiles"][0]["mapping_config"]["transaction_mappings"]["charge"]["debit_account_code"] == "1100-AR"
+    assert (
+        listed.json()["profiles"][0]["mapping_config"]["transaction_mappings"]["charge"][
+            "debit_account_code"
+        ]
+        == "1100-AR"
+    )
 
 
 def test_mapped_export_preview_and_download_are_deterministic(client, db_session: Session) -> None:
@@ -217,7 +235,9 @@ def test_mapped_export_preview_and_download_are_deterministic(client, db_session
     )
 
     headers = _auth_headers(client, email=admin.email, club_id=club.id)
-    profile = client.post("/api/finance/accounting-profiles", headers=headers, json=_profile_payload()).json()
+    profile = client.post(
+        "/api/finance/accounting-profiles", headers=headers, json=_profile_payload()
+    ).json()
     batch = _create_canonical_batch(client, headers=headers)
 
     preview_first = client.get(
@@ -271,11 +291,15 @@ def test_updating_profile_changes_future_mapped_output(client, db_session: Sessi
     )
 
     headers = _auth_headers(client, email=admin.email, club_id=club.id)
-    created_profile = client.post("/api/finance/accounting-profiles", headers=headers, json=_profile_payload()).json()
+    created_profile = client.post(
+        "/api/finance/accounting-profiles", headers=headers, json=_profile_payload()
+    ).json()
     batch = _create_canonical_batch(client, headers=headers)
 
     updated_payload = _profile_payload()
-    updated_payload["mapping_config"]["transaction_mappings"]["charge"]["debit_account_code"] = "1150-AR-CLUB"
+    updated_payload["mapping_config"]["transaction_mappings"]["charge"]["debit_account_code"] = (
+        "1150-AR-CLUB"
+    )
     updated = client.put(
         f"/api/finance/accounting-profiles/{created_profile['id']}",
         headers=headers,
@@ -320,7 +344,9 @@ def test_accounting_export_profile_is_club_scoped(client, db_session: Session) -
     )
 
     headers_b = _auth_headers(client, email=admin_b.email, club_id=club_b.id)
-    profile_b = client.post("/api/finance/accounting-profiles", headers=headers_b, json=_profile_payload()).json()
+    profile_b = client.post(
+        "/api/finance/accounting-profiles", headers=headers_b, json=_profile_payload()
+    ).json()
     batch_b = _create_canonical_batch(client, headers=headers_b)
 
     headers_a = _auth_headers(client, email=admin_a.email, club_id=club_a.id)

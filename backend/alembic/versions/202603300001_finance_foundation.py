@@ -57,7 +57,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["account_customer_id"], ["account_customers.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["account_customer_id"], ["account_customers.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["club_id"], ["clubs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(

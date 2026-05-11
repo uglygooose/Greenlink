@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -65,7 +65,9 @@ def _create_club(db: Session, *, name: str, slug: str) -> Club:
     return club
 
 
-def _assign_membership(db: Session, *, user: User, club: Club, role: ClubMembershipRole) -> ClubMembership:
+def _assign_membership(
+    db: Session, *, user: User, club: Club, role: ClubMembershipRole
+) -> ClubMembership:
     membership = ClubMembership(
         person_id=user.person_id,
         club_id=club.id,
@@ -106,7 +108,7 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
     db_session.add_all([tee, other_course])
     db_session.flush()
 
-    now = datetime(2026, 3, 30, 9, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 3, 30, 9, 0, tzinfo=UTC)
     future = now + timedelta(days=5)
 
     club_ruleset = BookingRuleSet(
@@ -160,7 +162,9 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
         priority=40,
         active=True,
     )
-    db_session.add_all([club_ruleset, course_ruleset, tee_ruleset, ignored_scope_ruleset, future_ruleset])
+    db_session.add_all(
+        [club_ruleset, course_ruleset, tee_ruleset, ignored_scope_ruleset, future_ruleset]
+    )
     db_session.flush()
 
     db_session.add_all(
@@ -290,9 +294,15 @@ def test_rule_evaluation_resolves_deterministic_constraints_and_pricing(
     assert payload["pricing"]["context_time_band"] == "morning"
     assert any(rule["reason"] == "override_applied" for rule in payload["applicable_rules"])
     assert any(rule["reason"] == "merge_applied" for rule in payload["applicable_rules"])
-    assert any(rule["reason"] == "higher_priority_override_already_applied" for rule in payload["ignored_rules"])
+    assert any(
+        rule["reason"] == "higher_priority_override_already_applied"
+        for rule in payload["ignored_rules"]
+    )
     assert any(rule["reason"] == "scope_mismatch" for rule in payload["ignored_rules"])
-    assert any(rule["reason"] == "effective_datetime_outside_ruleset_window" for rule in payload["ignored_rules"])
+    assert any(
+        rule["reason"] == "effective_datetime_outside_ruleset_window"
+        for rule in payload["ignored_rules"]
+    )
     assert any(warning["code"] == "public_holiday_unresolved" for warning in payload["warnings"])
 
 
@@ -320,7 +330,7 @@ def test_rule_evaluation_without_datetime_uses_any_dimension_pricing_rules(
         scope_type=BookingRuleScopeType.CLUB,
         scope_ref_id=None,
         conflict_strategy=BookingRuleConflictStrategy.OVERRIDE,
-        applies_from=datetime(2026, 3, 30, 9, 0, tzinfo=timezone.utc),
+        applies_from=datetime(2026, 3, 30, 9, 0, tzinfo=UTC),
         priority=90,
         active=True,
     )
@@ -456,7 +466,10 @@ def test_rule_context_supports_supplied_public_holiday_and_custom_time_band(
     assert payload["context"]["time_band_resolution"]["source"] == "supplied"
     assert len(payload["pricing"]["candidate_rules"]) == 1
     assert payload["pricing"]["candidate_rules"][0]["time_band_ref"] == "prime"
-    assert any(rule["reason"] == "custom_time_band_ref_mismatch" for rule in payload["pricing"]["ignored_rules"])
+    assert any(
+        rule["reason"] == "custom_time_band_ref_mismatch"
+        for rule in payload["pricing"]["ignored_rules"]
+    )
 
 
 def test_availability_preview_is_structural_and_flags_unresolved_state(
@@ -532,8 +545,8 @@ def test_availability_preview_is_structural_and_flags_unresolved_state(
     )
     db_session.commit()
 
-    effective_datetime = datetime(2026, 3, 30, 7, 0, tzinfo=timezone.utc)
-    reference_datetime = datetime(2026, 3, 25, 7, 0, tzinfo=timezone.utc)
+    effective_datetime = datetime(2026, 3, 30, 7, 0, tzinfo=UTC)
+    reference_datetime = datetime(2026, 3, 25, 7, 0, tzinfo=UTC)
     headers = _auth_headers(client, user.email, str(club.id))
     response = client.get(
         "/api/rules/availability-preview",
@@ -554,9 +567,17 @@ def test_availability_preview_is_structural_and_flags_unresolved_state(
     assert any(item["code"] == "advance_window_satisfied" for item in payload["resolved_checks"])
     assert any(item["code"] == "within_operating_hours" for item in payload["resolved_checks"])
     assert any(item["code"] == "time_restriction_satisfied" for item in payload["resolved_checks"])
-    assert any(item["code"] == "max_bookings_per_day_requires_booking_state" for item in payload["unresolved_checks"])
-    assert any(item["code"] == "guest_limit_requires_party_context" for item in payload["unresolved_checks"])
-    assert any(item["code"] == "live_concurrency_not_evaluated" for item in payload["unresolved_checks"])
+    assert any(
+        item["code"] == "max_bookings_per_day_requires_booking_state"
+        for item in payload["unresolved_checks"]
+    )
+    assert any(
+        item["code"] == "guest_limit_requires_party_context"
+        for item in payload["unresolved_checks"]
+    )
+    assert any(
+        item["code"] == "live_concurrency_not_evaluated" for item in payload["unresolved_checks"]
+    )
 
 
 def test_slot_preview_consumes_booking_state_and_resolves_capacity_and_limits(
@@ -631,8 +652,8 @@ def test_slot_preview_consumes_booking_state_and_resolves_capacity_and_limits(
     )
     db_session.commit()
 
-    effective_datetime = datetime(2026, 3, 30, 8, 0, tzinfo=timezone.utc)
-    reference_datetime = datetime(2026, 3, 25, 8, 0, tzinfo=timezone.utc)
+    effective_datetime = datetime(2026, 3, 30, 8, 0, tzinfo=UTC)
+    reference_datetime = datetime(2026, 3, 25, 8, 0, tzinfo=UTC)
     headers = _auth_headers(client, user.email, str(club.id))
     response = client.post(
         "/api/rules/slot-preview",
@@ -674,6 +695,10 @@ def test_slot_preview_consumes_booking_state_and_resolves_capacity_and_limits(
     assert payload["decision_input"]["slot"]["slot_interval_minutes"] == 8
     assert payload["decision_input"]["slot"]["slot_interval_source"] == "input"
     assert any(item["code"] == "slot_capacity_available" for item in payload["resolved_checks"])
-    assert any(item["code"] == "max_bookings_per_day_satisfied" for item in payload["resolved_checks"])
-    assert any(item["code"] == "max_future_bookings_satisfied" for item in payload["resolved_checks"])
+    assert any(
+        item["code"] == "max_bookings_per_day_satisfied" for item in payload["resolved_checks"]
+    )
+    assert any(
+        item["code"] == "max_future_bookings_satisfied" for item in payload["resolved_checks"]
+    )
     assert any(item["code"] == "guest_limit_exceeded" for item in payload["blockers"])

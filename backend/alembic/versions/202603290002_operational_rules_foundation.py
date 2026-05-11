@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -96,7 +96,9 @@ def upgrade() -> None:
         sa.Column("operating_hours", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("booking_window_days", sa.Integer(), nullable=False, server_default="14"),
         sa.Column("cancellation_policy_hours", sa.Integer(), nullable=False, server_default="24"),
-        sa.Column("default_slot_interval_minutes", sa.Integer(), nullable=False, server_default="10"),
+        sa.Column(
+            "default_slot_interval_minutes", sa.Integer(), nullable=False, server_default="10"
+        ),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
@@ -152,7 +154,9 @@ def upgrade() -> None:
         sa.Column("club_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("applies_to", booking_rule_applies_to_enum, nullable=False),
-        sa.Column("scope_type", booking_rule_scope_type_enum, nullable=False, server_default="club"),
+        sa.Column(
+            "scope_type", booking_rule_scope_type_enum, nullable=False, server_default="club"
+        ),
         sa.Column("scope_ref_id", sa.String(length=120), nullable=True),
         sa.Column(
             "conflict_strategy",
@@ -246,7 +250,7 @@ def upgrade() -> None:
         sa.column("created_at", sa.DateTime(timezone=True)),
         sa.column("updated_at", sa.DateTime(timezone=True)),
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     existing_clubs = bind.execute(sa.select(clubs.c.id, clubs.c.timezone)).all()
     for club_id, timezone_value in existing_clubs:
         bind.execute(

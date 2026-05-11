@@ -43,8 +43,12 @@ def upgrade() -> None:
         sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("recipient_count", sa.Integer(), nullable=True),
         sa.Column("delivery_note", sa.String(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["club_id"], ["clubs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["created_by_person_id"], ["people.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),

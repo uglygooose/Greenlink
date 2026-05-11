@@ -65,7 +65,9 @@ class BookingCommercialService:
         pricing_player_type = None
         if primary_participant is not None and primary_participant.club_membership_id is not None:
             membership = self.db.scalar(
-                select(ClubMembership).where(ClubMembership.id == primary_participant.club_membership_id)
+                select(ClubMembership).where(
+                    ClubMembership.id == primary_participant.club_membership_id
+                )
             )
             if membership is not None:
                 membership_role = membership.role
@@ -75,14 +77,18 @@ class BookingCommercialService:
                 )
         applies_to = (
             BookingRuleAppliesTo.STAFF
-            if primary_participant is not None and primary_participant.participant_type == BookingParticipantType.STAFF
+            if primary_participant is not None
+            and primary_participant.participant_type == BookingParticipantType.STAFF
             else BookingRuleAppliesTo.GUEST
-            if primary_participant is not None and primary_participant.participant_type == BookingParticipantType.GUEST
+            if primary_participant is not None
+            and primary_participant.participant_type == BookingParticipantType.GUEST
             else BookingRuleAppliesTo.MEMBER
         )
         if pricing_player_type is None:
             pricing_player_type = self.resolve_pricing_player_type(
-                participant_type=primary_participant.participant_type if primary_participant is not None else None,
+                participant_type=primary_participant.participant_type
+                if primary_participant is not None
+                else None,
                 membership=None,
             )
         context = self.rule_context_service.normalize_context(
@@ -143,10 +149,16 @@ class BookingCommercialService:
         *,
         participant_type: BookingParticipantType | None,
     ) -> tuple[ClubMembershipRole | None, PricingPlayerType]:
-        membership = self.db.scalar(select(ClubMembership).where(ClubMembership.id == membership_id)) if membership_id else None
+        membership = (
+            self.db.scalar(select(ClubMembership).where(ClubMembership.id == membership_id))
+            if membership_id
+            else None
+        )
         return (
             membership.role if membership is not None else None,
-            self.resolve_pricing_player_type(participant_type=participant_type, membership=membership),
+            self.resolve_pricing_player_type(
+                participant_type=participant_type, membership=membership
+            ),
         )
 
     def resolve_booking_holes(self, *, course_holes: int, requested_holes: int | None) -> int:

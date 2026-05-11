@@ -191,8 +191,12 @@ def upgrade() -> None:
     op.drop_constraint("uq_club_memberships_user_club", "club_memberships", type_="unique")
     op.drop_constraint("club_memberships_user_id_fkey", "club_memberships", type_="foreignkey")
     op.alter_column("club_memberships", "person_id", existing_type=sa.Uuid(), nullable=False)
-    op.alter_column("club_memberships", "joined_at", existing_type=sa.DateTime(timezone=True), nullable=False)
-    op.alter_column("club_memberships", "membership_metadata", existing_type=sa.JSON(), nullable=False)
+    op.alter_column(
+        "club_memberships", "joined_at", existing_type=sa.DateTime(timezone=True), nullable=False
+    )
+    op.alter_column(
+        "club_memberships", "membership_metadata", existing_type=sa.JSON(), nullable=False
+    )
     op.create_foreign_key(
         "fk_club_memberships_person_id_people",
         "club_memberships",
@@ -201,7 +205,9 @@ def upgrade() -> None:
         ["id"],
         ondelete="CASCADE",
     )
-    op.create_unique_constraint("uq_club_memberships_person_club", "club_memberships", ["person_id", "club_id"])
+    op.create_unique_constraint(
+        "uq_club_memberships_person_club", "club_memberships", ["person_id", "club_id"]
+    )
     op.create_unique_constraint(
         "uq_club_memberships_club_membership_number",
         "club_memberships",
@@ -234,10 +240,16 @@ def downgrade() -> None:
         ["id"],
         ondelete="CASCADE",
     )
-    op.create_unique_constraint("uq_club_memberships_user_club", "club_memberships", ["user_id", "club_id"])
-    op.drop_constraint("uq_club_memberships_club_membership_number", "club_memberships", type_="unique")
+    op.create_unique_constraint(
+        "uq_club_memberships_user_club", "club_memberships", ["user_id", "club_id"]
+    )
+    op.drop_constraint(
+        "uq_club_memberships_club_membership_number", "club_memberships", type_="unique"
+    )
     op.drop_constraint("uq_club_memberships_person_club", "club_memberships", type_="unique")
-    op.drop_constraint("fk_club_memberships_person_id_people", "club_memberships", type_="foreignkey")
+    op.drop_constraint(
+        "fk_club_memberships_person_id_people", "club_memberships", type_="foreignkey"
+    )
     op.drop_column("club_memberships", "membership_metadata")
     op.drop_column("club_memberships", "membership_number")
     op.drop_column("club_memberships", "joined_at")

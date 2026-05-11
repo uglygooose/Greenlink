@@ -78,7 +78,9 @@ class SuperadminOnboardingService:
         self.publisher = DatabaseEventPublisher(db)
 
     def list_clubs(self) -> SuperadminClubListResponse:
-        clubs = list(self.db.scalars(select(Club).order_by(Club.created_at.desc(), Club.name.asc())).all())
+        clubs = list(
+            self.db.scalars(select(Club).order_by(Club.created_at.desc(), Club.name.asc())).all()
+        )
         items = [self._club_summary(club) for club in clubs]
         return SuperadminClubListResponse(items=items, total_count=len(items))
 
@@ -124,12 +126,18 @@ class SuperadminOnboardingService:
         self.db.refresh(club)
         return self._club_summary(club)
 
-    def get_onboarding_detail(self, *, club_id: uuid.UUID) -> SuperadminClubOnboardingDetailResponse:
+    def get_onboarding_detail(
+        self, *, club_id: uuid.UUID
+    ) -> SuperadminClubOnboardingDetailResponse:
         club = self._get_club(club_id)
         config = self._get_or_create_config(club, persist=False)
         finance_profiles = self._finance_profiles(club_id)
         selected_finance_profile = next(
-            (profile for profile in finance_profiles if profile.id == config.preferred_accounting_profile_id),
+            (
+                profile
+                for profile in finance_profiles
+                if profile.id == config.preferred_accounting_profile_id
+            ),
             None,
         )
         rule_sets = self._rule_sets(club_id)
@@ -141,7 +149,9 @@ class SuperadminOnboardingService:
             rule_set_count=len(rule_sets),
             active_rule_set_count=len([ruleset for ruleset in rule_sets if ruleset.active]),
             pricing_matrix_count=len(pricing_matrices),
-            active_pricing_matrix_count=len([matrix for matrix in pricing_matrices if matrix.active]),
+            active_pricing_matrix_count=len(
+                [matrix for matrix in pricing_matrices if matrix.active]
+            ),
             setup_complete=len(rule_sets) > 0 and len(pricing_matrices) > 0,
             rule_sets=[
                 SuperadminRuleSetSummary(
@@ -236,7 +246,10 @@ class SuperadminOnboardingService:
                 raise NotFoundError("Accounting export profile not found")
             config.preferred_accounting_profile_id = profile.id
 
-        if payload.preferred_accounting_profile_id is None and "preferred_accounting_profile_id" in payload.model_fields_set:
+        if (
+            payload.preferred_accounting_profile_id is None
+            and "preferred_accounting_profile_id" in payload.model_fields_set
+        ):
             config.preferred_accounting_profile_id = None
         if payload.enabled_module_keys is not None:
             self._replace_modules(club_id=club.id, module_keys=payload.enabled_module_keys)
@@ -416,7 +429,11 @@ class SuperadminOnboardingService:
             event_type="club_membership.upserted",
             aggregate_type="club_membership",
             aggregate_id=str(membership.id),
-            payload={"club_id": str(club.id), "person_id": str(person.id), "role": payload.role.value},
+            payload={
+                "club_id": str(club.id),
+                "person_id": str(person.id),
+                "role": payload.role.value,
+            },
             correlation_id=correlation_id,
             club_id=club.id,
             actor_user_id=actor_user_id,
@@ -472,7 +489,9 @@ class SuperadminOnboardingService:
         linked_user = self.db.scalar(
             select(User).options(selectinload(User.person)).where(User.email == normalized_email)
         )
-        person = self._resolve_invited_person(normalized_email=normalized_email, linked_user=linked_user)
+        person = self._resolve_invited_person(
+            normalized_email=normalized_email, linked_user=linked_user
+        )
         membership = self.db.scalar(
             select(ClubMembership).where(
                 ClubMembership.club_id == club.id,
@@ -555,7 +574,9 @@ class SuperadminOnboardingService:
         finance_profiles: list[AccountingExportProfile] | None = None,
         assignments: list[SuperadminAssignedUserSummary] | None = None,
     ) -> SuperadminClubSummary:
-        profiles = finance_profiles if finance_profiles is not None else self._finance_profiles(club.id)
+        profiles = (
+            finance_profiles if finance_profiles is not None else self._finance_profiles(club.id)
+        )
         assigned = assignments if assignments is not None else self._assignments(club.id)
         return SuperadminClubSummary(
             id=club.id,
@@ -567,9 +588,13 @@ class SuperadminOnboardingService:
             onboarding_state=ClubOnboardingState(club.onboarding_state),
             onboarding_current_step=ClubOnboardingStep(club.onboarding_current_step),
             registry_status=self._registry_status(club),
-            finance_ready=self._finance_summary(profiles, self._selected_profile(club.id, profiles)).setup_complete,
+            finance_ready=self._finance_summary(
+                profiles, self._selected_profile(club.id, profiles)
+            ).setup_complete,
             finance_profile_count=len(profiles),
-            active_assignment_count=len([item for item in assigned if item.status == ClubMembershipStatus.ACTIVE]),
+            active_assignment_count=len(
+                [item for item in assigned if item.status == ClubMembershipStatus.ACTIVE]
+            ),
             created_at=club.created_at,
             updated_at=club.updated_at,
         )
@@ -605,7 +630,11 @@ class SuperadminOnboardingService:
         if config is None:
             return None
         return next(
-            (profile for profile in profiles if profile.id == config.preferred_accounting_profile_id),
+            (
+                profile
+                for profile in profiles
+                if profile.id == config.preferred_accounting_profile_id
+            ),
             None,
         )
 
@@ -614,7 +643,9 @@ class SuperadminOnboardingService:
             self.db.scalars(
                 select(AccountingExportProfile)
                 .where(AccountingExportProfile.club_id == club_id)
-                .order_by(AccountingExportProfile.is_active.desc(), AccountingExportProfile.name.asc())
+                .order_by(
+                    AccountingExportProfile.is_active.desc(), AccountingExportProfile.name.asc()
+                )
             ).all()
         )
 
@@ -670,13 +701,19 @@ class SuperadminOnboardingService:
     def _count_rule_sets(self, club_id: uuid.UUID) -> int:
         return len(
             list(
-                self.db.scalars(select(BookingRuleSet.id).where(BookingRuleSet.club_id == club_id)).all()
+                self.db.scalars(
+                    select(BookingRuleSet.id).where(BookingRuleSet.club_id == club_id)
+                ).all()
             )
         )
 
     def _count_pricing_matrices(self, club_id: uuid.UUID) -> int:
         return len(
-            list(self.db.scalars(select(PricingMatrix.id).where(PricingMatrix.club_id == club_id)).all())
+            list(
+                self.db.scalars(
+                    select(PricingMatrix.id).where(PricingMatrix.club_id == club_id)
+                ).all()
+            )
         )
 
     def _enabled_module_keys(self, club_id: uuid.UUID) -> list[str]:
@@ -758,7 +795,9 @@ class SuperadminOnboardingService:
         current_index = STEP_ORDER.index(current_step)
         if live:
             return [
-                OnboardingStepStatus(key=step, label=STEP_LABELS[step], status="complete", ready=True)
+                OnboardingStepStatus(
+                    key=step, label=STEP_LABELS[step], status="complete", ready=True
+                )
                 for step in STEP_ORDER
             ]
         items: list[OnboardingStepStatus] = []
@@ -789,16 +828,23 @@ class SuperadminOnboardingService:
                 score += 0.5 if step.ready else 0.25
         return round((score / len(steps)) * 100)
 
-    def _onboarding_readiness(self, *, club: Club, config: ClubConfig) -> dict[ClubOnboardingStep, bool]:
+    def _onboarding_readiness(
+        self, *, club: Club, config: ClubConfig
+    ) -> dict[ClubOnboardingStep, bool]:
         profiles = self._finance_profiles(club.id)
         selected_profile = next(
-            (profile for profile in profiles if profile.id == config.preferred_accounting_profile_id and profile.is_active),
+            (
+                profile
+                for profile in profiles
+                if profile.id == config.preferred_accounting_profile_id and profile.is_active
+            ),
             None,
         )
         return {
             ClubOnboardingStep.BASIC_INFO: self._basic_info_ready(club),
             ClubOnboardingStep.FINANCE: selected_profile is not None,
-            ClubOnboardingStep.RULES: self._count_rule_sets(club.id) > 0 and self._count_pricing_matrices(club.id) > 0,
+            ClubOnboardingStep.RULES: self._count_rule_sets(club.id) > 0
+            and self._count_pricing_matrices(club.id) > 0,
             ClubOnboardingStep.MODULES: len(self._enabled_module_keys(club.id)) > 0,
         }
 
@@ -856,7 +902,9 @@ class SuperadminOnboardingService:
         if linked_user is not None and linked_user.person is not None:
             return linked_user.person
         person = self.db.scalar(
-            select(Person).options(selectinload(Person.user)).where(Person.normalized_email == normalized_email)
+            select(Person)
+            .options(selectinload(Person.user))
+            .where(Person.normalized_email == normalized_email)
         )
         if person is not None:
             return person

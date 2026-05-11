@@ -6,7 +6,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models import ClubMembershipRole, PricingDayType, PricingPlayerType, PricingSeason, PricingTimeBand
+from app.models import (
+    ClubMembershipRole,
+    PricingDayType,
+    PricingPlayerType,
+    PricingSeason,
+    PricingTimeBand,
+)
 from app.models.enums import BookingRuleAppliesTo
 from app.schemas.rule_context import ContextNotice, NormalizedRuleContext
 
@@ -40,8 +46,16 @@ class BookingPartyContextInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_requested_player_count(self) -> BookingPartyContextInput:
-        bucket_values = [value for value in (self.member_count, self.guest_count, self.staff_count) if value is not None]
-        if self.requested_player_count is not None and bucket_values and self.requested_player_count != sum(bucket_values):
+        bucket_values = [
+            value
+            for value in (self.member_count, self.guest_count, self.staff_count)
+            if value is not None
+        ]
+        if (
+            self.requested_player_count is not None
+            and bucket_values
+            and self.requested_player_count != sum(bucket_values)
+        ):
             raise ValueError("requested_player_count must match the sum of explicit party buckets")
         return self
 
