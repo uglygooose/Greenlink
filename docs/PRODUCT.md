@@ -277,6 +277,10 @@ Generative AI on course conditioning, voice tee-sheet operation, AI tournament p
 
 FastAPI + PostgreSQL + semantic layer (dbt) + LLM router pattern. The router lets GreenLink mix OpenAI for chat surfaces, Anthropic for longer-context reasoning, and small fine-tuned models for classification work (no-show prediction). Costs stay under control because most queries route to the cheap models; only the open-ended chat queries hit the expensive ones. **Build the semantic layer in v1 even if only no-show prediction and Operations Q&A ship in v1.5.** It compounds across every AI feature that follows.
 
+The v1 semantic layer ships as a Python metric registry inside the FastAPI codebase (`backend/app/semantic/`), not as a dbt project. Metrics are defined as typed Python classes with SQL queries, result schemas, and dependency graphs — extending the `finance/read_model_service.py:SummaryWindow` pattern already established in the backend. This is the v1 bridge: it satisfies §7's substantive commitment to stable definitions of every metric and entity, with substantially less operational complexity than dbt.
+
+The standard remains dbt or equivalent. The migration trigger is named: when metric count exceeds ~25, OR compound metric definitions become clunky, OR an analyst joins the team and needs dbt-grade lineage, OR a paying customer surfaces an AI feature that needs introspection beyond Python registry capability — that's the signal to migrate to dbt. The v1 registry's metric definitions become the spec the dbt project implements. No work is lost; the upgrade path is real.
+
 ---
 
 ## 8. Risks and threats
@@ -379,7 +383,7 @@ The codebase has substantial foundations:
 
 Applying the discipline of Section 3 (bridges where the standard isn't built) and the principle that v1 deepens the USPs rather than chases feature parity:
 
-**Backend / integration work — 16 items:**
+**Backend / integration work — 17 items:**
 
 1. Fix member booking party-size defect
 2. Enable MEMBER_ACCOUNT at POS terminal
@@ -391,12 +395,13 @@ Applying the discipline of Section 3 (bridges where the standard isn't built) an
 8. In-app message list / notifications backend
 9. Member consent capture columns + onboarding flow (POPIA — legal)
 10. Information Officer field + af-south-1 data residency defaults (POPIA — legal)
-11. List-endpoint tenant-scoping audit (~91 endpoints)
+11. ~~List-endpoint tenant-scoping audit~~ — COMPLETE per Phase 5.5 audit (commit a8cf5cb). 125 of 127 endpoints scoped correctly; the two unscoped endpoints (/health, /auth/login) are correctly public. Note: §10.3 originally cited "~91 endpoints" — actual surface is 127 (37 of which are list endpoints). Calibration drift, resolved.
 12. Multi-tender per-acquirer reconciliation in close-day
 13. Cash variance by employee tracking
 14. Pastel export format validated against real Pastel installation
 15. Daily KPI metrics — RevPATT, F&B per round, effective green fee
 16. ErrorBoundary at route + critical-surface level
+17. Python metric registry foundation — `backend/app/semantic/` directory with the registry pattern; 6 v1 metrics defined (RevPATT, RevPUR, effective green fee, F&B per round, weather-adjusted utilisation, member-stats); test sentinel verifying registry well-formedness.
 
 **Frontend rebuild surfaces — 11 surfaces, all Claude Design ground-up:**
 
@@ -455,12 +460,14 @@ Implement design tokens in CSS/Tailwind. Build admin shell to production quality
 Tee sheet, close-day wizard, finance / accounting export, pricing rules management, audit log viewer. Bundled because they share design language and Masters aesthetics carry consistently across them. *Claude Design burst 2.*
 
 **Phase 9 — Backend extension wave.**
-Sixteen items, sequenced by dependency, parallelisable in sub-phases:
+Seventeen items, sequenced by dependency, parallelisable in sub-phases:
 - *Sub-phase 9A — Legal and foundations:* POPIA fields, VAT tagging, HNA Player ID, tenant-scoping audit.
 - *Sub-phase 9B — Audit log expansion:* wire booking + finance + pricing services to emit events. Foundation for both audit USP and AI feature-store.
 - *Sub-phase 9C — Tee sheet correctness:* optimistic locking, slot hold model.
 - *Sub-phase 9D — Finance USP deepening:* multi-tender per-acquirer reconciliation, cash variance by employee, Pastel export validation, KPI calculations.
 - *Sub-phase 9E — Comms foundation:* transactional email provider, in-app notification list.
+- *Sub-phase 9F — Semantic-layer architecture:* Python metric registry in `backend/app/semantic/`. Foundational layer that every AI feature in v1.5+ sits on, per §7. Six v1 metrics implemented against the registry pattern. Test sentinel verifies registry well-formedness.
+- *Sub-phase 9G — Contract-quality bundle:* Six USP-critical create endpoints corrected to `status_code=201` per REST contract; two platform.py endpoints replace untyped `dict[str, str]` returns with proper Pydantic response models. Small surface, USP-critical.
 
 *Runs in parallel with Phase 8.* *Claude Code.*
 
@@ -483,7 +490,7 @@ Configure tenant, import member list, train GM and ops team, onboard membership,
 
 - Phase 6 (design system + foundation surfaces design) runs in parallel with Phase 5 (schema integrity).
 - Phase 9 (backend extension wave) runs in parallel with Phase 8 (USP surfaces design).
-- Phase 9's sub-phases A through E run in parallel with each other where they don't share files.
+- Phase 9's sub-phases A through G run in parallel with each other where they don't share files. 9F (semantic-layer architecture) is foundational and should land before 9D (finance USP deepening) which depends on it for KPI metric implementation.
 - Most of Phase 11's surfaces can be designed in parallel once the language is set.
 
 ### What does not happen in v1

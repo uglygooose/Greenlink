@@ -18,6 +18,21 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 5.6 — PRODUCT.md amendment (WI-5 decision + Phase 5.5 audit conflict resolutions)
+
+Docs-only commit. Seven surgical edits to docs/PRODUCT.md:
+- §7: paragraph added clarifying v1 ships Python metric registry; dbt named as v2/v3 standard with named migration triggers
+- §10.3: work item 17 added (semantic layer foundation); work item 11 marked complete with calibration note (~91 → 127)
+- §11: sub-phase 9F (semantic-layer architecture) added
+- §11: sub-phase 9G (contract-quality bundle) added
+- §11: "Runs in parallel" subsection updated to cover 9A–9G
+- §11: Phase 9 item-count narrative updated from "Sixteen items" to "Seventeen items" to match §10.3 (direct downstream of the work-item-17 addition)
+
+Unblocks Phase 9 kickoff — WI-5 decision is now canonical. Phase 9 shape is 9A through 9G inclusive.
+
+No code, no schema, no tests.
+
+---
 ### Phase 5.5 — Backend audit report (2026-05-12)
 
 - **Scope**: read-only backend audit covering domain event emission consistency, tenant scoping completeness, read-model pattern coverage, service-layer architecture coherence, API contract quality, and test coverage relative to v1 USP surfaces. v1-USP-weighted severity grading. Output feeds Phase 9 backend extension wave with a concrete prioritised work list.
