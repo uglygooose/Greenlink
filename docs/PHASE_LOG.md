@@ -18,6 +18,17 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 7.1 — LIVE_STATE.md regenerated post Phase 7 (2026-05-12)
+
+Docs-only commit. LIVE_STATE.md regenerated to capture Phase 7's frontend rebuild burst: new design tokens, component primitives at `frontend/src/components/ui/`, new admin shell at `frontend/src/components/admin-shell/`, the `frontend/src/components/onboarding/` helper, three new `/onboarding/*` routes wrapped in ProtectedRoute, replaced Login + Admin dashboard + Settings hub surfaces, deleted old shell components and the stale `src/design-system/greenlink-design-system.md`.
+
+Top-of-file stamp updated to commit `a97e071`. Router line-number references shifted to reflect the new `/onboarding/*` group (RootRedirect 35-45 → 38-48; `/admin/select-club` redirect 51 → 54; superadmin catchall 100 → 113; admin catchall 85 → 98; player catchall 111 → 124; settings/club redirect 80 → 93; settings/profile redirect 81 → 94). New "Design system" section added between Stack and Routes (tokens, fonts, primitives, admin chrome, onboarding helper, token-discipline grep status). New "Parallel implementations" section before "Known follow-ups" documenting the three rebuild-burst carry-overs per the Phase 7 commit message — `AdminWorkspace.tsx` (15 consumers), `material-symbol.tsx` (28 consumers), `app.css` — slated for Phase 10/12 cleanup. Identity & session notable surfaces extended with the three onboarding pages. Reporting & targets `admin-dashboard-page.tsx` line count corrected (355 → 375) and Phase 7 rebuild noted. Known follow-ups gained an entry enumerating the `TODO(Phase 9X)` stubs planted by Phase 7.
+
+C9 and FROZEN backend-gap entries reviewed and left intact — they live in `frontend/src/features/tee-sheet/sheet-shared.tsx`, which Phase 7 did not touch. "What is NOT here" reviewed; entries still accurate.
+
+No code, no schema, no tests.
+
+---
 ## Phase 7 — Design system + first six surfaces in the live frontend (2026-05-12)
 
 First Claude Code frontend rebuild burst. Implements Claude Design's Phase 6 deliverable in `frontend/src/`. Design tokens, seven component primitives, six surfaces, all wrapped in the Phase 6 `.gl` scope and built against `--gl-*` tokens.

@@ -1,6 +1,6 @@
 # GreenLink — Live State
 
-Last regenerated: 2026-05-11 from commit `1151ea7`.
+Last regenerated: 2026-05-12 from commit `a97e071`.
 Source of truth: code in this repo. If this file disagrees with code, code wins.
 
 ## How this file is maintained
@@ -14,28 +14,59 @@ This file is regenerated, not edited. To update it, re-run the Phase 1 regenerat
 - Database: PostgreSQL, required by validator at `backend/app/config/settings.py:46-51`. Connection string read from `GREENLINK_DATABASE_URL` (env prefix `GREENLINK_`, `backend/app/config/settings.py:15-19,26`); default literal in `backend/app/config/settings.py:11`; Alembic-side URL hardcoded in `backend/alembic.ini:6`.
 - Dev infra: `docker-compose.yml` defines two services — `postgres` (`postgres:16-alpine`, `docker-compose.yml:2-17`) and `redis` (`redis:7-alpine`, `docker-compose.yml:19-28`). No app container.
 
+## Design system (Phase 7)
+
+The design system is the Phase 6 prototype ported into the live frontend during Phase 7. Locked production defaults: Newsreader (display serif), Manrope (workhorse sans), default density, light mode. Dark-mode tokens exist (no user toggle in v1). All Phase 7 surfaces are wrapped in the `.gl` token scope so they sit alongside un-rebuilt pages without colliding with `frontend/src/styles/app.css`.
+
+- Tokens: `frontend/src/styles/tokens.css` (389 lines). Imported in `frontend/src/main.tsx:5` ahead of `app.css`. Canonical reference: `docs/phase6_prototype/tokens.css` (Phase 6.1 commit `c5e8fdc`); Phase 7 overrides `--gl-font-serif` → Newsreader and `--gl-font-sans` → Manrope.
+- Web fonts: Google Fonts link in `frontend/index.html:16-19` covers Newsreader, Manrope, IBM Plex Mono, Material Symbols Outlined (plus Inter, kept for un-rebuilt pages). `font-display: swap`. Self-hosting deferred to v1.5.
+- Component primitives (`frontend/src/components/ui/`):
+  - `Button.tsx` (52 lines) — primary / secondary / tertiary / destructive; sm / md / lg sizes; loading state via `aria-busy`.
+  - `Input.tsx` (116 lines) — wires `useId`-derived `htmlFor`/`id`, `aria-describedby` (helper + error IDs), `aria-invalid` automatically.
+  - `Card.tsx` (26 lines) — default / flat / sunken variants; semantic `as=` for `div` / `section` / `article` / `aside`.
+  - `Badge.tsx` (36 lines) — 9 tones mapped to `--gl-*` palette; optional dot.
+  - `Table.tsx` (99 lines) — generic over row type; tabular figures on `.num` cells; `aria-sort` on sortable headers.
+  - `Icon.tsx` (43 lines) — Material Symbols Outlined wrapper with `FILL`/`wght`/`GRAD`/`opsz` variation-settings; `aria-hidden` by default, `role="img"` + `aria-label` when labelled.
+  - `Wordmark.tsx` (47 lines) — serif "Green" + sans "link" + Caddie Red dot.
+  - `Avatar.tsx` (31 lines) — heritage circle, parchment glyph, serif tile.
+  - `HeroPlaceholder.tsx` (90 lines) — SVG-only brand-surface stand-in (tones `dawn` / `course` / `mist`) ported byte-for-byte from `docs/phase6_prototype/system.jsx:117-188`. Three tone palettes are intentional hex literals scoped to this file (atmospheric SVG values not derivable from `--gl-*` tokens). Real photography deferred to v1.5.
+  - Each primitive ships with a vitest render test alongside (17 tests total across the seven primitives that have explicit tests; Avatar + HeroPlaceholder do not have dedicated test files).
+- Admin chrome (`frontend/src/components/admin-shell/`, Phase 7):
+  - `AdminShell.tsx` (27 lines) — sidebar + topbar + scrollable main, wrapped in `.gl`.
+  - `AdminSidebar.tsx` (258 lines) — nav structure ported verbatim from the prototype: Operate / Finance / Club groups + Settings. Items without backing routes (`Bookings`, `Member ledger`, `Audit log`, `Handicaps`, `Competitions`) render as `aria-disabled` placeholders with `title="… ships in Phase XX"`.
+  - `AdminTopBar.tsx` (117 lines) — 64px top bar with title + breadcrumbs + search + (currently-disabled) action buttons.
+- Onboarding helper (`frontend/src/components/onboarding/OnboardingProgress.tsx`, 38 lines) — `role="progressbar"` with `aria-valuemin`/`aria-valuemax`/`aria-valuenow`.
+- Token discipline: arbitrary hex values in Phase 7 new code are confined to `tokens.css` (canonical) and `HeroPlaceholder.tsx`'s three tone palettes (documented above). Every other Phase 7 surface references `--gl-*` tokens only.
+
 ## Routes (frontend)
 
 All routes defined in `frontend/src/routes/router.tsx`. ProtectedRoute wraps each shell; layouts wrap the protected children.
 
 ### Public
 
-- `/` → `RootRedirect` (`frontend/src/routes/router.tsx:35-45`) — redirects to bootstrap `landing_path` or `/login`.
-- `/login` → `frontend/src/pages/login-page.tsx`.
+- `/` → `RootRedirect` (`frontend/src/routes/router.tsx:38-48`) — redirects to bootstrap `landing_path` or `/login`.
+- `/login` → `frontend/src/pages/login-page.tsx` (Phase 7 rebuild).
 - `/accept-invitation` → `frontend/src/pages/invitation-accept-page.tsx` — reads `?token=…` query param.
 - `/select-club` → `frontend/src/pages/select-club-page.tsx` — club picker.
-- `/admin/select-club` → redirect to `/select-club` (`frontend/src/routes/router.tsx:51`).
+- `/admin/select-club` → redirect to `/select-club` (`frontend/src/routes/router.tsx:54`).
+
+### Onboarding (wrapped by `ProtectedRoute`, no admin shell — brand-flavoured flow)
+
+- `/onboarding/welcome` → `frontend/src/pages/onboarding-welcome-page.tsx` (Phase 7, new) — Step 1 of 6.
+- `/onboarding/popia` → `frontend/src/pages/onboarding-popia-page.tsx` (Phase 7, new) — Step 3 of 6; POPIA consent + Information Officer designation, persistence stubbed pending Phase 9A.
+- `/onboarding/complete` → `frontend/src/pages/onboarding-completion-page.tsx` (Phase 7, new) — Step 6 of 6; "Open dashboard" navigates to `/admin/dashboard`.
+- `/onboarding/*` → redirect to `/onboarding/welcome` (`frontend/src/routes/router.tsx:67`).
 
 ### Superadmin (wrapped by `SuperadminLayout`, `frontend/src/routes/superadmin-layout.tsx`)
 
 - `/superadmin/overview` → `frontend/src/pages/superadmin-overview-page.tsx`.
 - `/superadmin/clubs` → `frontend/src/pages/superadmin-clubs-page.tsx`.
 - `/superadmin/accounting-profiles` → `frontend/src/pages/superadmin-accounting-profiles-page.tsx`.
-- `/superadmin/*` → redirect to `/superadmin/overview` (`frontend/src/routes/router.tsx:100`).
+- `/superadmin/*` → redirect to `/superadmin/overview` (`frontend/src/routes/router.tsx:113`).
 
-### Admin (wrapped by `AdminLayout`, `frontend/src/routes/admin-layout.tsx`)
+### Admin (wrapped by `AdminLayout`, `frontend/src/routes/admin-layout.tsx`; Phase 7 swapped to the new admin-shell components)
 
-- `/admin/dashboard` → `frontend/src/pages/admin-dashboard-page.tsx` — Today workspace.
+- `/admin/dashboard` → `frontend/src/pages/admin-dashboard-page.tsx` (Phase 7 rebuild) — Dashboard workspace.
 - `/admin/golf/dashboard` → `frontend/src/pages/admin-golf-dashboard-page.tsx`.
 - `/admin/golf/tee-sheet` → `frontend/src/pages/admin-golf-tee-sheet-page.tsx`.
 - `/admin/golf/settings` → `frontend/src/pages/admin-golf-settings-page.tsx` (4-line wrapper re-exporting `admin-golf-settings-guided-page.tsx`).
@@ -50,11 +81,11 @@ All routes defined in `frontend/src/routes/router.tsx`. ProtectedRoute wraps eac
 - `/admin/pro-shop` → `frontend/src/pages/admin-pro-shop-page.tsx`.
 - `/admin/reports` → `frontend/src/pages/admin-reports-page.tsx`.
 - `/admin/pos-terminal` → `frontend/src/pages/admin-pos-terminal-page.tsx`.
-- `/admin/settings` → `frontend/src/pages/admin-settings-hub-page.tsx`.
-- `/admin/settings/club` → redirect to `/admin/settings` (`frontend/src/routes/router.tsx:80`).
-- `/admin/settings/profile` → redirect to `/admin/settings` (`frontend/src/routes/router.tsx:81`).
+- `/admin/settings` → `frontend/src/pages/admin-settings-hub-page.tsx` (Phase 7 rebuild) — Club details + sectioned sub-nav.
+- `/admin/settings/club` → redirect to `/admin/settings` (`frontend/src/routes/router.tsx:93`).
+- `/admin/settings/profile` → redirect to `/admin/settings` (`frontend/src/routes/router.tsx:94`).
 - `/admin/settings/modules` → `frontend/src/pages/admin-settings-modules-page.tsx`.
-- `/admin/*` → redirect to `/admin/dashboard` (`frontend/src/routes/router.tsx:85`).
+- `/admin/*` → redirect to `/admin/dashboard` (`frontend/src/routes/router.tsx:98`).
 
 ### Player
 
@@ -62,7 +93,7 @@ All routes defined in `frontend/src/routes/router.tsx`. ProtectedRoute wraps eac
 - `/player/book` → `frontend/src/pages/player-book-page.tsx`.
 - `/player/order` → `frontend/src/pages/player-order-page.tsx`.
 - `/player/profile` → `frontend/src/pages/player-profile-page.tsx`.
-- `/player/*` → redirect to `/player/home` (`frontend/src/routes/router.tsx:111`).
+- `/player/*` → redirect to `/player/home` (`frontend/src/routes/router.tsx:124`).
 
 ## API endpoints (backend)
 
@@ -299,7 +330,7 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 - Frontend feature dirs: `frontend/src/session/`, `frontend/src/auth/`, `frontend/src/features/people/`, `frontend/src/features/profile/`.
 - Key routes: `/login`, `/accept-invitation`, `/select-club`.
 - Key endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/invitations/accept`, `POST /api/auth/invitations/activate`, `GET /api/session/bootstrap`, full `/api/people/*` group.
-- Notable surfaces: `frontend/src/components/protected-route.tsx`, `frontend/src/session/session-provider.tsx`, `frontend/src/pages/login-page.tsx`, `frontend/src/pages/invitation-accept-page.tsx`, `frontend/src/pages/select-club-page.tsx`.
+- Notable surfaces: `frontend/src/components/protected-route.tsx`, `frontend/src/session/session-provider.tsx`, `frontend/src/pages/login-page.tsx` (Phase 7 rebuild, 225 lines), `frontend/src/pages/invitation-accept-page.tsx`, `frontend/src/pages/select-club-page.tsx`, `frontend/src/pages/onboarding-welcome-page.tsx` (Phase 7, 148 lines), `frontend/src/pages/onboarding-popia-page.tsx` (Phase 7, 249 lines), `frontend/src/pages/onboarding-completion-page.tsx` (Phase 7, 153 lines).
 - Bootstrap menu_items source: `backend/app/services/session_bootstrap_service.py:18-51`.
 
 ### Tee sheet
@@ -383,13 +414,28 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 - Frontend feature dirs: `frontend/src/features/admin-dashboard/`, `frontend/src/features/targets/`.
 - Key routes: `/admin/dashboard`, `/admin/reports`, `/admin/targets`.
 - Key endpoints: `GET /api/admin/dashboard/summary`, `GET /api/admin/reports/summary`, full `/api/targets/*` group (5).
-- Notable surfaces: `frontend/src/pages/admin-dashboard-page.tsx` (355 lines), `frontend/src/pages/admin-reports-page.tsx` (608 lines), `frontend/src/pages/admin-targets-page.tsx`.
+- Notable surfaces: `frontend/src/pages/admin-dashboard-page.tsx` (Phase 7 rebuild, 375 lines — wires real `/api/admin/dashboard/summary`; "Live gross takings", "Members on course", "Next on the tee" stubbed with `TODO(Phase 9C/9D)` referencing the KPI metrics + tee-sheet read-model work items), `frontend/src/pages/admin-reports-page.tsx` (608 lines), `frontend/src/pages/admin-targets-page.tsx`. Settings hub lives under "Identity & session" → `/admin/settings` (`admin-settings-hub-page.tsx`, Phase 7 rebuild, 336 lines).
+
+## Parallel implementations (rebuild-burst carry-overs)
+
+Per ENGINEERING_STANDARDS.md §3, the rebuild burst's subtraction discipline applies across the burst as a whole, not per commit. Phase 7 leaves three pre-rebuild artefacts in tree because un-rebuilt surfaces still consume them; Phase 10 / 12 deletes them as the consuming pages rebuild against the new design system.
+
+- `frontend/src/components/shell/AdminWorkspace.tsx` — content-area scaffold (title + KPIs + body) imported by **15** un-rebuilt admin pages: `admin-finance-page`, `admin-finance-dashboard-page`, `admin-golf-tee-sheet-page`, `admin-golf-dashboard-page`, `admin-golf-settings-page`, `admin-communications-page`, `admin-halfway-page`, `admin-members-page`, `admin-order-queue-page`, `admin-people-dashboard-page`, `admin-pos-terminal-page`, `admin-pro-shop-page`, `admin-reports-page`, `admin-settings-modules-page`, `admin-targets-page`. Phase 7 surfaces do NOT use it.
+- `frontend/src/components/benchmark/material-symbol.tsx` — older `MaterialSymbol` icon component, imported by **28** files (un-rebuilt admin pages + a couple of features). Phase 7 surfaces use `frontend/src/components/ui/Icon.tsx` instead.
+- `frontend/src/styles/app.css` (~297 lines) — pre-rebuild Tailwind + custom CSS (`.auth-card`, `.admin-shell`, `.admin-card`, `.tee-sheet-slot-card`, etc.) consumed by un-rebuilt pages. `tokens.css` is imported ahead of it in `frontend/src/main.tsx:5-6` so the new system takes precedence within `.gl` scope. Phase 7 surfaces use only `--gl-*` tokens.
+
+Pre-rebuild assets that Phase 7 deleted outright (no carry-over needed): `frontend/src/components/shell/AdminShell.tsx`, `AdminSidebar.tsx`, `AdminTopbar.tsx`, `AdminSidebar.test.tsx`, plus `frontend/src/design-system/greenlink-design-system.md` (pre-rebuild design doc superseded by Phase 6 prototype + tokens.css; directory removed).
 
 ## Known follow-ups (code-evidenced only)
 
 - **C9 — staff_count recomputation in tee sheet read model.** Frontend re-derives `party_summary.staff_count` locally; backend should be the source. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:1027`.
 - **Tee-sheet read model lacks `next_action` / arrivals-due / unresolved flags.** Frontend derives them from raw booking state. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:896-898` (`// FROZEN — backend gap. … Replace when backend read model exposes computed flags (is_at_risk, is_arrivals_due, next_action, is_unresolved).`).
 - **Booking read model lacks finance eligibility flags.** Frontend derives `canPostCharge` / `canRecordPayment` / `canMarkComplimentary` / `canMarkWaived` / `canPostRefund` from `payment_status`. Evidence: `frontend/src/features/tee-sheet/sheet-shared.tsx:922-924` (`// FROZEN — backend gap. … Replace when backend read model exposes computed finance eligibility flags …`).
+- **Phase 7 dashboard / settings stubs awaiting Phase 9 wiring.** Phase 7 planted `TODO(Phase 9X)` comments where the prototype calls for data the existing API doesn't surface yet:
+  - `frontend/src/pages/admin-dashboard-page.tsx`: "Live gross takings", "Members on course", "Next on the tee" card, per-acquirer close-day rows, real-time accounting sync — all anchored to Phase 9C (tee-sheet read-model) and Phase 9D (KPI metrics + multi-tender reconciliation).
+  - `frontend/src/pages/admin-settings-hub-page.tsx`: `Save changes` / `Discard` disabled pending Phase 9A wiring of `PUT /api/clubs/config`. Sub-nav items for Profile / Security / Notifications / Accounting / Info Officer / Integrations / Membership types / Households / Billing rules / Communications / Accessibility render as `aria-disabled` placeholders carrying the Phase that ships them.
+  - `frontend/src/pages/onboarding-popia-page.tsx`, `frontend/src/pages/onboarding-welcome-page.tsx`, `frontend/src/pages/onboarding-completion-page.tsx`: POPIA consent state + Information Officer designation + "Save & exit" persist nowhere yet — Phase 9A delivers `club_onboarding_state` columns and the corresponding endpoints.
+  - `frontend/src/components/admin-shell/AdminSidebar.tsx`: nav items `Bookings` / `Member ledger` / `Audit log` / `Handicaps` / `Competitions` are placeholder labels; backing routes ship in Phase 9B WI-14 (audit log) and Phase 10 / 11 (the rest).
 
 ## What is NOT here
 
