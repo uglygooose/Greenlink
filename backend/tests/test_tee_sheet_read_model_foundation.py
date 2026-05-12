@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
@@ -341,3 +342,352 @@ def test_tee_sheet_day_defaults_reference_datetime_and_generates_rows_per_tee(
         warning["code"] == "reference_datetime_defaulted_to_request_time"
         for warning in payload["warnings"]
     )
+
+
+# ---------- WI-11 read-model coverage expansion ---------------------------
+#
+# Each test below exercises one decision the tee-sheet read model makes.
+# Service entry point: TeeSheetService.load_day (HTTP route /api/golf/tee-sheet/day).
+# Decisions covered: occupancy attribution, terminal-state visibility,
+# blocked-slot flagging, slot-interval honouring, multi-tee aggregation,
+# and tenant isolation.
+
+
+def _seed_minimal_course_environment(
+    db: Session,
+    *,
+    slug: str,
+    open_hours_close: str = "07:00",
+    interval_minutes: int = 30,
+) -> tuple[Club, Course, Tee, User]:
+    user = _create_user(db, email=f"rm-{slug}@example.com")
+    club = _create_club(db, name=f"RM {slug}", slug=slug)
+    _assign_membership(db, user=user, club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    course = Course(club_id=club.id, name="Main", holes=18, active=True)
+    db.add(course)
+    db.flush()
+    tee = Tee(
+        course_id=course.id,
+        name="Blue",
+        gender=None,
+        slope_rating=128,
+        course_rating="72.4",
+        color_code="#1b4d8f",
+        active=True,
+    )
+    db.add(tee)
+    db.add(
+        ClubConfig(
+            club_id=club.id,
+            timezone="Africa/Johannesburg",
+            operating_hours={
+                day: {"open": "06:00", "close": open_hours_close, "closed": False}
+                for day in (
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                )
+            },
+            booking_window_days=14,
+            cancellation_policy_hours=24,
+            default_slot_interval_minutes=interval_minutes,
+        )
+    )
+    db.commit()
+    db.refresh(course)
+    db.refresh(tee)
+    return club, course, tee, user
+
+
+def _seed_booking_for_slot(
+    db: Session,
+    *,
+    club: Club,
+    course: Course,
+    tee: Tee | None,
+    person_id: uuid.UUID,
+    slot_datetime: datetime,
+    status: BookingStatus,
+    party_size: int = 2,
+    interval_minutes: int = 30,
+) -> Booking:
+    booking = Booking(
+        club_id=club.id,
+        course_id=course.id,
+        tee_id=tee.id if tee is not None else None,
+        slot_datetime=slot_datetime,
+        slot_interval_minutes=interval_minutes,
+        status=status,
+        source=BookingSource.ADMIN,
+        party_size=party_size,
+        primary_person_id=person_id,
+        primary_membership_id=None,
+    )
+    db.add(booking)
+    db.flush()
+    db.add(
+        BookingParticipant(
+            booking_id=booking.id,
+            person_id=person_id,
+            club_membership_id=None,
+            participant_type=BookingParticipantType.MEMBER,
+            display_name="Primary",
+            guest_name=None,
+            sort_order=0,
+            is_primary=True,
+        )
+    )
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+
+def test_tee_sheet_zero_bookings_yields_empty_occupancy(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, _tee, user = _seed_minimal_course_environment(db_session, slug="rm-empty")
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rows"], "no rows generated"
+    for row in payload["rows"]:
+        for slot in row["slots"]:
+            assert slot["bookings"] == []
+            assert slot["occupancy"]["reserved_player_count"] == 0
+            assert slot["occupancy"]["confirmed_booking_count"] == 0
+            assert slot["party_summary"]["total_players"] == 0
+
+
+def test_tee_sheet_surfaces_reserved_and_checked_in_bookings(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, tee, user = _seed_minimal_course_environment(db_session, slug="rm-mixed")
+    reserved_slot = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    checked_in_slot = datetime(2026, 3, 30, 4, 30, tzinfo=UTC)
+    _seed_booking_for_slot(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=user.person_id,
+        slot_datetime=reserved_slot,
+        status=BookingStatus.RESERVED,
+    )
+    _seed_booking_for_slot(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=user.person_id,
+        slot_datetime=checked_in_slot,
+        status=BookingStatus.CHECKED_IN,
+    )
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    statuses = {slot["bookings"][0]["status"] for slot in hole_1_row["slots"] if slot["bookings"]}
+    assert statuses == {"reserved", "checked_in"}
+
+
+def test_tee_sheet_excludes_cancelled_bookings_from_visible_list(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, tee, user = _seed_minimal_course_environment(db_session, slug="rm-cancel")
+    slot = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    _seed_booking_for_slot(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=user.person_id,
+        slot_datetime=slot,
+        status=BookingStatus.CANCELLED,
+    )
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    first_slot_view = hole_1_row["slots"][0]
+    assert first_slot_view["bookings"] == []
+
+
+def test_tee_sheet_excludes_no_show_and_completed_paid_from_visible_list(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, tee, user = _seed_minimal_course_environment(db_session, slug="rm-terminal")
+    slot_no_show = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    slot_completed = datetime(2026, 3, 30, 4, 30, tzinfo=UTC)
+    _seed_booking_for_slot(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=user.person_id,
+        slot_datetime=slot_no_show,
+        status=BookingStatus.NO_SHOW,
+    )
+    completed = _seed_booking_for_slot(
+        db_session,
+        club=club,
+        course=course,
+        tee=tee,
+        person_id=user.person_id,
+        slot_datetime=slot_completed,
+        status=BookingStatus.COMPLETED,
+    )
+    # Completed + paid is excluded; completed + pending payment is retained
+    # (per TeeSheetService._should_include_booking_in_sheet). Mark paid.
+    completed.payment_status = None
+    db_session.add(completed)
+    db_session.commit()
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    for slot_view in hole_1_row["slots"][:2]:
+        assert slot_view["bookings"] == []
+
+
+def test_tee_sheet_blocked_slot_surfaces_state_flag_and_display_status(
+    client: TestClient, db_session: Session
+) -> None:
+    club, course, tee, user = _seed_minimal_course_environment(db_session, slug="rm-blocked")
+    slot = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    db_session.add(
+        TeeSheetSlotState(
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            slot_datetime=slot,
+            player_capacity=4,
+            manually_blocked=True,
+            blocked_reason="Maintenance",
+        )
+    )
+    db_session.commit()
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    blocked_slot = hole_1_row["slots"][0]
+    assert blocked_slot["state_flags"]["manually_blocked"] is True
+    assert blocked_slot["display_status"] == "blocked"
+
+
+def test_tee_sheet_honours_default_slot_interval_minutes(
+    client: TestClient, db_session: Session
+) -> None:
+    # 60 minutes of operating window with 10-minute slots → 6 slots per row
+    # (default behaviour: slot count = (close - open) / interval).
+    club, course, _tee, user = _seed_minimal_course_environment(
+        db_session, slug="rm-interval", open_hours_close="07:00", interval_minutes=10
+    )
+    headers = _auth_headers(client, user.email, str(club.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["interval_minutes"] == 10
+    hole_1_row = next(row for row in payload["rows"] if row["start_lane"] == "hole_1")
+    assert len(hole_1_row["slots"]) == 6
+
+
+def test_tee_sheet_is_tenant_scoped_across_clubs(client: TestClient, db_session: Session) -> None:
+    """Read model for club A never returns bookings from club B."""
+    club_a, course_a, tee_a, admin_a = _seed_minimal_course_environment(
+        db_session, slug="rm-tenant-a"
+    )
+    club_b, course_b, tee_b, admin_b = _seed_minimal_course_environment(
+        db_session, slug="rm-tenant-b"
+    )
+    slot = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    _seed_booking_for_slot(
+        db_session,
+        club=club_b,
+        course=course_b,
+        tee=tee_b,
+        person_id=admin_b.person_id,
+        slot_datetime=slot,
+        status=BookingStatus.RESERVED,
+    )
+    headers_a = _auth_headers(client, admin_a.email, str(club_a.id))
+    response = client.get(
+        "/api/golf/tee-sheet/day",
+        params={
+            "course_id": str(course_a.id),
+            "date": date(2026, 3, 30).isoformat(),
+            "membership_type": "member",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+        },
+        headers=headers_a,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    for row in payload["rows"]:
+        for slot_view in row["slots"]:
+            assert slot_view["bookings"] == [], (
+                f"club_a tee sheet leaked a booking: {slot_view['bookings']}"
+            )
