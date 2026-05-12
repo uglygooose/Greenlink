@@ -1,355 +1,375 @@
-import { Link, NavLink } from "react-router-dom";
+// Phase 7 rebuild — Admin dashboard (working surface).
+// Replaces the pre-rebuild Material-3 dashboard. Wires to the real
+// /api/admin/dashboard/summary endpoint for occupancy + recent activity +
+// active targets; placeholders for the prototype's "live gross takings" and
+// "members on course" stats are flagged with Phase 9 TODOs.
+import type { CSSProperties, ReactNode } from "react";
 
-import { MaterialSymbol } from "../components/benchmark/material-symbol";
-import AdminWorkspace from "../components/shell/AdminWorkspace";
+import { AdminShell } from "../components/admin-shell/AdminShell";
+import { Badge } from "../components/ui/Badge";
+import { Card } from "../components/ui/Card";
+import { Icon } from "../components/ui/Icon";
 import { useAdminDashboardSummaryQuery } from "../features/admin-dashboard/hooks";
 import { useSession } from "../session/session-context";
 import type { DashboardActivityItem } from "../types/admin-dashboard";
 
-function formatAmount(amount: number): string {
-  return `R${Math.abs(amount).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function formatAmountStr(amount: string): string {
-  return formatAmount(parseFloat(amount));
+function formatZar(amount: number | string): string {
+  const numeric = typeof amount === "string" ? parseFloat(amount) : amount;
+  if (!Number.isFinite(numeric)) return "R 0.00";
+  return `R ${Math.abs(numeric).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hr`;
   return new Date(iso).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
 }
 
-function activityIcon(entry: DashboardActivityItem): { icon: string; className: string } {
-  if (entry.type === "refund") return { icon: "undo", className: "bg-amber-50 text-amber-600" };
-  if (entry.source === "booking") return { icon: "golf_course", className: "bg-blue-50 text-blue-600" };
-  if (entry.source === "pos") return { icon: "point_of_sale", className: "bg-emerald-50 text-emerald-600" };
-  if (entry.source === "order") return { icon: "restaurant", className: "bg-amber-50 text-amber-600" };
-  if (entry.type === "payment") return { icon: "payments", className: "bg-secondary-container text-secondary" };
-  return { icon: "receipt_long", className: "bg-surface-container-high text-on-surface-variant" };
+function todayLabel(): string {
+  return new Intl.DateTimeFormat("en-ZA", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
 }
 
-interface AlertChipProps {
-  count: number;
+interface StatProps {
   label: string;
-  href: string;
-  tone: "amber" | "red" | "blue" | "green";
+  value: ReactNode;
+  sub?: ReactNode;
+  accent?: string;
+  border?: boolean;
 }
 
-function AlertChip({ count, label, href, tone }: AlertChipProps): JSX.Element {
-  const toneMap = {
-    amber: "bg-amber-100 text-amber-800 hover:bg-amber-200",
-    red: "bg-error-container/60 text-on-error-container hover:bg-error-container",
-    blue: "bg-blue-100 text-blue-800 hover:bg-blue-200",
-    green: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200",
-  };
+function Stat({ label, value, sub, accent, border }: StatProps): JSX.Element {
   return (
-    <Link
-      className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${toneMap[tone]}`}
-      to={href}
-    >
-      <span className="font-bold">{count}</span>
-      <span>{label}</span>
-      <MaterialSymbol className="text-[16px]" icon="arrow_forward" />
-    </Link>
-  );
-}
-
-interface WorkCardProps {
-  icon: string;
-  iconClass: string;
-  title: string;
-  detail: string;
-  actionLabel: string;
-  href: string;
-}
-
-function WorkCard({ icon, iconClass, title, detail, actionLabel, href }: WorkCardProps): JSX.Element {
-  return (
-    <div className="flex items-start gap-4 rounded-2xl bg-surface-container-lowest p-5 shadow-sm">
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${iconClass}`}>
-        <MaterialSymbol icon={icon} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-on-surface">{title}</p>
-        <p className="mt-1 text-sm text-on-surface-variant">{detail}</p>
-      </div>
-      <NavLink
-        className="shrink-0 rounded-xl bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-primary-dim"
-        to={href}
+    <div style={{ padding: "16px 22px", borderLeft: border ? "1px solid var(--gl-border-subtle)" : "none" }}>
+      <div className="gl-t-xs gl-muted">{label}</div>
+      <div
+        className="gl-serif gl-tabular"
+        style={{ fontSize: 28, fontWeight: 500, marginTop: 6, letterSpacing: "-0.01em" }}
       >
-        {actionLabel}
-      </NavLink>
+        {value}
+      </div>
+      {sub ? (
+        <div
+          style={{
+            fontSize: 11.5,
+            marginTop: 4,
+            color: accent ?? "var(--gl-text-secondary)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function TodayLayout(): JSX.Element {
-  const { bootstrap, accessToken } = useSession();
-  const selectedClubId = bootstrap?.selected_club_id ?? null;
-  const selectedClubName = bootstrap?.selected_club?.name ?? "Club workspace";
-  const timezone = bootstrap?.selected_club?.timezone ?? "";
+function activityIconSpec(entry: DashboardActivityItem): { name: string; color: string } {
+  if (entry.type === "refund") return { name: "undo", color: "var(--gl-state-atrisk)" };
+  if (entry.source === "booking") return { name: "event_available", color: "var(--gl-heritage-500)" };
+  if (entry.source === "pos") return { name: "point_of_sale", color: "var(--gl-state-checkedin)" };
+  if (entry.source === "order") return { name: "restaurant", color: "var(--gl-state-atrisk)" };
+  if (entry.type === "payment") return { name: "payments", color: "var(--gl-heritage-500)" };
+  return { name: "receipt_long", color: "var(--gl-text-secondary)" };
+}
 
-  const summaryQuery = useAdminDashboardSummaryQuery({ accessToken, selectedClubId });
-  const summary = summaryQuery.data;
+function activitySource(entry: DashboardActivityItem): string {
+  return `${entry.source} · ${timeAgo(entry.created_at)}`;
+}
 
-  const unpaidCount = summary?.unpaid_bookings_today ?? 0;
-  const noShowCount = summary?.no_show_risk_count ?? 0;
-  const arrivalsCount = summary?.arrivals_due_count ?? 0;
-  const closeDayReady = summary?.close_day_ready ?? true;
-  const teeOccupancy = summary?.tee_occupancy ?? null;
-  const occupancyPct = teeOccupancy?.occupancy_pct ?? null;
-  const recentActivity = summary?.recent_activity ?? [];
-  const activeTargets = summary?.active_targets ?? [];
+interface ActivityRowProps {
+  icon: string;
+  color?: string;
+  text: ReactNode;
+  meta: string;
+}
 
-  const workCards: WorkCardProps[] = [];
-
-  if (arrivalsCount > 0) {
-    workCards.push({
-      icon: "directions_walk",
-      iconClass: "bg-blue-100 text-blue-700",
-      title: "Arrivals due soon",
-      detail: `${arrivalsCount} reserved booking${arrivalsCount === 1 ? "" : "s"} ${arrivalsCount === 1 ? "is" : "are"} due to arrive in the next 90 minutes.`,
-      actionLabel: "Check In",
-      href: "/admin/golf/tee-sheet?filter=arrivals-due",
-    });
-  }
-
-  if (unpaidCount > 0) {
-    workCards.push({
-      icon: "payments",
-      iconClass: "bg-amber-100 text-amber-700",
-      title: "Unpaid bookings",
-      detail: `${unpaidCount} booking${unpaidCount === 1 ? "" : "s"} today ${unpaidCount === 1 ? "has" : "have"} outstanding payment.`,
-      actionLabel: "Open Tee Sheet",
-      href: "/admin/golf/tee-sheet?filter=unpaid",
-    });
-  }
-
-  if (noShowCount > 0) {
-    workCards.push({
-      icon: "person_off",
-      iconClass: "bg-error-container/60 text-on-error-container",
-      title: "No-show risk",
-      detail: `${noShowCount} reserved booking${noShowCount === 1 ? "" : "s"} ${noShowCount === 1 ? "has" : "have"} passed their start time without check-in.`,
-      actionLabel: "Review",
-      href: "/admin/golf/tee-sheet?filter=no-shows",
-    });
-  }
-
-  if (!closeDayReady) {
-    workCards.push({
-      icon: "task_alt",
-      iconClass: "bg-primary-container/50 text-primary",
-      title: "Close Day not ready",
-      detail: "Resolve unpaid bookings or no-show risks before closing the day.",
-      actionLabel: "Go to Finance",
-      href: "/admin/finance",
-    });
-  }
-
-  const hasWorkItems = workCards.length > 0;
-
+function ActivityRow({ icon, color, text, meta }: ActivityRowProps): JSX.Element {
   return (
-    <AdminWorkspace
-      description={`${selectedClubName}${timezone ? ` · ${timezone}` : ""}`}
-      title="Today"
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        padding: "8px 0",
+        borderBottom: "1px solid var(--gl-border-subtle)",
+      }}
     >
-      <div className="space-y-8">
-        <div className="flex flex-wrap items-center gap-3">
-          {summaryQuery.isLoading ? (
-            <div className="h-9 w-48 animate-pulse rounded-full bg-slate-100" />
-          ) : (
-            <>
-              {arrivalsCount > 0 && (
-                <AlertChip
-                  count={arrivalsCount}
-                  href="/admin/golf/tee-sheet?filter=arrivals-due"
-                  label="arrivals due"
-                  tone="blue"
-                />
-              )}
-              {unpaidCount > 0 && (
-                <AlertChip
-                  count={unpaidCount}
-                  href="/admin/golf/tee-sheet?filter=unpaid"
-                  label="unpaid today"
-                  tone="amber"
-                />
-              )}
-              {noShowCount > 0 && (
-                <AlertChip
-                  count={noShowCount}
-                  href="/admin/golf/tee-sheet?filter=no-shows"
-                  label="no-show risk"
-                  tone="red"
-                />
-              )}
-              {!closeDayReady && (
-                <Link
-                  className="flex items-center gap-2 rounded-full bg-primary-container/40 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary-container"
-                  to="/admin/finance"
-                >
-                  <MaterialSymbol className="text-[16px]" icon="warning" />
-                  Close Day blocked
-                  <MaterialSymbol className="text-[16px]" icon="arrow_forward" />
-                </Link>
-              )}
-              {unpaidCount === 0 && noShowCount === 0 && arrivalsCount === 0 && closeDayReady && (
-                <span className="flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-800">
-                  <MaterialSymbol className="text-[16px]" icon="check_circle" />
-                  All clear — no outstanding issues
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.65fr)_360px]">
-          <div className="space-y-8">
-            <section className="rounded-2xl bg-surface-container-low p-6">
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Work Queue</p>
-                <h2 className="mt-2 font-headline text-xl font-bold text-on-surface">What needs action</h2>
-              </div>
-              <div className="space-y-3">
-                {summaryQuery.isLoading ? (
-                  <div className="space-y-3">
-                    {[1, 2].map((item) => (
-                      <div className="h-20 animate-pulse rounded-2xl bg-slate-100" key={item} />
-                    ))}
-                  </div>
-                ) : null}
-                {!summaryQuery.isLoading && !hasWorkItems ? (
-                  <div className="flex items-center gap-4 rounded-2xl bg-emerald-50 p-5">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-600">
-                      <MaterialSymbol icon="check_circle" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-900">No outstanding items.</p>
-                      <p className="text-xs text-emerald-800">All bookings are settled and the day is ready to close.</p>
-                    </div>
-                  </div>
-                ) : null}
-                {workCards.map((card) => (
-                  <WorkCard key={card.title} {...card} />
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-2xl bg-surface-container-lowest shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Recent Movement</p>
-                  <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Activity feed</h3>
-                </div>
-                <NavLink className="text-xs font-bold uppercase tracking-wider text-primary hover:text-primary-dim" to="/admin/finance">
-                  Full Journal
-                </NavLink>
-              </div>
-              <div className="space-y-1 p-2">
-                {summaryQuery.isLoading ? (
-                  <div className="space-y-2 p-2">
-                    {[1, 2, 3].map((item) => (
-                      <div className="h-12 animate-pulse rounded-xl bg-slate-100" key={item} />
-                    ))}
-                  </div>
-                ) : null}
-                {!summaryQuery.isLoading && recentActivity.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-slate-400">No recent activity yet.</div>
-                ) : null}
-                {recentActivity.map((entry) => {
-                  const { icon, className } = activityIcon(entry);
-                  return (
-                    <div className="flex items-center gap-4 rounded-xl p-4 transition-colors hover:bg-surface-container-low" key={entry.id}>
-                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${className}`}>
-                        <MaterialSymbol className="text-sm" icon={icon} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-on-surface">{entry.description}</p>
-                        <p className="text-[10px] capitalize text-slate-400">
-                          {entry.source} · {timeAgo(entry.created_at)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-sm font-bold text-on-surface">{formatAmountStr(entry.amount)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-
-          <div className="space-y-6">
-            <section className="rounded-2xl bg-surface-container-low p-6">
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Performance</p>
-                <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Active targets</h3>
-              </div>
-              {summaryQuery.isLoading ? (
-                <div className="space-y-3">
-                  {[1, 2].map((item) => (
-                    <div className="h-14 animate-pulse rounded-xl bg-slate-100" key={item} />
-                  ))}
-                </div>
-              ) : activeTargets.length === 0 ? (
-                <p className="text-sm text-slate-400">No active targets for this period.</p>
-              ) : (
-                <div className="space-y-3">
-                  {activeTargets.map((t) => (
-                    <div className="rounded-xl bg-white p-4" key={`${t.domain_key}-${t.metric_key}`}>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t.domain_label}</p>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t.period_key}</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-on-surface">{t.metric_label}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Target:{" "}
-                        {t.unit === "currency"
-                          ? formatAmount(t.target_value)
-                          : t.target_value.toLocaleString("en-ZA")}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
-              <div className="mb-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Tee Sheet</p>
-                <h3 className="mt-1 font-headline text-lg font-bold text-on-surface">Today's occupancy</h3>
-              </div>
-              {summaryQuery.isLoading ? (
-                <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
-              ) : occupancyPct !== null ? (
-                <>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-headline text-3xl font-extrabold text-on-surface">{occupancyPct}%</span>
-                    <span className="text-xs font-medium text-primary">
-                      {teeOccupancy?.booked_slots}/{teeOccupancy?.total_slots} slots
-                    </span>
-                  </div>
-                  <div className="mt-3 h-1 w-full rounded-full bg-slate-100">
-                    <div className="h-1 rounded-full bg-primary" style={{ width: `${occupancyPct}%` }} />
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-slate-400">No tee sheet data for today.</p>
-              )}
-              <Link className="mt-4 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-primary" to="/admin/golf/tee-sheet">
-                Open Tee Sheet
-                <MaterialSymbol className="text-[14px]" icon="arrow_forward" />
-              </Link>
-            </section>
-          </div>
-        </div>
+      <Icon name={icon} size={16} color={color ?? "var(--gl-text-secondary)"} />
+      <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5 }}>{text}</div>
+      <div className="gl-muted" style={{ fontSize: 11 }}>
+        {meta}
       </div>
-    </AdminWorkspace>
+    </div>
   );
 }
 
+const CARD_HEADER_STYLE: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  padding: "18px 22px 12px 22px",
+  borderBottom: "1px solid var(--gl-border-subtle)",
+};
+
 export function AdminDashboardPage(): JSX.Element {
-  return <TodayLayout />;
+  const { accessToken, bootstrap } = useSession();
+  const selectedClubId = bootstrap?.selected_club_id ?? null;
+  const summaryQuery = useAdminDashboardSummaryQuery({ accessToken, selectedClubId });
+  const summary = summaryQuery.data;
+
+  const teeOccupancy = summary?.tee_occupancy ?? null;
+  const occupancyPct = teeOccupancy?.occupancy_pct ?? null;
+  const bookedSlots = teeOccupancy?.booked_slots ?? 0;
+  const totalSlots = teeOccupancy?.total_slots ?? 0;
+  const closeDayReady = summary?.close_day_ready ?? false;
+  const noShowCount = summary?.no_show_risk_count ?? 0;
+  const recentActivity = summary?.recent_activity ?? [];
+
+  return (
+    <AdminShell title="Dashboard">
+      <div
+        style={{
+          padding: 28,
+          display: "grid",
+          gridTemplateColumns: "1.4fr 1fr",
+          gap: 24,
+        }}
+      >
+        {/* Left column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Card style={{ padding: 0 }}>
+            <div style={CARD_HEADER_STYLE}>
+              <div>
+                <div className="gl-eyebrow">{todayLabel()}</div>
+                <div className="gl-serif" style={{ fontSize: 22, fontWeight: 500, marginTop: 6, letterSpacing: "-0.01em" }}>
+                  The course, today
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" className="gl-btn gl-btn--secondary" data-size="sm" disabled aria-label="Day picker — ships in Phase 10">
+                  <Icon name="today" size={14} /> Today
+                </button>
+                <button
+                  type="button"
+                  className="gl-btn gl-btn--secondary"
+                  data-size="sm"
+                  disabled
+                  aria-label="Previous day — ships in Phase 10"
+                >
+                  <Icon name="chevron_left" size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="gl-btn gl-btn--secondary"
+                  data-size="sm"
+                  disabled
+                  aria-label="Next day — ships in Phase 10"
+                >
+                  <Icon name="chevron_right" size={14} />
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+              <Stat
+                label="Slots booked"
+                value={
+                  summaryQuery.isLoading ? "—" : occupancyPct !== null ? `${bookedSlots} / ${totalSlots}` : "—"
+                }
+                sub={
+                  summaryQuery.isLoading
+                    ? "loading…"
+                    : occupancyPct !== null
+                      ? `${occupancyPct}% occupied`
+                      : "no tee sheet today"
+                }
+              />
+              {/* TODO(Phase 9D): live "members on course" metric requires read-model surface from Phase 9C tee sheet correctness work + WI-6 KPI metrics. */}
+              <Stat label="Members on course" value="—" sub="needs Phase 9D" border />
+              {/* TODO(Phase 9D): live gross takings is one of the WI-6 KPI metrics. */}
+              <Stat label="Gross takings · live" value="—" sub="needs Phase 9D" border />
+              <Stat
+                label="Unpaid bookings"
+                value={summaryQuery.isLoading ? "—" : summary?.unpaid_bookings_today ?? 0}
+                sub={
+                  summaryQuery.isLoading
+                    ? "loading…"
+                    : (summary?.unpaid_bookings_today ?? 0) > 0
+                      ? "review before close"
+                      : "all settled"
+                }
+                accent={(summary?.unpaid_bookings_today ?? 0) > 0 ? "var(--gl-caddie)" : undefined}
+                border
+              />
+            </div>
+          </Card>
+
+          {/* TODO(Phase 9C/10): real "Next on the tee" read-model from tee-sheet correctness work.
+              Until then, render an empty-state card pointing to the existing tee sheet route. */}
+          <Card style={{ padding: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "16px 22px",
+                borderBottom: "1px solid var(--gl-border-subtle)",
+              }}
+            >
+              <div className="gl-serif" style={{ fontSize: 18, fontWeight: 500 }}>
+                Next on the tee
+              </div>
+              <a href="/admin/golf/tee-sheet" className="gl-btn gl-btn--tertiary" data-size="sm">
+                Open tee sheet <Icon name="arrow_forward" size={14} />
+              </a>
+            </div>
+            <div
+              style={{
+                padding: 28,
+                textAlign: "center",
+                color: "var(--gl-text-secondary)",
+                fontSize: 13,
+                lineHeight: 1.55,
+              }}
+            >
+              Phase 9C ships the live read-model that backs this card. Until then,
+              the tee sheet itself is the source of truth.
+            </div>
+          </Card>
+        </div>
+
+        {/* Right column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Card>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <div className="gl-serif" style={{ fontSize: 18, fontWeight: 500 }}>
+                Daily close
+              </div>
+              <Badge tone={closeDayReady ? "good" : "warn"} dot>
+                {closeDayReady ? "Ready" : "Pending"}
+              </Badge>
+            </div>
+            <div className="gl-muted gl-t-sm" style={{ marginBottom: 14 }}>
+              Runs at 23:30 · {bootstrap?.selected_club?.timezone ?? "Africa/Johannesburg"}
+            </div>
+            {/* TODO(Phase 9D): per-acquirer close-day reconciliation rows render here once the
+                multi-tender reconciliation work lands. */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {noShowCount > 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                  <Icon name="warning_amber" size={16} color="var(--gl-state-atrisk)" />
+                  <span style={{ flex: 1 }}>No-show risk</span>
+                  <span className="gl-muted" style={{ fontSize: 11.5 }}>
+                    {noShowCount} booking{noShowCount === 1 ? "" : "s"}
+                  </span>
+                </div>
+              ) : null}
+              {(summary?.unpaid_bookings_today ?? 0) > 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                  <Icon name="payments" size={16} color="var(--gl-caddie)" />
+                  <span style={{ flex: 1 }}>Unpaid bookings</span>
+                  <span className="gl-muted" style={{ fontSize: 11.5 }}>
+                    {summary?.unpaid_bookings_today} outstanding
+                  </span>
+                </div>
+              ) : null}
+              {closeDayReady && noShowCount === 0 && (summary?.unpaid_bookings_today ?? 0) === 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                  <Icon name="check_circle" size={16} color="var(--gl-state-checkedin)" />
+                  <span style={{ flex: 1 }}>All checks clear</span>
+                </div>
+              ) : null}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 16,
+                paddingTop: 14,
+                borderTop: "1px solid var(--gl-border-subtle)",
+              }}
+            >
+              <span className="gl-t-xs gl-muted">Bound to accounting profile</span>
+              <a href="/admin/finance" className="gl-btn gl-btn--primary" data-size="sm">
+                Review &amp; close
+              </a>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="gl-serif" style={{ fontSize: 18, fontWeight: 500, marginBottom: 10 }}>
+              Activity
+            </div>
+            {summaryQuery.isLoading ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="gl-skeleton" style={{ height: 16, width: "60%" }} />
+                <div className="gl-skeleton" style={{ height: 16, width: "80%" }} />
+                <div className="gl-skeleton" style={{ height: 16, width: "70%" }} />
+              </div>
+            ) : recentActivity.length === 0 ? (
+              <div className="gl-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+                Nothing has moved through today yet.
+              </div>
+            ) : (
+              recentActivity.slice(0, 6).map((entry) => {
+                const { name, color } = activityIconSpec(entry);
+                return (
+                  <ActivityRow
+                    key={entry.id}
+                    icon={name}
+                    color={color}
+                    text={
+                      <>
+                        <strong>{entry.description}</strong>
+                        <span className="gl-muted" style={{ marginLeft: 6, fontSize: 11.5, textTransform: "capitalize" }}>
+                          · {activitySource(entry)}
+                        </span>
+                      </>
+                    }
+                    meta={formatZar(entry.amount)}
+                  />
+                );
+              })
+            )}
+          </Card>
+
+          {/* TODO(Phase 9D): real-time accounting sync status (last successful post, error count)
+              wires from the Pastel API integration work; bootstrap currently only knows the bound
+              profile name. */}
+          <Card variant="sunken">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div className="gl-t-xs gl-muted">SA accounting</div>
+                <div className="gl-serif" style={{ fontSize: 16, marginTop: 4, fontWeight: 500 }}>
+                  Accounting export
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  color: "var(--gl-state-checkedin)",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ width: 6, height: 6, borderRadius: 999, background: "var(--gl-state-checkedin)" }}
+                />
+                Configure in Settings → Club → Accounting
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </AdminShell>
+  );
 }

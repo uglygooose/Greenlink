@@ -21,6 +21,9 @@ import { AdminOrderQueuePage } from "../pages/admin-order-queue-page";
 import { AdminPosTerminalPage } from "../pages/admin-pos-terminal-page";
 import { InvitationAcceptPage } from "../pages/invitation-accept-page";
 import { LoginPage } from "../pages/login-page";
+import { OnboardingCompletionPage } from "../pages/onboarding-completion-page";
+import { OnboardingPopiaPage } from "../pages/onboarding-popia-page";
+import { OnboardingWelcomePage } from "../pages/onboarding-welcome-page";
 import { PlayerBookPage } from "../pages/player-book-page";
 import { PlayerOrderPage } from "../pages/player-order-page";
 import { PlayerProfilePage } from "../pages/player-profile-page";
@@ -53,6 +56,16 @@ const router = createBrowserRouter([
     path: "/select-club",
     element: <ProtectedRoute />,
     children: [{ index: true, element: <SelectClubPage /> }],
+  },
+  {
+    path: "/onboarding",
+    element: <ProtectedRoute />,
+    children: [
+      { path: "welcome", element: <OnboardingWelcomePage /> },
+      { path: "popia", element: <OnboardingPopiaPage /> },
+      { path: "complete", element: <OnboardingCompletionPage /> },
+      { path: "*", element: <Navigate to="/onboarding/welcome" replace /> },
+    ],
   },
   {
     path: "/admin",

@@ -5,10 +5,23 @@ import { describe, expect, test, vi } from "vitest";
 
 import { AdminLayout } from "./admin-layout";
 
-vi.mock("../components/shell/AdminShell", () => ({
-  default: ({ children, title }: { children: React.ReactNode; title: string }) => (
+// Phase 7: AdminLayout wraps the new admin-shell AdminShell (named export at
+// ../components/admin-shell/AdminShell). Mock renders a probe testid carrying
+// the resolved title + comma-joined breadcrumbs so the contract assertions can
+// pin every admin route's chrome metadata.
+vi.mock("../components/admin-shell/AdminShell", () => ({
+  AdminShell: ({
+    children,
+    title,
+    breadcrumbs,
+  }: {
+    children: React.ReactNode;
+    title: React.ReactNode;
+    breadcrumbs?: string[];
+  }) => (
     <div>
-      <div data-testid="admin-shell-title">{title}</div>
+      <div data-testid="admin-shell-title">{title as string}</div>
+      <div data-testid="admin-shell-breadcrumbs">{(breadcrumbs ?? []).join(",")}</div>
       {children}
     </div>
   ),
@@ -48,41 +61,42 @@ function renderAdminRoute(initialEntry: string): void {
 
 describe("admin route contract", () => {
   test.each([
-    ["/admin/dashboard", "Today", "Today page"],
-    ["/admin/golf/dashboard", "Golf Summary", "Golf summary page"],
-    ["/admin/golf/tee-sheet", "Tee Sheet", "Tee sheet page"],
-    ["/admin/golf/settings", "Golf Settings", "Golf settings page"],
-    ["/admin/orders", "Order Queue", "Orders page"],
-    ["/admin/people/dashboard", "People Summary", "People summary page"],
-    ["/admin/members", "Members", "Members page"],
-    ["/admin/targets", "Targets", "Targets page"],
-    ["/admin/finance/dashboard", "Finance Summary", "Finance summary page"],
-    ["/admin/finance", "Close Day", "Close day page"],
-    ["/admin/communications", "Communications", "Communications page"],
-    ["/admin/halfway", "Halfway House", "Halfway page"],
-    ["/admin/pro-shop", "Pro Shop", "Pro shop page"],
-    ["/admin/reports", "Performance", "Performance page"],
-    ["/admin/pos-terminal", "POS Terminal", "POS terminal page"],
-    ["/admin/settings", "Settings", "Settings hub page"],
-    ["/admin/settings/modules", "Modules", "Settings modules page"],
-  ])("admin layout metadata stays aligned for %s", async (path, title, pageCopy) => {
+    ["/admin/dashboard", "Dashboard", "", "Today page"],
+    ["/admin/golf/dashboard", "Golf summary", "", "Golf summary page"],
+    ["/admin/golf/tee-sheet", "Tee sheet", "", "Tee sheet page"],
+    ["/admin/golf/settings", "Golf settings", "", "Golf settings page"],
+    ["/admin/orders", "Order queue", "", "Orders page"],
+    ["/admin/people/dashboard", "People summary", "", "People summary page"],
+    ["/admin/members", "Members", "", "Members page"],
+    ["/admin/targets", "Targets", "", "Targets page"],
+    ["/admin/finance/dashboard", "Finance summary", "", "Finance summary page"],
+    ["/admin/finance", "Daily close", "", "Close day page"],
+    ["/admin/communications", "Communications", "", "Communications page"],
+    ["/admin/halfway", "Halfway house", "", "Halfway page"],
+    ["/admin/pro-shop", "Pro shop", "", "Pro shop page"],
+    ["/admin/reports", "Reports", "", "Performance page"],
+    ["/admin/pos-terminal", "POS terminal", "", "POS terminal page"],
+    ["/admin/settings", "Club", "Settings", "Settings hub page"],
+    ["/admin/settings/modules", "Modules", "Settings", "Settings modules page"],
+  ])("admin layout metadata stays aligned for %s", async (path, title, breadcrumbs, pageCopy) => {
     renderAdminRoute(path);
 
     expect(await screen.findByTestId("admin-shell-title")).toHaveTextContent(title);
+    expect(screen.getByTestId("admin-shell-breadcrumbs")).toHaveTextContent(breadcrumbs);
     expect(screen.getByText(pageCopy)).toBeInTheDocument();
   });
 
   test("/admin/settings/profile redirects to the settings hub", async () => {
     renderAdminRoute("/admin/settings/profile");
 
-    expect(await screen.findByTestId("admin-shell-title")).toHaveTextContent("Settings");
+    expect(await screen.findByTestId("admin-shell-title")).toHaveTextContent("Club");
     expect(await screen.findByText("Settings hub page")).toBeInTheDocument();
   });
 
   test("/admin/settings/club redirects to the settings hub", async () => {
     renderAdminRoute("/admin/settings/club");
 
-    expect(await screen.findByTestId("admin-shell-title")).toHaveTextContent("Settings");
+    expect(await screen.findByTestId("admin-shell-title")).toHaveTextContent("Club");
     expect(await screen.findByText("Settings hub page")).toBeInTheDocument();
   });
 });

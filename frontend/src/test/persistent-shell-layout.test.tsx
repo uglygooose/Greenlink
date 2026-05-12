@@ -14,7 +14,8 @@ let adminShellUnmounts = 0;
 let superadminShellMounts = 0;
 let superadminShellUnmounts = 0;
 
-vi.mock("../components/shell/AdminShell", () => {
+// Phase 7: admin shell moved to ../components/admin-shell/AdminShell as a named export.
+vi.mock("../components/admin-shell/AdminShell", () => {
   function MockAdminShell({ children, title }: { children: React.ReactNode; title: React.ReactNode }): JSX.Element {
     React.useEffect(() => {
       adminShellMounts += 1;
@@ -30,7 +31,7 @@ vi.mock("../components/shell/AdminShell", () => {
       </div>
     );
   }
-  return { default: MockAdminShell };
+  return { AdminShell: MockAdminShell };
 });
 
 vi.mock("../components/shell/SuperadminShell", () => {

@@ -18,6 +18,42 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 7 — Design system + first six surfaces in the live frontend (2026-05-12)
+
+First Claude Code frontend rebuild burst. Implements Claude Design's Phase 6 deliverable in `frontend/src/`. Design tokens, seven component primitives, six surfaces, all wrapped in the Phase 6 `.gl` scope and built against `--gl-*` tokens.
+
+- **Scope**: Phase 7 rebuilds Login + Admin shell & dashboard + Settings hub + three new Onboarding surfaces (welcome, POPIA, completion). Old chrome (`AdminShell.tsx`, `AdminSidebar.tsx`, `AdminTopbar.tsx` and the `AdminSidebar.test.tsx`) deleted alongside the pre-rebuild design-system doc `src/design-system/greenlink-design-system.md` (which the Phase 6 system supersedes).
+- **Files touched**:
+  - Added: `frontend/src/styles/tokens.css` (380 lines, ported from `docs/phase6_prototype/tokens.css` with `--gl-font-serif`→Newsreader and `--gl-font-sans`→Manrope overrides per the locked production defaults). Imported in `frontend/src/main.tsx` ahead of `app.css`.
+  - Added: `frontend/index.html` Google Fonts link extended with Newsreader + IBM Plex Mono families (Manrope + Inter + Material Symbols Outlined kept; Inter still consumed by un-rebuilt surfaces).
+  - Added primitives at `frontend/src/components/ui/`: `Button`, `Input`, `Card`, `Badge`, `Table`, `Icon`, `Wordmark`, `Avatar`, `HeroPlaceholder` — each with a `Path:` header comment and a vitest render test covering primary states.
+  - Added admin chrome at `frontend/src/components/admin-shell/`: `AdminShell`, `AdminSidebar`, `AdminTopBar`. Sidebar nav structure ported verbatim from the prototype (Operate / Finance / Club + Settings); items without backing routes (`Bookings`, `Member ledger`, `Audit log`, `Handicaps`, `Competitions`) render as aria-disabled placeholders carrying the Phase that ships them.
+  - Added shared onboarding component at `frontend/src/components/onboarding/OnboardingProgress.tsx`.
+  - Replaced (delete + new file in the same commit): `frontend/src/pages/login-page.tsx`, `frontend/src/pages/admin-dashboard-page.tsx`, `frontend/src/pages/admin-settings-hub-page.tsx`.
+  - Added new pages: `frontend/src/pages/onboarding-welcome-page.tsx`, `frontend/src/pages/onboarding-popia-page.tsx`, `frontend/src/pages/onboarding-completion-page.tsx`.
+  - Modified routing: `frontend/src/routes/admin-layout.tsx` (replaces the old `AdminShell` import with the new admin-shell path, updates route metadata strings); `frontend/src/routes/router.tsx` (new `/onboarding/*` group under `ProtectedRoute`).
+  - Modified `frontend/src/routes/route-truth.test.tsx` and `frontend/src/test/persistent-shell-layout.test.tsx` (mock the new `admin-shell/AdminShell` named export; route-truth title assertions updated to the new label set).
+  - Deleted (4 files + 1 doc): `frontend/src/components/shell/AdminShell.tsx`, `frontend/src/components/shell/AdminSidebar.tsx`, `frontend/src/components/shell/AdminTopbar.tsx`, `frontend/src/components/shell/AdminSidebar.test.tsx`, `frontend/src/pages/admin-dashboard-page.test.tsx`, `frontend/src/pages/admin-settings-hub-page.test.tsx`, `frontend/src/design-system/greenlink-design-system.md` (pre-rebuild design doc superseded by the Phase 6 prototype + tokens.css; directory removed when empty).
+- **Approved defaults locked in production**: Newsreader (display serif), Manrope (workhorse sans), default density, light mode. The prototype's `TWEAK_DEFAULTS`, `app.jsx`, and `tweaks-panel.jsx` are reference-only — the live app does not ship the runtime tweaks panel.
+- **Parallel implementations carried into Phase 10/12** (per ENGINEERING_STANDARDS.md §3 rebuild-burst exception):
+  - `frontend/src/components/shell/AdminWorkspace.tsx` stays — 15 un-rebuilt admin pages still import it for their internal title/KPI scaffold (`admin-finance-page`, `admin-golf-tee-sheet-page`, `admin-communications-page`, etc.). Phase 10/12 deletes it as those surfaces rebuild.
+  - `frontend/src/components/benchmark/material-symbol.tsx` stays — consumed by un-rebuilt pages alongside `MaterialSymbol`. The new `Icon` primitive supersedes it for Phase 7 surfaces.
+  - `frontend/src/styles/app.css` stays — un-rebuilt pages use `.auth-card`, `.admin-shell`, `.admin-card`, etc. Phase 7 surfaces use only `--gl-*` tokens.
+  - Tailwind config + Inter font also stay for un-rebuilt pages.
+- **Phase 9 TODOs planted** (anchor refs):
+  - Dashboard live gross takings / members-on-course / per-acquirer close-day rows → Phase 9D (`WI-6` KPI metrics, multi-tender reconciliation).
+  - "Next on the tee" card backed by tee-sheet read-model → Phase 9C.
+  - Onboarding POPIA persistence + Information Officer designation + "Download a copy" → Phase 9A.
+  - Settings hub `Save changes` wiring to `PUT /api/clubs/config` → Phase 9A.
+  - Audit log nav item shipped as disabled placeholder per the brief → backed by Phase 9B WI-14 (audit-log query surface).
+- **Accessibility**: tokens-driven single `--gl-focus-ring` treatment via `.gl :focus-visible`; semantic landmarks (`<main>`, `<header>`, `<aside>`, `<nav aria-label>`) on every surface; Phase 7 Input wires `htmlFor`/`id`/`aria-describedby`/`aria-invalid` automatically; Button exposes `aria-busy` while loading; OnboardingProgress carries `role="progressbar"` with valuemin/valuemax/valuenow; mobile touch-target floor (`min-height: 44px` under 600px) on `.gl-btn` and `.gl-input`.
+- **Token discipline verification**: grep of `#[0-9a-fA-F]{3,6}` across all Phase 7 new code (tokens.css excluded as canonical, tests excluded) finds matches only in `frontend/src/components/ui/HeroPlaceholder.tsx` — the SVG hero placeholder's three tone palettes (`dawn`/`course`/`mist`), ported byte-for-byte from `docs/phase6_prototype/system.jsx`. These are atmospheric SVG-only palette values, deliberately one-off, not derivable from `--gl-*` tokens.
+- **Verification chain**: `npm run typecheck` clean. `npm test` 280/280 passing across 40 files (includes the 7 new primitive test files = 17 new tests). `npm run lint` 13 warnings — all `react-hooks/exhaustive-deps` in pre-existing un-rebuilt code, no warnings in Phase 7 new code. `npm run build` succeeds; the existing chunk-size warning is unchanged from baseline.
+- **Conflicts surfaced**: the prototype's `app.jsx` TWEAK_DEFAULTS specifies Source Serif 4 + IBM Plex Sans (matches `tokens.css` and the design conversation transcript at `docs/phase6_prototype/chats/chat1.md:80`), but the user-approved production defaults are Newsreader + Manrope. Resolution: Phase 7 honours the user-approved production defaults; the prototype is reference-only for these two values. This was confirmed before any code was written.
+- **Outcome**: live app now boots through the new design system. `/login`, `/admin/dashboard`, `/admin/settings`, and the three `/onboarding/*` routes render against the Phase 6 visual contract with real backend endpoints wired (`POST /api/auth/login`, `GET /api/session/bootstrap`, `GET /api/admin/dashboard/summary`, `GET /api/clubs/config`, `GET /api/finance/accounting-profiles`). Un-rebuilt admin routes (`/admin/golf/tee-sheet`, `/admin/finance`, etc.) now render inside the new shell — visually mixed for the rebuild window, deliberately so per the §11 plan.
+- **Follow-ups**: none blocking. Phase 8 (USP surfaces design) and Phase 9 (backend extension wave) run in parallel; Phase 10 begins the second rebuild burst (USP surface code) consuming the new design system foundation that Phase 7 lays down.
+
+---
 ## Phase 6.1 — Claude Design prototype archived
 
 Docs-only commit. Claude Design's Phase 6 deliverable (design system tokens + 5 foundation boards + 6 surfaces + design conversation transcripts) archived at docs/phase6_prototype/ as read-only reference for Phase 7 implementation.
