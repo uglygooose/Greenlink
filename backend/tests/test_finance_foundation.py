@@ -25,6 +25,7 @@ from app.models import (
     Person,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -175,6 +176,13 @@ def test_finance_transactions_create_and_ledger_is_derived(
     assert charge_payload["transaction"]["source"] == "booking"
     assert charge_payload["transaction"]["reference_id"] == charge_reference_id
     assert charge_payload["balance"] == "-125.00"
+
+    assert_event_emitted(
+        db_session,
+        entity_type="finance_transaction",
+        entity_id=charge_payload["transaction"]["id"],
+        action="finance.transaction.posted",
+    )
 
     payment = client.post(
         "/api/finance/transactions",

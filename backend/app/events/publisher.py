@@ -19,6 +19,10 @@ class EventPublisher(Protocol):
         correlation_id: str | None = None,
         club_id: uuid.UUID | None = None,
         actor_user_id: uuid.UUID | None = None,
+        actor_person_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        before: dict[str, object] | None = None,
+        after: dict[str, object] | None = None,
     ) -> None: ...
 
 
@@ -36,13 +40,25 @@ class DatabaseEventPublisher:
         correlation_id: str | None = None,
         club_id: uuid.UUID | None = None,
         actor_user_id: uuid.UUID | None = None,
+        actor_person_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        before: dict[str, object] | None = None,
+        after: dict[str, object] | None = None,
     ) -> None:
+        enriched: dict[str, object] = {**payload}
+        enriched.setdefault("source_channel", source_channel)
+        if actor_person_id is not None:
+            enriched.setdefault("actor_person_id", str(actor_person_id))
+        if before is not None:
+            enriched.setdefault("before", before)
+        if after is not None:
+            enriched.setdefault("after", after)
         self.db.add(
             DomainEventRecord(
                 event_type=event_type,
                 aggregate_type=aggregate_type,
                 aggregate_id=aggregate_id,
-                payload=payload,
+                payload=enriched,
                 correlation_id=correlation_id,
                 club_id=club_id,
                 actor_user_id=actor_user_id,

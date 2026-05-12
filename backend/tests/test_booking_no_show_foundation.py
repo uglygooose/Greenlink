@@ -31,6 +31,7 @@ from app.models import (
     TeeSheetSlotState,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -306,6 +307,13 @@ def test_booking_no_show_allows_reserved_booking_and_reflects_in_tee_sheet(
     persisted = db_session.scalar(select(Booking).where(Booking.id == booking.id))
     assert persisted is not None
     assert persisted.status == BookingStatus.NO_SHOW
+
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=str(booking.id),
+        action="booking.no_show",
+    )
 
     after_no_show = client.get(
         "/api/golf/tee-sheet/day",

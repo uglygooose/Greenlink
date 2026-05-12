@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountingExportProfile,
     FinanceExportBatchStatus,
@@ -42,6 +43,7 @@ class AccountingProfileMappingService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.batch_service = FinanceExportBatchService(db)
+        self.publisher = DatabaseEventPublisher(db)
 
     def list_profiles(self, *, club_id: uuid.UUID) -> AccountingExportProfileListResponse:
         profiles = list(
@@ -64,6 +66,9 @@ class AccountingProfileMappingService:
         club_id: uuid.UUID,
         created_by_person_id: uuid.UUID,
         payload: AccountingExportProfileUpsertRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> AccountingExportProfileResponse:
         target_system = self._normalize_target_system(payload.target_system)
         profile = AccountingExportProfile(
@@ -79,7 +84,7 @@ class AccountingProfileMappingService:
             self._deactivate_other_profiles(club_id=club_id)
         self.db.add(profile)
         try:
-            self.db.commit()
+            self.db.flush()
         except IntegrityError:
             self.db.rollback()
             raise AppError(
@@ -87,6 +92,29 @@ class AccountingProfileMappingService:
                 message="An accounting export profile with this code already exists for the club",
                 status_code=409,
             ) from None
+        self.publisher.publish(
+            event_type="finance.profile.created",
+            aggregate_type="accounting_profile",
+            aggregate_id=str(profile.id),
+            payload={
+                "profile_id": str(profile.id),
+                "code": profile.code,
+                "target_system": profile.target_system,
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            actor_person_id=created_by_person_id,
+            source_channel=source_channel,
+            before=None,
+            after={
+                "code": profile.code,
+                "name": profile.name,
+                "target_system": profile.target_system,
+                "is_active": profile.is_active,
+            },
+        )
+        self.db.commit()
         self.db.refresh(profile)
         return self._to_profile_response(profile)
 
@@ -96,8 +124,18 @@ class AccountingProfileMappingService:
         club_id: uuid.UUID,
         profile_id: uuid.UUID,
         payload: AccountingExportProfileUpsertRequest,
+        actor_user_id: uuid.UUID | None = None,
+        actor_person_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> AccountingExportProfileResponse:
         profile = self.get_profile(club_id=club_id, profile_id=profile_id)
+        before_snapshot = {
+            "code": profile.code,
+            "name": profile.name,
+            "target_system": profile.target_system,
+            "is_active": profile.is_active,
+        }
         profile.code = self._normalize_code(payload.code)
         profile.name = payload.name.strip()
         profile.target_system = self._normalize_target_system(payload.target_system)
@@ -107,7 +145,7 @@ class AccountingProfileMappingService:
             self._deactivate_other_profiles(club_id=club_id, excluded_profile_id=profile.id)
         self.db.add(profile)
         try:
-            self.db.commit()
+            self.db.flush()
         except IntegrityError:
             self.db.rollback()
             raise AppError(
@@ -115,6 +153,28 @@ class AccountingProfileMappingService:
                 message="An accounting export profile with this code already exists for the club",
                 status_code=409,
             ) from None
+        self.publisher.publish(
+            event_type="finance.profile.updated",
+            aggregate_type="accounting_profile",
+            aggregate_id=str(profile.id),
+            payload={
+                "profile_id": str(profile.id),
+                "code": profile.code,
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            actor_person_id=actor_person_id,
+            source_channel=source_channel,
+            before=before_snapshot,
+            after={
+                "code": profile.code,
+                "name": profile.name,
+                "target_system": profile.target_system,
+                "is_active": profile.is_active,
+            },
+        )
+        self.db.commit()
         self.db.refresh(profile)
         return self._to_profile_response(profile)
 
@@ -207,6 +267,9 @@ class AccountingProfileMappingService:
         batch_id: uuid.UUID,
         profile_id: uuid.UUID,
         exported_by_person_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> AccountingMappedExportDownloadResult:
         batch = self.batch_service.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status == FinanceExportBatchStatus.VOID:
@@ -259,9 +322,32 @@ class AccountingProfileMappingService:
             }
         )
         metadata["export_events"] = export_events
+        previous_status = batch.status.value
         batch.metadata_json = metadata
         batch.status = FinanceExportBatchStatus.EXPORTED
         self.db.add(batch)
+        self.publisher.publish(
+            event_type="finance.export_batch.exported",
+            aggregate_type="finance_export_batch",
+            aggregate_id=str(batch.id),
+            payload={
+                "batch_id": str(batch.id),
+                "accounting_profile_id": str(profile.id),
+                "target_system": profile.target_system,
+                "actor_person_id": str(exported_by_person_id),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            actor_person_id=exported_by_person_id,
+            source_channel=source_channel,
+            before={"status": previous_status},
+            after={
+                "status": FinanceExportBatchStatus.EXPORTED.value,
+                "mapped_file_name": preview.file_name,
+                "mapped_content_hash": preview.content_hash,
+            },
+        )
         self.db.commit()
 
         return AccountingMappedExportDownloadResult(

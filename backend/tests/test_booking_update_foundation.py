@@ -31,6 +31,7 @@ from app.models import (
     TeeSheetSlotState,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -295,6 +296,12 @@ def test_booking_update_allows_reserved_party_edit_and_projects_to_tee_sheet(
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"] == "allowed"
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=payload["booking"]["id"],
+        action="booking.updated",
+    )
     assert payload["booking"]["party_size"] == 3
     assert payload["booking"]["primary_person_id"] == str(second_member.person_id)
     assert payload["booking"]["cart_flag"] is False

@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.publisher import DatabaseEventPublisher
 from app.models import Booking, BookingStatus
 from app.schemas.bookings import (
     BookingCheckInDecision,
@@ -24,11 +25,16 @@ BLOCKED_CHECKIN_STATUSES = {
 class BookingCheckInService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.publisher = DatabaseEventPublisher(db)
 
     def check_in_booking(
         self,
         club_id: uuid.UUID,
         payload: BookingCheckInRequest,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingCheckInResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -72,8 +78,21 @@ class BookingCheckInService:
                 ],
             )
 
+        previous_status = booking.status.value
         booking.status = BookingStatus.CHECKED_IN
         self.db.add(booking)
+        self.publisher.publish(
+            event_type="booking.checked_in",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={"booking_id": str(booking.id)},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"status": previous_status},
+            after={"status": BookingStatus.CHECKED_IN.value},
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)

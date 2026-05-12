@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from collections.abc import Generator
 from pathlib import Path
 
@@ -23,7 +24,7 @@ os.environ.setdefault("GREENLINK_OBJECT_STORAGE_SECRET_KEY", "pytest-only")
 import pytest
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -31,6 +32,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from alembic import command
 from app.auth.dependencies import get_db
 from app.main import app
+from app.models import DomainEventRecord
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink_test"
 DEFAULT_TEST_ADMIN_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/postgres"
@@ -160,3 +162,47 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+def assert_event_emitted(
+    session: Session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    action: str,
+    actor_user_id: uuid.UUID | None = None,
+    source_channel: str | None = None,
+) -> DomainEventRecord:
+    """Assert a DomainEventRecord matching the given coordinates was emitted.
+
+    Maps the Phase 9B audit-log carrier names to the DomainEventRecord columns:
+      entity_type → aggregate_type
+      entity_id   → aggregate_id
+      action      → event_type
+    Source channel lives in payload['source_channel'] (publisher default 'system').
+    Returns the matched event so the test can drill into snapshot contents.
+    """
+    stmt = select(DomainEventRecord).where(
+        DomainEventRecord.aggregate_type == entity_type,
+        DomainEventRecord.aggregate_id == entity_id,
+        DomainEventRecord.event_type == action,
+    )
+    if actor_user_id is not None:
+        stmt = stmt.where(DomainEventRecord.actor_user_id == actor_user_id)
+    events = list(session.scalars(stmt).all())
+    assert events, (
+        f"No DomainEventRecord matched entity_type={entity_type!r}, "
+        f"entity_id={entity_id!r}, action={action!r}"
+    )
+    if source_channel is not None:
+        matches = [
+            event
+            for event in events
+            if (event.payload or {}).get("source_channel") == source_channel
+        ]
+        assert matches, (
+            f"No matching event had source_channel={source_channel!r}; "
+            f"observed: {[(event.payload or {}).get('source_channel') for event in events]!r}"
+        )
+        return matches[0]
+    return events[0]

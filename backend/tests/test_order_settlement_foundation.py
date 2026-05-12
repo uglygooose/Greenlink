@@ -31,6 +31,7 @@ from app.models import (
     Person,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -286,6 +287,12 @@ def test_cash_tender_records_payment_transaction_and_offsets_balance(
     order_id = _create_order(client, headers=headers, person_id=customer.id, booking_id=booking.id)
     _collect_order(client, headers=headers, order_id=order_id)
     _post_charge(client, headers=headers, order_id=order_id)
+    assert_event_emitted(
+        db_session,
+        entity_type="finance_order_charge",
+        entity_id=order_id,
+        action="finance.order_charge.posted",
+    )
 
     response = client.post(
         f"/api/orders/{order_id}/record-payment",

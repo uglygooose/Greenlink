@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.domain.people.normalization import build_full_name, normalize_email
 from app.models import Club, ClubMembership, ClubMembershipRole, ClubMembershipStatus, Person, User
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -261,6 +262,12 @@ def test_golf_settings_publish_flow_enforces_setup_order(
     )
     assert published_rules.status_code == 200
     assert published_rules.json()["rule_set"]["status"] == "active"
+    assert_event_emitted(
+        db_session,
+        entity_type="rule_set",
+        entity_id=published_rules.json()["rule_set"]["id"],
+        action="settings.rule_set.published",
+    )
 
     pricing_draft = _create_pricing_matrix(client, headers, name="Draft Matrix", active=False)
     published_pricing = client.post(
@@ -270,6 +277,12 @@ def test_golf_settings_publish_flow_enforces_setup_order(
     )
     assert published_pricing.status_code == 200
     assert published_pricing.json()["pricing_matrix"]["status"] == "active"
+    assert_event_emitted(
+        db_session,
+        entity_type="pricing_matrix",
+        entity_id=published_pricing.json()["pricing_matrix"]["id"],
+        action="settings.pricing_matrix.published",
+    )
 
 
 def test_golf_settings_rollback_restores_previous_active_versions(

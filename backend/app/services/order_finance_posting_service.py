@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
     Booking,
@@ -29,12 +30,16 @@ class OrderFinancePostingService:
         self.db = db
         self.ledger_service = LedgerService(db)
         self.order_service = OrderService(db)
+        self.publisher = DatabaseEventPublisher(db)
 
     def post_charge(
         self,
         *,
         club_id: uuid.UUID,
         payload: OrderChargePostRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> OrderChargePostResult:
         order = self._load_order(club_id=club_id, order_id=payload.order_id)
         if order is None:
@@ -130,16 +135,20 @@ class OrderFinancePostingService:
                 ],
             )
 
+        order_total = self._compute_order_total(order)
         created = self.ledger_service.create_transaction(
             club_id=club_id,
             payload=FinanceTransactionCreateRequest(
                 account_id=finance_account.id,
-                amount=-self._compute_order_total(order),
+                amount=-order_total,
                 type=FinanceTransactionType.CHARGE,
                 source=FinanceTransactionSource.ORDER,
                 reference_id=order.id,
                 description=f"Order charge {str(order.id)[:8]}",
             ),
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            correlation_id=correlation_id,
         )
 
         order.finance_charge_transaction_id = created.transaction.id
@@ -149,6 +158,22 @@ class OrderFinancePostingService:
                 booking.payment_status = BookingPaymentStatus.PENDING
                 self.db.add(booking)
         self.db.add(order)
+        self.publisher.publish(
+            event_type="finance.order_charge.posted",
+            aggregate_type="finance_order_charge",
+            aggregate_id=str(order.id),
+            payload={
+                "order_id": str(order.id),
+                "transaction_id": str(created.transaction.id),
+                "amount": str(order_total),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"finance_charge_transaction_id": None},
+            after={"finance_charge_transaction_id": str(created.transaction.id)},
+        )
         self.db.commit()
 
         hydrated = self.order_service.get_order(club_id=club_id, order_id=order.id)

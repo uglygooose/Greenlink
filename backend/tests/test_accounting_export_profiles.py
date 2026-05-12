@@ -25,6 +25,7 @@ from app.models import (
     User,
 )
 from app.models.finance.transaction import FinanceTransaction
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str, role: ClubMembershipRole, club: Club) -> User:
@@ -196,6 +197,13 @@ def test_accounting_export_profile_create_and_list(client, db_session: Session) 
     assert created.json()["target_system"] == "generic_journal"
     assert listed.status_code == 200
     assert listed.json()["total_count"] == 1
+
+    assert_event_emitted(
+        db_session,
+        entity_type="accounting_profile",
+        entity_id=created.json()["id"],
+        action="finance.profile.created",
+    )
     assert (
         listed.json()["profiles"][0]["mapping_config"]["transaction_mappings"]["charge"][
             "debit_account_code"

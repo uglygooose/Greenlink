@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
     BookingParticipant,
@@ -51,11 +52,16 @@ MOVEABLE_STATUSES = {BookingStatus.RESERVED, BookingStatus.CHECKED_IN}
 class BookingMoveService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.publisher = DatabaseEventPublisher(db)
 
     def move_booking(
         self,
         club_id: uuid.UUID,
         payload: BookingMoveRequest,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingMoveResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -300,11 +306,37 @@ class BookingMoveService:
                 participant=participant,
             )
 
+        before_slot = {
+            "slot_datetime": moved_booking.slot_datetime.isoformat(),
+            "start_lane": (
+                moved_booking.start_lane.value if moved_booking.start_lane is not None else None
+            ),
+            "tee_id": str(moved_booking.tee_id) if moved_booking.tee_id is not None else None,
+        }
         # Apply the move
         moved_booking.slot_datetime = target_slot_datetime
         moved_booking.start_lane = target_start_lane
         moved_booking.tee_id = target_tee_id
         self.db.add(moved_booking)
+        after_slot = {
+            "slot_datetime": moved_booking.slot_datetime.isoformat(),
+            "start_lane": (
+                moved_booking.start_lane.value if moved_booking.start_lane is not None else None
+            ),
+            "tee_id": str(moved_booking.tee_id) if moved_booking.tee_id is not None else None,
+        }
+        self.publisher.publish(
+            event_type="booking.moved",
+            aggregate_type="booking",
+            aggregate_id=str(moved_booking.id),
+            payload={"booking_id": str(moved_booking.id)},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before=before_slot,
+            after=after_slot,
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=moved_booking.id)

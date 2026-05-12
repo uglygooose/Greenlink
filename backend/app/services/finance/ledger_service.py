@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import FinanceAccount, FinanceTransaction
 from app.schemas.finance import (
     FinanceAccountCustomerSummary,
@@ -24,12 +25,16 @@ from app.schemas.finance import (
 class LedgerService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.publisher = DatabaseEventPublisher(db)
 
     def create_transaction(
         self,
         *,
         club_id: uuid.UUID,
         payload: FinanceTransactionCreateRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> FinanceTransactionCreateResult:
         account = self._load_account(club_id=club_id, account_id=payload.account_id)
         if account is None:
@@ -45,6 +50,26 @@ class LedgerService:
             description=payload.description,
         )
         self.db.add(transaction)
+        self.db.flush()
+        transaction_response = FinanceTransactionResponse.model_validate(transaction)
+        self.publisher.publish(
+            event_type="finance.transaction.posted",
+            aggregate_type="finance_transaction",
+            aggregate_id=str(transaction.id),
+            payload={
+                "transaction_id": str(transaction.id),
+                "account_id": str(account.id),
+                "amount": str(transaction.amount),
+                "type": transaction.type.value,
+                "source": transaction.source.value,
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before=None,
+            after=transaction_response.model_dump(mode="json"),
+        )
         self.db.commit()
         self.db.refresh(transaction)
 

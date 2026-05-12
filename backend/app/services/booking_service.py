@@ -8,6 +8,7 @@ from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
     BookingParticipant,
@@ -56,9 +57,16 @@ class BookingService:
         self.availability_service = AvailabilityService(db)
         self.booking_commercial_service = BookingCommercialService(db)
         self.participant_resolver = BookingParticipantResolver(db)
+        self.publisher = DatabaseEventPublisher(db)
 
     def create_booking(
-        self, club_id: uuid.UUID, payload: BookingCreateRequest
+        self,
+        club_id: uuid.UUID,
+        payload: BookingCreateRequest,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingCreateResult:
         failures: list[BookingCreateFailureDetail] = []
 
@@ -267,6 +275,20 @@ class BookingService:
             ],
         )
         self.db.add(booking)
+        self.db.flush()
+        booking_summary = BookingSummary.model_validate(booking).model_dump(mode="json")
+        self.publisher.publish(
+            event_type="booking.created",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={"booking_id": str(booking.id)},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before=None,
+            after=booking_summary,
+        )
         self.db.commit()
 
         hydrated = self.db.scalar(

@@ -91,14 +91,31 @@ class GolfSettingsService:
         self,
         club_id: uuid.UUID,
         rule_set_id: uuid.UUID,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> GolfSettingsRulesMutationResult:
         self.ensure_rules_prerequisites(club_id)
         target = self._load_rule_set(club_id, rule_set_id)
         current_active = self._load_current_active_rule_set(club_id, exclude_id=target.id)
+        previous_active_id_str = str(current_active.id) if current_active is not None else None
         if current_active is not None:
             self._set_rule_snapshot(club_id, current_active)
         self._deactivate_other_rule_sets(club_id, keep_id=target.id)
         target.active = True
+        self.publisher.publish(
+            event_type="settings.rule_set.published",
+            aggregate_type="rule_set",
+            aggregate_id=str(target.id),
+            payload={"rule_set_id": str(target.id), "rule_set_name": target.name},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"active_rule_set_id": previous_active_id_str},
+            after={"active_rule_set_id": str(target.id), "version": target.name},
+        )
         self.db.commit()
         self.db.expire_all()
         reloaded = self._load_rule_set(club_id, target.id)
@@ -108,7 +125,14 @@ class GolfSettingsService:
             readiness=self.get_readiness(club_id),
         )
 
-    def rollback_rule_set(self, club_id: uuid.UUID) -> GolfSettingsRulesMutationResult:
+    def rollback_rule_set(
+        self,
+        club_id: uuid.UUID,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
+    ) -> GolfSettingsRulesMutationResult:
         snapshot = self._get_snapshot(club_id, RULES_SNAPSHOT_KEY)
         if snapshot is None:
             raise ConflictError(
@@ -117,10 +141,23 @@ class GolfSettingsService:
             )
 
         current_active = self._load_current_active_rule_set(club_id)
+        previous_active_id_str = str(current_active.id) if current_active is not None else None
         if current_active is not None:
             self._set_rule_snapshot(club_id, current_active)
 
         restored = self._restore_rule_snapshot(club_id, snapshot)
+        self.publisher.publish(
+            event_type="settings.rule_set.rolled_back",
+            aggregate_type="rule_set",
+            aggregate_id=str(restored.id),
+            payload={"rule_set_id": str(restored.id), "rule_set_name": restored.name},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"active_rule_set_id": previous_active_id_str},
+            after={"active_rule_set_id": str(restored.id), "version": restored.name},
+        )
         self.db.commit()
         self.db.expire_all()
         reloaded = self._load_rule_set(club_id, restored.id)
@@ -134,14 +171,31 @@ class GolfSettingsService:
         self,
         club_id: uuid.UUID,
         matrix_id: uuid.UUID,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> GolfSettingsPricingMutationResult:
         self.ensure_pricing_prerequisites(club_id)
         target = self._load_pricing_matrix(club_id, matrix_id)
         current_active = self._load_current_active_pricing_matrix(club_id, exclude_id=target.id)
+        previous_active_id_str = str(current_active.id) if current_active is not None else None
         if current_active is not None:
             self._set_pricing_snapshot(club_id, current_active)
         self._deactivate_other_pricing_matrices(club_id, keep_id=target.id)
         target.active = True
+        self.publisher.publish(
+            event_type="settings.pricing_matrix.published",
+            aggregate_type="pricing_matrix",
+            aggregate_id=str(target.id),
+            payload={"pricing_matrix_id": str(target.id), "pricing_matrix_name": target.name},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"active_pricing_matrix_id": previous_active_id_str},
+            after={"active_pricing_matrix_id": str(target.id), "version": target.name},
+        )
         self.db.commit()
         self.db.expire_all()
         reloaded = self._load_pricing_matrix(club_id, target.id)
@@ -248,7 +302,14 @@ class GolfSettingsService:
             raise NotFoundError("Club not found")
         return club
 
-    def rollback_pricing_matrix(self, club_id: uuid.UUID) -> GolfSettingsPricingMutationResult:
+    def rollback_pricing_matrix(
+        self,
+        club_id: uuid.UUID,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
+    ) -> GolfSettingsPricingMutationResult:
         snapshot = self._get_snapshot(club_id, PRICING_SNAPSHOT_KEY)
         if snapshot is None:
             raise ConflictError(
@@ -257,10 +318,26 @@ class GolfSettingsService:
             )
 
         current_active = self._load_current_active_pricing_matrix(club_id)
+        previous_active_id_str = str(current_active.id) if current_active is not None else None
         if current_active is not None:
             self._set_pricing_snapshot(club_id, current_active)
 
         restored = self._restore_pricing_snapshot(club_id, snapshot)
+        self.publisher.publish(
+            event_type="settings.pricing_matrix.rolled_back",
+            aggregate_type="pricing_matrix",
+            aggregate_id=str(restored.id),
+            payload={
+                "pricing_matrix_id": str(restored.id),
+                "pricing_matrix_name": restored.name,
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"active_pricing_matrix_id": previous_active_id_str},
+            after={"active_pricing_matrix_id": str(restored.id), "version": restored.name},
+        )
         self.db.commit()
         self.db.expire_all()
         reloaded = self._load_pricing_matrix(club_id, restored.id)

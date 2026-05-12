@@ -39,6 +39,7 @@ from app.models import (
     TeeSheetSlotState,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -279,6 +280,13 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(
         for item in payload["availability"]["unresolved_checks"]
     )
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 1
+
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=payload["booking"]["id"],
+        action="booking.created",
+    )
 
     tee_sheet = client.get(
         "/api/golf/tee-sheet/day",

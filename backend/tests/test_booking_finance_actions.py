@@ -28,6 +28,7 @@ from app.models import (
     Person,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str) -> User:
@@ -232,6 +233,19 @@ def test_booking_finance_actions_post_charge_and_record_payment_happy_path(
     assert charge_payload["transaction"]["amount"] == "-85.00"
     assert charge_payload["balance"] == "-85.00"
 
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=str(booking.id),
+        action="booking.charge_posted",
+    )
+    assert_event_emitted(
+        db_session,
+        entity_type="finance_transaction",
+        entity_id=charge_payload["transaction"]["id"],
+        action="finance.transaction.posted",
+    )
+
     record_response = client.post(
         f"/api/golf/bookings/{booking.id}/record-payment",
         headers=headers,
@@ -246,6 +260,13 @@ def test_booking_finance_actions_post_charge_and_record_payment_happy_path(
     assert record_payload["transaction"]["source"] == "booking"
     assert record_payload["transaction"]["amount"] == "85.00"
     assert record_payload["balance"] == "0.00"
+
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=str(booking.id),
+        action="booking.payment_recorded",
+    )
 
     persisted_booking = db_session.get(Booking, booking.id)
     assert persisted_booking is not None

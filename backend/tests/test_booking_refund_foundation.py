@@ -27,6 +27,7 @@ from app.models import (
     Person,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrored from test_booking_finance_actions.py — not extracted to
@@ -251,6 +252,13 @@ def test_post_refund_full_amount_against_paid_booking(
     assert payload["transaction"]["amount"] == "450.00"
     # After charge(-450) + payment(+450) + refund(+450) = +450 credit balance
     assert payload["balance"] == "450.00"
+
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=str(booking.id),
+        action="booking.refund_issued",
+    )
 
     # Verify DB state: 3 transactions, correct types, append-only (none deleted/mutated)
     transactions = list(

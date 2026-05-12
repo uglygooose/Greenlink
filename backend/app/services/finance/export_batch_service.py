@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
     Club,
@@ -50,6 +51,7 @@ class SelectedFinanceTransaction:
 class FinanceExportBatchService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.publisher = DatabaseEventPublisher(db)
 
     def generate_or_get_existing(
         self,
@@ -57,6 +59,9 @@ class FinanceExportBatchService:
         club_id: uuid.UUID,
         created_by_person_id: uuid.UUID,
         payload: FinanceExportBatchCreateRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> FinanceExportBatchCreateResult:
         existing = self._load_active_batch(
             club_id=club_id,
@@ -120,7 +125,7 @@ class FinanceExportBatchService:
         )
         self.db.add(batch)
         try:
-            self.db.commit()
+            self.db.flush()
         except IntegrityError:
             self.db.rollback()
             existing = self._load_active_batch(
@@ -135,6 +140,29 @@ class FinanceExportBatchService:
                 created=False,
                 batch=self._to_detail(existing),
             )
+        self.publisher.publish(
+            event_type="finance.export_batch.generated",
+            aggregate_type="finance_export_batch",
+            aggregate_id=str(batch.id),
+            payload={
+                "batch_id": str(batch.id),
+                "export_profile": batch.export_profile.value,
+                "transaction_count": batch.transaction_count,
+                "actor_person_id": str(created_by_person_id),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            actor_person_id=created_by_person_id,
+            source_channel=source_channel,
+            before=None,
+            after={
+                "status": batch.status.value,
+                "transaction_count": batch.transaction_count,
+                "content_hash": batch.content_hash,
+            },
+        )
+        self.db.commit()
 
         return FinanceExportBatchCreateResult(
             created=True,
@@ -232,20 +260,36 @@ class FinanceExportBatchService:
         *,
         club_id: uuid.UUID,
         batch_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> FinanceExportBatchVoidResult:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status != FinanceExportBatchStatus.VOID:
+            previous_status = batch.status.value
             metadata = dict(batch.metadata_json or {})
             metadata.setdefault(
                 "void_event",
                 {
                     "voided_at": utc_now().isoformat(),
-                    "previous_status": batch.status.value,
+                    "previous_status": previous_status,
                 },
             )
             batch.metadata_json = metadata
             batch.status = FinanceExportBatchStatus.VOID
             self.db.add(batch)
+            self.publisher.publish(
+                event_type="finance.export_batch.voided",
+                aggregate_type="finance_export_batch",
+                aggregate_id=str(batch.id),
+                payload={"batch_id": str(batch.id)},
+                correlation_id=correlation_id,
+                club_id=club_id,
+                actor_user_id=actor_user_id,
+                source_channel=source_channel,
+                before={"status": previous_status},
+                after={"status": FinanceExportBatchStatus.VOID.value},
+            )
             self.db.commit()
             self.db.refresh(batch)
             return FinanceExportBatchVoidResult(
@@ -263,6 +307,9 @@ class FinanceExportBatchService:
         club_id: uuid.UUID,
         batch_id: uuid.UUID,
         regenerated_by_person_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> FinanceExportBatchRegenerateResult:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status == FinanceExportBatchStatus.VOID:
@@ -273,6 +320,7 @@ class FinanceExportBatchService:
             )
 
         previous_status = batch.status.value
+        previous_batch_id = batch.id
         metadata = dict(batch.metadata_json or {})
         metadata["void_event"] = {
             "voided_at": utc_now().isoformat(),
@@ -285,6 +333,22 @@ class FinanceExportBatchService:
         batch.metadata_json = metadata
         batch.status = FinanceExportBatchStatus.VOID
         self.db.add(batch)
+        self.publisher.publish(
+            event_type="finance.export_batch.regenerated",
+            aggregate_type="finance_export_batch",
+            aggregate_id=str(previous_batch_id),
+            payload={
+                "batch_id": str(previous_batch_id),
+                "actor_person_id": str(regenerated_by_person_id),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            actor_person_id=regenerated_by_person_id,
+            source_channel=source_channel,
+            before={"status": previous_status},
+            after={"status": FinanceExportBatchStatus.VOID.value, "superseded": True},
+        )
         self.db.commit()
 
         result = self.generate_or_get_existing(
@@ -295,6 +359,9 @@ class FinanceExportBatchService:
                 date_from=batch.date_from,
                 date_to=batch.date_to,
             ),
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            correlation_id=correlation_id,
         )
         regenerated_batch = self.get_batch(club_id=club_id, batch_id=result.batch.id)
         metadata["superseded_event"] = {

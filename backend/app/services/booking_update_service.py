@@ -8,6 +8,7 @@ from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
     BookingParticipant,
@@ -48,6 +49,7 @@ class BookingUpdateService:
         self.availability_service = AvailabilityService(db)
         self.booking_commercial_service = BookingCommercialService(db)
         self.participant_resolver = BookingParticipantResolver(db)
+        self.publisher = DatabaseEventPublisher(db)
 
     def update_booking(
         self,
@@ -55,6 +57,9 @@ class BookingUpdateService:
         *,
         booking_id: uuid.UUID,
         payload: BookingUpdateRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingUpdateResult:
         booking = self._load_booking(club_id=club_id, booking_id=booking_id)
         if booking is None:
@@ -217,6 +222,7 @@ class BookingUpdateService:
                 failures=[],
             )
 
+        before_snapshot = BookingSummary.model_validate(booking).model_dump(mode="json")
         booking.primary_person_id = primary_participant.person_id
         booking.primary_membership_id = primary_participant.club_membership_id
         booking.party_size = len(resolved_participants)
@@ -233,6 +239,20 @@ class BookingUpdateService:
             for participant in resolved_participants
         ]
         self.db.add(booking)
+        self.db.flush()
+        after_snapshot = BookingSummary.model_validate(booking).model_dump(mode="json")
+        self.publisher.publish(
+            event_type="booking.updated",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={"booking_id": str(booking.id)},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before=before_snapshot,
+            after=after_snapshot,
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)

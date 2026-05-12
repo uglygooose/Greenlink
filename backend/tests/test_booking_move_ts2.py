@@ -41,6 +41,7 @@ from app.models import (
     TeeSheetSlotState,
     User,
 )
+from tests.conftest import assert_event_emitted
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -236,6 +237,12 @@ def test_move_booking_valid_time_change(client: TestClient, db_session: Session)
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"] == "allowed"
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=str(booking.id),
+        action="booking.moved",
+    )
 
 
 def test_move_capacity_is_lane_aware(client: TestClient, db_session: Session) -> None:

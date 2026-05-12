@@ -24,6 +24,7 @@ from app.models import (
     User,
 )
 from app.models.finance.transaction import FinanceTransaction
+from tests.conftest import assert_event_emitted
 
 
 def _create_user(db: Session, *, email: str, role: ClubMembershipRole, club: Club) -> User:
@@ -192,6 +193,13 @@ def test_generate_finance_export_batch_persists_summary_and_rows(
     assert payload["batch"]["rows"][0]["debit_amount"] == "120.00"
     assert payload["batch"]["rows"][1]["credit_amount"] == "120.00"
     assert payload["batch"]["metadata_json"]["selection_timezone"] == "Africa/Johannesburg"
+
+    assert_event_emitted(
+        db_session,
+        entity_type="finance_export_batch",
+        entity_id=payload["batch"]["id"],
+        action="finance.export_batch.generated",
+    )
 
 
 def test_generate_finance_export_batch_is_idempotent_for_same_range(

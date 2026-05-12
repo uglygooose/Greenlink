@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
     Booking,
@@ -38,12 +39,16 @@ class BookingFinanceService:
         self.db = db
         self.ledger_service = LedgerService(db)
         self.booking_commercial_service = BookingCommercialService(db)
+        self.publisher = DatabaseEventPublisher(db)
 
     def update_payment_status(
         self,
         *,
         club_id: uuid.UUID,
         payload: BookingPaymentStatusUpdateRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingPaymentStatusUpdateResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -101,8 +106,21 @@ class BookingFinanceService:
                 ],
             )
 
+        previous_payment_status = current_status.value if current_status is not None else None
         booking.payment_status = payload.payment_status
         self.db.add(booking)
+        self.publisher.publish(
+            event_type="booking.payment_status_updated",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={"booking_id": str(booking.id)},
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"payment_status": previous_payment_status},
+            after={"payment_status": payload.payment_status.value},
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)
@@ -120,6 +138,9 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingChargePostRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingChargePostResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -268,10 +289,32 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=self._charge_description(booking=booking, override=payload.description),
             ),
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            correlation_id=correlation_id,
         )
 
+        previous_payment_status = (
+            booking.payment_status.value if booking.payment_status is not None else None
+        )
         booking.payment_status = BookingPaymentStatus.PENDING
         self.db.add(booking)
+        self.publisher.publish(
+            event_type="booking.charge_posted",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={
+                "booking_id": str(booking.id),
+                "transaction_id": str(created.transaction.id),
+                "amount": str(charge_amount),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"payment_status": previous_payment_status},
+            after={"payment_status": BookingPaymentStatus.PENDING.value},
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)
@@ -291,6 +334,9 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingPaymentRecordRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingPaymentRecordResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -418,10 +464,32 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=f"Payment for booking {str(booking.id)[:8]}",
             ),
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            correlation_id=correlation_id,
         )
 
+        previous_payment_status = (
+            booking.payment_status.value if booking.payment_status is not None else None
+        )
         booking.payment_status = BookingPaymentStatus.PAID
         self.db.add(booking)
+        self.publisher.publish(
+            event_type="booking.payment_recorded",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={
+                "booking_id": str(booking.id),
+                "transaction_id": str(created.transaction.id),
+                "amount": str(settlement_amount),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"payment_status": previous_payment_status},
+            after={"payment_status": BookingPaymentStatus.PAID.value},
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)
@@ -441,6 +509,9 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingRefundRequest,
+        actor_user_id: uuid.UUID | None = None,
+        source_channel: str = "system",
+        correlation_id: str | None = None,
     ) -> BookingRefundResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -541,13 +612,35 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=description,
             ),
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            correlation_id=correlation_id,
         )
 
+        previous_payment_status = (
+            booking.payment_status.value if booking.payment_status is not None else None
+        )
         # Revert payment status to PENDING: the booking now has an open financial
         # position that requires close-day review (partial re-charge, account credit
         # application, or explicit waive decision).
         booking.payment_status = BookingPaymentStatus.PENDING
         self.db.add(booking)
+        self.publisher.publish(
+            event_type="booking.refund_issued",
+            aggregate_type="booking",
+            aggregate_id=str(booking.id),
+            payload={
+                "booking_id": str(booking.id),
+                "transaction_id": str(created.transaction.id),
+                "amount": str(refund_amount),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+            source_channel=source_channel,
+            before={"payment_status": previous_payment_status},
+            after={"payment_status": BookingPaymentStatus.PENDING.value},
+        )
         self.db.commit()
 
         hydrated = self._load_booking(club_id=club_id, booking_id=booking.id)

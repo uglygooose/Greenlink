@@ -17,6 +17,14 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-12 — booking-finance two-commit pattern
+
+- **Surfaced by**: Phase 9B emission tracing.
+- **Claim**: `booking_finance_service` methods (`post_charge`, `record_payment`, `post_refund`) are described as atomic booking-side mutations that move money and update booking state together.
+- **Reality**: Each method calls `self.ledger_service.create_transaction(...)` which commits the FinanceTransaction (commit #1) before the booking-status change is committed (commit #2). If commit #2 raises, the ledger row persists without the booking acknowledgement — money moves without the booking state catching up.
+- **Evidence**: `backend/app/services/booking_finance_service.py` post_charge / record_payment / post_refund each call `ledger_service.create_transaction(...)`, which commits internally in `backend/app/services/finance/ledger_service.py` before the parent booking-status `self.db.commit()`.
+- **Resolution**: Deferred. Needs a dedicated phase to wrap both writes in a single SQLAlchemy transaction (refactor `ledger_service.create_transaction` to not commit when invoked from a parent service, or pass a session-scoped flag). Pre-dates Phase 9B; surfaced when audit-log emissions made the two-commit boundary visible. Not touched in 9B per phase discipline.
+---
 ### 2026-05-11 — CI on main has been red since at least 30 March
 
 - **Surfaced by**: Phase 2 verification (lint failures locally) + GitHub Actions history review.
