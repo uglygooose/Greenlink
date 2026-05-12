@@ -37,7 +37,7 @@ class ReportsSummaryResponse(BaseModel):
     course_count: int
 
 
-# ---------- Phase 9D WI-13: member-stats read-model schemas --------------
+# ---------- Member-stats read-model schemas ------------------------------
 
 
 class MemberStatsSummaryResponse(BaseModel):

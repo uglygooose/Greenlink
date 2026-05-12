@@ -53,7 +53,7 @@ class BlastSendResponse(BaseModel):
     delivery_note: str
 
 
-# ---------- Phase 9E WI-12 — blast read-model schemas --------------------
+# ---------- Blast read-model schemas -------------------------------------
 
 
 class BlastSummaryResponse(BaseModel):

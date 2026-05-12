@@ -1,4 +1,4 @@
-"""Optimistic-locking regression sentinel (WI-9).
+"""Optimistic-locking regression sentinel.
 
 PRODUCT.md §3.1 commits GreenLink to "concurrency-safe by design.
 Optimistic locking with a five-minute hold on slot selection. Two staff
@@ -299,7 +299,7 @@ def test_concurrent_create_booking_emits_distinct_audit_events(
 ) -> None:
     """Two concurrent bookings emit two distinct booking.created events.
 
-    Pairs with Phase 9B's emission work: the audit-log feature store
+    Pairs with the audit-log emission work: the audit-log feature store
     captures the race so the bug is visible to anyone reading the log.
     When optimistic locking lands, this becomes one booking.created
     event plus (likely) one slot-hold-rejection event — the phase that

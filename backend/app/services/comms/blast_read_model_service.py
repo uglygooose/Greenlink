@@ -1,8 +1,7 @@
-"""Blast read model (Phase 9E WI-12).
+"""Blast read model.
 
-Mirrors the 9D :class:`PeopleReadModelService` shape: methods accept
-``(session, club_id, …)`` plus an optional ``(start_utc, end_utc)``
-window, and return Pydantic response models from ``app.schemas.blasts``.
+Methods accept ``(session, club_id, …)`` plus an optional :class:`TimeWindow`
+and return Pydantic response models from ``app.schemas.blasts``.
 
 Two read methods, both tenant-scoped:
 
@@ -14,15 +13,13 @@ Two read methods, both tenant-scoped:
 
 Aggregations are SQL-pushdown — one round-trip per method. Delivery /
 open / bounce metrics are not yet surfaced because the
-:class:`CommunicationBlast` model does not yet track them; PRODUCT.md
-§11 Phase 9E broader comms scope (v1.5+) adds them once a transactional
-provider lands.
+:class:`CommunicationBlast` model does not yet track them; the comms
+broader scope (v1.5+) adds them once a transactional provider lands.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -30,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.communication_blast import CommunicationBlast
 from app.models.enums import BlastStatus
 from app.schemas.blasts import BlastListItemResponse, BlastSummaryResponse
+from app.services._window import TimeWindow
 
 
 class BlastReadModelService:
@@ -40,8 +38,7 @@ class BlastReadModelService:
         self,
         *,
         club_id: uuid.UUID,
-        start_utc: datetime | None = None,
-        end_utc: datetime | None = None,
+        window: TimeWindow | None = None,
     ) -> BlastSummaryResponse:
         sent_case = case((CommunicationBlast.status == BlastStatus.SENT, 1), else_=0)
         drafted_case = case((CommunicationBlast.status == BlastStatus.DRAFT, 1), else_=0)
@@ -62,17 +59,18 @@ class BlastReadModelService:
             func.avg(sent_recipient_case).label("avg_recipient_count"),
             func.max(CommunicationBlast.sent_at).label("last_sent_at"),
         ).where(CommunicationBlast.club_id == club_id)
-        if start_utc is not None:
-            stmt = stmt.where(CommunicationBlast.created_at >= start_utc)
-        if end_utc is not None:
-            stmt = stmt.where(CommunicationBlast.created_at < end_utc)
+        if window is not None:
+            stmt = stmt.where(
+                CommunicationBlast.created_at >= window.start_utc,
+                CommunicationBlast.created_at < window.end_utc,
+            )
 
         row = self.db.execute(stmt).one()
         avg_int = int(row.avg_recipient_count) if row.avg_recipient_count is not None else 0
         return BlastSummaryResponse(
             club_id=club_id,
-            window_start=start_utc,
-            window_end=end_utc,
+            window_start=window.start_utc if window is not None else None,
+            window_end=window.end_utc if window is not None else None,
             total_blasts=int(row.total or 0),
             blasts_drafted=int(row.drafted or 0),
             blasts_sent=int(row.sent or 0),
@@ -85,8 +83,7 @@ class BlastReadModelService:
         self,
         *,
         club_id: uuid.UUID,
-        start_utc: datetime | None = None,
-        end_utc: datetime | None = None,
+        window: TimeWindow | None = None,
         limit: int = 20,
     ) -> list[BlastListItemResponse]:
         stmt = (
@@ -95,10 +92,11 @@ class BlastReadModelService:
             .order_by(CommunicationBlast.created_at.desc())
             .limit(limit)
         )
-        if start_utc is not None:
-            stmt = stmt.where(CommunicationBlast.created_at >= start_utc)
-        if end_utc is not None:
-            stmt = stmt.where(CommunicationBlast.created_at < end_utc)
+        if window is not None:
+            stmt = stmt.where(
+                CommunicationBlast.created_at >= window.start_utc,
+                CommunicationBlast.created_at < window.end_utc,
+            )
         rows = list(self.db.scalars(stmt).all())
         return [
             BlastListItemResponse(

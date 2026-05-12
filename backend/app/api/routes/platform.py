@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_superadmin, get_db
+from app.events.emission_context import EmissionContext
 from app.schemas.platform import (
     BootstrapRequest,
     ClubCreateRequest,
@@ -20,6 +21,12 @@ from app.services.platform_service import PlatformService
 router = APIRouter()
 
 
+def _context(request: Request) -> EmissionContext:
+    return EmissionContext(
+        correlation_id=getattr(request.state, "correlation_id", None),
+    )
+
+
 @router.post(
     "/bootstrap",
     response_model=PlatformBootstrapResponse,
@@ -31,8 +38,7 @@ def bootstrap_platform(
     db: Session = Depends(get_db),
 ) -> PlatformBootstrapResponse:
     service = PlatformService(db)
-    correlation_id = getattr(request.state, "correlation_id", None)
-    return service.bootstrap_platform(payload, correlation_id=correlation_id)
+    return service.bootstrap_platform(payload, context=_context(request))
 
 
 @router.post(
@@ -47,8 +53,7 @@ def create_club(
     db: Session = Depends(get_db),
 ) -> PlatformBootstrapResponse:
     service = PlatformService(db)
-    correlation_id = getattr(request.state, "correlation_id", None)
-    return service.create_club(payload, correlation_id=correlation_id)
+    return service.create_club(payload, context=_context(request))
 
 
 @router.post(
@@ -63,9 +68,16 @@ def assign_membership(
     db: Session = Depends(get_db),
 ) -> PlatformMembershipAssignResponse:
     service = PlatformService(db)
-    correlation_id = getattr(request.state, "correlation_id", None)
-    service.assign_membership(payload, correlation_id=correlation_id)
-    return PlatformMembershipAssignResponse(status="created")
+    membership = service.assign_membership(payload, context=_context(request))
+    return PlatformMembershipAssignResponse(
+        id=membership.id,
+        club_id=membership.club_id,
+        person_id=membership.person_id,
+        role=membership.role,
+        status=membership.status,
+        is_primary=membership.is_primary,
+        membership_number=membership.membership_number,
+    )
 
 
 @router.put("/clubs/{club_id}/modules", response_model=PlatformModuleUpdateResponse)
@@ -77,6 +89,5 @@ def update_modules(
     db: Session = Depends(get_db),
 ) -> PlatformModuleUpdateResponse:
     service = PlatformService(db)
-    correlation_id = getattr(request.state, "correlation_id", None)
-    service.update_modules(club_id, payload, correlation_id=correlation_id)
-    return PlatformModuleUpdateResponse(status="updated")
+    module_keys = service.update_modules(club_id, payload, context=_context(request))
+    return PlatformModuleUpdateResponse(club_id=club_id, module_keys=module_keys)

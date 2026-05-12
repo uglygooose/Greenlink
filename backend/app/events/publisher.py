@@ -5,6 +5,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from app.events.emission_context import EmissionContext
 from app.models import DomainEventRecord
 
 
@@ -16,11 +17,9 @@ class EventPublisher(Protocol):
         aggregate_type: str,
         aggregate_id: str,
         payload: dict[str, object],
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
         club_id: uuid.UUID | None = None,
-        actor_user_id: uuid.UUID | None = None,
         actor_person_id: uuid.UUID | None = None,
-        source_channel: str = "system",
         before: dict[str, object] | None = None,
         after: dict[str, object] | None = None,
     ) -> None: ...
@@ -37,16 +36,15 @@ class DatabaseEventPublisher:
         aggregate_type: str,
         aggregate_id: str,
         payload: dict[str, object],
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
         club_id: uuid.UUID | None = None,
-        actor_user_id: uuid.UUID | None = None,
         actor_person_id: uuid.UUID | None = None,
-        source_channel: str = "system",
         before: dict[str, object] | None = None,
         after: dict[str, object] | None = None,
     ) -> None:
+        ctx = context or EmissionContext()
         enriched: dict[str, object] = {**payload}
-        enriched.setdefault("source_channel", source_channel)
+        enriched.setdefault("source_channel", ctx.source_channel)
         if actor_person_id is not None:
             enriched.setdefault("actor_person_id", str(actor_person_id))
         if before is not None:
@@ -59,8 +57,8 @@ class DatabaseEventPublisher:
                 aggregate_type=aggregate_type,
                 aggregate_id=aggregate_id,
                 payload=enriched,
-                correlation_id=correlation_id,
+                correlation_id=ctx.correlation_id,
                 club_id=club_id,
-                actor_user_id=actor_user_id,
+                actor_user_id=ctx.actor_user_id,
             )
         )

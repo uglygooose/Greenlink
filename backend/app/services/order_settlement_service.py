@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -165,9 +166,8 @@ class OrderSettlementService:
                 "charge_transaction_id": str(order.finance_charge_transaction_id),
                 "settlement_applied": settlement_applied,
             },
-            correlation_id=None,
+            context=EmissionContext(actor_user_id=payload.acting_user_id),
             club_id=club_id,
-            actor_user_id=payload.acting_user_id,
         )
         self.db.commit()
 

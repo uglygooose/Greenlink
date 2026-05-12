@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
@@ -59,9 +60,7 @@ class BookingMoveService:
         club_id: uuid.UUID,
         payload: BookingMoveRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingMoveResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -330,10 +329,8 @@ class BookingMoveService:
             aggregate_type="booking",
             aggregate_id=str(moved_booking.id),
             payload={"booking_id": str(moved_booking.id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before=before_slot,
             after=after_slot,
         )

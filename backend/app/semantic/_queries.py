@@ -9,8 +9,8 @@ revenue formula is identical across RevPATT / RevPUR / effective green
 fee.
 
 Tenant scope is enforced at every helper — every query carries the
-``club_id`` predicate. Phase 9A's vat_category tags at the originator
-records (bookings.vat_category, order_items.vat_category,
+``club_id`` predicate. The vat_category tags at the originator records
+(bookings.vat_category, order_items.vat_category,
 pos_transaction_items.vat_category) drive the revenue split.
 """
 
@@ -40,12 +40,12 @@ from app.models import (
     TeeSheetSlotState,
     VatCategory,
 )
-from app.semantic._window import MetricWindow
+from app.services._window import TimeWindow
 
 ZERO = Decimal("0.00")
 
 
-def green_fee_revenue(session: Session, *, club_id: uuid.UUID, window: MetricWindow) -> Decimal:
+def green_fee_revenue(session: Session, *, club_id: uuid.UUID, window: TimeWindow) -> Decimal:
     """Sum of charge-type finance transactions where the originating booking
     is tagged ``vat_category='green_fee'`` and the transaction was posted
     in the window.
@@ -66,7 +66,7 @@ def green_fee_revenue(session: Session, *, club_id: uuid.UUID, window: MetricWin
     return total if total is not None else ZERO
 
 
-def utilised_rounds(session: Session, *, club_id: uuid.UUID, window: MetricWindow) -> int:
+def utilised_rounds(session: Session, *, club_id: uuid.UUID, window: TimeWindow) -> int:
     """Sum of ``party_size`` across bookings whose status is CHECKED_IN or
     COMPLETED with a ``slot_datetime`` in the window. Matches the brief:
     no-shows and cancellations do NOT count.
@@ -82,7 +82,7 @@ def utilised_rounds(session: Session, *, club_id: uuid.UUID, window: MetricWindo
     return int(total or 0)
 
 
-def fnb_revenue(session: Session, *, club_id: uuid.UUID, window: MetricWindow) -> Decimal:
+def fnb_revenue(session: Session, *, club_id: uuid.UUID, window: TimeWindow) -> Decimal:
     """Sum of F&B-tagged line revenue from both originator surfaces:
       * player-app halfway-house orders (order_items.vat_category='fnb',
         order status COLLECTED)
@@ -135,7 +135,7 @@ def fnb_revenue(session: Session, *, club_id: uuid.UUID, window: MetricWindow) -
     return order_branch + pos_branch
 
 
-def generated_slot_count(session: Session, *, club_id: uuid.UUID, window: MetricWindow) -> int:
+def generated_slot_count(session: Session, *, club_id: uuid.UUID, window: TimeWindow) -> int:
     """Compute the available tee-time slot denominator for RevPATT.
 
     Gross slots per day = ``(operating_minutes // default_slot_interval_minutes)

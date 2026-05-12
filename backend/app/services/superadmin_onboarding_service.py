@@ -12,6 +12,7 @@ from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
 from app.core.security import create_one_time_token, hash_one_time_token
 from app.domain.people.normalization import build_full_name, normalize_email
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountingExportProfile,
@@ -88,8 +89,7 @@ class SuperadminOnboardingService:
         self,
         *,
         payload: SuperadminClubCreateRequest,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> SuperadminClubSummary:
         club = Club(
             name=payload.name.strip(),
@@ -118,9 +118,8 @@ class SuperadminOnboardingService:
             aggregate_type="club",
             aggregate_id=str(club.id),
             payload={"slug": club.slug, "onboarding_state": club.onboarding_state},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(club)
@@ -214,8 +213,7 @@ class SuperadminOnboardingService:
         *,
         club_id: uuid.UUID,
         payload: SuperadminClubOnboardingUpdateRequest,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> SuperadminClubOnboardingDetailResponse:
         club = self._get_club(club_id)
         config = self._get_or_create_config(club, persist=True)
@@ -278,9 +276,8 @@ class SuperadminOnboardingService:
                 ),
                 "enabled_module_keys": self._enabled_module_keys(club.id),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         return self.get_onboarding_detail(club_id=club.id)
@@ -290,8 +287,7 @@ class SuperadminOnboardingService:
         *,
         club_id: uuid.UUID,
         active: bool,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> SuperadminClubSummary:
         club = self._get_club(club_id)
         if club.active == active:
@@ -303,9 +299,8 @@ class SuperadminOnboardingService:
             aggregate_type="club",
             aggregate_id=str(club.id),
             payload={"active": active},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(club)
@@ -315,8 +310,7 @@ class SuperadminOnboardingService:
         self,
         *,
         club_id: uuid.UUID,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> None:
         club = self._get_club(club_id)
         if self._registry_status(club) == "active":
@@ -342,9 +336,8 @@ class SuperadminOnboardingService:
             aggregate_type="club",
             aggregate_id=str(club_id),
             payload={"slug": club.slug, "name": club.name},
-            correlation_id=correlation_id,
+            context=context,
             club_id=None,
-            actor_user_id=actor_user_id,
         )
         self.db.delete(club)
         self.db.commit()
@@ -384,8 +377,7 @@ class SuperadminOnboardingService:
         *,
         club_id: uuid.UUID,
         payload: SuperadminClubAssignmentUpsertRequest,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> SuperadminClubAssignmentResponse:
         if payload.role not in {ClubMembershipRole.CLUB_ADMIN, ClubMembershipRole.CLUB_STAFF}:
             raise AppError(
@@ -434,9 +426,8 @@ class SuperadminOnboardingService:
                 "person_id": str(person.id),
                 "role": payload.role.value,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         return SuperadminClubAssignmentResponse(
@@ -467,8 +458,7 @@ class SuperadminOnboardingService:
         *,
         club_id: uuid.UUID,
         payload: SuperadminClubInvitationCreateRequest,
-        actor_user_id: uuid.UUID,
-        correlation_id: str | None = None,
+        context: EmissionContext,
     ) -> SuperadminClubInvitationResponse:
         if payload.role not in {ClubMembershipRole.CLUB_ADMIN, ClubMembershipRole.CLUB_STAFF}:
             raise AppError(
@@ -537,7 +527,7 @@ class SuperadminOnboardingService:
             person_id=person.id,
             membership_id=membership.id,
             linked_user_id=linked_user.id if linked_user is not None else None,
-            invited_by_user_id=actor_user_id,
+            invited_by_user_id=context.actor_user_id,
             accepted_by_user_id=None,
             email=normalized_email,
             normalized_email=normalized_email,
@@ -559,9 +549,8 @@ class SuperadminOnboardingService:
                 "role": payload.role.value,
                 "linked_user_id": str(linked_user.id) if linked_user is not None else None,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(invitation)

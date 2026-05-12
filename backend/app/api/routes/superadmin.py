@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_superadmin, get_db
 from app.core.exceptions import AppError
+from app.events.emission_context import EmissionContext
 from app.models import User
 from app.schemas.superadmin import (
     SuperadminAccountingProfileActivationRequest,
@@ -127,8 +128,10 @@ def create_superadmin_club(
 ) -> SuperadminClubSummary:
     return SuperadminOnboardingService(db).create_club(
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -143,8 +146,10 @@ def update_superadmin_club_status(
     return SuperadminOnboardingService(db).set_club_active(
         club_id=club_id,
         active=payload.active,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -157,8 +162,10 @@ def delete_superadmin_club(
 ) -> None:
     SuperadminOnboardingService(db).delete_club(
         club_id=club_id,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -182,8 +189,10 @@ def update_superadmin_club_onboarding(
     return SuperadminOnboardingService(db).update_onboarding(
         club_id=club_id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -233,8 +242,10 @@ def assign_superadmin_club_user(
     return SuperadminOnboardingService(db).assign_user_to_club(
         club_id=club_id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -265,6 +276,8 @@ def create_superadmin_club_invitation(
     return SuperadminOnboardingService(db).create_invitation(
         club_id=club_id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )

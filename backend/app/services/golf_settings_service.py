@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.routes.operations_support import to_pricing_matrix_response, to_rule_set_response
 from app.core.datetime import utc_now
 from app.core.exceptions import ConflictError, NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     BookingRule,
@@ -92,9 +93,7 @@ class GolfSettingsService:
         club_id: uuid.UUID,
         rule_set_id: uuid.UUID,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> GolfSettingsRulesMutationResult:
         self.ensure_rules_prerequisites(club_id)
         target = self._load_rule_set(club_id, rule_set_id)
@@ -109,10 +108,8 @@ class GolfSettingsService:
             aggregate_type="rule_set",
             aggregate_id=str(target.id),
             payload={"rule_set_id": str(target.id), "rule_set_name": target.name},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"active_rule_set_id": previous_active_id_str},
             after={"active_rule_set_id": str(target.id), "version": target.name},
         )
@@ -129,9 +126,7 @@ class GolfSettingsService:
         self,
         club_id: uuid.UUID,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> GolfSettingsRulesMutationResult:
         snapshot = self._get_snapshot(club_id, RULES_SNAPSHOT_KEY)
         if snapshot is None:
@@ -151,10 +146,8 @@ class GolfSettingsService:
             aggregate_type="rule_set",
             aggregate_id=str(restored.id),
             payload={"rule_set_id": str(restored.id), "rule_set_name": restored.name},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"active_rule_set_id": previous_active_id_str},
             after={"active_rule_set_id": str(restored.id), "version": restored.name},
         )
@@ -172,9 +165,7 @@ class GolfSettingsService:
         club_id: uuid.UUID,
         matrix_id: uuid.UUID,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> GolfSettingsPricingMutationResult:
         self.ensure_pricing_prerequisites(club_id)
         target = self._load_pricing_matrix(club_id, matrix_id)
@@ -189,10 +180,8 @@ class GolfSettingsService:
             aggregate_type="pricing_matrix",
             aggregate_id=str(target.id),
             payload={"pricing_matrix_id": str(target.id), "pricing_matrix_name": target.name},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"active_pricing_matrix_id": previous_active_id_str},
             after={"active_pricing_matrix_id": str(target.id), "version": target.name},
         )
@@ -210,8 +199,7 @@ class GolfSettingsService:
         *,
         club_id: uuid.UUID,
         person_id: uuid.UUID,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> InformationOfficerResponse:
         club = self._load_club(club_id)
         person = self.db.scalar(select(Person).where(Person.id == person_id))
@@ -243,9 +231,14 @@ class GolfSettingsService:
                     str(previous_person_id) if previous_person_id is not None else None
                 ),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
+            before={
+                "information_officer_person_id": (
+                    str(previous_person_id) if previous_person_id is not None else None
+                )
+            },
+            after={"information_officer_person_id": str(person_id)},
         )
         self.db.commit()
         self.db.refresh(club)
@@ -259,8 +252,7 @@ class GolfSettingsService:
         self,
         *,
         club_id: uuid.UUID,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> InformationOfficerResponse:
         club = self._load_club(club_id)
         previous_person_id = club.information_officer_person_id
@@ -276,9 +268,14 @@ class GolfSettingsService:
                     str(previous_person_id) if previous_person_id is not None else None
                 ),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
+            before={
+                "information_officer_person_id": (
+                    str(previous_person_id) if previous_person_id is not None else None
+                )
+            },
+            after={"information_officer_person_id": None},
         )
         self.db.commit()
         self.db.refresh(club)
@@ -306,9 +303,7 @@ class GolfSettingsService:
         self,
         club_id: uuid.UUID,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> GolfSettingsPricingMutationResult:
         snapshot = self._get_snapshot(club_id, PRICING_SNAPSHOT_KEY)
         if snapshot is None:
@@ -331,10 +326,8 @@ class GolfSettingsService:
                 "pricing_matrix_id": str(restored.id),
                 "pricing_matrix_name": restored.name,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"active_pricing_matrix_id": previous_active_id_str},
             after={"active_pricing_matrix_id": str(restored.id), "version": restored.name},
         )

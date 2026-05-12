@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -170,7 +171,7 @@ class PosService:
         self.db.flush()
 
         # Product.category is free-text in v1; a real Product → VatCategory
-        # mapping is a Phase 9B/9D concern. Until then, POS lines tag as OTHER
+        # mapping is a follow-up concern. Until then, POS lines tag as OTHER
         # so close-day apportionment can flag them as needing classification.
         item_models = [
             PosTransactionItem(
@@ -201,9 +202,8 @@ class PosService:
                 if finance_transaction_id
                 else None,
             },
-            correlation_id=None,
+            context=EmissionContext(actor_user_id=actor_user_id),
             club_id=club_id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
 

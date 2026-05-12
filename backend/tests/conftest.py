@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
 from app.auth.dependencies import get_db
+from app.events.emission_context import EmissionContext
 from app.main import app
 from app.models import DomainEventRecord
 
@@ -170,18 +171,28 @@ def assert_event_emitted(
     entity_type: str,
     entity_id: str,
     action: str,
+    context: EmissionContext | None = None,
     actor_user_id: uuid.UUID | None = None,
     source_channel: str | None = None,
 ) -> DomainEventRecord:
     """Assert a DomainEventRecord matching the given coordinates was emitted.
 
-    Maps the Phase 9B audit-log carrier names to the DomainEventRecord columns:
+    Maps the audit-log carrier names to the DomainEventRecord columns:
       entity_type → aggregate_type
       entity_id   → aggregate_id
       action      → event_type
     Source channel lives in payload['source_channel'] (publisher default 'system').
     Returns the matched event so the test can drill into snapshot contents.
+
+    Either ``context`` or the legacy ``actor_user_id`` / ``source_channel``
+    kwargs work — passing ``context`` is preferred; the others stay as a
+    transition convenience.
     """
+    if context is not None:
+        if actor_user_id is None:
+            actor_user_id = context.actor_user_id
+        if source_channel is None and context.source_channel != "system":
+            source_channel = context.source_channel
     stmt = select(DomainEventRecord).where(
         DomainEventRecord.aggregate_type == entity_type,
         DomainEventRecord.aggregate_id == entity_id,

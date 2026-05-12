@@ -8,6 +8,7 @@ from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
@@ -57,9 +58,7 @@ class BookingUpdateService:
         *,
         booking_id: uuid.UUID,
         payload: BookingUpdateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingUpdateResult:
         booking = self._load_booking(club_id=club_id, booking_id=booking_id)
         if booking is None:
@@ -146,7 +145,7 @@ class BookingUpdateService:
             else datetime.now(UTC)
         )
         try:
-            context = self.rule_context_service.normalize_context(
+            rule_context = self.rule_context_service.normalize_context(
                 RuleContextInput(
                     club_id=club_id,
                     course_id=booking.course_id,
@@ -176,8 +175,8 @@ class BookingUpdateService:
         booking_state.current_bookings_for_day = self._count_bookings_for_local_day(
             club_id=club_id,
             person_id=primary_participant.person_id,
-            local_date=context.local_date,
-            timezone_name=context.timezone,
+            local_date=rule_context.local_date,
+            timezone_name=rule_context.timezone,
             exclude_booking_id=booking.id,
         )
         booking_state.current_future_bookings = self._count_future_bookings(
@@ -187,7 +186,7 @@ class BookingUpdateService:
             exclude_booking_id=booking.id,
         )
         decision_input = self.booking_state_service.build_decision_input(
-            context,
+            rule_context,
             slot=SlotCandidateInput(slot_interval_minutes=booking.slot_interval_minutes),
             party=BookingPartyContextInput(
                 member_count=sum(
@@ -246,10 +245,8 @@ class BookingUpdateService:
             aggregate_type="booking",
             aggregate_id=str(booking.id),
             payload={"booking_id": str(booking.id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before=before_snapshot,
             after=after_snapshot,
         )

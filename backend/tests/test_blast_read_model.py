@@ -1,4 +1,4 @@
-"""Phase 9E WI-12 — blast read model.
+"""Blast read model.
 
 Covers BlastReadModelService.summary + list_recent plus tenant
 isolation, window bounds, empty-club behaviour, and the
@@ -10,7 +10,7 @@ rewrite).
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.models.communication_blast import CommunicationBlast
 from app.schemas.blasts import BlastCreateRequest
+from app.services._window import TimeWindow
 from app.services.comms.blast_read_model_service import BlastReadModelService
 from app.services.comms.blast_service import BlastService
 
@@ -197,8 +198,14 @@ def test_summary_window_filters_by_created_at(db_session: Session) -> None:
     service = BlastReadModelService(db_session)
     bounded = service.summary(
         club_id=club.id,
-        start_utc=datetime(2026, 7, 1, tzinfo=UTC),
-        end_utc=datetime(2026, 7, 31, tzinfo=UTC),
+        window=TimeWindow(
+            club_id=club.id,
+            timezone_name="Africa/Johannesburg",
+            date_from=date(2026, 7, 1),
+            date_to=date(2026, 7, 31),
+            start_utc=datetime(2026, 7, 1, tzinfo=UTC),
+            end_utc=datetime(2026, 7, 31, tzinfo=UTC),
+        ),
     )
     assert bounded.total_blasts == 1
     assert bounded.blasts_sent == 1
@@ -282,7 +289,7 @@ def test_list_recent_response_shape_is_fully_populated(db_session: Session) -> N
 
 
 def test_list_blasts_still_returns_descending_order(db_session: Session) -> None:
-    """Phase 9E opportunistic cleanup of audit Finding 4.4: blast_service.py
+    """Audit Finding 4.4 cleanup: blast_service.py
     list_blasts now uses ``select(...)`` instead of ``.query(...)``. This
     test guards the shape stays identical — three blasts in, three out,
     newest first, ``total_count`` matching.

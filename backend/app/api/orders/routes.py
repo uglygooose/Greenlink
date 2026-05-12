@@ -13,6 +13,7 @@ from app.api.routes.club_access import (
 )
 from app.auth.dependencies import get_current_user, get_db
 from app.core.exceptions import AuthorizationError, NotFoundError
+from app.events.emission_context import EmissionContext
 from app.models import ClubMembershipRole, OrderSource, OrderStatus, User
 from app.schemas.order_settlement import (
     OrderSettlementRecordRequest,
@@ -110,8 +111,10 @@ def create_order(
     return service.create_order(
         club_id=context.selected_club.id,
         payload=normalized_payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 

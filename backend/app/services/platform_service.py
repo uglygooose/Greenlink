@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.domain.people.normalization import build_full_name, normalize_email, split_display_name
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Club,
@@ -38,7 +39,7 @@ class PlatformService:
         self.publisher = DatabaseEventPublisher(db)
 
     def bootstrap_platform(
-        self, payload: BootstrapRequest, *, correlation_id: str | None = None
+        self, payload: BootstrapRequest, *, context: EmissionContext | None = None
     ) -> PlatformBootstrapResponse:
         platform_state = self._get_or_create_platform_state()
         if platform_state.is_initialized:
@@ -96,14 +97,24 @@ class PlatformService:
         platform_state.initialized_by_user_id = superadmin.id
         platform_state.initial_club_id = initial_club.id if initial_club else None
         self.db.add(platform_state)
+        bootstrap_context = context or EmissionContext()
+        if bootstrap_context.actor_user_id is None:
+            bootstrap_context = EmissionContext(
+                actor_user_id=superadmin.id,
+                source_channel=bootstrap_context.source_channel,
+                correlation_id=bootstrap_context.correlation_id,
+            )
         self.publisher.publish(
             event_type="platform.bootstrapped",
             aggregate_type="platform_state",
             aggregate_id=str(platform_state.id),
             payload={"initial_club_id": str(initial_club.id) if initial_club else None},
-            correlation_id=correlation_id,
-            actor_user_id=superadmin.id,
+            context=bootstrap_context,
             club_id=initial_club.id if initial_club else None,
+            after={
+                "is_initialized": True,
+                "initial_club_id": str(initial_club.id) if initial_club else None,
+            },
         )
         self.db.commit()
         return PlatformBootstrapResponse(
@@ -112,7 +123,7 @@ class PlatformService:
         )
 
     def create_club(
-        self, payload: ClubCreateRequest, *, correlation_id: str | None = None
+        self, payload: ClubCreateRequest, *, context: EmissionContext | None = None
     ) -> PlatformBootstrapResponse:
         self._assert_initialized()
         self._ensure_unique_club_slug(payload.slug)
@@ -132,15 +143,16 @@ class PlatformService:
             aggregate_type="club",
             aggregate_id=str(club.id),
             payload={"slug": club.slug},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
+            after={"slug": club.slug, "name": club.name, "timezone": club.timezone},
         )
         self.db.commit()
         return PlatformBootstrapResponse(status="created", message="Club created.")
 
     def assign_membership(
-        self, payload: ClubMembershipAssignRequest, *, correlation_id: str | None = None
-    ) -> None:
+        self, payload: ClubMembershipAssignRequest, *, context: EmissionContext | None = None
+    ) -> ClubMembership:
         self._assert_initialized()
         person = self.db.get(Person, payload.person_id)
         club = self.db.get(Club, payload.club_id)
@@ -154,7 +166,9 @@ class PlatformService:
                 ClubMembership.club_id == payload.club_id,
             )
         )
+        before: dict[str, object] | None
         if membership is None:
+            before = None
             membership = ClubMembership(
                 person_id=payload.person_id,
                 club_id=payload.club_id,
@@ -166,6 +180,12 @@ class PlatformService:
             self.db.add(membership)
             self.db.flush()
         else:
+            before = {
+                "role": membership.role.value,
+                "status": membership.status.value,
+                "is_primary": membership.is_primary,
+                "membership_number": membership.membership_number,
+            }
             membership.role = payload.role
             membership.status = payload.status
             membership.is_primary = payload.is_primary
@@ -175,32 +195,56 @@ class PlatformService:
             aggregate_type="club_membership",
             aggregate_id=str(membership.id),
             payload={"role": payload.role.value, "status": payload.status.value},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club.id,
+            before=before,
+            after={
+                "role": payload.role.value,
+                "status": payload.status.value,
+                "is_primary": payload.is_primary,
+                "membership_number": payload.membership_number,
+            },
         )
         self.db.commit()
+        self.db.refresh(membership)
+        return membership
 
     def update_modules(
         self,
         club_id: uuid.UUID,
         payload: ClubModuleUpdateRequest,
         *,
-        correlation_id: str | None = None,
-    ) -> None:
+        context: EmissionContext | None = None,
+    ) -> list[str]:
         self._assert_initialized()
         club = self.db.get(Club, club_id)
         if club is None:
             raise NotFoundError("Club not found")
+        before_keys = sorted(
+            module.module_key
+            for module in self.db.scalars(
+                select(ClubModule).where(ClubModule.club_id == club_id)
+            ).all()
+        )
         self._replace_modules(club_id, payload.module_keys)
+        after_keys = sorted(
+            module.module_key
+            for module in self.db.scalars(
+                select(ClubModule).where(ClubModule.club_id == club_id)
+            ).all()
+        )
         self.publisher.publish(
             event_type="club.modules_updated",
             aggregate_type="club",
             aggregate_id=str(club_id),
             payload={"module_keys": payload.module_keys},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
+            before={"module_keys": before_keys},
+            after={"module_keys": after_keys},
         )
         self.db.commit()
+        return after_keys
 
     def _replace_modules(self, club_id: uuid.UUID, module_keys: list[str]) -> None:
         existing = self.db.scalars(select(ClubModule).where(ClubModule.club_id == club_id)).all()

@@ -31,10 +31,9 @@ class _MemberStatsMetric(Metric):
     ) -> MemberStatsResult:
         """Per-member activity for every member of the club.
 
-        Delegates to ``PeopleReadModelService.list_member_activity`` (the
-        Phase 9D WI-13 service) and maps each entry to the existing 9F
-        ``MemberStatEntry`` shape. The service does the SQL; this stub
-        keeps the registry contract intact (single
+        Delegates to ``PeopleReadModelService.list_member_activity`` and
+        maps each entry to the ``MemberStatEntry`` shape. The service does
+        the SQL; this stub keeps the registry contract intact (single
         ``list[MemberStatEntry]`` payload, no window arguments surfaced
         through the metric API).
         """

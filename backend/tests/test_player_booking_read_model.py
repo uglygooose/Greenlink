@@ -234,7 +234,7 @@ def test_player_booking_read_model_is_member_only(client: TestClient, db_session
     assert response.status_code == 403
 
 
-# ---------- WI-11 read-model coverage expansion ---------------------------
+# ---------- Read-model coverage expansion --------------------------------
 #
 # Each test below exercises one decision the player-booking read model makes.
 # Service entry point: PlayerBookingReadModelService.load_for_person.

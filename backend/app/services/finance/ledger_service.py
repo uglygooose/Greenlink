@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import FinanceAccount, FinanceTransaction
 from app.schemas.finance import (
@@ -32,9 +33,7 @@ class LedgerService:
         *,
         club_id: uuid.UUID,
         payload: FinanceTransactionCreateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> FinanceTransactionCreateResult:
         account = self._load_account(club_id=club_id, account_id=payload.account_id)
         if account is None:
@@ -63,10 +62,8 @@ class LedgerService:
                 "type": transaction.type.value,
                 "source": transaction.source.value,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before=None,
             after=transaction_response.model_dump(mode="json"),
         )

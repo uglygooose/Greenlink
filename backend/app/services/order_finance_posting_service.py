@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -37,9 +38,7 @@ class OrderFinancePostingService:
         *,
         club_id: uuid.UUID,
         payload: OrderChargePostRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> OrderChargePostResult:
         order = self._load_order(club_id=club_id, order_id=payload.order_id)
         if order is None:
@@ -146,9 +145,7 @@ class OrderFinancePostingService:
                 reference_id=order.id,
                 description=f"Order charge {str(order.id)[:8]}",
             ),
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
-            correlation_id=correlation_id,
+            context=context,
         )
 
         order.finance_charge_transaction_id = created.transaction.id
@@ -167,10 +164,8 @@ class OrderFinancePostingService:
                 "transaction_id": str(created.transaction.id),
                 "amount": str(order_total),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"finance_charge_transaction_id": None},
             after={"finance_charge_transaction_id": str(created.transaction.id)},
         )

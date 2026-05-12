@@ -7,6 +7,7 @@ from sqlalchemy import case, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
@@ -85,9 +86,9 @@ class OrderService:
         *,
         club_id: uuid.UUID,
         payload: OrderCreateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> OrderCreateResult:
+        correlation_id = context.correlation_id if context is not None else None
         if correlation_id:
             existing = self._load_order_from_create_correlation(
                 club_id=club_id,
@@ -116,7 +117,7 @@ class OrderService:
         # The player-app halfway-house menu is fixed F&B (see PLAYER_MENU_ITEMS
         # above), so player-app orders tag every line as FNB. Staff-source
         # orders are not tied to a specific catalogue yet; line VAT category
-        # falls to OTHER until a real product → VAT mapping lands (Phase 9B+).
+        # falls to OTHER until a real product → VAT mapping lands.
         line_vat_category = (
             VatCategory.FNB.value
             if payload.source == OrderSource.PLAYER_APP
@@ -150,9 +151,8 @@ class OrderService:
                 "booking_id": str(order.booking_id) if order.booking_id is not None else None,
                 "item_count": len(payload.items),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
 

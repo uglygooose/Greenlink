@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.semantic._queries import fnb_revenue, safe_ratio, utilised_rounds
-from app.semantic._window import resolve_window
 from app.semantic.base import Metric
 from app.semantic.registry import register
+from app.services._window import optional_date, resolve_window
 
 ZERO = Decimal("0.00")
 
@@ -52,20 +51,12 @@ class _FnbPerRoundMetric(Metric):
         window = resolve_window(
             session,
             club_id=club_id,
-            date_from=_optional_date(params.get("date_from")),
-            date_to=_optional_date(params.get("date_to")),
+            date_from=optional_date(params.get("date_from")),
+            date_to=optional_date(params.get("date_to")),
         )
         revenue = fnb_revenue(session, club_id=club_id, window=window)
         rounds = utilised_rounds(session, club_id=club_id, window=window)
         return FnbPerRoundResult(value=safe_ratio(revenue, rounds))
-
-
-def _optional_date(value: object) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    raise TypeError(f"date_from/date_to must be date, got {type(value)!r}")
 
 
 fnb_per_round = _FnbPerRoundMetric(

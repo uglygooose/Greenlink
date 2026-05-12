@@ -344,7 +344,7 @@ def test_tee_sheet_day_defaults_reference_datetime_and_generates_rows_per_tee(
     )
 
 
-# ---------- WI-11 read-model coverage expansion ---------------------------
+# ---------- Read-model coverage expansion --------------------------------
 #
 # Each test below exercises one decision the tee-sheet read model makes.
 # Service entry point: TeeSheetService.load_day (HTTP route /api/golf/tee-sheet/day).

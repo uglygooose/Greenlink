@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -46,9 +47,7 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingPaymentStatusUpdateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingPaymentStatusUpdateResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -114,10 +113,8 @@ class BookingFinanceService:
             aggregate_type="booking",
             aggregate_id=str(booking.id),
             payload={"booking_id": str(booking.id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"payment_status": previous_payment_status},
             after={"payment_status": payload.payment_status.value},
         )
@@ -138,9 +135,7 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingChargePostRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingChargePostResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -289,9 +284,7 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=self._charge_description(booking=booking, override=payload.description),
             ),
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
-            correlation_id=correlation_id,
+            context=context,
         )
 
         previous_payment_status = (
@@ -308,10 +301,8 @@ class BookingFinanceService:
                 "transaction_id": str(created.transaction.id),
                 "amount": str(charge_amount),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"payment_status": previous_payment_status},
             after={"payment_status": BookingPaymentStatus.PENDING.value},
         )
@@ -334,9 +325,7 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingPaymentRecordRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingPaymentRecordResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -464,9 +453,7 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=f"Payment for booking {str(booking.id)[:8]}",
             ),
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
-            correlation_id=correlation_id,
+            context=context,
         )
 
         previous_payment_status = (
@@ -483,10 +470,8 @@ class BookingFinanceService:
                 "transaction_id": str(created.transaction.id),
                 "amount": str(settlement_amount),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"payment_status": previous_payment_status},
             after={"payment_status": BookingPaymentStatus.PAID.value},
         )
@@ -509,9 +494,7 @@ class BookingFinanceService:
         *,
         club_id: uuid.UUID,
         payload: BookingRefundRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingRefundResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -612,9 +595,7 @@ class BookingFinanceService:
                 reference_id=booking.id,
                 description=description,
             ),
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
-            correlation_id=correlation_id,
+            context=context,
         )
 
         previous_payment_status = (
@@ -634,10 +615,8 @@ class BookingFinanceService:
                 "transaction_id": str(created.transaction.id),
                 "amount": str(refund_amount),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"payment_status": previous_payment_status},
             after={"payment_status": BookingPaymentStatus.PENDING.value},
         )

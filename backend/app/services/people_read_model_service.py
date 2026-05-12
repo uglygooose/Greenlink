@@ -1,27 +1,26 @@
-"""Member-stats read model (Phase 9D WI-13).
+"""Member-stats read model.
 
-Extends the FinanceReadModelService.SummaryWindow shape: methods accept
-``(session, club_id, …)`` plus an optional window, and return Pydantic
-response models from ``app.schemas.reports``.
+Methods accept ``(session, club_id, …)`` plus an optional :class:`TimeWindow`
+and return Pydantic response models from ``app.schemas.reports``.
 
 Three public methods, all tenant-scoped:
 
 * :meth:`summary` — club-wide membership distributions by role / status /
   tenure bucket plus aggregates.
 * :meth:`list_member_activity` — every member's activity (rounds, spend,
-  last-played) for the supplied window. Drives the 9F ``member_stats``
+  last-played) for the supplied window. Drives the ``member_stats``
   metric's all-club shape.
 * :meth:`member_activity` — single-person activity for the same window.
 
 Tenure bucketing uses ``ClubMembership.joined_at`` against a reference
 date (defaults to "today" in the club's timezone). The role-based "tier"
-proxy is documented in :class:`MemberStatsSummaryResponse`.
+proxy is documented in :class:`MemberStatsSummaryResponse`. A ``window``
+of ``None`` means "all-time" for activity queries.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -43,6 +42,7 @@ from app.models import (
     FinanceTransactionType,
 )
 from app.schemas.reports import MemberActivityResponse, MemberStatsSummaryResponse
+from app.services._window import TimeWindow
 
 ZERO = Decimal("0.00")
 UTILISED_STATUSES = (BookingStatus.CHECKED_IN, BookingStatus.COMPLETED)
@@ -52,16 +52,6 @@ TENURE_1_5Y = "1_to_5y"
 TENURE_5_10Y = "5_to_10y"
 TENURE_10_PLUS_Y = "10y_plus"
 TENURE_BUCKETS = (TENURE_UNDER_1Y, TENURE_1_5Y, TENURE_5_10Y, TENURE_10_PLUS_Y)
-
-
-@dataclass(frozen=True, slots=True)
-class ActivityWindow:
-    """Optional date range for activity queries. ``None`` on either bound
-    means "open" — useful for the 9F member_stats stub's all-time call.
-    """
-
-    start_utc: datetime | None
-    end_utc: datetime | None
 
 
 class PeopleReadModelService:
@@ -139,11 +129,11 @@ class PeopleReadModelService:
         *,
         club_id: uuid.UUID,
         person_id: uuid.UUID,
-        window: ActivityWindow | None = None,
+        window: TimeWindow | None = None,
     ) -> MemberActivityResponse:
         entries = self._build_activity_rows(
             club_id=club_id,
-            window=window or ActivityWindow(start_utc=None, end_utc=None),
+            window=window,
             person_ids=[person_id],
         )
         if entries:
@@ -154,7 +144,7 @@ class PeopleReadModelService:
         self,
         *,
         club_id: uuid.UUID,
-        window: ActivityWindow | None = None,
+        window: TimeWindow | None = None,
     ) -> list[MemberActivityResponse]:
         member_person_ids = list(
             self.db.scalars(
@@ -165,7 +155,7 @@ class PeopleReadModelService:
             return []
         rows = self._build_activity_rows(
             club_id=club_id,
-            window=window or ActivityWindow(start_utc=None, end_utc=None),
+            window=window,
             person_ids=member_person_ids,
         )
         # Stable ordering: by person_id string for deterministic test output.
@@ -178,7 +168,7 @@ class PeopleReadModelService:
         self,
         *,
         club_id: uuid.UUID,
-        window: ActivityWindow,
+        window: TimeWindow | None,
         person_ids: list[uuid.UUID],
     ) -> list[MemberActivityResponse]:
         if not person_ids:
@@ -200,10 +190,11 @@ class PeopleReadModelService:
             )
             .group_by(BookingParticipant.person_id)
         )
-        if window.start_utc is not None:
-            rounds_stmt = rounds_stmt.where(Booking.slot_datetime >= window.start_utc)
-        if window.end_utc is not None:
-            rounds_stmt = rounds_stmt.where(Booking.slot_datetime < window.end_utc)
+        if window is not None:
+            rounds_stmt = rounds_stmt.where(
+                Booking.slot_datetime >= window.start_utc,
+                Booking.slot_datetime < window.end_utc,
+            )
         rounds_rows = self.db.execute(rounds_stmt).all()
         rounds_by_person: dict[uuid.UUID, tuple[int, datetime | None]] = {
             row.person_id: (int(row.rounds), row.last_played_utc) for row in rounds_rows
@@ -226,10 +217,11 @@ class PeopleReadModelService:
             )
             .group_by(AccountCustomer.person_id)
         )
-        if window.start_utc is not None:
-            spend_stmt = spend_stmt.where(FinanceTransaction.created_at >= window.start_utc)
-        if window.end_utc is not None:
-            spend_stmt = spend_stmt.where(FinanceTransaction.created_at < window.end_utc)
+        if window is not None:
+            spend_stmt = spend_stmt.where(
+                FinanceTransaction.created_at >= window.start_utc,
+                FinanceTransaction.created_at < window.end_utc,
+            )
         spend_rows = self.db.execute(spend_stmt).all()
         spend_by_person: dict[uuid.UUID, Decimal] = {row.person_id: row.spend for row in spend_rows}
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_db
 from app.core.exceptions import AuthorizationError, NotFoundError
+from app.events.emission_context import EmissionContext
 from app.models import ClubMembershipRole, User, UserType
 from app.schemas.people import (
     AccountCustomerCreateRequest,
@@ -128,8 +129,10 @@ def create_person(
     service = PeopleService(db)
     person = service.create_person(
         payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_person_response(person)
 
@@ -153,8 +156,10 @@ def create_or_update_membership(
     membership = service.upsert_membership(
         club_id=context.selected_club.id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_membership_response(membership)
 
@@ -180,8 +185,10 @@ def update_membership(
     updated = service.update_membership(
         membership,
         payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_membership_response(updated)
 
@@ -205,8 +212,10 @@ def create_account_customer(
     account_customer = service.create_account_customer(
         club_id=context.selected_club.id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_account_customer_response(account_customer)
 
@@ -240,8 +249,10 @@ def process_bulk_intake(
     return service.process(
         context.selected_club.id,
         payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
 
 
@@ -295,8 +306,10 @@ def update_self_profile(
         user=current_user,
         club_id=club_id,
         payload=payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_self_profile_response(
         person=person,
@@ -347,8 +360,10 @@ def update_person(
     updated = service.update_person(
         person,
         payload,
-        actor_user_id=current_user.id,
-        correlation_id=_correlation_id(request),
+        context=EmissionContext(
+            actor_user_id=current_user.id,
+            correlation_id=_correlation_id(request),
+        ),
     )
     return service.to_person_response(updated)
 

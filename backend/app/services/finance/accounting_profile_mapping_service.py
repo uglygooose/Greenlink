@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountingExportProfile,
@@ -66,9 +67,7 @@ class AccountingProfileMappingService:
         club_id: uuid.UUID,
         created_by_person_id: uuid.UUID,
         payload: AccountingExportProfileUpsertRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> AccountingExportProfileResponse:
         target_system = self._normalize_target_system(payload.target_system)
         profile = AccountingExportProfile(
@@ -101,11 +100,9 @@ class AccountingProfileMappingService:
                 "code": profile.code,
                 "target_system": profile.target_system,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
             actor_person_id=created_by_person_id,
-            source_channel=source_channel,
             before=None,
             after={
                 "code": profile.code,
@@ -124,10 +121,8 @@ class AccountingProfileMappingService:
         club_id: uuid.UUID,
         profile_id: uuid.UUID,
         payload: AccountingExportProfileUpsertRequest,
-        actor_user_id: uuid.UUID | None = None,
         actor_person_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> AccountingExportProfileResponse:
         profile = self.get_profile(club_id=club_id, profile_id=profile_id)
         before_snapshot = {
@@ -161,11 +156,9 @@ class AccountingProfileMappingService:
                 "profile_id": str(profile.id),
                 "code": profile.code,
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
             actor_person_id=actor_person_id,
-            source_channel=source_channel,
             before=before_snapshot,
             after={
                 "code": profile.code,
@@ -267,9 +260,7 @@ class AccountingProfileMappingService:
         batch_id: uuid.UUID,
         profile_id: uuid.UUID,
         exported_by_person_id: uuid.UUID,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> AccountingMappedExportDownloadResult:
         batch = self.batch_service.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status == FinanceExportBatchStatus.VOID:
@@ -336,11 +327,9 @@ class AccountingProfileMappingService:
                 "target_system": profile.target_system,
                 "actor_person_id": str(exported_by_person_id),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
             actor_person_id=exported_by_person_id,
-            source_channel=source_channel,
             before={"status": previous_status},
             after={
                 "status": FinanceExportBatchStatus.EXPORTED.value,

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.domain.people.normalization import normalize_email, normalize_phone
+from app.events.emission_context import EmissionContext
 from app.models import (
     BulkIntakeAction,
     ClubMembership,
@@ -48,15 +49,13 @@ class BulkIntakeService:
         club_id: uuid.UUID,
         payload: BulkIntakeRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BulkIntakeResult:
         return self._run(
             club_id,
             payload,
             apply_changes=True,
-            actor_user_id=actor_user_id,
-            correlation_id=correlation_id,
+            context=context,
         )
 
     def _run(
@@ -65,8 +64,7 @@ class BulkIntakeService:
         payload: BulkIntakeRequest,
         *,
         apply_changes: bool,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BulkIntakeResult:
         outcomes: list[BulkIntakeOutcome] = []
         counts = {action.value: 0 for action in BulkIntakeAction}
@@ -76,8 +74,7 @@ class BulkIntakeService:
                 row_index=index,
                 row=row,
                 apply_changes=apply_changes,
-                actor_user_id=actor_user_id,
-                correlation_id=correlation_id,
+                context=context,
             )
             counts[outcome.action.value] += 1
             outcomes.append(outcome)
@@ -97,8 +94,7 @@ class BulkIntakeService:
         row_index: int,
         row,
         apply_changes: bool,
-        actor_user_id: uuid.UUID | None,
-        correlation_id: str | None,
+        context: EmissionContext | None,
     ) -> BulkIntakeOutcome:
         warnings: list[IntegrityIssue] = []
         blockers: list[IntegrityIssue] = []
@@ -153,14 +149,12 @@ class BulkIntakeService:
             if apply_changes:
                 matched_person = self.people_service.create_person(
                     self._row_to_person_request(row),
-                    actor_user_id=actor_user_id,
-                    correlation_id=correlation_id,
+                    context=context,
                 )
                 membership = self.people_service.upsert_membership(
                     club_id=club_id,
                     payload=self._row_to_membership_request(row, matched_person.id),
-                    actor_user_id=actor_user_id,
-                    correlation_id=correlation_id,
+                    context=context,
                 )
                 return BulkIntakeOutcome(
                     row_index=row_index,
@@ -193,8 +187,7 @@ class BulkIntakeService:
                 created = self.people_service.upsert_membership(
                     club_id=club_id,
                     payload=self._row_to_membership_request(row, matched_person.id),
-                    actor_user_id=actor_user_id,
-                    correlation_id=correlation_id,
+                    context=context,
                 )
                 return BulkIntakeOutcome(
                     row_index=row_index,
@@ -251,8 +244,7 @@ class BulkIntakeService:
             updated = self.people_service.update_membership(
                 membership,
                 payload=self._row_to_membership_update_request(row),
-                actor_user_id=actor_user_id,
-                correlation_id=correlation_id,
+                context=context,
             )
             return BulkIntakeOutcome(
                 row_index=row_index,

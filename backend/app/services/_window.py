@@ -1,13 +1,14 @@
-"""Window-resolution helper for semantic-layer metrics.
+"""Canonical time-window helper for the backend.
 
-Mirrors the FinanceReadModelService.SummaryWindow pattern but tighter:
-each metric accepts a (date_from, date_to) pair via params, and this helper
-converts those local-date bounds to UTC instants in the club's timezone.
-Local dates are inclusive on the lower bound, exclusive on the upper bound.
+A tenant-bound, tz-aware window over a contiguous date range. Local dates
+are inclusive on the lower bound, exclusive on the upper bound. If
+``date_from`` / ``date_to`` are omitted, the window defaults to "today"
+in the club's timezone.
 
-If date_from / date_to are omitted, the window defaults to "today" in the
-club's timezone — matches what the 9F sentinel exercises (empty club →
-zero).
+Consumed by the semantic-layer metric modules and by read-model services
+(``PeopleReadModelService``, ``BlastReadModelService``). The finance
+``SummaryWindow`` retains period bucketing (day/week/month) and stays
+parallel rather than collapsing into ``TimeWindow``.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from app.models import Club
 
 
 @dataclass(frozen=True, slots=True)
-class MetricWindow:
+class TimeWindow:
     club_id: uuid.UUID
     timezone_name: str
     date_from: date
@@ -39,7 +40,7 @@ def resolve_window(
     club_id: uuid.UUID,
     date_from: date | None,
     date_to: date | None,
-) -> MetricWindow:
+) -> TimeWindow:
     club = session.scalar(select(Club).where(Club.id == club_id))
     if club is None:
         raise ValueError(f"Club {club_id!r} not found")
@@ -51,7 +52,7 @@ def resolve_window(
         raise ValueError("date_to must be strictly after date_from")
     start_utc = datetime.combine(resolved_from, datetime.min.time(), tzinfo=zone).astimezone(UTC)
     end_utc = datetime.combine(resolved_to, datetime.min.time(), tzinfo=zone).astimezone(UTC)
-    return MetricWindow(
+    return TimeWindow(
         club_id=club_id,
         timezone_name=club.timezone,
         date_from=resolved_from,
@@ -59,3 +60,16 @@ def resolve_window(
         start_utc=start_utc,
         end_utc=end_utc,
     )
+
+
+def optional_date(value: object) -> date | None:
+    """Coerce a ``params``-style value to ``date | None``.
+
+    Used by metric ``compute`` methods that accept ``date_from`` / ``date_to``
+    through the registry's freeform ``**params: object`` channel.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    raise TypeError(f"date_from/date_to must be date, got {type(value)!r}")

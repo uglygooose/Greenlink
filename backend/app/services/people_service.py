@@ -13,6 +13,7 @@ from app.domain.people.normalization import (
     normalize_email,
     normalize_phone,
 )
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import AccountCustomer, ClubMembership, ConsentSource, Person, User, UserType
 from app.schemas.people import (
@@ -39,8 +40,7 @@ class PeopleService:
         self,
         payload: PersonCreateRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> Person:
         person = Person(
             first_name=clean_name(payload.first_name),
@@ -67,8 +67,7 @@ class PeopleService:
             aggregate_type="person",
             aggregate_id=str(person.id),
             payload={"email": person.email, "external_ref": person.external_ref},
-            correlation_id=correlation_id,
-            actor_user_id=actor_user_id,
+            context=context,
         )
         self.db.commit()
         self.db.refresh(person)
@@ -79,8 +78,7 @@ class PeopleService:
         person: Person,
         payload: PersonUpdateRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> Person:
         if payload.first_name is not None:
             person.first_name = clean_name(payload.first_name)
@@ -120,8 +118,7 @@ class PeopleService:
             aggregate_type="person",
             aggregate_id=str(person.id),
             payload={"email": person.email},
-            correlation_id=correlation_id,
-            actor_user_id=actor_user_id,
+            context=context,
         )
         self.db.commit()
         self.db.refresh(person)
@@ -133,8 +130,7 @@ class PeopleService:
         user: User,
         club_id: uuid.UUID | None,
         payload: SelfProfileUpdateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> Person:
         if user.person_id is None:
             raise NotFoundError("Profile not found")
@@ -147,8 +143,7 @@ class PeopleService:
                 email=payload.contact_email,
                 phone=payload.phone,
             ),
-            actor_user_id=actor_user_id,
-            correlation_id=correlation_id,
+            context=context,
         )
 
     def get_person(self, person_id: uuid.UUID) -> Person:
@@ -212,8 +207,7 @@ class PeopleService:
         *,
         club_id: uuid.UUID,
         payload: ClubMembershipCreateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> ClubMembership:
         person = self.db.get(Person, payload.person_id)
         if person is None:
@@ -256,9 +250,8 @@ class PeopleService:
             aggregate_type="club_membership",
             aggregate_id=str(membership.id),
             payload={"club_id": str(club_id), "person_id": str(payload.person_id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(membership)
@@ -269,8 +262,7 @@ class PeopleService:
         membership: ClubMembership,
         payload: ClubMembershipUpdateRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> ClubMembership:
         self._ensure_membership_number_available(
             membership.club_id,
@@ -295,9 +287,8 @@ class PeopleService:
             aggregate_type="club_membership",
             aggregate_id=str(membership.id),
             payload={"club_id": str(membership.club_id), "person_id": str(membership.person_id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=membership.club_id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(membership)
@@ -324,8 +315,7 @@ class PeopleService:
         *,
         club_id: uuid.UUID,
         payload: AccountCustomerCreateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> AccountCustomer:
         person = self.db.get(Person, payload.person_id)
         if person is None:
@@ -361,9 +351,8 @@ class PeopleService:
             aggregate_type="account_customer",
             aggregate_id=str(account_customer.id),
             payload={"club_id": str(club_id), "person_id": str(payload.person_id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
         )
         self.db.commit()
         self.db.refresh(account_customer)

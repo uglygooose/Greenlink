@@ -24,8 +24,8 @@ class _WeatherAdjustedUtilisationMetric(Metric):
         **params: object,
     ) -> WeatherAdjustedUtilisationResult:
         # Real implementation depends on a weather data source — deferred to
-        # v1.5 per Phase 5.5 audit WI-6. v1 ships the stub so the registry
-        # contract is complete.
+        # v1.5 once a weather data source lands. v1 ships the stub so the
+        # registry contract is complete.
         return WeatherAdjustedUtilisationResult(value=ZERO)
 
 

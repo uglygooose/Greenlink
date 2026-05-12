@@ -8,6 +8,7 @@ from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     Booking,
@@ -64,9 +65,7 @@ class BookingService:
         club_id: uuid.UUID,
         payload: BookingCreateRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingCreateResult:
         failures: list[BookingCreateFailureDetail] = []
 
@@ -147,7 +146,7 @@ class BookingService:
             else datetime.now(UTC)
         )
         try:
-            context = self.rule_context_service.normalize_context(
+            rule_context = self.rule_context_service.normalize_context(
                 RuleContextInput(
                     club_id=club_id,
                     course_id=course.id,
@@ -190,14 +189,14 @@ class BookingService:
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
             start_lane=payload.start_lane,
-            slot_datetime=context.effective_datetime,
+            slot_datetime=rule_context.effective_datetime,
         )
         slot_state = self._load_slot_state(
             club_id=club_id,
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
             start_lane=payload.start_lane,
-            slot_datetime=context.effective_datetime,
+            slot_datetime=rule_context.effective_datetime,
         )
         _, booking_state = self.booking_state_service.build_inputs_from_persisted_state(
             bookings=slot_bookings,
@@ -206,8 +205,8 @@ class BookingService:
         booking_state.current_bookings_for_day = self._count_bookings_for_local_day(
             club_id=club_id,
             person_id=primary_participant.person_id,
-            local_date=context.local_date,
-            timezone_name=context.timezone,
+            local_date=rule_context.local_date,
+            timezone_name=rule_context.timezone,
         )
         booking_state.current_future_bookings = self._count_future_bookings(
             club_id=club_id,
@@ -216,7 +215,7 @@ class BookingService:
         )
 
         decision_input = self.booking_state_service.build_decision_input(
-            context,
+            rule_context,
             slot=SlotCandidateInput(slot_interval_minutes=slot_interval_minutes),
             party=BookingPartyContextInput(
                 member_count=sum(
@@ -257,7 +256,7 @@ class BookingService:
             course_id=course.id,
             tee_id=tee.id if tee is not None else None,
             start_lane=payload.start_lane,
-            slot_datetime=context.effective_datetime,
+            slot_datetime=rule_context.effective_datetime,
             slot_interval_minutes=slot_interval_minutes,
             holes=booking_holes,
             status=BookingStatus.RESERVED,
@@ -282,10 +281,8 @@ class BookingService:
             aggregate_type="booking",
             aggregate_id=str(booking.id),
             payload={"booking_id": str(booking.id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before=None,
             after=booking_summary,
         )

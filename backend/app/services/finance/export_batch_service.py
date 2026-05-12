@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime import utc_now
 from app.core.exceptions import AppError, NotFoundError
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     AccountCustomer,
@@ -59,9 +60,7 @@ class FinanceExportBatchService:
         club_id: uuid.UUID,
         created_by_person_id: uuid.UUID,
         payload: FinanceExportBatchCreateRequest,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> FinanceExportBatchCreateResult:
         existing = self._load_active_batch(
             club_id=club_id,
@@ -150,11 +149,9 @@ class FinanceExportBatchService:
                 "transaction_count": batch.transaction_count,
                 "actor_person_id": str(created_by_person_id),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
             actor_person_id=created_by_person_id,
-            source_channel=source_channel,
             before=None,
             after={
                 "status": batch.status.value,
@@ -260,9 +257,7 @@ class FinanceExportBatchService:
         *,
         club_id: uuid.UUID,
         batch_id: uuid.UUID,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> FinanceExportBatchVoidResult:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status != FinanceExportBatchStatus.VOID:
@@ -283,10 +278,8 @@ class FinanceExportBatchService:
                 aggregate_type="finance_export_batch",
                 aggregate_id=str(batch.id),
                 payload={"batch_id": str(batch.id)},
-                correlation_id=correlation_id,
+                context=context,
                 club_id=club_id,
-                actor_user_id=actor_user_id,
-                source_channel=source_channel,
                 before={"status": previous_status},
                 after={"status": FinanceExportBatchStatus.VOID.value},
             )
@@ -307,9 +300,7 @@ class FinanceExportBatchService:
         club_id: uuid.UUID,
         batch_id: uuid.UUID,
         regenerated_by_person_id: uuid.UUID,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> FinanceExportBatchRegenerateResult:
         batch = self.get_batch(club_id=club_id, batch_id=batch_id)
         if batch.status == FinanceExportBatchStatus.VOID:
@@ -341,11 +332,9 @@ class FinanceExportBatchService:
                 "batch_id": str(previous_batch_id),
                 "actor_person_id": str(regenerated_by_person_id),
             },
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
             actor_person_id=regenerated_by_person_id,
-            source_channel=source_channel,
             before={"status": previous_status},
             after={"status": FinanceExportBatchStatus.VOID.value, "superseded": True},
         )
@@ -359,9 +348,7 @@ class FinanceExportBatchService:
                 date_from=batch.date_from,
                 date_to=batch.date_to,
             ),
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
-            correlation_id=correlation_id,
+            context=context,
         )
         regenerated_batch = self.get_batch(club_id=club_id, batch_id=result.batch.id)
         metadata["superseded_event"] = {

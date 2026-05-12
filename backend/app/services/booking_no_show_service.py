@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.events.emission_context import EmissionContext
 from app.events.publisher import DatabaseEventPublisher
 from app.models import Booking, BookingStatus
 from app.schemas.bookings import (
@@ -32,9 +33,7 @@ class BookingNoShowService:
         club_id: uuid.UUID,
         payload: BookingNoShowRequest,
         *,
-        actor_user_id: uuid.UUID | None = None,
-        source_channel: str = "system",
-        correlation_id: str | None = None,
+        context: EmissionContext | None = None,
     ) -> BookingNoShowResult:
         booking = self._load_booking(club_id=club_id, booking_id=payload.booking_id)
         if booking is None:
@@ -84,10 +83,8 @@ class BookingNoShowService:
             aggregate_type="booking",
             aggregate_id=str(booking.id),
             payload={"booking_id": str(booking.id)},
-            correlation_id=correlation_id,
+            context=context,
             club_id=club_id,
-            actor_user_id=actor_user_id,
-            source_channel=source_channel,
             before={"status": previous_status},
             after={"status": BookingStatus.NO_SHOW.value},
         )

@@ -60,8 +60,15 @@ class PlatformBootstrapResponse(BaseModel):
 
 
 class PlatformMembershipAssignResponse(BaseModel):
-    status: str
+    id: uuid.UUID
+    club_id: uuid.UUID
+    person_id: uuid.UUID
+    role: ClubMembershipRole
+    status: ClubMembershipStatus
+    is_primary: bool
+    membership_number: str | None
 
 
 class PlatformModuleUpdateResponse(BaseModel):
-    status: str
+    club_id: uuid.UUID
+    module_keys: list[str]

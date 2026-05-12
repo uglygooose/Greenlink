@@ -17,6 +17,14 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — assert_event_emitted legacy-kwarg shim
+
+- **Surfaced by**: Phase 9.1 standards remediation (Item 4 — EmissionContext sweep).
+- **Claim**: Phase 9.1 introduced `EmissionContext` and applied "replace, don't layer" across 33 emission call sites + 4 route files.
+- **Reality**: The `assert_event_emitted` test helper in `backend/tests/conftest.py` accepts both `context=EmissionContext(...)` (the canonical shape) and the legacy `actor_user_id` / `source_channel` kwarg pair, for backwards compatibility with inline assertions in pre-9B foundation test files (e.g. `tests/test_booking_cancellation_foundation.py` and ~13 similar). Phase 9.1's "replace, don't layer" rule was held narrowly because stripping the shim required rewriting inline assertions across ~14 test files at meaningful regression risk.
+- **Evidence**: `backend/tests/conftest.py:168-203` — `assert_event_emitted` carries both `context: EmissionContext | None = None` AND `actor_user_id`, `source_channel` legacy parameters. The legacy kwargs unwrap context when both are supplied and otherwise act as a passthrough.
+- **Resolution**: Deferred. Convert the foundation tests' inline assertions to construct `EmissionContext` directly and drop the shim as a discrete cleanup phase — small, mechanical, low risk done in isolation. No urgency; the shim is a test-only convenience that doesn't leak into production code paths.
+---
 ### 2026-05-12 — blast_service.py .query() residuals
 
 - **Surfaced by**: Phase 9E WI-12 cleanup of audit Finding 4.4.
@@ -31,7 +39,7 @@ Each entry uses this format:
 - **Claim**: REST create / update endpoints should return the affected resource (or at least a richer envelope) so callers don't need a follow-up GET.
 - **Reality**: `POST /api/platform/memberships` returns `{"status": "created"}` and `PUT /api/platform/clubs/{club_id}/modules` returns `{"status": "updated"}`. Phase 9G typed both as `PlatformMembershipAssignResponse` / `PlatformModuleUpdateResponse` mirroring the exact-same shape — typed envelopes around a status string, no resource payload. The superadmin frontend currently has to re-fetch the membership list / module list after each call.
 - **Evidence**: `backend/app/api/routes/platform.py:52-66` (post-9G shape); `PlatformMembershipAssignResponse` / `PlatformModuleUpdateResponse` in `backend/app/schemas/platform.py`.
-- **Resolution**: Deferred. Real architectural smell but real out-of-scope for 9G (mirror-current-shape rule). Could fold into a future contract-quality phase if it becomes load-bearing for Phase 10's superadmin surface — currently the frontend handles the extra GET, so no immediate pressure.
+- **Resolution**: Resolved in Phase 9.1. `POST /api/platform/memberships` now returns the created `ClubMembership` resource (id, club_id, person_id, role, status, is_primary, membership_number) via `PlatformMembershipAssignResponse`. `PUT /api/platform/clubs/{club_id}/modules` now returns the post-update module-key list via `PlatformModuleUpdateResponse`. `PlatformService.assign_membership` and `update_modules` updated to return the resource alongside the emission.
 ---
 ### 2026-05-12 — membership transition timestamps
 
