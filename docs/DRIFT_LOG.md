@@ -17,6 +17,14 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-12 — membership transition timestamps
+
+- **Surfaced by**: Phase 9D WI-13 (PeopleReadModelService.summary).
+- **Claim**: Member-stats can report month-over-month churn alongside growth.
+- **Reality**: `ClubMembership` tracks current `status` only (`active` / `invited` / `suspended` / `inactive`) with no transition-timestamp columns (e.g. `lapsed_at`, `inactive_at`). `summary` surfaces `growth_this_month` (joins via `joined_at`) but cannot surface `churn_this_month` because the date a membership left active status is not persisted.
+- **Evidence**: `backend/app/models/club_membership.py` has no `*_at` transition columns; `app/services/people_read_model_service.py:summary` therefore omits `churn_this_month` from `MemberStatsSummaryResponse`.
+- **Resolution**: Deferred. Two viable fixes — (a) add transition-timestamp columns on `ClubMembership` (`lapsed_at`, `inactive_at`, etc.); (b) query `DomainEventRecord` (Phase 9B) for `club_membership.updated` events to reconstruct the transition history. Path (b) is cleaner since the audit log is already capturing the transitions. Needs a dedicated phase.
+---
 ### 2026-05-12 — booking-finance two-commit pattern
 
 - **Surfaced by**: Phase 9B emission tracing.

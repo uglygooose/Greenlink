@@ -29,7 +29,30 @@ class _MemberStatsMetric(Metric):
         club_id: uuid.UUID,
         **params: object,
     ) -> MemberStatsResult:
-        return MemberStatsResult(members=[])
+        """Per-member activity for every member of the club.
+
+        Delegates to ``PeopleReadModelService.list_member_activity`` (the
+        Phase 9D WI-13 service) and maps each entry to the existing 9F
+        ``MemberStatEntry`` shape. The service does the SQL; this stub
+        keeps the registry contract intact (single
+        ``list[MemberStatEntry]`` payload, no window arguments surfaced
+        through the metric API).
+        """
+        from app.services.people_read_model_service import PeopleReadModelService
+
+        service = PeopleReadModelService(session)
+        entries = service.list_member_activity(club_id=club_id)
+        return MemberStatsResult(
+            members=[
+                MemberStatEntry(
+                    member_id=entry.person_id,
+                    rounds=entry.rounds,
+                    spend=entry.spend,
+                    last_played=entry.last_played,
+                )
+                for entry in entries
+            ]
+        )
 
 
 member_stats = _MemberStatsMetric(
