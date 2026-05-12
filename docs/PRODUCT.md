@@ -395,7 +395,7 @@ Applying the discipline of Section 3 (bridges where the standard isn't built) an
 8. In-app message list / notifications backend
 9. Member consent capture columns + onboarding flow (POPIA — legal)
 10. Information Officer field + af-south-1 data residency defaults (POPIA — legal)
-11. ~~List-endpoint tenant-scoping audit~~ — COMPLETE per Phase 5.5 audit (commit a8cf5cb). 125 of 127 endpoints scoped correctly; the two unscoped endpoints (/health, /auth/login) are correctly public. Note: §10.3 originally cited "~91 endpoints" — actual surface is 127 (37 of which are list endpoints). Calibration drift, resolved.
+11. ~~List-endpoint tenant-scoping audit~~ — COMPLETE per Phase 5.5 audit (commit a8cf5cb), re-verified in Phase 9A. 125 of 127 endpoints scoped correctly; the two unscoped endpoints (/health, /auth/login) are correctly public. Note: §10.3 originally cited "~91 endpoints" — actual surface is 127 (37 of which are list endpoints). Calibration drift, resolved.
 12. Multi-tender per-acquirer reconciliation in close-day
 13. Cash variance by employee tracking
 14. Pastel export format validated against real Pastel installation

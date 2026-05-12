@@ -18,6 +18,27 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 9A — Legal foundations: POPIA + VAT + HNA Player ID (2026-05-12)
+
+Backend extension wave. Three legal/regulatory fields the v1 product needs in the data model before any surface can capture them, plus the §10.3 WI-11 closeout.
+
+- **Scope**:
+  - POPIA consent capture on `people` (`consent_captured_at`, `consent_version`, `consent_source` + `ConsentSource` enum).
+  - POPIA Information Officer on `clubs` (`information_officer_person_id` FK, `information_officer_designated_at`); `designate_information_officer` / `clear_information_officer` on `GolfSettingsService` emitting `information_officer.designated` / `.cleared` DomainEventRecord events.
+  - VAT category at line-item level per SA §10(1)(cO): `bookings.vat_category` (default `green_fee`), `order_items.vat_category` (default `other`), `pos_transaction_items.vat_category` (default `other`); CHECK constraint validates the six-value `VatCategory` enum on each table. FinanceTransaction unchanged — VAT lives on originating records per the Phase 9A user decision (see Decisions below).
+  - HNA Player ID on `people.hna_player_id` (`String(32)`, nullable) with global partial unique index `ix_people_hna_player_id_unique`.
+  - §10.3 work item 11 (list-endpoint tenant-scoping audit) re-verified: 127 endpoints walked, 2 unscoped (`/health`, `/auth/login`) — both intentionally public. Audit's claim holds.
+- **Migration**: `backend/alembic/versions/202605120001_legal_foundations.py` (single revision, schema + backfill defaults).
+- **Files touched**: `app/models/enums.py`, `app/models/__init__.py`, `app/models/person.py`, `app/models/club.py`, `app/models/booking.py`, `app/models/order_item.py`, `app/models/pos_transaction.py`, `app/schemas/people.py`, `app/schemas/operations.py`, `app/services/people_service.py`, `app/services/people_integrity_service.py`, `app/services/golf_settings_service.py`, `app/services/booking_service.py`, `app/services/booking_move_service.py`, `app/services/order_service.py`, `app/services/pos_service.py`, new `alembic/versions/202605120001_legal_foundations.py`, new `tests/test_legal_foundations.py`, `docs/PRODUCT.md` (§10.3 WI-11 re-verification annotation).
+- **Decisions made**:
+  - **VAT placement** — chose "originating records only" (OrderItem + PosTransactionItem + Booking carry `vat_category`; FinanceTransaction does not). The booking pipeline emits a single FinanceTransaction header without any line-item backing, so a finance-side VAT column would force bookings to either tag at the wrong granularity or invent a pseudo-line. Tagging at source (the originating record) keeps the line-item integrity intact and lets the daily journal aggregate by VAT category via JOIN. Defaults: bookings → `green_fee` (always, by domain); player-app halfway-house orders → `fnb` (the menu is fixed F&B); staff-source orders and POS items → `other` (real Product → VatCategory mapping deferred to Phase 9B/9D when close-day reconciles).
+  - **HNA uniqueness** — chose global partial unique on `people.hna_player_id` over the phase prompt's "per-tenant" wording. PRODUCT.md §6 item 6 treats HNA Player ID as the canonical cross-club identifier; HNA assigns one ID per SA golfer globally. Per-tenant uniqueness would duplicate data and risk divergence when the same person plays multiple clubs.
+  - **Information Officer attachment** — IO designation requires an active `ClubMembership` in the same club (a club can't designate an arbitrary external person). Service method raises `ConflictError("information_officer_membership_required")` otherwise.
+- **Follow-ups created**:
+  - Phase 9B/9D: replace `VatCategory.OTHER` defaults on POS lines and staff-source orders with a real `Product.category → VatCategory` mapping; close-day wizard surfaces `OTHER`-tagged lines as needing categorisation.
+  - Phase 10 / 12: UI surfaces that capture these fields (onboarding consent moment per §10.3 frontend surface 10; member directory IO designation per surface 1; member profile HNA Player ID per surface 7/11).
+- **Notes**: No new dependencies. Ruff clean. No mypy in this project. Migration is one revision; downgrade reverses every column, FK, index, and CHECK added. CHECK constraints rather than native Postgres ENUM types match the most recent precedent (`pricing_rules.player_type`, `pricing_rules.season`) — strings with table-level validation, no enum-ALTER pain on future value additions.
+---
 ## Phase 7.1 — LIVE_STATE.md regenerated post Phase 7 (2026-05-12)
 
 Docs-only commit. LIVE_STATE.md regenerated to capture Phase 7's frontend rebuild burst: new design tokens, component primitives at `frontend/src/components/ui/`, new admin shell at `frontend/src/components/admin-shell/`, the `frontend/src/components/onboarding/` helper, three new `/onboarding/*` routes wrapped in ProtectedRoute, replaced Login + Admin dashboard + Settings hub surfaces, deleted old shell components and the stale `src/design-system/greenlink-design-system.md`.

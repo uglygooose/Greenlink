@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, String, text
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import ClubOnboardingState, ClubOnboardingStep
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -34,6 +38,14 @@ class Club(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     logo_object_key: Mapped[str | None] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    information_officer_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    information_officer_designated_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+    )
 
     memberships = relationship(
         "ClubMembership",

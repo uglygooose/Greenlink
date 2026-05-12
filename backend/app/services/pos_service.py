@@ -13,6 +13,7 @@ from app.models import (
     FinanceAccountStatus,
     FinanceTransactionSource,
     FinanceTransactionType,
+    VatCategory,
 )
 from app.models.enums import TenderType
 from app.models.pos_transaction import PosTransaction, PosTransactionItem
@@ -168,6 +169,9 @@ class PosService:
         self.db.add(pos_tx)
         self.db.flush()
 
+        # Product.category is free-text in v1; a real Product → VatCategory
+        # mapping is a Phase 9B/9D concern. Until then, POS lines tag as OTHER
+        # so close-day apportionment can flag them as needing classification.
         item_models = [
             PosTransactionItem(
                 pos_transaction_id=pos_tx.id,
@@ -175,6 +179,7 @@ class PosService:
                 item_name_snapshot=item.item_name,
                 unit_price_snapshot=item.unit_price,
                 quantity=item.quantity,
+                vat_category=VatCategory.OTHER.value,
             )
             for item in normalized_items
         ]

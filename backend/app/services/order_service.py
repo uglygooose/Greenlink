@@ -17,6 +17,7 @@ from app.models import (
     OrderSource,
     OrderStatus,
     Person,
+    VatCategory,
 )
 from app.schemas.orders import (
     OrderCancelRequest,
@@ -112,6 +113,15 @@ class OrderService:
         self.db.add(order)
         self.db.flush()
 
+        # The player-app halfway-house menu is fixed F&B (see PLAYER_MENU_ITEMS
+        # above), so player-app orders tag every line as FNB. Staff-source
+        # orders are not tied to a specific catalogue yet; line VAT category
+        # falls to OTHER until a real product → VAT mapping lands (Phase 9B+).
+        line_vat_category = (
+            VatCategory.FNB.value
+            if payload.source == OrderSource.PLAYER_APP
+            else VatCategory.OTHER.value
+        )
         for item in payload.items:
             item_name_snapshot = item.item_name
             unit_price_snapshot = item.unit_price
@@ -126,6 +136,7 @@ class OrderService:
                     item_name_snapshot=item_name_snapshot,
                     unit_price_snapshot=unit_price_snapshot,
                     quantity=item.quantity,
+                    vat_category=line_vat_category,
                 )
             )
 

@@ -10,6 +10,7 @@ from app.models import (
     BulkIntakeAction,
     ClubMembershipRole,
     ClubMembershipStatus,
+    ConsentSource,
     IntegrityIssueScope,
     IntegrityIssueSeverity,
     ReadinessStatus,
@@ -26,6 +27,10 @@ class PersonCreateRequest(BaseModel):
     external_ref: str | None = Field(default=None, max_length=120)
     notes: str | None = None
     profile_metadata: dict[str, Any] = Field(default_factory=dict)
+    consent_captured_at: datetime | None = None
+    consent_version: str | None = Field(default=None, max_length=64)
+    consent_source: ConsentSource | None = None
+    hna_player_id: str | None = Field(default=None, max_length=32)
 
 
 class PersonUpdateRequest(BaseModel):
@@ -38,6 +43,10 @@ class PersonUpdateRequest(BaseModel):
     external_ref: str | None = Field(default=None, max_length=120)
     notes: str | None = None
     profile_metadata: dict[str, Any] | None = None
+    consent_captured_at: datetime | None = None
+    consent_version: str | None = Field(default=None, max_length=64)
+    consent_source: ConsentSource | None = None
+    hna_player_id: str | None = Field(default=None, max_length=32)
 
 
 class PersonResponse(BaseModel):
@@ -54,6 +63,10 @@ class PersonResponse(BaseModel):
     external_ref: str | None
     notes: str | None
     profile_metadata: dict[str, Any]
+    consent_captured_at: datetime | None = None
+    consent_version: str | None = None
+    consent_source: ConsentSource | None = None
+    hna_player_id: str | None = None
     linked_user_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime

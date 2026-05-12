@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import JSON, Date, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -29,6 +30,10 @@ class Person(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=dict,
         server_default=text("'{}'::json"),
     )
+    consent_captured_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    consent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    consent_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    hna_player_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     user = relationship("User", back_populates="person", uselist=False)
     memberships = relationship(

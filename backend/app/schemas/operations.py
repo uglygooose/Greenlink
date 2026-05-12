@@ -474,3 +474,13 @@ class GolfSettingsPricingMutationResult(BaseModel):
     action: Literal["published", "rolled_back"]
     pricing_matrix: PricingMatrixResponse
     readiness: GolfSettingsReadinessResponse
+
+
+class InformationOfficerDesignateRequest(BaseModel):
+    person_id: uuid.UUID
+
+
+class InformationOfficerResponse(BaseModel):
+    club_id: uuid.UUID
+    person_id: uuid.UUID | None
+    designated_at: datetime | None

@@ -32,6 +32,7 @@ from app.models.enums import (
     ClubMembershipStatus,
     ClubOnboardingState,
     ClubOnboardingStep,
+    ConsentSource,
     FinanceAccountStatus,
     FinanceExportBatchStatus,
     FinanceExportProfile,
@@ -51,6 +52,7 @@ from app.models.enums import (
     ReadinessStatus,
     StartLane,
     UserType,
+    VatCategory,
 )
 from app.models.finance.account import FinanceAccount
 from app.models.finance.accounting_export_profile import AccountingExportProfile
@@ -103,6 +105,7 @@ __all__ = [
     "ClubModule",
     "ClubSetting",
     "ClubTarget",
+    "ConsentSource",
     "Course",
     "DomainEventRecord",
     "FinanceAccount",
@@ -141,4 +144,5 @@ __all__ = [
     "TeeSheetSlotState",
     "User",
     "UserType",
+    "VatCategory",
 ]

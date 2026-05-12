@@ -6,12 +6,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.operations_support import to_pricing_matrix_response, to_rule_set_response
+from app.core.datetime import utc_now
 from app.core.exceptions import ConflictError, NotFoundError
+from app.events.publisher import DatabaseEventPublisher
 from app.models import (
     BookingRule,
     BookingRuleSet,
+    Club,
+    ClubMembership,
     ClubSetting,
     Course,
+    Person,
     PricingMatrix,
     PricingRule,
     Tee,
@@ -22,6 +27,7 @@ from app.schemas.operations import (
     GolfSettingsPricingMutationResult,
     GolfSettingsReadinessResponse,
     GolfSettingsRulesMutationResult,
+    InformationOfficerResponse,
     PricingMatrixCreateRequest,
     PricingRuleWriteRequest,
 )
@@ -33,6 +39,7 @@ PRICING_SNAPSHOT_KEY = "golf_settings.pricing.last_active"
 class GolfSettingsService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.publisher = DatabaseEventPublisher(db)
 
     def get_readiness(self, club_id: uuid.UUID) -> GolfSettingsReadinessResponse:
         courses_configured = self._has_courses(club_id)
@@ -143,6 +150,103 @@ class GolfSettingsService:
             pricing_matrix=to_pricing_matrix_response(reloaded),
             readiness=self.get_readiness(club_id),
         )
+
+    def designate_information_officer(
+        self,
+        *,
+        club_id: uuid.UUID,
+        person_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
+        correlation_id: str | None = None,
+    ) -> InformationOfficerResponse:
+        club = self._load_club(club_id)
+        person = self.db.scalar(select(Person).where(Person.id == person_id))
+        if person is None:
+            raise NotFoundError("Person not found")
+        has_membership = self.db.scalar(
+            select(ClubMembership.id).where(
+                ClubMembership.club_id == club_id,
+                ClubMembership.person_id == person_id,
+            )
+        )
+        if has_membership is None:
+            raise ConflictError(
+                "Information Officer must be a club member",
+                code="information_officer_membership_required",
+            )
+        previous_person_id = club.information_officer_person_id
+        designated_at = utc_now()
+        club.information_officer_person_id = person_id
+        club.information_officer_designated_at = designated_at
+        self.db.add(club)
+        self.publisher.publish(
+            event_type="information_officer.designated",
+            aggregate_type="club",
+            aggregate_id=str(club_id),
+            payload={
+                "person_id": str(person_id),
+                "previous_person_id": (
+                    str(previous_person_id) if previous_person_id is not None else None
+                ),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+        )
+        self.db.commit()
+        self.db.refresh(club)
+        return InformationOfficerResponse(
+            club_id=club.id,
+            person_id=club.information_officer_person_id,
+            designated_at=club.information_officer_designated_at,
+        )
+
+    def clear_information_officer(
+        self,
+        *,
+        club_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
+        correlation_id: str | None = None,
+    ) -> InformationOfficerResponse:
+        club = self._load_club(club_id)
+        previous_person_id = club.information_officer_person_id
+        club.information_officer_person_id = None
+        club.information_officer_designated_at = None
+        self.db.add(club)
+        self.publisher.publish(
+            event_type="information_officer.cleared",
+            aggregate_type="club",
+            aggregate_id=str(club_id),
+            payload={
+                "previous_person_id": (
+                    str(previous_person_id) if previous_person_id is not None else None
+                ),
+            },
+            correlation_id=correlation_id,
+            club_id=club_id,
+            actor_user_id=actor_user_id,
+        )
+        self.db.commit()
+        self.db.refresh(club)
+        return InformationOfficerResponse(
+            club_id=club.id,
+            person_id=None,
+            designated_at=None,
+        )
+
+    def get_information_officer(self, club_id: uuid.UUID) -> InformationOfficerResponse:
+        club = self._load_club(club_id)
+        return InformationOfficerResponse(
+            club_id=club.id,
+            person_id=club.information_officer_person_id,
+            designated_at=club.information_officer_designated_at,
+        )
+
+    def _load_club(self, club_id: uuid.UUID) -> Club:
+        club = self.db.scalar(select(Club).where(Club.id == club_id))
+        if club is None:
+            raise NotFoundError("Club not found")
+        return club
 
     def rollback_pricing_matrix(self, club_id: uuid.UUID) -> GolfSettingsPricingMutationResult:
         snapshot = self._get_snapshot(club_id, PRICING_SNAPSHOT_KEY)

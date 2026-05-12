@@ -367,6 +367,7 @@ class BookingMoveService:
             fee_label=booking.fee_label,
             fee_amount=booking.fee_amount,
             fee_currency=booking.fee_currency,
+            vat_category=booking.vat_category,
             payment_status=booking.payment_status,
         )
         self.db.add(moved_booking)

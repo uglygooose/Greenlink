@@ -14,7 +14,7 @@ from app.domain.people.normalization import (
     normalize_phone,
 )
 from app.events.publisher import DatabaseEventPublisher
-from app.models import AccountCustomer, ClubMembership, Person, User, UserType
+from app.models import AccountCustomer, ClubMembership, ConsentSource, Person, User, UserType
 from app.schemas.people import (
     AccountCustomerCreateRequest,
     AccountCustomerResponse,
@@ -55,6 +55,10 @@ class PeopleService:
             external_ref=payload.external_ref,
             notes=payload.notes,
             profile_metadata=dict(payload.profile_metadata),
+            consent_captured_at=ensure_utc(payload.consent_captured_at),
+            consent_version=payload.consent_version,
+            consent_source=payload.consent_source.value if payload.consent_source else None,
+            hna_player_id=payload.hna_player_id,
         )
         self.db.add(person)
         self.db.flush()
@@ -98,6 +102,14 @@ class PeopleService:
             person.notes = payload.notes
         if payload.profile_metadata is not None:
             person.profile_metadata = dict(payload.profile_metadata)
+        if payload.consent_captured_at is not None:
+            person.consent_captured_at = ensure_utc(payload.consent_captured_at)
+        if payload.consent_version is not None:
+            person.consent_version = payload.consent_version
+        if payload.consent_source is not None:
+            person.consent_source = payload.consent_source.value
+        if payload.hna_player_id is not None:
+            person.hna_player_id = payload.hna_player_id
         person.full_name = build_full_name(person.first_name, person.last_name)
         if person.user is not None:
             person.user.display_name = person.full_name
@@ -413,6 +425,10 @@ class PeopleService:
             external_ref=person.external_ref,
             notes=person.notes,
             profile_metadata=person.profile_metadata,
+            consent_captured_at=person.consent_captured_at,
+            consent_version=person.consent_version,
+            consent_source=ConsentSource(person.consent_source) if person.consent_source else None,
+            hna_player_id=person.hna_player_id,
             linked_user_id=person.user.id if person.user is not None else None,
             created_at=person.created_at,
             updated_at=person.updated_at,

@@ -240,3 +240,19 @@ class BlastStatus(StrEnum):
     DRAFT = "draft"
     SENT = "sent"
     FAILED = "failed"
+
+
+class VatCategory(StrEnum):
+    SUB_FEE = "sub_fee"
+    GREEN_FEE = "green_fee"
+    FNB = "fnb"
+    NON_MEMBER_INCOME = "non_member_income"
+    PRO_SHOP = "pro_shop"
+    OTHER = "other"
+
+
+class ConsentSource(StrEnum):
+    ONBOARDING = "onboarding"
+    MEMBER_APP = "member_app"
+    ADMIN_CAPTURE = "admin_capture"
+    IMPORT = "import"

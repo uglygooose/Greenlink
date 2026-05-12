@@ -87,6 +87,12 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(BookingPaymentStatus, values_callable=enum_values),
         nullable=True,
     )
+    vat_category: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="green_fee",
+        server_default=text("'green_fee'::character varying"),
+    )
 
     participants = relationship(
         "BookingParticipant",

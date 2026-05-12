@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -31,6 +31,12 @@ class OrderItem(UUIDPrimaryKeyMixin, Base):
     item_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
     unit_price_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     quantity: Mapped[int] = mapped_column(nullable=False)
+    vat_category: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="other",
+        server_default=text("'other'::character varying"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,

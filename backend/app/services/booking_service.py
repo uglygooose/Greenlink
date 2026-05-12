@@ -18,6 +18,7 @@ from app.models import (
     StartLane,
     Tee,
     TeeSheetSlotState,
+    VatCategory,
 )
 from app.schemas.booking_state import (
     BookingPartyContextInput,
@@ -260,6 +261,7 @@ class BookingService:
             caddie_flag=payload.caddie_flag,
             fee_amount=commercial_snapshot.fee_amount,
             fee_currency=commercial_snapshot.fee_currency,
+            vat_category=VatCategory.GREEN_FEE.value,
             participants=[
                 self._to_booking_participant(participant) for participant in resolved_participants
             ],
