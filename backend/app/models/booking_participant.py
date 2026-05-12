@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,7 +33,17 @@ class BookingParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     guest_name: Mapped[str | None] = mapped_column(String(255))
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     booking = relationship("Booking", back_populates="participants")

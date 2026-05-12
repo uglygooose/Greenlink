@@ -3,85 +3,40 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Generator
+from pathlib import Path
 
-# Settings has no hardcoded defaults for secrets / database URL — provide test-only
-# fallbacks BEFORE any app import triggers Settings(). Real values are loaded from
-# backend/.env or the shell environment when present; setdefault only fills the gap
-# when neither is set (e.g. CI without a .env file).
-os.environ.setdefault("GREENLINK_SECRET_KEY", "pytest-only-secret-not-for-production")
-os.environ.setdefault(
-    "GREENLINK_DATABASE_URL",
-    "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink",
+# Tests always target the test database. Force GREENLINK_DATABASE_URL to the test
+# URL BEFORE any app import triggers Settings() — so that both the FastAPI app's
+# default engine and Alembic migrations (run via the Python API in fixtures below)
+# hit the test database, never the user's configured runtime database.
+os.environ["GREENLINK_DATABASE_URL"] = os.environ.get(
+    "GREENLINK_TEST_DATABASE_URL",
+    "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink_test",
 )
+
+# Other secrets Settings() requires from env. Test-only values; setdefault leaves
+# real shell env values untouched when present.
+os.environ.setdefault("GREENLINK_SECRET_KEY", "pytest-only-secret-not-for-production")
 os.environ.setdefault("GREENLINK_OBJECT_STORAGE_ACCESS_KEY", "pytest-only")
 os.environ.setdefault("GREENLINK_OBJECT_STORAGE_SECRET_KEY", "pytest-only")
 
 import pytest
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from alembic import command
 from app.auth.dependencies import get_db
-from app.db.base import Base
 from app.main import app
-
-# PostgreSQL ENUM types that SQLAlchemy creates but may not reliably drop via
-# drop_all() when reusing the same test database across test functions.
-# This list must be kept in sync with any sa.Enum / Mapped[StrEnum] columns.
-_ENUM_TYPE_NAMES = [
-    "usertype",
-    "clubmembershiprole",
-    "clubmembershipstatus",
-    "clubinvitationstatus",
-    "clubonboardingstate",
-    "clubonboardingstep",
-    "readinessstatus",
-    "integrityissueseverity",
-    "integrityissuescope",
-    "bulkintakeaction",
-    "bookingruleappliesto",
-    "bookingrulescopetype",
-    "bookingruleconflictstrategy",
-    "bookingruletype",
-    "pricingruleappliesto",
-    "pricingplayertype",
-    "pricingdaytype",
-    "pricingseason",
-    "pricingtimeband",
-    "bookingstatus",
-    "bookingparticipanttype",
-    "bookingsource",
-    "financeaccountstatus",
-    "financetransactiontype",
-    "financetransactionsource",
-    "financeexportprofile",
-    "financeexportbatchstatus",
-    "ordersource",
-    "orderstatus",
-    "tendertype",
-    "startlane",
-    "bookingpaymentstatus",
-    "newspostvisibility",
-    "newspoststatus",
-    "blasttargetsegment",
-    "blastchannel",
-    "blaststatus",
-]
-
-
-def _drop_all_enum_types(engine) -> None:
-    """Explicitly drop all PostgreSQL ENUM types that may linger after drop_all()."""
-    with engine.connect() as conn:
-        for type_name in _ENUM_TYPE_NAMES:
-            conn.execute(text(f'DROP TYPE IF EXISTS "{type_name}" CASCADE'))
-        conn.commit()
-
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/greenlink_test"
 DEFAULT_TEST_ADMIN_DATABASE_URL = "postgresql+psycopg://greenlink:greenlink@localhost:5432/postgres"
 TEST_DB_PREFLIGHT_CONNECT_TIMEOUT_SECONDS = 5
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+ALEMBIC_CONFIG_PATH = BACKEND_ROOT / "alembic.ini"
 
 
 def _build_unreachable_postgres_message(
@@ -143,6 +98,32 @@ def _ensure_postgres_test_database() -> None:
         admin_engine.dispose()
 
 
+def _reset_public_schema(engine: Engine) -> None:
+    """Drop and recreate the public schema — wipes all tables, sequences, and enum types.
+
+    A schema-level drop is what makes the migration-based fixture below cheap and
+    reliable: it nukes the `alembic_version` tracker and every Postgres enum type
+    in one statement, so the next `alembic upgrade head` starts from genuinely empty.
+    """
+    with engine.connect() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.commit()
+
+
+def _run_migrations(database_url: str) -> None:
+    """Run `alembic upgrade head` against the given database URL via the Python API.
+
+    env.py loads Settings() and writes settings.database_url onto the Alembic Config,
+    overriding whatever this function sets via `set_main_option`. The module-level
+    `os.environ["GREENLINK_DATABASE_URL"] = ...` assignment above pins
+    Settings.database_url to the test database, so both pathways converge.
+    """
+    alembic_cfg = Config(str(ALEMBIC_CONFIG_PATH))
+    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(alembic_cfg, "head")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_test_database() -> None:
     _ensure_postgres_test_database()
@@ -159,16 +140,14 @@ def db_session() -> Generator[Session, None, None]:
     TestingSessionLocal = sessionmaker(
         bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
     )
-    Base.metadata.drop_all(bind=engine)
-    _drop_all_enum_types(engine)
-    Base.metadata.create_all(bind=engine)
+    _reset_public_schema(engine)
+    _run_migrations(test_database_url)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
-        _drop_all_enum_types(engine)
+        _reset_public_schema(engine)
         engine.dispose()
 
 

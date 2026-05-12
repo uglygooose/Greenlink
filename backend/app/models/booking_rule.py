@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -23,8 +23,18 @@ class BookingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(BookingRuleType, values_callable=enum_values),
         nullable=False,
     )
-    evaluation_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evaluation_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     ruleset = relationship("BookingRuleSet", back_populates="rules")

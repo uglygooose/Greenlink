@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -28,7 +28,12 @@ class AccountCustomer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     billing_email: Mapped[str | None] = mapped_column(String(255))
     billing_phone: Mapped[str | None] = mapped_column(String(64))
-    billing_metadata: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    billing_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
 
     club = relationship("Club", back_populates="account_customers")
     person = relationship("Person", back_populates="account_customers")

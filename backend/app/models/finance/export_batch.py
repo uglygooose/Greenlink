@@ -52,6 +52,7 @@ class FinanceExportBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         nullable=False,
         default=FinanceExportBatchStatus.GENERATED,
+        server_default=text("'generated'::financeexportbatchstatus"),
     )
     created_by_person_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("people.id", ondelete="RESTRICT"),
@@ -61,12 +62,22 @@ class FinanceExportBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    transaction_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    transaction_count: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     total_debits: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default=text("0.00"),
     )
     total_credits: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default=text("0.00"),
     )
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     payload_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)

@@ -251,8 +251,9 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 
 ## Database
 
-- Migration head: `202605110001` (`backend/alembic/versions/202605110001_club_invitations.py`).
-- Migration count: 23 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
+- Migration head: `202605110002` (`backend/alembic/versions/202605110002_fix_pricing_rules_enum_drift.py`).
+- Migration count: 24 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
+- Schema/model parity: Phase 5 closed the `pricing_rules.player_type` and `pricing_rules.season` VARCHAR→enum drift (the original Pattern A finding), the 8 Pattern B model columns missing `values_callable`, the 3 Pattern C Postgres-enum-missing-Python-value gaps, and all Pattern E declaration gaps (1 CHECK, 6 indexes, 3 redundant UNIQUE constraints, 1 Text-vs-String column, 46 server_default mirrors). `alembic --autogenerate` against a fresh-migrated DB produces zero proposed ops as of 2026-05-12.
 - Models live in: `backend/app/models/`.
 - Tables (from `__tablename__` declarations):
   - `accounting_export_profiles` (`backend/app/models/finance/accounting_export_profile.py:14`)

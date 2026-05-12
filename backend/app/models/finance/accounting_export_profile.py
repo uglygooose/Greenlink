@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,13 +19,20 @@ class AccountingExportProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     club_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clubs.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     target_system: Mapped[str] = mapped_column(String(64), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
     mapping_config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_by_person_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("people.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
     )

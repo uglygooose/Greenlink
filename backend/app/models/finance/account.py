@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Enum, ForeignKey, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -35,6 +35,7 @@ class FinanceAccount(UUIDPrimaryKeyMixin, Base):
         Enum(FinanceAccountStatus, values_callable=enum_values),
         nullable=False,
         default=FinanceAccountStatus.ACTIVE,
+        server_default=text("'active'::financeaccountstatus"),
     )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),

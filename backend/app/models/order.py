@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, func
+from sqlalchemy import Enum, ForeignKey, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -15,6 +15,14 @@ from app.models.mixins import UUIDPrimaryKeyMixin
 
 class Order(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        Index(
+            "ix_orders_club_status_created_at",
+            "club_id",
+            "status",
+            "created_at",
+        ),
+    )
 
     club_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clubs.id", ondelete="CASCADE"),
@@ -57,6 +65,7 @@ class Order(UUIDPrimaryKeyMixin, Base):
         Enum(OrderStatus, values_callable=enum_values),
         nullable=False,
         default=OrderStatus.PLACED,
+        server_default=text("'placed'::orderstatus"),
     )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),

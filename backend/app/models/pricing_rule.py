@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -32,8 +32,13 @@ class PricingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     player_type: Mapped[PricingPlayerType] = mapped_column(
         Enum(PricingPlayerType, values_callable=enum_values),
         nullable=False,
+        server_default=text("'member_standard'::pricingplayertype"),
     )
-    holes: Mapped[int] = mapped_column(Integer, nullable=False)
+    holes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("18"),
+    )
     day_type: Mapped[PricingDayType] = mapped_column(
         Enum(PricingDayType, values_callable=enum_values),
         nullable=False,
@@ -42,6 +47,7 @@ class PricingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(PricingSeason, values_callable=enum_values),
         nullable=False,
         default=PricingSeason.ANY,
+        server_default=text("'any'::pricingseason"),
     )
     time_band: Mapped[PricingTimeBand] = mapped_column(
         Enum(PricingTimeBand, values_callable=enum_values),

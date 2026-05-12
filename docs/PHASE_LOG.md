@@ -18,6 +18,49 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 5 — Schema integrity: pricing_rules drift + Pattern B/C/E remediation, autogenerate-clean (2026-05-12)
+
+- **Original scope**: resolve `pricing_rules.player_type`/`pricing_rules.season` model/migration type drift (Phase 2 finding: model declared `Enum(...)` but migration `202604130003` shipped `sa.String(64)`/`sa.String(32)`), and switch `backend/tests/conftest.py` from `Base.metadata.create_all()` to real Alembic migrations so future drift fails CI rather than passing silently against a synthesised schema.
+- **Surfaced and fixed in the same phase**:
+  - **Pattern A** (1 case, the original): pricing_rules columns converted VARCHAR → enum via new migration `202605110002`.
+  - **Pattern B** (8 columns across 3 model files): the conftest switch immediately failed pytest with `invalid input value for enum bookingruleappliesto: "MEMBER"` — diagnosis was that `booking_rule_set.py`, `communication_blast.py`, and `news_post.py` declared `Mapped[<EnumClass>]` without wrapping the column in `Enum(EnumClass, values_callable=enum_values)`, so SQLAlchemy bound enum values by `.name` (uppercase) while Postgres enums are lowercase. Fixed in-place; no new migration required.
+  - **Pattern C** (3 missing enum values): `pricingdaytype`/`pricingtimeband` were missing `"any"`, `pricingruleappliesto` was missing `"staff"`. Migration `202605110002` extended via `ALTER TYPE ... ADD VALUE IF NOT EXISTS` (downgrade documented as no-op — Postgres has no DROP VALUE).
+  - **Pattern E structural** (1 case): `finance_transactions` model omitted the `amount <> 0` CHECK declared by migration `202603300001`. Declared as `CheckConstraint("amount <> 0", name="ck_finance_transactions_amount_non_zero")` on the model.
+  - **Pattern E indexes** (6 declarations + 1 redeclaration): every migration-created non-unique index that wasn't on its model is now declared, byte-exact-name-match: `ix_news_posts_status`, `ix_finance_transactions_account_created_at` (composite, replaces model's single-column `account_id` index), `ix_accounting_export_profiles_club_id`, `ix_accounting_export_profiles_created_by_person_id`, `ix_orders_club_status_created_at`, `ix_club_configs_preferred_accounting_profile_id`.
+  - **Pattern E redundant UQs** (3 cases): `uq_finance_tender_records_charge_transaction_id`, `uq_finance_tender_records_settlement_transaction_id`, `uq_pos_transactions_finance_transaction_id` — migrations created these alongside the column-level `unique=True` (which produces a separate UNIQUE INDEX). The redundant explicit UNIQUE constraints are now declared on models too, so alembic stops proposing to drop them.
+  - **Pattern E column-type drift** (1 case): `news_posts.body` is `Text` in DB (from migration) but the model omitted the type, defaulting to `String`. Model now declares `Text`.
+  - **Pattern E server_default mirrors** (46 columns across 14 models): every migration-set `server_default` on a column whose model didn't mirror it is now declared with `server_default=text("<literal-matching-migration>")`. Excludes `platform_state.id` (SERIAL `nextval(...)` handled by autoincrement). The 2 `accounting_export_profiles.created_at/updated_at` columns whose migration used `CURRENT_TIMESTAMP` (rather than the mixin's `now()`) are canonicalized by Alembic as equivalent — autogenerate is silent on them.
+  - **Census-confirmed clean**: Pattern D (foreign key target/ON DELETE/nullability/Postgres-compiled type) — 67/67 FKs match. No findings.
+- **Files touched**:
+  - `backend/alembic/versions/202605110002_fix_pricing_rules_enum_drift.py` (new — VARCHAR→enum conversion + 3 Pattern C `ALTER TYPE ADD VALUE` statements + documented no-op downgrade)
+  - `backend/tests/conftest.py` (Base.metadata.create_all() → `alembic.command.upgrade(cfg, "head")` per-test fixture, with public-schema drop/recreate isolation)
+  - `backend/tests/test_schema_consistency.py` (extended: 11 → 26 tests; new coverage for Pattern C enum value completeness, finance_transactions CHECK declaration, 6 Phase 5 indexes, 5-entry server_default sentinel)
+  - Model files (18 total): `app/models/account_customer.py`, `app/models/booking.py`, `app/models/booking_participant.py`, `app/models/booking_rule.py`, `app/models/booking_rule_set.py`, `app/models/club.py`, `app/models/club_config.py`, `app/models/club_membership.py`, `app/models/communication_blast.py`, `app/models/finance/account.py`, `app/models/finance/accounting_export_profile.py`, `app/models/finance/export_batch.py`, `app/models/finance/tender_record.py`, `app/models/finance/transaction.py`, `app/models/news_post.py`, `app/models/order.py`, `app/models/person.py`, `app/models/pos_transaction.py`, `app/models/pricing_rule.py`, `app/models/product.py`, `app/models/tee_sheet_slot_state.py`
+  - `docs/LIVE_STATE.md` (head/count updated)
+  - `docs/PHASE_LOG.md` (this entry)
+- **Outcome**:
+  - `pricing_rules` and 35 enum-typed columns total now match between Python StrEnum, model `Enum(...)` declaration, and Postgres `USER-DEFINED` types byte-for-byte.
+  - Conftest uses real migrations; future model/migration divergence fails the suite instead of silently passing against a synthesised schema.
+  - `alembic --autogenerate` against a fresh-migrated DB proposes **zero ops**: the model files are now canonical schema documentation for the v3 GreenLink semantic layer (PRODUCT.md §7).
+  - Schema-consistency sentinel grew from 11 to 26 parametrised tests covering enums, enum values, CHECK, indexes, and a server_default subset.
+- **Decisions made**:
+  - **Path B (full Pattern E remediation) chosen over Path A (defer informational items to Phase 5.5)**. Reasoning: PRODUCT.md §7 commits the v1 schema to be the truthful source for the v2 semantic layer; PRODUCT.md §11 (v3 GreenLink endpoint) requires autogenerate cleanliness so Phase 9 schema work isn't fighting historical declaration noise. Foundation work is cheapest while we're already in the schema layer. Deferring would create persistent autogenerate friction across every future backend phase.
+  - **Cosmetic CHECK rendering noise explicitly documented as non-drift**: 5 CHECK constraints where the model declares `quantity > 0` and Postgres normalizes to `quantity > 0::numeric` (or `>= 0::numeric`) are functionally identical. Listed here so a future autogenerate run surfacing them is not treated as new drift: `ck_order_items_quantity_positive`, `ck_order_items_unit_price_snapshot_non_negative`, `ck_finance_tender_records_amount_positive`, `ck_pos_transactions_total_non_negative`, `ck_pos_transaction_items_quantity_positive`, `ck_pos_transaction_items_unit_price_non_negative`, `ck_products_price_non_negative`, plus the newly declared `ck_finance_transactions_amount_non_zero`. (Alembic's `compare_type=True, compare_server_default=True` mode correctly treats these as equal — the noise appears only if a future contributor introspects with a stricter comparator.)
+  - **Pattern C `ALTER TYPE ADD VALUE` downgrade is intentionally a no-op**: Postgres provides no `DROP VALUE`; leaving the extra enum values present in the older schema is benign since nothing in the older schema reads them. The downgrade comment documents this so a future contributor doesn't try to "fix" it.
+- **Verification chain (Hard Rule 7)**:
+  - `uv run ruff check .` → All checks passed.
+  - `uv run ruff format --check .` → 229 files clean (1 reformatted in-flight).
+  - `uv run pytest -q` → 217 passed, 0 failed (baseline was 191; Phase 5 adds 11+15 schema-consistency parametrised cases).
+  - Downgrade test: `alembic upgrade head` → `downgrade -1` (lands at `202605110001`) → `upgrade head` (lands at `202605110002`). Round-trip clean.
+  - From-scratch test: `DROP SCHEMA public CASCADE` + `CREATE SCHEMA public` + full pytest → 217 passed.
+  - Autogenerate-clean confirmed: `produce_migrations(MigrationContext, Base.metadata)` against fresh-migrated DB returns `upgrade_ops.ops == []`.
+  - App boot smoke: `from app.main import app` imports cleanly; 131 routes registered.
+- **Follow-ups created**: none. The 5 cosmetic `::numeric` CHECK renderings are explicitly documented above as non-drift, not as a follow-up.
+- **Notes**:
+  - The Phase 5 census deliberately escalated to the user after Pattern E was found, because the original scope was "type/value integrity." User chose Path B (full remediation) against PRODUCT.md §7 / §11. The expanded scope was bounded by the census: every Pattern A/B/C/D/E finding is enumerated above and closed.
+  - The conftest switch is now a hard guard: a future model edit that diverges from migrations will fail pytest at suite startup, not at a per-test query. Any future PR that adds a new model column should also add the matching migration before pushing.
+  - For Phase 9 (semantic layer / autogenerate-driven schema evolution), the baseline is genuinely zero. New migrations should be born from autogenerate runs that propose exactly the intended change.
+---
 ### Phase 4.8 — Engineering docs aligned with PRODUCT.md (2026-05-11)
 
 - **Scope**: address drift findings from Phase 4.7's read-only check. HIGH drift in `docs/ARCHITECTURE_REVIEW_CHECKLIST.md` (rebuild discipline), LOW drift in `docs/ENGINEERING_STANDARDS.md` (rebuild-aware clarifications + truncation fix). Stage `.gitignore` rule for Windows Zone.Identifier sidecar files added by user.

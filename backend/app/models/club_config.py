@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,16 +19,33 @@ class ClubConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
-    operating_hours: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    booking_window_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
-    cancellation_policy_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
+    operating_hours: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
+    booking_window_days: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=14,
+        server_default=text("14"),
+    )
+    cancellation_policy_hours: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=24,
+        server_default=text("24"),
+    )
     default_slot_interval_minutes: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=10,
+        server_default=text("10"),
     )
     preferred_accounting_profile_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("accounting_export_profiles.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )

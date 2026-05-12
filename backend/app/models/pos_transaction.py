@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,6 +26,10 @@ class PosTransaction(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "pos_transactions"
     __table_args__ = (
         CheckConstraint("total_amount >= 0", name="ck_pos_transactions_total_non_negative"),
+        UniqueConstraint(
+            "finance_transaction_id",
+            name="uq_pos_transactions_finance_transaction_id",
+        ),
     )
 
     club_id: Mapped[uuid.UUID] = mapped_column(

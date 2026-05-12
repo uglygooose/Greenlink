@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -25,7 +25,11 @@ class Product(UUIDPrimaryKeyMixin, Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    active: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,

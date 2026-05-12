@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,6 +26,14 @@ class FinanceTenderRecord(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "finance_tender_records"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_finance_tender_records_amount_positive"),
+        UniqueConstraint(
+            "charge_transaction_id",
+            name="uq_finance_tender_records_charge_transaction_id",
+        ),
+        UniqueConstraint(
+            "settlement_transaction_id",
+            name="uq_finance_tender_records_settlement_transaction_id",
+        ),
     )
 
     club_id: Mapped[uuid.UUID] = mapped_column(

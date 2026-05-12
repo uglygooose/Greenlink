@@ -4,7 +4,16 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -36,7 +45,12 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     slot_datetime: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     slot_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    holes: Mapped[int] = mapped_column(Integer, nullable=False, default=18)
+    holes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=18,
+        server_default=text("18"),
+    )
     status: Mapped[BookingStatus] = mapped_column(
         Enum(BookingStatus, values_callable=enum_values),
         nullable=False,
@@ -45,6 +59,7 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Enum(BookingSource, values_callable=enum_values),
         nullable=False,
         default=BookingSource.ADMIN,
+        server_default=text("'admin'::bookingsource"),
     )
     party_size: Mapped[int] = mapped_column(Integer, nullable=False)
     primary_person_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -53,8 +68,18 @@ class Booking(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     primary_membership_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("club_memberships.id", ondelete="SET NULL")
     )
-    cart_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    caddie_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cart_flag: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    caddie_flag: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     fee_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
     fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     fee_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)

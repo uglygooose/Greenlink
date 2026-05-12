@@ -4,7 +4,16 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Enum, ForeignKey, Numeric, String, event, func
+from sqlalchemy import (
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    event,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -16,6 +25,17 @@ from app.models.mixins import UUIDPrimaryKeyMixin
 
 class FinanceTransaction(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "finance_transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "amount <> 0",
+            name="ck_finance_transactions_amount_non_zero",
+        ),
+        Index(
+            "ix_finance_transactions_account_created_at",
+            "account_id",
+            "created_at",
+        ),
+    )
 
     club_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clubs.id", ondelete="CASCADE"),
@@ -24,7 +44,6 @@ class FinanceTransaction(UUIDPrimaryKeyMixin, Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("finance_accounts.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     type: Mapped[FinanceTransactionType] = mapped_column(

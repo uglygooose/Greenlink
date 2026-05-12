@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import Enum, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import UTCDateTime
+from app.models.enum_utils import enum_values
 from app.models.enums import BlastChannel, BlastStatus, BlastTargetSegment
 from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -27,14 +28,17 @@ class CommunicationBlast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subject: Mapped[str] = mapped_column(nullable=False)
     body: Mapped[str] = mapped_column(Text(), nullable=False)
     target_segment: Mapped[BlastTargetSegment] = mapped_column(
+        Enum(BlastTargetSegment, values_callable=enum_values),
         nullable=False,
         default=BlastTargetSegment.ALL,
     )
     channel: Mapped[BlastChannel] = mapped_column(
+        Enum(BlastChannel, values_callable=enum_values),
         nullable=False,
         default=BlastChannel.IN_APP,
     )
     status: Mapped[BlastStatus] = mapped_column(
+        Enum(BlastStatus, values_callable=enum_values),
         nullable=False,
         default=BlastStatus.DRAFT,
     )

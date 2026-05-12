@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import JSON, Date, String, Text
+from sqlalchemy import JSON, Date, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -23,7 +23,12 @@ class Person(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     gender: Mapped[str | None] = mapped_column(String(64))
     external_ref: Mapped[str | None] = mapped_column(String(120), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
-    profile_metadata: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    profile_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
 
     user = relationship("User", back_populates="person", uselist=False)
     memberships = relationship(

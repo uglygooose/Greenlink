@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import Enum as PythonEnum
 
-from sqlalchemy import JSON, Boolean, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.datetime import utc_now
@@ -46,13 +46,19 @@ class ClubMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=ClubMembershipStatus.ACTIVE,
     )
-    joined_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+    joined_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        nullable=False,
+        default=utc_now,
+        server_default=text("now()"),
+    )
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     membership_number: Mapped[str | None] = mapped_column(String(64))
     membership_metadata: Mapped[dict[str, object]] = mapped_column(
         JSON,
         nullable=False,
         default=dict,
+        server_default=text("'{}'::json"),
     )
 
     person = relationship("Person", back_populates="memberships")
