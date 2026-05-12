@@ -18,6 +18,15 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 6.1 — Claude Design prototype archived
+
+Docs-only commit. Claude Design's Phase 6 deliverable (design system tokens + 5 foundation boards + 6 surfaces + design conversation transcripts) archived at docs/phase6_prototype/ as read-only reference for Phase 7 implementation.
+
+Approved defaults: Newsreader, Manrope, default density, light mode.
+
+No code, no schema, no tests.
+
+---
 ## Phase 5.6 — PRODUCT.md amendment (WI-5 decision + Phase 5.5 audit conflict resolutions)
 
 Docs-only commit. Seven surgical edits to docs/PRODUCT.md:
