@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.club_membership import ClubMembership
@@ -57,11 +58,12 @@ class BlastService:
         self._db = db
 
     def list_blasts(self, club_id: uuid.UUID) -> BlastListResponse:
-        blasts = (
-            self._db.query(CommunicationBlast)
-            .filter(CommunicationBlast.club_id == club_id)
-            .order_by(CommunicationBlast.created_at.desc())
-            .all()
+        blasts = list(
+            self._db.scalars(
+                select(CommunicationBlast)
+                .where(CommunicationBlast.club_id == club_id)
+                .order_by(CommunicationBlast.created_at.desc())
+            ).all()
         )
         return BlastListResponse(
             blasts=[_to_response(b) for b in blasts],

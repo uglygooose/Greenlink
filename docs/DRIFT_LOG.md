@@ -17,6 +17,14 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-12 — blast_service.py .query() residuals
+
+- **Surfaced by**: Phase 9E WI-12 cleanup of audit Finding 4.4.
+- **Claim**: Phase 9E converted the audit-named `.query()` block in `blast_service.py` to SQLAlchemy 2.0 `select(...)` style.
+- **Reality**: Three `.query()` usages remain in `backend/app/services/comms/blast_service.py` — `send_blast` (load by id+club) and `_resolve_recipients` (memberships, persons). Audit Finding 4.4 named only the `list_blasts` block at lines :59-64; Phase 9E's brief scope was "those four lines" so the residuals were left.
+- **Evidence**: `backend/app/services/comms/blast_service.py` `send_blast` and `_resolve_recipients` still use `self._db.query(...).filter(...).all()` / `.first()` patterns.
+- **Resolution**: Deferred. Cosmetic, non-functional — `.query()` is still supported by SQLAlchemy 2.x with a deprecation path. Convert when comms is next touched (a Phase 11 frontend integration or a v1.5 transactional-provider phase is the natural fold-in point). No urgency.
+---
 ### 2026-05-12 — platform.py create routes return status string instead of resource
 
 - **Surfaced by**: Phase 9G WI-8 (typing platform.py dict returns).
