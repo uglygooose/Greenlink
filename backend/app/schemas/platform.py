@@ -57,3 +57,11 @@ class ClubModuleUpdateRequest(BaseModel):
 class PlatformBootstrapResponse(BaseModel):
     status: str
     message: str
+
+
+class PlatformMembershipAssignResponse(BaseModel):
+    status: str
+
+
+class PlatformModuleUpdateResponse(BaseModel):
+    status: str

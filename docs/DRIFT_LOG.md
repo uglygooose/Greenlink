@@ -17,6 +17,14 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-12 — platform.py create routes return status string instead of resource
+
+- **Surfaced by**: Phase 9G WI-8 (typing platform.py dict returns).
+- **Claim**: REST create / update endpoints should return the affected resource (or at least a richer envelope) so callers don't need a follow-up GET.
+- **Reality**: `POST /api/platform/memberships` returns `{"status": "created"}` and `PUT /api/platform/clubs/{club_id}/modules` returns `{"status": "updated"}`. Phase 9G typed both as `PlatformMembershipAssignResponse` / `PlatformModuleUpdateResponse` mirroring the exact-same shape — typed envelopes around a status string, no resource payload. The superadmin frontend currently has to re-fetch the membership list / module list after each call.
+- **Evidence**: `backend/app/api/routes/platform.py:52-66` (post-9G shape); `PlatformMembershipAssignResponse` / `PlatformModuleUpdateResponse` in `backend/app/schemas/platform.py`.
+- **Resolution**: Deferred. Real architectural smell but real out-of-scope for 9G (mirror-current-shape rule). Could fold into a future contract-quality phase if it becomes load-bearing for Phase 10's superadmin surface — currently the frontend handles the extra GET, so no immediate pressure.
+---
 ### 2026-05-12 — membership transition timestamps
 
 - **Surfaced by**: Phase 9D WI-13 (PeopleReadModelService.summary).

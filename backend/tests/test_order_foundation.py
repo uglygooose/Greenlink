@@ -218,7 +218,7 @@ def _create_order(
         ],
     }
     response = client.post("/api/orders", headers=headers, json=payload)
-    assert response.status_code == 200
+    assert response.status_code == 201
     return response.json()
 
 
@@ -503,7 +503,7 @@ def test_player_member_can_fetch_menu_and_place_order_without_person_id(
             ],
         },
     )
-    assert create_response.status_code == 200
+    assert create_response.status_code == 201
     payload = create_response.json()
     assert payload["created"] is True
     assert payload["order"]["person"]["id"] == str(member_user.person_id)

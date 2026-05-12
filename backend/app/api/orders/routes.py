@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.routes.club_access import (
@@ -84,7 +84,11 @@ def get_order_menu(
     return service.list_player_menu(club_id=context.selected_club.id)
 
 
-@router.post("", response_model=OrderCreateResult)
+@router.post(
+    "",
+    response_model=OrderCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_order(
     payload: OrderCreateRequest,
     request: Request,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -47,7 +47,11 @@ from app.services.finance.read_model_service import FinanceReadModelService
 router = APIRouter()
 
 
-@router.post("/transactions", response_model=FinanceTransactionCreateResult)
+@router.post(
+    "/transactions",
+    response_model=FinanceTransactionCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_finance_transaction(
     payload: FinanceTransactionCreateRequest,
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
@@ -162,7 +166,11 @@ def get_account_ledger(
     return service.get_account_ledger(club_id=context.selected_club.id, account_id=account_id)
 
 
-@router.post("/export-batches", response_model=FinanceExportBatchCreateResult)
+@router.post(
+    "/export-batches",
+    response_model=FinanceExportBatchCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_finance_export_batch(
     payload: FinanceExportBatchCreateRequest,
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008
@@ -258,7 +266,11 @@ def list_accounting_export_profiles(
     return service.list_profiles(club_id=context.selected_club.id)
 
 
-@router.post("/accounting-profiles", response_model=AccountingExportProfileResponse)
+@router.post(
+    "/accounting-profiles",
+    response_model=AccountingExportProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_accounting_export_profile(
     payload: AccountingExportProfileUpsertRequest,
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),  # noqa: B008

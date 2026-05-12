@@ -183,7 +183,7 @@ def test_generate_finance_export_batch_persists_summary_and_rows(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
     assert payload["created"] is True
     assert payload["batch"]["transaction_count"] == 2
@@ -235,8 +235,8 @@ def test_generate_finance_export_batch_is_idempotent_for_same_range(
     first = client.post("/api/finance/export-batches", headers=headers, json=request_body)
     second = client.post("/api/finance/export-batches", headers=headers, json=request_body)
 
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.status_code == 201
+    assert second.status_code == 201
     assert first.json()["created"] is True
     assert second.json()["created"] is False
     assert first.json()["batch"]["id"] == second.json()["batch"]["id"]
@@ -336,7 +336,7 @@ def test_finance_export_selection_includes_order_and_pos_transactions(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     sources = [row["source"] for row in response.json()["batch"]["rows"]]
     assert sources == ["order", "pos"]
 
@@ -378,7 +378,7 @@ def test_voided_finance_export_batch_allows_regeneration(
     assert voided.status_code == 200
     assert voided.json()["void_applied"] is True
     assert voided.json()["batch"]["status"] == "void"
-    assert regenerated.status_code == 200
+    assert regenerated.status_code == 201
     assert regenerated.json()["created"] is True
     assert regenerated.json()["batch"]["id"] != batch_id
 

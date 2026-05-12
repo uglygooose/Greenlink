@@ -12,6 +12,8 @@ from app.schemas.platform import (
     ClubMembershipAssignRequest,
     ClubModuleUpdateRequest,
     PlatformBootstrapResponse,
+    PlatformMembershipAssignResponse,
+    PlatformModuleUpdateResponse,
 )
 from app.services.platform_service import PlatformService
 
@@ -49,28 +51,32 @@ def create_club(
     return service.create_club(payload, correlation_id=correlation_id)
 
 
-@router.post("/memberships", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/memberships",
+    response_model=PlatformMembershipAssignResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def assign_membership(
     payload: ClubMembershipAssignRequest,
     request: Request,
     _: object = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> PlatformMembershipAssignResponse:
     service = PlatformService(db)
     correlation_id = getattr(request.state, "correlation_id", None)
     service.assign_membership(payload, correlation_id=correlation_id)
-    return {"status": "created"}
+    return PlatformMembershipAssignResponse(status="created")
 
 
-@router.put("/clubs/{club_id}/modules")
+@router.put("/clubs/{club_id}/modules", response_model=PlatformModuleUpdateResponse)
 def update_modules(
     club_id: uuid.UUID,
     payload: ClubModuleUpdateRequest,
     request: Request,
     _: object = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> PlatformModuleUpdateResponse:
     service = PlatformService(db)
     correlation_id = getattr(request.state, "correlation_id", None)
     service.update_modules(club_id, payload, correlation_id=correlation_id)
-    return {"status": "updated"}
+    return PlatformModuleUpdateResponse(status="updated")

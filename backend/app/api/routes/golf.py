@@ -346,7 +346,11 @@ def get_player_bookings(
     )
 
 
-@router.post("/bookings", response_model=BookingCreateResult)
+@router.post(
+    "/bookings",
+    response_model=BookingCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_booking(
     payload: BookingCreateRequest,
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),

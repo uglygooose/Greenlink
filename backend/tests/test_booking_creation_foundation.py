@@ -263,7 +263,7 @@ def test_booking_create_allows_write_and_surfaces_in_tee_sheet(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
 
     assert payload["decision"] == "allowed"
@@ -358,7 +358,7 @@ def test_booking_create_persists_resolved_pricing_snapshot_for_tee_sheet(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
 
     assert payload["decision"] == "allowed"
@@ -433,7 +433,7 @@ def test_member_portal_booking_creation_uses_current_member_and_projects_to_tee_
             "participants": [],
         },
     )
-    assert create_response.status_code == 200
+    assert create_response.status_code == 201
     payload = create_response.json()
 
     assert payload["decision"] == "allowed"
@@ -553,7 +553,7 @@ def test_booking_create_blocks_when_slot_capacity_is_exceeded(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
 
     assert payload["decision"] == "blocked"
@@ -596,7 +596,7 @@ def test_booking_create_returns_indeterminate_when_slot_state_is_incomplete(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
 
     assert payload["decision"] == "indeterminate"
@@ -654,7 +654,7 @@ def test_booking_create_blocks_when_member_participant_lacks_club_membership(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
 
     assert payload["decision"] == "blocked"

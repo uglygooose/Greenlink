@@ -169,7 +169,7 @@ def test_finance_transactions_create_and_ledger_is_derived(
             "description": "Booking charge",
         },
     )
-    assert charge.status_code == 200
+    assert charge.status_code == 201
     charge_payload = charge.json()
     assert charge_payload["transaction"]["amount"] == "-125.00"
     assert charge_payload["transaction"]["type"] == "charge"
@@ -196,7 +196,7 @@ def test_finance_transactions_create_and_ledger_is_derived(
             "description": "Front desk payment",
         },
     )
-    assert payment.status_code == 200
+    assert payment.status_code == 201
     payment_payload = payment.json()
     assert payment_payload["transaction"]["amount"] == "75.00"
     assert payment_payload["balance"] == "-50.00"

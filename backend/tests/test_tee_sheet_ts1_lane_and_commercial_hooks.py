@@ -445,7 +445,7 @@ def test_booking_created_via_api_with_start_lane_appears_in_tee_sheet(
         },
         headers=headers,
     )
-    assert create_response.status_code == 200
+    assert create_response.status_code == 201
     create_payload = create_response.json()
     assert create_payload["decision"] == "allowed"
     assert create_payload["booking"]["start_lane"] == "hole_1"

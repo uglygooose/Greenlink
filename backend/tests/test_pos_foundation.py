@@ -259,7 +259,7 @@ def test_create_pos_transaction_cash(client: TestClient, db_session: Session) ->
         "tender_type": "cash",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "allowed"
     assert data["transaction_applied"] is True
@@ -282,7 +282,7 @@ def test_create_pos_transaction_card(client: TestClient, db_session: Session) ->
         "tender_type": "card",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "allowed"
     assert data["transaction"]["total_amount"] == "109.98"
@@ -311,7 +311,7 @@ def test_create_pos_transaction_member_account(client: TestClient, db_session: S
         "person_id": str(member_person.id),
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "allowed"
     assert data["transaction"]["total_amount"] == "12.00"
@@ -333,7 +333,7 @@ def test_create_pos_transaction_member_account_missing_person(
         "tender_type": "member_account",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "blocked"
     assert any("person_id" in f for f in data["failures"])
@@ -357,7 +357,7 @@ def test_create_pos_transaction_member_account_no_finance_account(
         "person_id": str(person_no_account.id),
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "blocked"
     assert any("finance account" in f.lower() for f in data["failures"])
@@ -386,7 +386,7 @@ def test_create_pos_transaction_with_product_id(client: TestClient, db_session: 
         "tender_type": "cash",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "allowed"
     assert data["transaction"]["items"][0]["product_id"] == str(product.id)
@@ -421,7 +421,7 @@ def test_create_pos_transaction_uses_canonical_product_details(
         "tender_type": "cash",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "allowed"
     assert data["transaction"]["total_amount"] == "70.00"
@@ -462,7 +462,7 @@ def test_create_pos_transaction_blocks_inactive_product(
         "tender_type": "cash",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["decision"] == "blocked"
     assert any("inactive" in failure.lower() for failure in data["failures"])
@@ -485,7 +485,7 @@ def test_create_pos_transaction_line_totals(client: TestClient, db_session: Sess
         "tender_type": "cash",
     }
     response = client.post("/api/pos/transactions", json=payload, headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     item = data["transaction"]["items"][0]
     assert item["line_total"] == "54.00"

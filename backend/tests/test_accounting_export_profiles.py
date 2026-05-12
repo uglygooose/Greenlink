@@ -173,7 +173,7 @@ def _create_canonical_batch(client, headers: dict[str, str]) -> dict[str, object
             "date_to": "2026-04-08",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     return response.json()["batch"]
 
 
@@ -192,7 +192,7 @@ def test_accounting_export_profile_create_and_list(client, db_session: Session) 
     )
     listed = client.get("/api/finance/accounting-profiles", headers=headers)
 
-    assert created.status_code == 200
+    assert created.status_code == 201
     assert created.json()["code"] == "generic_journal_ops"
     assert created.json()["target_system"] == "generic_journal"
     assert listed.status_code == 200

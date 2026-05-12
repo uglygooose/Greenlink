@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.routes.club_access import (
@@ -80,7 +80,11 @@ def update_product(
     )
 
 
-@router.post("/transactions", response_model=PosTransactionResult)
+@router.post(
+    "/transactions",
+    response_model=PosTransactionResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_pos_transaction(
     payload: PosTransactionCreateRequest,
     request: Request,

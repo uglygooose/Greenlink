@@ -289,7 +289,7 @@ def test_booking_cancel_allows_reserved_booking_and_reflects_in_tee_sheet(
             ],
         },
     )
-    assert create_response.status_code == 200
+    assert create_response.status_code == 201
     booking_id = create_response.json()["booking"]["id"]
 
     before_cancel = client.get(

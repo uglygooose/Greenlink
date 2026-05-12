@@ -248,7 +248,7 @@ def _create_order(
             ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     return response.json()["order"]["id"]
 
 
