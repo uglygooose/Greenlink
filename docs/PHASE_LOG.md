@@ -18,6 +18,34 @@ Each entry uses this format:
 ```
 
 ---
+### Phase 5.5 — Backend audit report (2026-05-12)
+
+- **Scope**: read-only backend audit covering domain event emission consistency, tenant scoping completeness, read-model pattern coverage, service-layer architecture coherence, API contract quality, and test coverage relative to v1 USP surfaces. v1-USP-weighted severity grading. Output feeds Phase 9 backend extension wave with a concrete prioritised work list.
+- **Files touched**:
+  - `docs/PHASE_5_5_BACKEND_AUDIT.md` (created)
+  - `docs/PHASE_LOG.md` (this entry)
+- **Findings**: **14 HIGH, 8 MEDIUM, 5 LOW** across the six audit areas.
+  - Area 1 (Domain events): 13 HIGH (booking lifecycle × 8, finance × 4, pricing publish × 1), 4 MEDIUM (comms × 2, operational support × 2), 1 LOW (auth).
+  - Area 2 (Tenant scoping): 0 findings — 125/127 endpoints scoped, 2 correctly public. PRODUCT.md §10.3 work item 11 closeable.
+  - Area 3 (Read-model coverage): 2 HIGH (semantic-layer commitment unfulfilled, daily KPI metrics absent), 2 MEDIUM (member-stats, blast-engagement read-models absent).
+  - Area 4 (Service coherence): 1 service (`superadmin_onboarding_service.py`, 946 lines / 4 domains) graded structural-rework-needed but MEDIUM in v1-USP weighting; 2 MEDIUM has-issues (golf_settings, accounting_profile_mapping); 1 LOW (blast_service `.query()` style drift). 36/40 services clean.
+  - Area 5 (API contracts): 6 HIGH (USP creates default to 200 instead of 201 in finance × 3, orders × 1, pos × 1, golf bookings × 1), 2 MEDIUM (platform.py untyped dict × 2), 1 MEDIUM (superadmin.py inappropriate 400), 1 LOW (no OpenAPI docstrings).
+  - Area 6 (Test coverage): 2 HIGH (zero `DomainEventRecord` assertions across the 197-test suite; no optimistic-locking regression sentinel before Phase 9C), 2 MEDIUM (tee-sheet + admin-dashboard test thinness).
+- **Outcome**: Phase 9 backend extension wave has a concrete prioritised work list. 14 Phase 9 work items derived (WI-1 through WI-14). v1 USP surfaces graded against the standards in PRODUCT.md §3 / §4 / §7.
+- **Phase 9 work items derived**: **14**, grouped by §11 sub-phase:
+  - 9A (legal & foundations): WI-10.
+  - 9B (audit-log expansion): WI-1, WI-2, WI-3, WI-4, WI-14.
+  - 9C (tee sheet correctness): WI-9, WI-11.
+  - 9D (finance USP deepening): WI-6, WI-13.
+  - 9E (comms foundation): WI-12.
+  - New 9F (semantic-layer architecture, proposed): WI-5.
+  - New 9G (contract-quality bundle, proposed): WI-7, WI-8.
+- **Follow-ups**: ONE item requires user decision before Phase 9 starts — **WI-5 dbt vs Python metric registry vs SQL views**. PRODUCT.md §7 commits to "dbt or equivalent"; the equivalents range from a Python dataclass metric registry (small, ships fast) to a real dbt project layered on Postgres (large, true semantic layer). User picks before WI-5 begins.
+- **Conflicts with PRODUCT.md §10**: 2 minor, 0 blocking.
+  - §10.3 cites "~91 endpoints" but actual count is 127 (37 list endpoints). Not a meaningful conflict — flagged for accuracy.
+  - **§11 Phase 9 sub-phases do not include the semantic-layer architecture explicitly, but §7 commits to it in v1.** Recommendation in the report: amend §11 to add sub-phase 9F + amend §10.3 to add work item 17. User decision pending alongside WI-5.
+- **Notes**: Tenant scoping is the strongest area in this audit — 125/127 endpoints correctly scoped, two intentional public exceptions (`/health`, `/auth/login`). The largest gap (audit-log USP) cuts across Areas 1 and 6 simultaneously, and both branches converge on Phase 9 sub-phase 9B. Phase 6 (Claude Design burst 1) is the next concrete phase — it runs in parallel with Phase 9 once both are queued.
+---
 ### Phase 5 — Schema integrity: pricing_rules drift + Pattern B/C/E remediation, autogenerate-clean (2026-05-12)
 
 - **Original scope**: resolve `pricing_rules.player_type`/`pricing_rules.season` model/migration type drift (Phase 2 finding: model declared `Enum(...)` but migration `202604130003` shipped `sa.String(64)`/`sa.String(32)`), and switch `backend/tests/conftest.py` from `Base.metadata.create_all()` to real Alembic migrations so future drift fails CI rather than passing silently against a synthesised schema.
