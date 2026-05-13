@@ -18,6 +18,55 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 8a: Waitlist → tee-row drag-and-drop (2026-05-14)
+
+Frontend slice. Wires the waitlist rail (Slice 7) and the tee-row grid (Slice 2) into a working drag-and-drop pipeline that creates walk-in bookings via the existing `POST /api/golf/bookings` endpoint with `source="walk_in"` (Slice 7.5) and N GUEST participants.
+
+- **Scope**:
+  - New DnD primitives module: `frontend/src/features/tee-sheet/dnd/types.ts` (DragPayload discriminated union, SlotDropTarget, DRAG_PAYLOAD_MIME) + `dnd/use-drag-state.ts` (page-level drag controller with payload + activeTarget + polite aria-live announcement).
+  - New mutation hook `use-create-walkin-booking.ts`: builds the booking payload (N participants sharing `guest_name`, first `is_primary`), patches the tee-sheet day query cache optimistically, rolls back on error, invalidates on settle. Exports `BookingCreateError`, `isOptimisticBookingId`, `OPTIMISTIC_BOOKING_ID_PREFIX`.
+  - `WaitlistCard` gains native HTML5 drag handlers: writes the payload into `dataTransfer` via the custom MIME, sets `data-dragging`, fires page-level `onDragStart`/`onDragEnd`, and dims to opacity 0.45 when the drop's mutation is in flight (`isOptimisticallyRemoved`).
+  - `TeeRow` gains drop-target wiring on empty player cells: non-blocked rows accept waitlist drags, the active drop target renders a brand-dashed border + "Drop here · {name}" with `north_east` icon, the row dims to opacity 0.65 while an optimistic booking is in flight.
+  - `WaitlistRail` forwards drag props down to each `WaitlistCard`.
+  - Page integration: `useDragState` + `useCreateWalkinBooking` mounted at `AdminTeeSheetPage`, an absolutely-positioned aria-live polite region announces "Picking up {name} · {1 seat|N seats}" on drag start, a dismissible inline `WalkinBookingErrorBanner` surfaces decision-blocked or network errors using the existing color-mix idiom.
+  - `BookingCreateInput.source` (`frontend/src/types/bookings.ts`) extended `"admin" | "member_portal"` → `"admin" | "member_portal" | "staff" | "walk_in"` to match the Slice 7.5 backend enum.
+  - 14 new tests: `use-create-walkin-booking.test.tsx` (10 — payload builder + hook lifecycle including success, missing session, decision !== "allowed" → BookingCreateError, optimistic patch, rollback) + `use-drag-state.test.tsx` (4 — initial state, start/end, announcement pluralisation, setActiveTarget). 4 extension tests on `WaitlistCard.test.tsx` (dragStart writes payload + fires callback + sets data-dragging, dragEnd clears, isOptimisticallyRemoved dims). 8 extension tests on `TeeRow.test.tsx` (drop eligibility gating by dragPayload + non-blocked, activeDropTarget visual, dragEnter fires with slot target, drop parses payload, malformed payload swallowed, optimistic booking dims row).
+  - `admin-tee-sheet-page.test.tsx` wrapped in `QueryClientProvider` (now required because the page mounts the walk-in mutation hook).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/dnd/types.ts` (created, 26 lines)
+  - `frontend/src/features/tee-sheet/dnd/use-drag-state.ts` (created, 56 lines)
+  - `frontend/src/features/tee-sheet/dnd/use-drag-state.test.tsx` (created, 69 lines)
+  - `frontend/src/features/tee-sheet/use-create-walkin-booking.ts` (created, 199 lines)
+  - `frontend/src/features/tee-sheet/use-create-walkin-booking.test.tsx` (created, 295 lines)
+  - `frontend/src/features/tee-sheet/components/WaitlistCard.tsx` (drag handlers + optimistic dim)
+  - `frontend/src/features/tee-sheet/components/WaitlistCard.test.tsx` (+4 tests)
+  - `frontend/src/features/tee-sheet/components/WaitlistRail.tsx` (forwarded drag props)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (drop-target wiring + optimistic row dim)
+  - `frontend/src/features/tee-sheet/components/TeeRow.test.tsx` (+8 tests)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (dragController + mutation + aria-live region + error banner)
+  - `frontend/src/pages/admin-tee-sheet-page.test.tsx` (QueryClientProvider wrap; existing 28 tests preserved)
+  - `frontend/src/types/bookings.ts` (BookingCreateInput.source extended)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`
+- **Outcome**: 449 frontend tests pass (was 405, +44 — 22 new for Slice 8a + Slice 7.5 backend test additions previously merged + already-existing tests now passing under the QueryClientProvider wrap). Lint: 0 errors (13 pre-existing warnings unrelated to Slice 8a). Typecheck clean. No new dependencies; no DnD library introduced (`grep -rE "react-dnd|dnd-kit|react-beautiful-dnd"` in `frontend/src/` returns 0 matches). FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex colors introduced — all visuals use `--gl-*` tokens and `color-mix(in oklab, ...)`.
+- **Decisions made**:
+  - **Native HTML5 Drag-and-Drop API**, no library (no `react-dnd`, no `@dnd-kit/core`). The drop interaction is one shape (waitlist card → empty player cell); library overhead bought nothing.
+  - **Party-of-N → ONE booking with N participants** (Deliverable 4a option i). All N `BookingCreateParticipantInput.guest_name` values share the single party name on the waitlist card; only the first carries `is_primary=true`. The waitlist card carries one name; inventing N-1 names (suffixes, placeholders, generated unique strings) is invention. Verified backend resolver accepts identical `guest_name` across participants.
+  - **Optimistic UI via React Query** (ENGINEERING_STANDARDS.md §7): `onMutate` snapshots the day-query cache and patches in a transient booking with id prefix `optimistic-`, `onError` restores the snapshot, `onSettled` invalidates the query. Consumers detect the optimistic booking via `isOptimisticBookingId`; `TeeRow` dims the row to opacity 0.65 while the mutation is in flight. The waitlist card dims to opacity 0.45 during the same window so users see the optimistic placement of party-of-N participants.
+  - **aria-live polite region** at the page level, absolutely-positioned offscreen via the standard sr-only pattern. Announces "Picking up {name} · {1 seat|N seats}" on drag start, empties on drag end. Screen-reader announcement is the v1 accessibility surface; keyboard-driven DnD is a separate scope (Slice 9+).
+  - **`aria-modal` DOM signal pattern reused** for layer coordination (Slice 6 standing contract): no new conflicts surfaced; the drag interaction is below the modal/popover layer and bails when those layers own focus.
+  - **No locks / no concurrency check**: accepted v1 concurrency gap. Two operators drag onto the same empty cell simultaneously → both fire; backend availability check rejects the second with a `BookingCreateError` and the optimistic patch rolls back. Surfaced as a dismissible inline banner via the existing `color-mix(--gl-caddie)` idiom. Hardening (slot soft-locks during in-flight drops) deferred to a later slice once availability semantics are clearer.
+  - **No new chrome action** for "place from waitlist" — drop is the only entry. The waitlist card's `Place` button stays Phase 8 stub (`onPlace` undefined → disabled). Suggestion engine remains FROZEN (`frontend/src/features/tee-sheet/components/WaitlistCard.tsx:136-145`). Behaviour symmetry is intentional: Slice 7 shipped chrome without an engine; Slice 8a ships the drop pathway without a one-click placement shortcut.
+- **Follow-ups created**:
+  - The Slice 2 channel-dot FROZEN now has live `source="walk_in"` data flowing through bookings — the per-cell channel dot can render the walk-in channel against real data when Slice 8b lands. Direct + aggregator channels still require enum additions before the four-channel taxonomy is renderable.
+  - Slot soft-lock during in-flight optimistic drops (v1 concurrency gap above). Deferred until availability semantics are scoped.
+  - Slice 8b: player → row drag (moving an existing player between time slots). Drag payload discriminated union has room for a `{ kind: "player"; … }` variant; drop target the same.
+  - Keyboard-driven DnD parity (pick up via Enter, navigate slots with arrow keys, place via Enter, cancel via Escape). Slice 9+ scope; not yet specced.
+- **Notes**:
+  - The original spec premise that the slice "creates one booking per party member" was caught at recon — the backend resolver supports one booking with N participants (`bookings.party_size = N`), which is the correct shape per the schema. The slice spec was corrected before any code landed (the "DO NOT INVENT N-1 names" rule preserved option i exclusively).
+  - The page test harness now requires a `QueryClientProvider` wrapper because the page mounts a mutation hook. Three inline `render(<MemoryRouter>...</MemoryRouter>)` callsites were also wrapped; existing 28 page tests pass unchanged after the wrap.
+  - The `WaitlistRail`'s `Send to POS` button + waitlist `Add` button remain stub Phase 8 chrome (Slice 7); Slice 8a deliberately does not extend them.
+
+---
 ## Phase 10 — Slice 7.5: BookingSource.WALK_IN enum addition (2026-05-13)
 
 Backend mini-slice. One new value on an existing native Postgres ENUM type. Prerequisite for Slice 8a's waitlist→row drop, which needs to emit walk-in bookings with a distinct source tag.

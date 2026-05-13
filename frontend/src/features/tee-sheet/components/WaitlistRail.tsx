@@ -12,6 +12,7 @@ import { Card } from "../../../components/ui/Card";
 import { CardHead } from "../../../components/ui/CardHead";
 import { Icon } from "../../../components/ui/Icon";
 import { Pill } from "../../../components/ui/Pill";
+import type { WaitlistDragPayload } from "../dnd/types";
 import type { WaitlistEntry } from "../use-waitlist";
 
 import { WaitlistCard } from "./WaitlistCard";
@@ -24,6 +25,12 @@ export interface WaitlistRailProps {
   onPlace?: (entry: WaitlistEntry) => void;
   onAdd?: () => void;
   onSendToPos?: () => void;
+  // Slice 8a drag wiring — forwarded to each WaitlistCard.
+  onDragStart?: (payload: WaitlistDragPayload) => void;
+  onDragEnd?: () => void;
+  // Optimistic-removal map: when a drop's mutation is in flight, the
+  // matching card stays visible but dimmed until success/error settles.
+  optimisticallyRemovedEntryIds?: ReadonlySet<string>;
 }
 
 const RAIL_WIDTH = 308;
@@ -36,6 +43,9 @@ export function WaitlistRail({
   onPlace,
   onAdd,
   onSendToPos,
+  onDragStart,
+  onDragEnd,
+  optimisticallyRemovedEntryIds,
 }: WaitlistRailProps): JSX.Element {
   const partyCount = waitlist.length;
   const playerCount = waitlist.reduce((sum, entry) => sum + entry.party, 0);
@@ -116,7 +126,14 @@ export function WaitlistRail({
           <EmptyDropHint />
         ) : (
           waitlist.map((entry) => (
-            <WaitlistCard key={entry.id} entry={entry} onPlace={onPlace} />
+            <WaitlistCard
+              key={entry.id}
+              entry={entry}
+              onPlace={onPlace}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              isOptimisticallyRemoved={optimisticallyRemovedEntryIds?.has(entry.id)}
+            />
           ))
         )}
       </div>

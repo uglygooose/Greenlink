@@ -68,7 +68,8 @@ All routes defined in `frontend/src/routes/router.tsx`. ProtectedRoute wraps eac
 
 - `/admin/dashboard` → `frontend/src/pages/admin-dashboard-page.tsx` — Dashboard workspace.
 - `/admin/golf/dashboard` → `frontend/src/pages/admin-golf-dashboard-page.tsx`.
-- `/admin/golf/tee-sheet` → `frontend/src/pages/admin-golf-tee-sheet-page.tsx`.
+- `/admin/golf/tee-sheet` → `frontend/src/pages/admin-golf-tee-sheet-page.tsx` (legacy 3276-line surface).
+- `/admin/tee-sheet` → `frontend/src/pages/admin-tee-sheet-page.tsx` (Phase 10 rebuild — Slices 1–8a).
 - `/admin/golf/settings` → `frontend/src/pages/admin-golf-settings-page.tsx`.
 - `/admin/orders` → `frontend/src/pages/admin-order-queue-page.tsx`.
 - `/admin/people/dashboard` → `frontend/src/pages/admin-people-dashboard-page.tsx`.
@@ -350,10 +351,13 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 - Frontend feature dir: `frontend/src/features/tee-sheet/` (12 files), `frontend/src/features/bookings/`.
 - Key routes: `/admin/golf/tee-sheet`, `/admin/golf/dashboard`.
 - Key endpoints: `GET /api/golf/tee-sheet/day`, `POST /api/golf/bookings`, `PATCH /api/golf/bookings/{booking_id}`, `POST /api/golf/bookings/{booking_id}/check-in`, `POST /api/golf/bookings/{booking_id}/complete`, `POST /api/golf/bookings/{booking_id}/no-show`, `POST /api/golf/bookings/{booking_id}/cancel`, `POST /api/golf/bookings/{booking_id}/move`.
-- Notable surfaces: `frontend/src/pages/admin-golf-tee-sheet-page.tsx` (3276 lines), `frontend/src/features/tee-sheet/sheet-shared.tsx` (1057 lines), `frontend/src/features/tee-sheet/booking-management-drawer.tsx` (622 lines), `frontend/src/features/tee-sheet/tee-sheet-swimlane-grid.tsx` (639 lines).
+- Notable surfaces: `frontend/src/pages/admin-tee-sheet-page.tsx` (Phase 10 rebuild — Slices 1–8a, mounted at `/admin/tee-sheet` per `frontend/src/routes/router.tsx:81`), `frontend/src/pages/admin-golf-tee-sheet-page.tsx` (3276 lines — legacy, mounted at `/admin/golf/tee-sheet`), `frontend/src/features/tee-sheet/sheet-shared.tsx` (1057 lines), `frontend/src/features/tee-sheet/booking-management-drawer.tsx` (622 lines), `frontend/src/features/tee-sheet/tee-sheet-swimlane-grid.tsx` (639 lines).
+- Phase 10 modules live under `frontend/src/features/tee-sheet/`: `dnd/types.ts` + `dnd/use-drag-state.ts` (Slice 8a — native HTML5 drag-and-drop primitives, no library), `use-create-walkin-booking.ts` (Slice 8a walk-in booking mutation with optimistic patch + rollback), `use-waitlist.ts` (Slice 7 empty stub — no `/api/golf/waitlist` endpoint), `components/PortfolioStrip.tsx` + `components/TeeRow.tsx` + `components/WaitlistCard.tsx` + `components/WaitlistRail.tsx` + `components/SelectionFooter.tsx` + `components/PortfolioTile.tsx` (Slices 1–7 chrome).
 - Gaps:
   - Frontend re-derives `staff_count` / `party_summary` locally in `updateSlotFromBookings` (`frontend/src/features/tee-sheet/sheet-shared.tsx:1023-1027`).
   - Two `FROZEN — backend gap` markers in `frontend/src/features/tee-sheet/sheet-shared.tsx:896` and `:922` flag client-side derivation of next-action / arrivals-due / finance-eligibility flags pending backend exposure.
+  - No `Waitlist` model, no `/api/golf/waitlist` endpoint, no suggestion engine — Phase 10 Slice 7 ships against an empty stub (`frontend/src/features/tee-sheet/use-waitlist.ts`). See DRIFT_LOG 2026-05-13.
+  - Phase 10 Slice 8a accepts a v1 concurrency gap: no slot soft-lock during in-flight optimistic walk-in drop. Two operators dragging onto the same empty cell will both see an optimistic transient; the second is rejected by `BookingCreateError` and rolled back via `WalkinBookingErrorBanner`. See DRIFT_LOG 2026-05-14.
 
 ### Pricing & rules
 

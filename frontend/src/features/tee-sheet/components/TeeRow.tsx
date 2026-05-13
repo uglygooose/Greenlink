@@ -1,19 +1,23 @@
-// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slices 2–4.
+// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slices 2–8a.
 // Renders one Phase 8 tee row from a single TeeSheetSlotView. Slice 4 added
 // selection: row-level click fires onSelect (except blocked rows), price and
 // more_vert are stop-propagation buttons that stay inert until later slices
-// wire their popover/menu.
+// wire their popover/menu. Slice 8a adds drop-target wiring on empty player
+// cells: dragOver renders the brand-dashed "Drop here · {name}" visual,
+// drop fires the page-level mutation with the slot_datetime.
 //
 // Backend gaps consciously NOT papered over:
 // - channel/source per booking → channel dot per player cell omitted
 // - "has audit events" per slot   → time-cell audit clock omitted
 // - pace per slot                 → pace pip omitted (column still rendered for layout)
 // These flow back to the slice-2 report and the recon ambiguities list.
-import type { CSSProperties } from "react";
+import type { CSSProperties, DragEvent } from "react";
 
 import { Icon } from "../../../components/ui/Icon";
 import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../../types/tee-sheet";
+import { DRAG_PAYLOAD_MIME, type DragPayload, type SlotDropTarget } from "../dnd/types";
 import { bookingParticipantNames, slotCapacity, timeKey } from "../sheet-shared";
+import { isOptimisticBookingId } from "../use-create-walkin-booking";
 
 export type RowState = "open" | "booked" | "atrisk" | "blocked";
 
@@ -140,6 +144,15 @@ export interface TeeRowProps {
   // row AND open the price popover. The TeeRow fires both callbacks; the page
   // composes selection + popover state from them.
   onPriceClick?: (slotKey: string, anchorEl: HTMLButtonElement) => void;
+  // Slice 8a — drag/drop coordination from the page level.
+  // dragPayload is the active drag (or null); when set + valid, empty
+  // player cells render the brand-dashed drop-target visual. onDrop fires
+  // the page-level mutation with the slot_datetime + parsed payload.
+  dragPayload?: DragPayload | null;
+  activeDropTarget?: SlotDropTarget | null;
+  onDragEnterSlot?: (target: SlotDropTarget) => void;
+  onDragLeaveSlot?: (target: SlotDropTarget) => void;
+  onDropOnSlot?: (target: SlotDropTarget, payload: DragPayload) => void;
 }
 
 export function TeeRow({
@@ -148,6 +161,11 @@ export function TeeRow({
   isSelected = false,
   onSelect,
   onPriceClick,
+  dragPayload = null,
+  activeDropTarget = null,
+  onDragEnterSlot,
+  onDragLeaveSlot,
+  onDropOnSlot,
 }: TeeRowProps): JSX.Element | null {
   const state = rowStateFromDisplayStatus(slot.display_status);
 
@@ -162,6 +180,25 @@ export function TeeRow({
   const cells = isBlocked ? [] : buildPlayerCells(slot);
   const price = rowPriceLabel(slot);
   const note = rowNote(slot, state);
+
+  // Optimistic-booking detection: when a drop's mutation is in flight, the
+  // tee-sheet day cache carries an "optimistic-..." booking on this slot.
+  // The row dims while the mutation resolves.
+  const isOptimistic = slot.bookings.some((booking) => isOptimisticBookingId(booking.id));
+
+  // Slice 8a — drop-target eligibility: non-blocked rows accept waitlist
+  // drags into their empty player cells. The page passes the active drag
+  // payload down; the cells render the brand-dashed visual when targeted.
+  const dropEligible = !isBlocked && dragPayload !== null && onDropOnSlot !== undefined;
+  const dropTarget: SlotDropTarget = {
+    kind: "slot",
+    slot_datetime: slot.slot_datetime,
+    row_key: timeKey(slot.local_time),
+  };
+  const isActiveDropTarget =
+    activeDropTarget !== null &&
+    activeDropTarget !== undefined &&
+    activeDropTarget.slot_datetime === slot.slot_datetime;
 
   // Selection: blocked rows do not select (their hatched overlay covers the
   // body and there is no operationally useful action on a blocked slot).
@@ -179,6 +216,7 @@ export function TeeRow({
       data-row-state={state}
       data-slot-time={timeKey(slot.local_time)}
       data-selected={isSelected ? "true" : "false"}
+      data-optimistic={isOptimistic ? "true" : undefined}
       onClick={handleRowClick}
       style={{
         display: "flex",
@@ -192,6 +230,7 @@ export function TeeRow({
         position: "relative",
         minHeight: 32,
         cursor: isBlocked || !onSelect ? "default" : "pointer",
+        opacity: isOptimistic ? 0.65 : 1,
       }}
     >
       <span
@@ -246,7 +285,16 @@ export function TeeRow({
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "stretch", position: "relative" }}>
           {cells.map((cell, i) => (
-            <PlayerCell key={i} cell={cell} />
+            <PlayerCell
+              key={i}
+              cell={cell}
+              dropEligible={dropEligible && cell.kind === "open"}
+              isActiveDropTarget={isActiveDropTarget && cell.kind === "open"}
+              dragLabel={dragLabelFor(dragPayload)}
+              onDragEnter={() => onDragEnterSlot?.(dropTarget)}
+              onDragLeave={() => onDragLeaveSlot?.(dropTarget)}
+              onDrop={(payload) => onDropOnSlot?.(dropTarget, payload)}
+            />
           ))}
           {note && state === "atrisk" ? (
             <span
@@ -340,10 +388,95 @@ export function TeeRow({
   );
 }
 
-function PlayerCell({ cell }: { cell: PlayerCellSpec }): JSX.Element {
+interface PlayerCellProps {
+  cell: PlayerCellSpec;
+  dropEligible?: boolean;
+  isActiveDropTarget?: boolean;
+  dragLabel?: string | null;
+  onDragEnter?: () => void;
+  onDragLeave?: () => void;
+  onDrop?: (payload: DragPayload) => void;
+}
+
+function PlayerCell({
+  cell,
+  dropEligible = false,
+  isActiveDropTarget = false,
+  dragLabel = null,
+  onDragEnter,
+  onDragLeave,
+  onDrop,
+}: PlayerCellProps): JSX.Element {
+  const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!dropEligible) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
+    if (!dropEligible) return;
+    event.preventDefault();
+    onDragEnter?.();
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+    if (!dropEligible) return;
+    // Only fire leave when the drag actually exits the cell, not when it
+    // moves between child elements of the same cell.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    onDragLeave?.();
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+    if (!dropEligible || !onDrop) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const raw = event.dataTransfer.getData(DRAG_PAYLOAD_MIME);
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as DragPayload;
+      onDrop(payload);
+    } catch {
+      // Malformed payload — ignore. Drop event has been consumed.
+    }
+  };
+
   if (cell.kind === "open") {
+    if (isActiveDropTarget && dragLabel !== null) {
+      return (
+        <div
+          data-testid="drop-target-active"
+          aria-dropeffect="move"
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          style={{
+            ...cellStyleBase,
+            border: "1px dashed var(--gl-brand)",
+            borderLeft: "1px dashed var(--gl-brand)",
+            background: "color-mix(in oklab, var(--gl-brand) 12%, transparent)",
+            color: "var(--gl-brand)",
+            margin: "2px 2px 2px 0",
+            borderRadius: "var(--gl-radius-xs)",
+          }}
+        >
+          <Icon name="north_east" size={12} color="var(--gl-brand)" />
+          <span className="gl-mono" style={{ fontSize: 10.5 }}>
+            Drop here · {dragLabel}
+          </span>
+        </div>
+      );
+    }
     return (
-      <div style={cellStyleBase}>
+      <div
+        data-testid={dropEligible ? "drop-target-eligible" : undefined}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={cellStyleBase}
+      >
         <Icon name="add" size={11} color="var(--gl-text-secondary)" />
         <span className="gl-t-xs gl-muted" style={{ textTransform: "none", letterSpacing: 0 }}>
           Add player
@@ -379,6 +512,12 @@ function PlayerCell({ cell }: { cell: PlayerCellSpec }): JSX.Element {
       {cell.cart ? <Icon name="electric_rickshaw" size={12} color="var(--gl-text-secondary)" /> : null}
     </div>
   );
+}
+
+function dragLabelFor(payload: DragPayload | null | undefined): string | null {
+  if (!payload) return null;
+  if (payload.kind === "waitlist") return payload.entry.name;
+  return null;
 }
 
 const cellStyleBase: CSSProperties = {

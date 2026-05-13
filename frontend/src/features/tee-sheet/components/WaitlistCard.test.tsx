@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { WaitlistCard } from "./WaitlistCard";
+import { DRAG_PAYLOAD_MIME } from "../dnd/types";
 import type { WaitlistEntry } from "../use-waitlist";
 
 function makeEntry(overrides: Partial<WaitlistEntry> = {}): WaitlistEntry {
@@ -74,5 +75,38 @@ describe("WaitlistCard", () => {
   test("card carries draggable=true (visual affordance for Slice 8a)", () => {
     render(<WaitlistCard entry={makeEntry()} />);
     expect(screen.getByTestId("waitlist-card-w1").getAttribute("draggable")).toBe("true");
+  });
+
+  test("dragStart writes the payload into dataTransfer and fires onDragStart", () => {
+    const onDragStart = vi.fn();
+    const entry = makeEntry({ party: 3 });
+    render(<WaitlistCard entry={entry} onDragStart={onDragStart} />);
+    const card = screen.getByTestId("waitlist-card-w1");
+    const setData = vi.fn();
+    fireEvent.dragStart(card, {
+      dataTransfer: { setData, types: [], items: [], files: [] },
+    });
+    expect(setData).toHaveBeenCalledWith(DRAG_PAYLOAD_MIME, expect.any(String));
+    const written = JSON.parse(setData.mock.calls[0][1] as string);
+    expect(written).toEqual({ kind: "waitlist", entry });
+    expect(onDragStart).toHaveBeenCalledWith({ kind: "waitlist", entry });
+    expect(card.getAttribute("data-dragging")).toBe("true");
+  });
+
+  test("dragEnd clears the data-dragging attribute and fires onDragEnd", () => {
+    const onDragEnd = vi.fn();
+    render(<WaitlistCard entry={makeEntry()} onDragEnd={onDragEnd} />);
+    const card = screen.getByTestId("waitlist-card-w1");
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.dragEnd(card);
+    expect(card.hasAttribute("data-dragging")).toBe(false);
+    expect(onDragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test("isOptimisticallyRemoved dims the card and exposes the data attribute", () => {
+    render(<WaitlistCard entry={makeEntry()} isOptimisticallyRemoved />);
+    const card = screen.getByTestId("waitlist-card-w1");
+    expect(card.getAttribute("data-optimistic-removed")).toBe("true");
+    expect(card.style.opacity).toBe("0.45");
   });
 });

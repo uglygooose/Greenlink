@@ -2,7 +2,29 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { TeeRow, buildPlayerCells, rowPriceLabel, rowStateFromDisplayStatus } from "./TeeRow";
+import { DRAG_PAYLOAD_MIME, type WaitlistDragPayload } from "../dnd/types";
+import { OPTIMISTIC_BOOKING_ID_PREFIX } from "../use-create-walkin-booking";
+import type { WaitlistEntry } from "../use-waitlist";
 import type { TeeSheetSlotView } from "../../../types/tee-sheet";
+
+function makeWaitlistEntry(overrides: Partial<WaitlistEntry> = {}): WaitlistEntry {
+  return {
+    id: "w1",
+    name: "K. Mokoena",
+    party: 2,
+    since: "06:14",
+    note: "Members",
+    source: "walkin",
+    feeAmount: 1100,
+    feeCurrency: "ZAR",
+    suggestion: null,
+    ...overrides,
+  };
+}
+
+function waitlistPayload(overrides: Partial<WaitlistEntry> = {}): WaitlistDragPayload {
+  return { kind: "waitlist", entry: makeWaitlistEntry(overrides) };
+}
 
 function slot(overrides: Partial<TeeSheetSlotView> = {}): TeeSheetSlotView {
   return {
@@ -327,5 +349,138 @@ describe("TeeRow selection (Slice 4)", () => {
     );
     const row = container.querySelector("[data-row-state='blocked']") as HTMLElement;
     expect(row.hasAttribute("aria-selected")).toBe(false);
+  });
+});
+
+describe("TeeRow drop targets (Slice 8a)", () => {
+  test("no dragPayload → empty cells are NOT drop-eligible", () => {
+    render(<TeeRow slot={slot()} onDropOnSlot={vi.fn()} />);
+    expect(screen.queryAllByTestId("drop-target-eligible")).toHaveLength(0);
+  });
+
+  test("dragPayload + non-blocked row → empty cells become drop-eligible", () => {
+    const onDropOnSlot = vi.fn();
+    render(
+      <TeeRow
+        slot={slot()}
+        dragPayload={waitlistPayload()}
+        onDropOnSlot={onDropOnSlot}
+      />,
+    );
+    expect(screen.getAllByTestId("drop-target-eligible")).toHaveLength(4);
+  });
+
+  test("blocked row → no drop-eligible cells even when dragPayload is present", () => {
+    render(
+      <TeeRow
+        slot={slot({
+          display_status: "blocked",
+          blockers: [{ code: "x", reason: "Closed", details: {} }],
+        })}
+        dragPayload={waitlistPayload()}
+        onDropOnSlot={vi.fn()}
+      />,
+    );
+    expect(screen.queryAllByTestId("drop-target-eligible")).toHaveLength(0);
+  });
+
+  test("activeDropTarget on this row → cells render 'Drop here · {name}' visual", () => {
+    render(
+      <TeeRow
+        slot={slot()}
+        dragPayload={waitlistPayload({ name: "Mokoena" })}
+        activeDropTarget={{
+          kind: "slot",
+          slot_datetime: "2026-05-12T06:30:00+02:00",
+          row_key: "06:30",
+        }}
+        onDropOnSlot={vi.fn()}
+      />,
+    );
+    const active = screen.getAllByTestId("drop-target-active");
+    expect(active.length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Drop here · Mokoena/).length).toBeGreaterThan(0);
+  });
+
+  test("dragEnter on an open cell fires onDragEnterSlot with the slot target", () => {
+    const onDragEnterSlot = vi.fn();
+    render(
+      <TeeRow
+        slot={slot()}
+        dragPayload={waitlistPayload()}
+        onDragEnterSlot={onDragEnterSlot}
+        onDropOnSlot={vi.fn()}
+      />,
+    );
+    fireEvent.dragEnter(screen.getAllByTestId("drop-target-eligible")[0]);
+    expect(onDragEnterSlot).toHaveBeenCalledWith({
+      kind: "slot",
+      slot_datetime: "2026-05-12T06:30:00+02:00",
+      row_key: "06:30",
+    });
+  });
+
+  test("drop on an open cell parses payload and fires onDropOnSlot", () => {
+    const onDropOnSlot = vi.fn();
+    const payload = waitlistPayload({ party: 3 });
+    const raw = JSON.stringify(payload);
+    render(
+      <TeeRow
+        slot={slot()}
+        dragPayload={payload}
+        onDropOnSlot={onDropOnSlot}
+      />,
+    );
+    fireEvent.drop(screen.getAllByTestId("drop-target-eligible")[0], {
+      dataTransfer: { getData: (type: string) => (type === DRAG_PAYLOAD_MIME ? raw : "") },
+    });
+    expect(onDropOnSlot).toHaveBeenCalledTimes(1);
+    const [target, parsedPayload] = onDropOnSlot.mock.calls[0];
+    expect(target).toEqual({
+      kind: "slot",
+      slot_datetime: "2026-05-12T06:30:00+02:00",
+      row_key: "06:30",
+    });
+    expect(parsedPayload).toEqual(payload);
+  });
+
+  test("drop with malformed payload is swallowed — onDropOnSlot is NOT fired", () => {
+    const onDropOnSlot = vi.fn();
+    render(
+      <TeeRow
+        slot={slot()}
+        dragPayload={waitlistPayload()}
+        onDropOnSlot={onDropOnSlot}
+      />,
+    );
+    fireEvent.drop(screen.getAllByTestId("drop-target-eligible")[0], {
+      dataTransfer: { getData: () => "{ this is not valid json" },
+    });
+    expect(onDropOnSlot).not.toHaveBeenCalled();
+  });
+
+  test("optimistic booking on slot → row carries data-optimistic and dims to opacity 0.65", () => {
+    const { container } = render(
+      <TeeRow
+        slot={slot({
+          display_status: "reserved",
+          bookings: [
+            {
+              id: `${OPTIMISTIC_BOOKING_ID_PREFIX}123`,
+              status: "reserved",
+              party_size: 2,
+              holes: 18,
+              slot_datetime: "2026-05-12T06:30:00+02:00",
+              participants: [
+                { id: "p1", display_name: "K. Mokoena", participant_type: "guest", is_primary: true },
+              ],
+            },
+          ],
+        })}
+      />,
+    );
+    const row = container.querySelector("[data-row-state]") as HTMLElement;
+    expect(row.getAttribute("data-optimistic")).toBe("true");
+    expect(row.style.opacity).toBe("0.65");
   });
 });

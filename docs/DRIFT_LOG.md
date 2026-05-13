@@ -17,6 +17,24 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — Slice 8a accepts v1 concurrency gap: no soft-lock during in-flight optimistic walk-in drop
+
+- **Surfaced by**: Phase 10 Slice 8a Deliverable 5 (page integration) review.
+- **Claim**: A waitlist→tee-row drop should be atomic against concurrent placements — two operators dragging onto the same empty cell must not both succeed against backend availability.
+- **Reality**: Slice 8a ships without slot soft-locks. The mutation hook patches the tee-sheet day cache optimistically, fires `POST /api/golf/bookings`, and rolls back on backend rejection. Two operators dragging onto the same empty cell will both see an optimistic transient; the second `POST` is rejected by `BookingCreateError` (decision !== "allowed") and rolls back. Surfaced via an inline dismissible banner (`WalkinBookingErrorBanner`).
+- **Evidence**: `frontend/src/features/tee-sheet/use-create-walkin-booking.ts:96-130` (no `cancelMutations` queue, no per-slot soft-lock map, no preflight availability poll). The optimistic patch unconditionally adds the transient booking to the slot regardless of whether another mutation is in flight against the same `slot_datetime`. The backend has no `/availability/reserve` or "slot soft-lock" endpoint.
+- **Resolution**: Accepted as a v1 trade-off. The backend availability service is the source of truth and the optimistic UI rollback is correct on rejection — the cost is that the second operator's UI flickers a transient booking before the banner appears. Slot soft-locking deferred until availability-reservation semantics are scoped (likely Slice 9). Documented as a follow-up in PHASE_LOG Slice 8a notes.
+- **Status**: Open — Slice 9 candidate.
+---
+### 2026-05-14 — Slice 8a party-of-N booking shares one guest_name across N participants (option i)
+
+- **Surfaced by**: Phase 10 Slice 8a Deliverable 4 reconnaissance — payload shape for `BookingCreateInput.participants` when the waitlist card carries one party name but the party size is >1.
+- **Claim**: A party-of-4 walk-in must show four named participants in the tee row.
+- **Reality**: The waitlist card surface (Phase 8 + Slice 7) carries exactly one party name (the lead booker's name) and a party-size integer. Inventing N-1 additional names (numeric suffixes "Mokoena 2/3/4", placeholders "Guest 2/3/4", or any generative form) is invention — it fabricates data the operator did not provide.
+- **Evidence**: `frontend/src/features/tee-sheet/use-waitlist.ts:15-25` (`WaitlistEntry` shape: one `name` string + one `party` integer); `frontend/src/features/tee-sheet/components/WaitlistCard.tsx` (renders one name + party number, no per-member name capture). Backend `BookingCreateParticipantInput.guest_name` accepts identical values across participants (no uniqueness constraint at the resolver level — verified via `backend/app/services/booking_service.py` resolver source).
+- **Resolution**: Slice 8a payload builder (option i) emits ONE booking with N participants, all sharing the single party name, first marked `is_primary=true`. Verified by `use-create-walkin-booking.test.tsx` tests (`party-of-4 produces 4 participants — all share guest_name, only first is_primary`). When the waitlist add-flow ships (still Phase 8 stub today) and starts capturing per-member names, the payload builder picks up the new field with zero structural changes.
+- **Status**: Resolved (current payload shape is correct for v1; reopen if backend gains a uniqueness constraint on `guest_name`).
+---
 ### 2026-05-13 — Slice 7 waitlist rail ships against a Path-1 empty stub (no Waitlist model, no /api/golf/waitlist endpoint, no BookingSource.WALK_IN enum value)
 
 - **Surfaced by**: Phase 10 Slice 7 Deliverable 1 reconnaissance across all four backend directories (`backend/app/api/routes/`, `backend/app/schemas/`, `backend/app/models/`, `backend/app/services/`).

@@ -1,9 +1,16 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AdminTeeSheetPage } from "./admin-tee-sheet-page";
 import type { TeeSheetDayResponse, TeeSheetSlotView } from "../types/tee-sheet";
+
+function buildQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+}
 
 const mockUseSession = vi.fn();
 const mockUseCoursesQuery = vi.fn();
@@ -33,12 +40,14 @@ vi.mock("../features/tee-sheet/components/PortfolioStrip", () => ({
 
 function renderPage(initialUrl = "/admin/tee-sheet?course_id=course-1&date=2026-05-12") {
   return render(
-    <MemoryRouter
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-      initialEntries={[initialUrl]}
-    >
-      <AdminTeeSheetPage />
-    </MemoryRouter>,
+    <QueryClientProvider client={buildQueryClient()}>
+      <MemoryRouter
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+        initialEntries={[initialUrl]}
+      >
+        <AdminTeeSheetPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -287,13 +296,15 @@ describe("AdminTeeSheetPage", () => {
       ];
       mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
       const { container } = render(
-        <MemoryRouter
-          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-          initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
-        >
-          <AdminTeeSheetPage />
-          <CourseSwitchProbe />
-        </MemoryRouter>,
+        <QueryClientProvider client={buildQueryClient()}>
+          <MemoryRouter
+            future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+            initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
+          >
+            <AdminTeeSheetPage />
+            <CourseSwitchProbe />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
       fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
       expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
@@ -442,13 +453,15 @@ describe("AdminTeeSheetPage", () => {
       }
       mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
       render(
-        <MemoryRouter
-          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-          initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
-        >
-          <AdminTeeSheetPage />
-          <CourseSwitchProbe />
-        </MemoryRouter>,
+        <QueryClientProvider client={buildQueryClient()}>
+          <MemoryRouter
+            future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+            initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
+          >
+            <AdminTeeSheetPage />
+            <CourseSwitchProbe />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
       fireEvent.click(screen.getAllByTestId("row-price-button")[0]);
       expect(screen.getByTestId("price-popover")).toBeInTheDocument();

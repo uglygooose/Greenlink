@@ -17,7 +17,7 @@ export interface BookingCreateInput {
   slot_datetime: string;
   slot_interval_minutes?: number | null;
   holes?: number | null;
-  source?: "admin" | "member_portal";
+  source?: "admin" | "member_portal" | "staff" | "walk_in";
   applies_to?: "member" | "guest" | "staff" | null;
   reference_datetime?: string | null;
   cart_flag?: boolean;

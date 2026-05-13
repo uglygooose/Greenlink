@@ -38,6 +38,9 @@ import { WaitlistRail } from "../features/tee-sheet/components/WaitlistRail";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { useWaitlist } from "../features/tee-sheet/use-waitlist";
+import { useCreateWalkinBooking } from "../features/tee-sheet/use-create-walkin-booking";
+import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
+import type { DragPayload, SlotDropTarget } from "../features/tee-sheet/dnd/types";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
 import { TEE_SHEET_SHORTCUTS } from "../features/tee-sheet/shortcuts";
 import { PricePopover } from "../components/ui/PricePopover";
@@ -234,6 +237,36 @@ export function AdminTeeSheetPage(): JSX.Element {
 
   const waitlist = useWaitlist({ clubId: selectedClubId, courseId, date: selectedDate });
 
+  // Slice 8a — DnD state + walk-in booking mutation. The drag controller
+  // lives at the page level so WaitlistCard (source) and TeeRow (target)
+  // can coordinate through one source of truth.
+  const dragController = useDragState();
+  const createWalkinBooking = useCreateWalkinBooking({
+    accessToken,
+    selectedClubId,
+    selectedDate,
+    membershipType: "staff",
+    teeId: null,
+  });
+  const optimisticallyRemovedEntryIds = useMemo<Set<string>>(() => {
+    if (!createWalkinBooking.isPending || !createWalkinBooking.variables) return new Set();
+    return new Set([createWalkinBooking.variables.entry.id]);
+  }, [createWalkinBooking.isPending, createWalkinBooking.variables]);
+
+  const handleDropOnSlot = useCallback(
+    (target: SlotDropTarget, payload: DragPayload) => {
+      if (payload.kind !== "waitlist") return;
+      if (!courseId) return;
+      dragController.endDrag();
+      createWalkinBooking.mutate({
+        entry: payload.entry,
+        slotDatetime: target.slot_datetime,
+        courseId,
+      });
+    },
+    [courseId, createWalkinBooking, dragController],
+  );
+
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
@@ -242,6 +275,12 @@ export function AdminTeeSheetPage(): JSX.Element {
       <div style={{ flex: 1, display: "flex", flexDirection: "row", minHeight: 0, overflow: "hidden" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <GridHeader />
+          {createWalkinBooking.isError ? (
+            <WalkinBookingErrorBanner
+              message={createWalkinBooking.error.message}
+              onDismiss={() => createWalkinBooking.reset()}
+            />
+          ) : null}
           <div style={{ flex: 1, overflow: "auto" }} data-testid="tee-sheet-row-list">
             {isLoading ? (
               <SkeletonRows />
@@ -263,6 +302,17 @@ export function AdminTeeSheetPage(): JSX.Element {
                   isSelected={selectedSlotKey === slot.slot_datetime}
                   onSelect={setSelectedSlotKey}
                   onPriceClick={handlePriceClick}
+                  dragPayload={dragController.state.payload}
+                  activeDropTarget={dragController.state.activeTarget}
+                  onDragEnterSlot={dragController.setActiveTarget}
+                  onDragLeaveSlot={(target) => {
+                    if (
+                      dragController.state.activeTarget?.slot_datetime === target.slot_datetime
+                    ) {
+                      dragController.setActiveTarget(null);
+                    }
+                  }}
+                  onDropOnSlot={handleDropOnSlot}
                 />
               ))
             )}
@@ -272,6 +322,9 @@ export function AdminTeeSheetPage(): JSX.Element {
           waitlist={waitlist.waitlist}
           loading={waitlist.loading}
           error={waitlist.error}
+          onDragStart={dragController.startDrag}
+          onDragEnd={dragController.endDrag}
+          optimisticallyRemovedEntryIds={optimisticallyRemovedEntryIds}
         />
       </div>
       <SelectionFooter selectedSlot={selectedSlot} onOpenShortcuts={openShortcuts} />
@@ -292,6 +345,28 @@ export function AdminTeeSheetPage(): JSX.Element {
         title="Tee sheet shortcuts"
         shortcuts={TEE_SHEET_SHORTCUTS}
       />
+      {/* Polite aria-live region: announces drag pickups for screen readers.
+          Empty when no drag is active; updated by useDragState's
+          announcement field on drag start. */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="tee-sheet-dnd-live"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0, 0, 0, 0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      >
+        {dragController.announcement}
+      </div>
     </div>
   );
 }
@@ -492,6 +567,45 @@ function EmptyPanel({ date }: { date: string }): JSX.Element {
           {date}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function WalkinBookingErrorBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}): JSX.Element {
+  return (
+    <div
+      role="alert"
+      data-testid="walkin-booking-error"
+      style={{
+        margin: "8px 12px 0",
+        padding: "8px 12px",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        borderRadius: "var(--gl-radius-sm)",
+        background: "color-mix(in oklab, var(--gl-caddie) 7%, var(--gl-surface-raised))",
+        border: "1px solid color-mix(in oklab, var(--gl-caddie) 35%, var(--gl-border-subtle))",
+        fontSize: 12,
+      }}
+    >
+      <Icon name="error" size={14} color="var(--gl-caddie)" />
+      <span style={{ flex: 1 }}>Couldn&apos;t place walk-in: {message}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss booking error"
+        className="gl-btn gl-btn--tertiary"
+        data-size="sm"
+        style={{ height: 22, padding: "0 8px" }}
+      >
+        Dismiss
+      </button>
     </div>
   );
 }
