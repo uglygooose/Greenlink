@@ -44,9 +44,14 @@ const EMPTY_AGGREGATE: DayAggregate = {
   revenueCurrency: null,
 };
 
+// Portfolio utilisation = (occupied + reserved) / capacity, summed across
+// every slot in every lane of the day. Includes both checked-in players
+// and reserved-not-yet-checked-in players, so a fully-booked morning sheet
+// reads its true day-ahead occupancy rather than 0% pre-check-in. "Live
+// ops only" semantics belong to the row-level checkedin state, not here.
 export function aggregateDay(day: TeeSheetDayResponse | undefined): DayAggregate {
   if (!day) return EMPTY_AGGREGATE;
-  let totalOccupied = 0;
+  let totalSeated = 0;
   let totalCapacity = 0;
   let teeTimesTotal = 0;
   let teeTimesBooked = 0;
@@ -56,7 +61,8 @@ export function aggregateDay(day: TeeSheetDayResponse | undefined): DayAggregate
     for (const slot of row.slots) {
       teeTimesTotal += 1;
       if (slot.bookings.length > 0) teeTimesBooked += 1;
-      totalOccupied += slot.occupancy.occupied_player_count ?? 0;
+      totalSeated +=
+        (slot.occupancy.occupied_player_count ?? 0) + (slot.occupancy.reserved_player_count ?? 0);
       totalCapacity += slot.occupancy.player_capacity ?? 0;
       for (const booking of slot.bookings) {
         if (!booking.fee_amount) continue;
@@ -67,7 +73,7 @@ export function aggregateDay(day: TeeSheetDayResponse | undefined): DayAggregate
       }
     }
   }
-  const utilisationPercent = totalCapacity > 0 ? Math.round((totalOccupied / totalCapacity) * 100) : 0;
+  const utilisationPercent = totalCapacity > 0 ? Math.round((totalSeated / totalCapacity) * 100) : 0;
   return { utilisationPercent, teeTimesBooked, teeTimesTotal, revenueAmount, revenueCurrency };
 }
 
@@ -117,7 +123,7 @@ export function PortfolioStrip({ selectedDate, activeCourseId }: PortfolioStripP
   );
 
   const eyebrowAggregate = useMemo<DayAggregate>(() => {
-    let totalOccupied = 0;
+    let totalSeated = 0;
     let totalCapacity = 0;
     let revenueAmount = 0;
     let revenueCurrency: string | null = null;
@@ -126,7 +132,8 @@ export function PortfolioStrip({ selectedDate, activeCourseId }: PortfolioStripP
       if (!day) continue;
       for (const row of day.rows) {
         for (const slot of row.slots) {
-          totalOccupied += slot.occupancy.occupied_player_count ?? 0;
+          totalSeated +=
+            (slot.occupancy.occupied_player_count ?? 0) + (slot.occupancy.reserved_player_count ?? 0);
           totalCapacity += slot.occupancy.player_capacity ?? 0;
           for (const booking of slot.bookings) {
             if (!booking.fee_amount) continue;
@@ -138,7 +145,7 @@ export function PortfolioStrip({ selectedDate, activeCourseId }: PortfolioStripP
         }
       }
     }
-    const utilisationPercent = totalCapacity > 0 ? Math.round((totalOccupied / totalCapacity) * 100) : 0;
+    const utilisationPercent = totalCapacity > 0 ? Math.round((totalSeated / totalCapacity) * 100) : 0;
     return { utilisationPercent, teeTimesBooked: 0, teeTimesTotal: 0, revenueAmount, revenueCurrency };
   }, [courses, dayQueries]);
 
@@ -224,7 +231,7 @@ export function PortfolioStrip({ selectedDate, activeCourseId }: PortfolioStripP
           flexWrap: "wrap",
         }}
       >
-        <div className="gl-t-xs gl-muted">Courses · today · {formatStripDate(selectedDate)}</div>
+        <div className="gl-t-xs gl-muted">Courses · {formatStripDate(selectedDate)}</div>
         <div className="gl-muted" style={{ fontSize: 11 }}>
           Portfolio utilisation{" "}
           <b className="gl-tabular" style={{ color: "var(--gl-text-primary)" }}>

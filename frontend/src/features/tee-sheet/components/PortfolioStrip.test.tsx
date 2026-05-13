@@ -91,7 +91,23 @@ describe("aggregateDay", () => {
     });
   });
 
-  test("sums occupied/capacity, counts booked slots, totals revenue", () => {
+  test("utilisation includes reserved_player_count (day-ahead view, not live-ops only)", () => {
+    // Morning sheet: every seat reserved, none checked in yet. The portfolio
+    // tile must read 100% — reserved counts as utilised for this metric.
+    const agg = aggregateDay(
+      day([
+        slot({
+          occupancy: { ...slot().occupancy, occupied_player_count: 0, reserved_player_count: 4, player_capacity: 4 },
+          bookings: [
+            { id: "b1", status: "reserved", party_size: 4, holes: 18, slot_datetime: "2026-05-12T06:30:00+02:00", participants: [] },
+          ],
+        }),
+      ]),
+    );
+    expect(agg.utilisationPercent).toBe(100);
+  });
+
+  test("sums occupied+reserved/capacity, counts booked slots, totals revenue", () => {
     const agg = aggregateDay(
       day([
         slot({
