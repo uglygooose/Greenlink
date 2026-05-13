@@ -22,6 +22,7 @@ import { Icon } from "../components/ui/Icon";
 import { Pill } from "../components/ui/Pill";
 import { TeeStateChip } from "../components/ui/TeeStateChip";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
+import { PortfolioStrip } from "../features/tee-sheet/components/PortfolioStrip";
 import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/components/TeeRow";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
@@ -99,6 +100,7 @@ export function AdminTeeSheetPage(): JSX.Element {
 
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
+      <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
       <DateStrip date={selectedDate} timezone={day?.timezone ?? clubTimezone} />
       <LegendStrip />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>

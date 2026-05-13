@@ -21,6 +21,16 @@ vi.mock("../features/tee-sheet/hooks", () => ({
   useTeeSheetDayQuery: () => mockUseTeeSheetDayQuery(),
 }));
 
+vi.mock("../features/tee-sheet/components/PortfolioStrip", () => ({
+  PortfolioStrip: ({ activeCourseId, selectedDate }: { activeCourseId: string | null; selectedDate: string }) => (
+    <div
+      data-testid="portfolio-strip-stub"
+      data-active-course={activeCourseId ?? ""}
+      data-date={selectedDate}
+    />
+  ),
+}));
+
 function renderPage(initialUrl = "/admin/tee-sheet?course_id=course-1&date=2026-05-12") {
   return render(
     <MemoryRouter
@@ -115,9 +125,13 @@ describe("AdminTeeSheetPage", () => {
     });
   });
 
-  test("renders date strip, legend and grid header even while loading", () => {
+  test("renders portfolio strip, date strip, legend and grid header even while loading", () => {
     mockUseTeeSheetDayQuery.mockReturnValue({ data: undefined, isPending: true, isError: false });
     renderPage();
+    const strip = screen.getByTestId("portfolio-strip-stub");
+    expect(strip).toBeInTheDocument();
+    expect(strip.getAttribute("data-active-course")).toBe("course-1");
+    expect(strip.getAttribute("data-date")).toBe("2026-05-12");
     expect(screen.getByTestId("tee-sheet-date")).toBeInTheDocument();
     expect(screen.getByLabelText(/tee sheet legend/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/tee sheet column headers/i)).toBeInTheDocument();
