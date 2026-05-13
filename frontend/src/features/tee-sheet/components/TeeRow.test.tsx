@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 
 import { TeeRow, buildPlayerCells, rowPriceLabel, rowStateFromDisplayStatus } from "./TeeRow";
 import type { TeeSheetSlotView } from "../../../types/tee-sheet";
@@ -232,5 +232,68 @@ describe("TeeRow rendering", () => {
   test("coalesceWithPrevious + non-blocked → renders normally", () => {
     const { container } = render(<TeeRow slot={slot()} coalesceWithPrevious />);
     expect(container.querySelector("[data-row-state='open']")).not.toBeNull();
+  });
+});
+
+describe("TeeRow selection (Slice 4)", () => {
+  test("clicking a non-blocked row fires onSelect with slot_datetime", () => {
+    const onSelect = vi.fn();
+    const { container } = render(<TeeRow slot={slot()} onSelect={onSelect} />);
+    fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+    expect(onSelect).toHaveBeenCalledWith("2026-05-12T06:30:00+02:00");
+  });
+
+  test("clicking a blocked row does NOT fire onSelect", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <TeeRow
+        slot={slot({
+          display_status: "blocked",
+          blockers: [{ code: "x", reason: "Closed", details: {} }],
+        })}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  test("price button click does NOT fire onSelect (stopPropagation)", () => {
+    const onSelect = vi.fn();
+    render(<TeeRow slot={slot()} onSelect={onSelect} />);
+    fireEvent.click(screen.getByTestId("row-price-button"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  test("more_vert button click does NOT fire onSelect (stopPropagation)", () => {
+    const onSelect = vi.fn();
+    render(<TeeRow slot={slot()} onSelect={onSelect} />);
+    fireEvent.click(screen.getByTestId("row-actions-button"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  test("isSelected=true sets aria-selected, data-selected, and brand outline+tint", () => {
+    const { container } = render(<TeeRow slot={slot()} isSelected onSelect={() => {}} />);
+    const row = container.querySelector("[data-row-state]") as HTMLElement;
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(row.getAttribute("data-selected")).toBe("true");
+    expect(row.style.outline).toContain("var(--gl-brand)");
+    expect(row.style.background).toContain("color-mix");
+    expect(row.style.background).toContain("var(--gl-brand)");
+  });
+
+  test("blocked row is not aria-selected even when isSelected is passed", () => {
+    const { container } = render(
+      <TeeRow
+        slot={slot({
+          display_status: "blocked",
+          blockers: [{ code: "x", reason: "Closed", details: {} }],
+        })}
+        isSelected
+        onSelect={() => {}}
+      />,
+    );
+    const row = container.querySelector("[data-row-state='blocked']") as HTMLElement;
+    expect(row.hasAttribute("aria-selected")).toBe(false);
   });
 });

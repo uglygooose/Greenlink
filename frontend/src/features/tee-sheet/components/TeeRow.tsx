@@ -1,8 +1,8 @@
-// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slice 2.
-// Renders one Phase 8 tee row from a single TeeSheetSlotView. Read-only:
-// no click, drag, popover, or audit-history wiring this slice — those land in
-// later phase-10 slices. Map keeps state-band glyphs, 4-up player cells, and
-// the blocked/atrisk/noshow note variants in lock-step with the design.
+// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slices 2–4.
+// Renders one Phase 8 tee row from a single TeeSheetSlotView. Slice 4 added
+// selection: row-level click fires onSelect (except blocked rows), price and
+// more_vert are stop-propagation buttons that stay inert until later slices
+// wire their popover/menu.
 //
 // Backend gaps consciously NOT papered over:
 // - channel/source per booking → channel dot per player cell omitted
@@ -134,9 +134,16 @@ export interface TeeRowProps {
   // True when the previous adjacent slot is also blocked — visually coalesces
   // the time-cell/state-band to the row above per Phase 8 hideHead behaviour.
   coalesceWithPrevious?: boolean;
+  isSelected?: boolean;
+  onSelect?: (slotKey: string) => void;
 }
 
-export function TeeRow({ slot, coalesceWithPrevious = false }: TeeRowProps): JSX.Element | null {
+export function TeeRow({
+  slot,
+  coalesceWithPrevious = false,
+  isSelected = false,
+  onSelect,
+}: TeeRowProps): JSX.Element | null {
   const state = rowStateFromDisplayStatus(slot.display_status);
 
   // hideHead: don't render the second/Nth adjacent blocked row at all — the
@@ -151,17 +158,35 @@ export function TeeRow({ slot, coalesceWithPrevious = false }: TeeRowProps): JSX
   const price = rowPriceLabel(slot);
   const note = rowNote(slot, state);
 
+  // Selection: blocked rows do not select (their hatched overlay covers the
+  // body and there is no operationally useful action on a blocked slot).
+  // Phase 8 dismiss is esc-only at the page level — clicking a non-blocked
+  // row always SETS the selection; it never toggles.
+  const handleRowClick = (): void => {
+    if (isBlocked || !onSelect) return;
+    onSelect(slot.slot_datetime);
+  };
+
   return (
     <div
+      role="row"
+      aria-selected={isBlocked ? undefined : isSelected}
       data-row-state={state}
       data-slot-time={timeKey(slot.local_time)}
+      data-selected={isSelected ? "true" : "false"}
+      onClick={handleRowClick}
       style={{
         display: "flex",
         alignItems: "stretch",
-        background: "var(--gl-surface-raised)",
+        background: isSelected
+          ? "color-mix(in oklab, var(--gl-brand) 7%, var(--gl-surface-raised))"
+          : "var(--gl-surface-raised)",
         borderBottom: "1px solid var(--gl-border-subtle)",
+        outline: isSelected ? "1px solid var(--gl-brand)" : "none",
+        outlineOffset: -1,
         position: "relative",
         minHeight: 32,
+        cursor: isBlocked || !onSelect ? "default" : "pointer",
       }}
     >
       <span
@@ -247,7 +272,14 @@ export function TeeRow({ slot, coalesceWithPrevious = false }: TeeRowProps): JSX
           justifyContent: "center",
         }}
       />
-      <div
+      {/* Price button: stopPropagation no-op stub. Slice 5 will wire the
+          PricePopover overlay here without firing row selection. */}
+      <button
+        type="button"
+        data-testid="row-price-button"
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
         style={{
           width: 76,
           borderLeft: "1px solid var(--gl-border-subtle)",
@@ -258,22 +290,37 @@ export function TeeRow({ slot, coalesceWithPrevious = false }: TeeRowProps): JSX
           fontSize: 12,
           fontWeight: 500,
           color: "var(--gl-text-primary)",
+          background: "transparent",
+          border: "none",
+          font: "inherit",
+          cursor: "pointer",
         }}
       >
         <span className="gl-mono gl-tabular">{price}</span>
-      </div>
-      <div
-        aria-hidden="true"
+      </button>
+      {/* more_vert button: stopPropagation no-op stub. Phase 8 doesn't
+          specify the menu contents (recon B.4-14 unresolved). Do not invent. */}
+      <button
+        type="button"
+        aria-label={`Row actions for ${timeKey(slot.local_time)}`}
+        data-testid="row-actions-button"
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
         style={{
           width: 32,
           borderLeft: "1px solid var(--gl-border-subtle)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
         }}
       >
         <Icon name="more_vert" size={14} color="var(--gl-text-secondary)" />
-      </div>
+      </button>
 
       {/* coalesceWithPrevious passthrough acknowledgement — purely diagnostic, drives nothing visible */}
       <span style={{ display: "none" }} data-coalesce={coalesceWithPrevious ? "true" : "false"} />

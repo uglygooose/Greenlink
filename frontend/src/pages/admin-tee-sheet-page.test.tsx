@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AdminTeeSheetPage } from "./admin-tee-sheet-page";
@@ -233,5 +233,87 @@ describe("AdminTeeSheetPage", () => {
     renderPage("/admin/tee-sheet?date=2026-05-12");
     // Empty state still renders — no crash on missing course_id param
     expect(screen.getByText(/no tee times scheduled/i)).toBeInTheDocument();
+  });
+
+  describe("selection (Slice 4)", () => {
+    test("clicking a row hydrates the SelectionFooter", () => {
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = renderPage();
+      const footer = screen.getByTestId("selection-footer");
+      expect(footer.getAttribute("data-has-selection")).toBe("false");
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(footer.getAttribute("data-has-selection")).toBe("true");
+      expect(screen.getByTestId("selection-label").textContent).toContain("06:30");
+    });
+
+    test("pressing Escape clears the selection", () => {
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = renderPage();
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
+    });
+
+    test("changing the active course clears the selection", () => {
+      // MemoryRouter only consults initialEntries at mount, so re-rendering
+      // with new initialEntries doesn't change the URL. Inject a probe that
+      // mutates the URL via useSearchParams within the same router instance.
+      function CourseSwitchProbe(): JSX.Element {
+        const [, setSearchParams] = useSearchParams();
+        return (
+          <button
+            type="button"
+            data-testid="course-switch-probe"
+            onClick={() => {
+              setSearchParams((prev) => {
+                prev.set("course_id", "course-2");
+                return prev;
+              });
+            }}
+          >
+            switch
+          </button>
+        );
+      }
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = render(
+        <MemoryRouter
+          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+          initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
+        >
+          <AdminTeeSheetPage />
+          <CourseSwitchProbe />
+        </MemoryRouter>,
+      );
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      fireEvent.click(screen.getByTestId("course-switch-probe"));
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
+    });
+
+    test("clicking a blocked row does not hydrate the footer", () => {
+      const slots = [
+        makeSlot({
+          slot_datetime: "2026-05-12T07:18:00+02:00",
+          local_time: "07:18:00",
+          display_status: "blocked",
+          blockers: [{ code: "aeration", reason: "Aeration", details: {} }],
+        }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = renderPage();
+      fireEvent.click(container.querySelector("[data-row-state='blocked']") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
+    });
   });
 });

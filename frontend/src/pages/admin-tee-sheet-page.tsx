@@ -1,18 +1,18 @@
-// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slice 2.
+// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–4.
 // Read-only tee-sheet skeleton at /admin/tee-sheet. Lives parallel to the
 // pre-rebuild admin-golf-tee-sheet-page.tsx until later slices land.
 //
-// What's here (Slice 2):
-// - Date controls strip (visual only — no picker, no day navigation handlers)
-// - State legend + channel legend strip
-// - Grid header (Time / Slot 1-4 / Pace / Price / actions)
-// - Row list rendered from the first row of the day response (single lane;
-//   multi-lane + multi-course handling is Slice 3)
-// - Loading skeleton / empty state / error state
+// What's here:
+// - Slice 2: date strip / legend / grid header / row list / loading-empty-error
+// - Slice 3: multi-course portfolio strip above the date strip
+// - Slice 4: single-row selection state + SelectionFooter mount; esc clears;
+//            course/date change clears; vanished-slot clears silently
 //
-// What's NOT here (later slices): selection, popovers, modals, waitlist,
-// drag-and-drop, lock, shortcuts, tournament mode, slot-interval toggle.
-import { useMemo } from "react";
+// What's NOT here (later slices): pricing popover (5), shortcut modal (6),
+// waitlist rail (7), drag-and-drop (8), real lock acquisition (9), full
+// keyboard shortcuts (10), slot-interval + density toggles (11), tournament
+// mode (12), marshal-on-phone (13).
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { Button } from "../components/ui/Button";
@@ -23,6 +23,7 @@ import { Pill } from "../components/ui/Pill";
 import { TeeStateChip } from "../components/ui/TeeStateChip";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { PortfolioStrip } from "../features/tee-sheet/components/PortfolioStrip";
+import { SelectionFooter } from "../features/tee-sheet/components/SelectionFooter";
 import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/components/TeeRow";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
@@ -98,6 +99,45 @@ export function AdminTeeSheetPage(): JSX.Element {
   const isError = teeSheetQuery.isError;
   const isEmpty = !isLoading && !isError && day !== undefined && slotRows.length === 0;
 
+  // Slice 4: selection state. Single source of truth; passed to TeeRow rows
+  // and the SelectionFooter. Identity key is slot_datetime — unique per row
+  // in the current single-lane render (Slice 12 will need to compose with
+  // lane once multi-lane lands).
+  const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
+
+  // Clear selection when the active course or date changes — a row from
+  // yesterday's sheet has no meaning on today's sheet.
+  useEffect(() => {
+    setSelectedSlotKey(null);
+  }, [courseId, selectedDate]);
+
+  // Esc clears selection at the page level. This is the only keyboard
+  // binding Slice 4 introduces; Slice 10 wires j/k/n/s/c/p/x.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setSelectedSlotKey(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const selectedSlot = useMemo(() => {
+    if (selectedSlotKey == null) return null;
+    const match = slotRows.find((row) => row.slot.slot_datetime === selectedSlotKey);
+    return match ? match.slot : null;
+  }, [selectedSlotKey, slotRows]);
+
+  // Silently clear when the selected slot disappears (data refetch, course
+  // change race, etc). The user shouldn't see a footer pointing at a row
+  // that no longer renders.
+  useEffect(() => {
+    if (selectedSlotKey != null && selectedSlot == null && slotRows.length > 0) {
+      setSelectedSlotKey(null);
+    }
+  }, [selectedSlotKey, selectedSlot, slotRows]);
+
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
@@ -119,10 +159,17 @@ export function AdminTeeSheetPage(): JSX.Element {
             <EmptyPanel date={selectedDate} />
           ) : (
             slotRows.map(({ slot, coalesce }) => (
-              <TeeRow key={slot.slot_datetime} slot={slot} coalesceWithPrevious={coalesce} />
+              <TeeRow
+                key={slot.slot_datetime}
+                slot={slot}
+                coalesceWithPrevious={coalesce}
+                isSelected={selectedSlotKey === slot.slot_datetime}
+                onSelect={setSelectedSlotKey}
+              />
             ))
           )}
         </div>
+        <SelectionFooter selectedSlot={selectedSlot} />
       </div>
     </div>
   );

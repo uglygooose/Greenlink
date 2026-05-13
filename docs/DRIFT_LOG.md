@@ -17,6 +17,15 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — Slice 4 selection-dismiss + price-click semantics differ from slice spec; followed Phase 8
+
+- **Surfaced by**: Phase 10 Slice 4 (row selection + selection footer) when verifying the spec's listed dismiss behaviours against the Phase 8 prototype.
+- **Claim**: Slice 4 spec section "LOCKED DECISIONS" listed three dismiss paths for row selection — "cleared by esc or by clicking the same row twice OR by clicking outside the grid" — and then qualified with "Verify the exact dismiss behaviour against Phase 8; match it." Spec section "Deliverables 2" also asked the price button to be a stop-propagation no-op so selection does not fire on price click.
+- **Reality**: The Phase 8 prototype implements **only** esc-to-dismiss. `phase8-tee-sheet.jsx:574-575` wires `onSelect={() => setSelectedRow(row.time)}` with no toggle: clicking the already-selected row is a no-op setter, not a clear. The prototype's `TeeSheetAB` mounts no outside-click dismisser; no `onClick` handler on a wrapping div or document-level listener exists. The only "clear" affordance is the esc keyboard shortcut, documented in `phase8-shared.jsx:39` as `["esc", "Close panel · clear selection"]`. Separately, the Phase 8 prototype's price-click handler at `phase8-tee-sheet.jsx:576` reads `onPriceClick={(r) => { setSelectedRow(r.time); setOverlay("price"); }}` — clicking the price DOES set selection AND open the popover.
+- **Evidence**: `/tmp/greenlink-phase8/greenlink/project/phase8-tee-sheet.jsx:208-294` (TeeRow + onClick handlers), `:476` (`useTSState("06:46")` initial value, no toggle), `:574-576` (selection assignment patterns), `phase8-shared.jsx:39-42` (shortcut group "Help" → esc maps to clear-selection).
+- **Resolution**: Followed Phase 8 on both points. Slice 4 implements esc-only dismiss at the page level (`frontend/src/pages/admin-tee-sheet-page.tsx` document-level keydown listener); no toggle, no click-outside handler. The spec's "click same row twice / click outside" phrasings were spec-author assumptions that don't match the canonical design; the spec's "match Phase 8" qualifier wins. For the price-click stub: Slice 4 keeps the spec's stop-propagation no-op since the popover that the prototype opens isn't wired until Slice 5 — at which point Slice 5 can choose to additionally fire `onSelect` (matching the prototype) when wiring the popover. Flagged here so Slice 5 doesn't re-derive the question.
+
+---
 ### 2026-05-13 — Phase 8 tee-sheet design vs backend response orientation mismatch
 
 - **Surfaced by**: Phase 10 Slice 2 (tee-sheet skeleton read-only) when diffing the Phase 8 design against the live `GET /api/golf/tee-sheet/day` response shape.
