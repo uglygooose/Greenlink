@@ -18,6 +18,38 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 7.5: BookingSource.WALK_IN enum addition (2026-05-13)
+
+Backend mini-slice. One new value on an existing native Postgres ENUM type. Prerequisite for Slice 8a's waitlist→row drop, which needs to emit walk-in bookings with a distinct source tag.
+
+- **Scope**:
+  - `BookingSource` enum (`backend/app/models/enums.py:149-153`) gains `WALK_IN = "walk_in"`.
+  - New Alembic migration `202605130001_add_walk_in_booking_source.py` runs `ALTER TYPE bookingsource ADD VALUE IF NOT EXISTS 'walk_in'` against the existing native Postgres ENUM type `bookingsource` (created by `202603290005_booking_aggregate_foundation.py:32-41`).
+  - No frontend changes.
+  - No service-layer changes — `BookingSource` is referenced as a passthrough at 9 sites; the only branches (`schemas/bookings.py:72`, `routes/golf.py:109,119`) gate on `== MEMBER_PORTAL` only, treating all other sources (now including `WALK_IN`) identically. No exhaustive match/elif chain anywhere.
+  - Two new tests in `backend/tests/test_booking_creation_foundation.py`: `test_booking_source_enum_includes_walk_in` (enum-level guard) + `test_booking_create_with_walk_in_source_persists_and_emits_audit` (API-level acceptance — 201 response, `source="walk_in"` persists, `booking.created` event emitted).
+- **Files touched**:
+  - `backend/app/models/enums.py` (1 line added)
+  - `backend/alembic/versions/202605130001_add_walk_in_booking_source.py` (created, 50 lines)
+  - `backend/tests/test_booking_creation_foundation.py` (+78 lines, 2 new tests)
+  - `docs/LIVE_STATE.md` (Migration head + count + most-recent-migration bullet updated)
+  - `docs/PHASE_LOG.md` (this entry)
+- **Outcome**: 306 backend tests pass (was 304, +2). Ruff clean. `alembic upgrade head` + `alembic downgrade -1` + re-upgrade round-trip succeeds against a clean DB. `alembic heads` reports `202605130001 (head)`.
+- **Decisions made**:
+  - **Path A — native `ALTER TYPE ADD VALUE`** chosen over Path B (convert column to String + CHECK). Reasons:
+    - The bookings.source column has been a native Postgres ENUM since `202603290005`; the Phase 9A String+CHECK convention applies only to new columns added under that phase, not to retroactive conversion of existing enums.
+    - Schema-style consistency with the other native enums on bookings (`status`) and adjacent tables (`bookingparticipanttype`, `pricingdaytype`, `pricingtimeband`).
+    - Migration risk is minimal (single ALTER TYPE statement; no column type rewrite, no orphan-type drop).
+    - The slice's stated goal was "tiny pre-8a backend slice"; Path B would have been a column-type rewrite dressed up as an enum addition.
+  - **Empty downgrade body with explanatory docstring** chosen over `NotImplementedError`. Postgres has no `ALTER TYPE ... DROP VALUE`. A no-op downgrade completes cleanly against a DB with no walk_in rows; operators downgrading after walk_in data has been written discover the implication via subsequent migration attempts.
+  - **`IF NOT EXISTS` clause** on ADD VALUE — idempotent, retry-safe.
+- **Follow-ups created**:
+  - The Slice 2 channel-dot FROZEN (`frontend/src/features/tee-sheet/components/TeeRow.tsx:302-306`) gets a partial resolution path: when Slice 8a starts emitting walk-in bookings with `source="walk_in"`, the per-cell channel dot can render the walk-in channel against real backend data. Direct + aggregator channels remain unrepresented in the BookingSource enum and will need separate enum additions before the full four-channel taxonomy is renderable.
+- **Notes**:
+  - The original Slice 7.5 spec referenced a `ck_bookings_source` CHECK constraint that does not exist (the spec author assumed Phase 9A's String+CHECK pattern applied universally). The actual column was a native ENUM. Caught via reconnaissance and corrected by the user before any code landed — exactly the STOP AND ASK shape the slice template prescribes.
+  - Service-layer scan (`grep "BookingSource\." backend/app/`): 9 reference sites, all passthroughs or `== MEMBER_PORTAL` gates. Confirms no exhaustive enumeration that would silently misroute WALK_IN.
+
+---
 ## Phase 9A — Legal foundations: POPIA + VAT + HNA Player ID (2026-05-12)
 
 Backend extension wave. Three legal/regulatory fields the v1 product needs in the data model before any surface can capture them, plus the §10.3 WI-11 closeout.
