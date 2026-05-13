@@ -17,6 +17,7 @@ import { AdminFinancePage } from "../pages/admin-finance-page";
 import { AdminGolfSettingsPage } from "../pages/admin-golf-settings-page";
 import { AdminMembersPage } from "../pages/admin-members-page";
 import { AdminGolfTeeSheetPage } from "../pages/admin-golf-tee-sheet-page";
+import { AdminTeeSheetPage } from "../pages/admin-tee-sheet-page";
 import { AdminOrderQueuePage } from "../pages/admin-order-queue-page";
 import { AdminPosTerminalPage } from "../pages/admin-pos-terminal-page";
 import { InvitationAcceptPage } from "../pages/invitation-accept-page";
@@ -77,6 +78,7 @@ const router = createBrowserRouter([
           { path: "dashboard", element: <AdminDashboardPage /> },
           { path: "golf/dashboard", element: <AdminGolfDashboardPage /> },
           { path: "golf/tee-sheet", element: <AdminGolfTeeSheetPage /> },
+          { path: "tee-sheet", element: <AdminTeeSheetPage /> },
           { path: "golf/settings", element: <AdminGolfSettingsPage /> },
           { path: "orders", element: <AdminOrderQueuePage /> },
           { path: "people/dashboard", element: <AdminPeopleDashboardPage /> },

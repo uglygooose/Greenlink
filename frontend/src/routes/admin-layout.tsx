@@ -15,6 +15,7 @@ const ADMIN_ROUTE_META: Array<{ match: (pathname: string) => boolean; meta: Admi
   { match: (p) => p === "/admin/dashboard", meta: { title: "Dashboard" } },
   { match: (p) => p === "/admin/golf/dashboard", meta: { title: "Golf summary" } },
   { match: (p) => p === "/admin/golf/tee-sheet", meta: { title: "Tee sheet", searchPlaceholder: "Search tee times…" } },
+  { match: (p) => p === "/admin/tee-sheet", meta: { title: "Tee sheet", breadcrumbs: ["Operate"], searchPlaceholder: "Search tee times…" } },
   { match: (p) => p === "/admin/golf/settings", meta: { title: "Golf settings" } },
   { match: (p) => p === "/admin/settings", meta: { title: "Club", breadcrumbs: ["Settings"] } },
   { match: (p) => p === "/admin/settings/modules", meta: { title: "Modules", breadcrumbs: ["Settings"] } },

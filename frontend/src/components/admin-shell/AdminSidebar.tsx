@@ -32,7 +32,7 @@ const NAV_GROUPS: NavGroupSpec[] = [
     title: "Operate",
     items: [
       { icon: "dashboard", label: "Dashboard", to: "/admin/dashboard" },
-      { icon: "calendar_month", label: "Tee sheet", to: "/admin/golf/tee-sheet" },
+      { icon: "calendar_month", label: "Tee sheet", to: "/admin/tee-sheet" },
       { icon: "point_of_sale", label: "Point of sale", to: "/admin/pos-terminal" },
       { icon: "event_available", label: "Bookings", comingPhase: "Phase 10" },
       { icon: "groups", label: "Members", to: "/admin/members" },

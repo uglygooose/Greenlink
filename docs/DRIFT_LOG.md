@@ -17,6 +17,27 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — Phase 8 tee-sheet design vs backend response orientation mismatch
+
+- **Surfaced by**: Phase 10 Slice 2 (tee-sheet skeleton read-only) when diffing the Phase 8 design against the live `GET /api/golf/tee-sheet/day` response shape.
+- **Claim**: Phase 8 design renders a single course's tee sheet as one row per TEE-TIME with four player columns inside each row (e.g. row "06:30" → players P1 / P2 / P3 / P4). The recon report (B.1–B.2) treated this as the canonical layout.
+- **Reality**: The backend response models the same data with the opposite axes. `TeeSheetDayResponse.rows` is a list of physical LANES (e.g. "1st Tee", "10th Tee"); each row's `slots: list[TeeSheetSlotView]` is the time sequence in that lane. The 4-up player-column unit of Phase 8 maps to a single `TeeSheetSlotView`, not to a backend row. For a single-tee course the backend returns a single row whose slots ARE the Phase 8 rows, so the visual translation is one-to-one — but the orientation flip becomes load-bearing the moment a course has two start lanes (shotgun) or the design needs to compare across lanes side-by-side.
+- **Evidence**: `backend/app/schemas/tee_sheet.py:111-129` (`TeeSheetRow.row_key/tee_id/start_lane/label/slots` — row is per-lane); `backend/app/schemas/tee_sheet.py:92-108` (`TeeSheetSlotView` carries the per-time `bookings` list with up to `occupancy.player_capacity` participants — slot is the 4-up unit). Prototype evidence: Phase 8 mock data at `phase8-tee-sheet.jsx:17-86` lists rows as `{ time, state, players: [4 entries], price }` — explicitly time-row × 4-player-column.
+- **Resolution**: Slice 2 handles by rendering only `response.rows[0].slots` (single lane, the dominant case for single-tee courses). The orientation mismatch is recorded here for Slice 12 (tournament-mode / shotgun view), which is where multi-lane on one course actually matters: that slice will need to either (a) treat each backend row as its own shotgun section and lay them out vertically inside the same surface, or (b) merge slots from multiple lanes at the same time index into a single Phase 8 row. The decision is not Slice 2's to make; flagged here so it isn't re-derived.
+
+---
+### 2026-05-13 — Tee-sheet row state, channel dot, audit cue not derivable from current backend response
+
+- **Surfaced by**: Phase 10 Slice 2 implementation against the live tee-sheet day response.
+- **Claim**: Phase 8 design specifies six row states (open / booked / checkedin / atrisk / noshow / blocked), a per-player-cell channel dot encoding booking source (member-direct / member-app / aggregator / walk-in), and a per-row audit clock indicating "row has audit events today".
+- **Reality**: The backend response exposes none of the three.
+  1. **Row state**: `TeeSheetSlotView.display_status` is `available | blocked | reserved | indeterminate | warning`. `checkedin` and `noshow` are booking-level statuses (`TeeSheetBookingSummary.status`); deriving the row-level state from them would require aggregation the slice spec forbids.
+  2. **Channel/source**: `TeeSheetBookingSummary` has no `source` / `channel` field. `BookingSource` enum exists on the backend but is not surfaced via the day response.
+  3. **Audit cue**: `TeeSheetSlotView` has no `has_audit_events` or equivalent boolean. The Phase 9B emission infrastructure records the events but no read-model summary is published per-slot.
+- **Evidence**: `backend/app/schemas/tee_sheet.py:26-30` (`TeeSheetSlotDisplayStatus` — 5 values, no checkedin/noshow); `backend/app/schemas/tee_sheet.py:76-89` (`TeeSheetBookingSummary` — no source/channel/audit fields); `backend/app/services/tee_sheet_service.py:121-137` (state_flags dict carries `manually_blocked | reserved_state_active | competition_controlled | event_controlled | externally_unavailable` only — none useful for the missing decorations).
+- **Resolution**: Defer-and-flag. Slice 2 renders `checkedin`/`noshow` as `booked`, omits the per-cell channel dot, and omits the audit clock. Three new FROZEN comments added inside `frontend/src/features/tee-sheet/components/TeeRow.tsx` at the exact render sites (row-state mapping function, PlayerCell body, time-cell body), worded to match the existing FROZEN comments in `sheet-shared.tsx:896` and `sheet-shared.tsx:922`. These mark the contract: when the backend exposes the named field, the comment is the search target for the implementer. Per the slice owner's decision, the three gaps belong to a future Phase 9B-style backend-extension burst, not slice-by-slice chasing.
+
+---
 ### 2026-05-13 — assert_event_emitted legacy-kwarg shim
 
 - **Surfaced by**: Phase 9.1 standards remediation (Item 4 — EmissionContext sweep).
