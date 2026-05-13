@@ -1,4 +1,4 @@
-// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–6.
+// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–7.
 // Read-only tee-sheet skeleton at /admin/tee-sheet. Lives parallel to the
 // pre-rebuild admin-golf-tee-sheet-page.tsx until later slices land.
 //
@@ -14,10 +14,13 @@
 //            (selection footer + topbar via ShortcutsProvider context). The
 //            page registers its 21-entry tee-sheet shortcut map on mount.
 //            Esc priority is now modal > popover > selection.
+// - Slice 7: walk-in waitlist rail mounted to the right of the row list
+//            (308 px). Empty stub today — backend has no waitlist entity
+//            (DRIFT_LOG 2026-05-13 Slice 7). Slice 8a wires drop targets.
 //
-// What's NOT here (later slices): waitlist rail (7), drag-and-drop (8),
-// real lock acquisition (9), full keyboard shortcuts (10), slot-interval
-// + density toggles (11), tournament mode (12), marshal-on-phone (13).
+// What's NOT here (later slices): drag-and-drop wiring (8), real lock
+// acquisition (9), full keyboard shortcuts (10), slot-interval + density
+// toggles (11), tournament mode (12), marshal-on-phone (13).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -31,8 +34,10 @@ import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { PortfolioStrip } from "../features/tee-sheet/components/PortfolioStrip";
 import { SelectionFooter } from "../features/tee-sheet/components/SelectionFooter";
 import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/components/TeeRow";
+import { WaitlistRail } from "../features/tee-sheet/components/WaitlistRail";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
+import { useWaitlist } from "../features/tee-sheet/use-waitlist";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
 import { TEE_SHEET_SHORTCUTS } from "../features/tee-sheet/shortcuts";
 import { PricePopover } from "../components/ui/PricePopover";
@@ -227,40 +232,49 @@ export function AdminTeeSheetPage(): JSX.Element {
     setShortcutsOpen(false);
   }, []);
 
+  const waitlist = useWaitlist({ clubId: selectedClubId, courseId, date: selectedDate });
+
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
       <DateStrip date={selectedDate} timezone={day?.timezone ?? clubTimezone} />
       <LegendStrip />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-        <GridHeader />
-        <div style={{ flex: 1, overflow: "auto" }}>
-          {isLoading ? (
-            <SkeletonRows />
-          ) : isError ? (
-            <ErrorPanel
-              message={teeSheetQuery.error instanceof Error ? teeSheetQuery.error.message : "Failed to load tee sheet"}
-              onRetry={() => {
-                void teeSheetQuery.refetch();
-              }}
-            />
-          ) : isEmpty ? (
-            <EmptyPanel date={selectedDate} />
-          ) : (
-            slotRows.map(({ slot, coalesce }) => (
-              <TeeRow
-                key={slot.slot_datetime}
-                slot={slot}
-                coalesceWithPrevious={coalesce}
-                isSelected={selectedSlotKey === slot.slot_datetime}
-                onSelect={setSelectedSlotKey}
-                onPriceClick={handlePriceClick}
+      <div style={{ flex: 1, display: "flex", flexDirection: "row", minHeight: 0, overflow: "hidden" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <GridHeader />
+          <div style={{ flex: 1, overflow: "auto" }} data-testid="tee-sheet-row-list">
+            {isLoading ? (
+              <SkeletonRows />
+            ) : isError ? (
+              <ErrorPanel
+                message={teeSheetQuery.error instanceof Error ? teeSheetQuery.error.message : "Failed to load tee sheet"}
+                onRetry={() => {
+                  void teeSheetQuery.refetch();
+                }}
               />
-            ))
-          )}
+            ) : isEmpty ? (
+              <EmptyPanel date={selectedDate} />
+            ) : (
+              slotRows.map(({ slot, coalesce }) => (
+                <TeeRow
+                  key={slot.slot_datetime}
+                  slot={slot}
+                  coalesceWithPrevious={coalesce}
+                  isSelected={selectedSlotKey === slot.slot_datetime}
+                  onSelect={setSelectedSlotKey}
+                  onPriceClick={handlePriceClick}
+                />
+              ))
+            )}
+          </div>
         </div>
-        <SelectionFooter selectedSlot={selectedSlot} onOpenShortcuts={openShortcuts} />
+        <WaitlistRail
+          waitlist={waitlist.waitlist}
+          loading={waitlist.loading}
+          error={waitlist.error}
+        />
       </div>
+      <SelectionFooter selectedSlot={selectedSlot} onOpenShortcuts={openShortcuts} />
       {pricePopover ? (
         <PricePopover
           anchorEl={pricePopover.anchorEl}

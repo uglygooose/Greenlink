@@ -78,13 +78,13 @@ describe("ShortcutsProvider + AdminTopBar bridge", () => {
   });
 
   test("useShortcuts outside a provider returns no-op values (safe default)", () => {
-    let captured: { hasOpenHandler: boolean } | null = null;
+    const captured: { hasOpenHandler: boolean } = { hasOpenHandler: true };
     function Probe(): JSX.Element {
       const ctx = useShortcuts();
-      captured = { hasOpenHandler: ctx.hasOpenHandler };
-      return null;
+      captured.hasOpenHandler = ctx.hasOpenHandler;
+      return <span data-testid="probe-ran" />;
     }
     render(<Probe />);
-    expect(captured?.hasOpenHandler).toBe(false);
+    expect(captured.hasOpenHandler).toBe(false);
   });
 });

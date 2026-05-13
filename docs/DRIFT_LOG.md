@@ -17,6 +17,26 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — Slice 7 waitlist rail ships against a Path-1 empty stub (no Waitlist model, no /api/golf/waitlist endpoint, no BookingSource.WALK_IN enum value)
+
+- **Surfaced by**: Phase 10 Slice 7 Deliverable 1 reconnaissance across all four backend directories (`backend/app/api/routes/`, `backend/app/schemas/`, `backend/app/models/`, `backend/app/services/`).
+- **Claim**: Phase 8's WaitlistRail mounts on the tee-sheet surface, fed by a backend list of walk-in parties — each with party name, party size, source (Walk-in / Member app), since-time, note, and an auto-fit suggestion ("Fits 06:46 · 2 slots").
+- **Reality**: Three specific backend entities are missing:
+  1. **No `Waitlist` model.** `grep -irln "waitlist\|walk_in\|walkin\|walk-in\|walkup" backend/app/models/` returns empty. No persisted entity for walk-in parties holding for placement.
+  2. **No `/api/golf/waitlist` endpoint.** Same grep against `backend/app/api/routes/` returns empty. No read, no create, no delete.
+  3. **No `BookingSource.WALK_IN` enum value.** `backend/app/models/enums.py:149` shows `class BookingSource(StrEnum)` with members `ADMIN | MEMBER_PORTAL | STAFF` only. Walk-in bookings cannot be tagged distinctly today — there is no path to "filter bookings by source = walk_in" as a fallback because the source value doesn't exist.
+  Additionally, `BookingStatus` at `backend/app/models/enums.py:~135` has no `WAITLIST` / `HOLDING` / `PENDING` value — the booking lifecycle is `RESERVED → CHECKED_IN → COMPLETED` plus `CANCELLED`/`NO_SHOW`. Nothing models "waiting to be placed in a slot".
+- **Evidence**: `backend/app/models/enums.py` lines 135 + 149 (BookingStatus, BookingSource enum members). Four grep commands across `backend/app/{api/routes,schemas,models,services}/` for `waitlist|walk_in|walkin|walk-in|walkup` returned empty. Slice 7 implementation report carries the full grep output.
+- **Resolution**: Path 1 — ship the rail chrome against an empty stub. `frontend/src/features/tee-sheet/use-waitlist.ts` exports a typed hook (`useWaitlist(params): { waitlist, loading, error }`) that returns empty data unconditionally. Two new FROZEN annotations name the missing entities explicitly so the future backend slice has a starting point:
+  - `use-waitlist.ts:6` — header FROZEN block listing missing model, endpoint, and enum value. Marks `synthesizeStubWaitlist()` as the swap-point.
+  - `WaitlistCard.tsx:99` — JSX FROZEN inside the conditional suggestion strip. The strip auto-renders when `entry.suggestion` becomes truthy in the response; the engine that produces "best gap" semantics is itself a product decision (see Path 3 rejection below).
+  - `WaitlistRail.tsx:43` — FROZEN at the footer running-total site. Sum of backend-provided `fee_amount` values, same idiom as Slices 2/3.
+
+  **Path 3 (backend extension first) was rejected** not because the rail entity is hard to model — a `Waitlist` model + `/api/golf/waitlist` CRUD endpoints + adding `WALK_IN` to `BookingSource` is a straightforward backend slice. It was rejected because the suggestion engine (Phase 8's "Fits 06:46 · 2 slots" pill) is a real product decision: what counts as "fits" depends on capacity policy, party-mix rules, time-of-day preferences, and holdover rules — none of which have been scoped or product-decided for Umhlali's actual walk-in flow. Building the suggestion engine pre-emptively is speculative scope against an unknown. The rail chrome and the empty-state drop hint deliver value today (Slice 8a needs the drop target in the DOM), and the moment the backend lands the waitlist entity, the chrome lights up with zero frontend changes downstream of the hook. The suggestion engine ships when product decides "best gap" semantics.
+
+  FROZEN count in `frontend/src/features/tee-sheet/` + `frontend/src/components/ui/` goes from 6 → 11 (5 new line matches across 4 logical gap-annotations; the 5th match is a meta-reference in `WaitlistRail.tsx` header that points readers to the gap-source in `use-waitlist.ts`).
+
+---
 ### 2026-05-13 — Slice 6 shell→page bridge: AdminTopBar prop extension + ShortcutsProvider context
 
 - **Surfaced by**: Phase 10 Slice 6 (shortcut help modal) when planning the path from page-owned modal state to the topbar's ? affordance.

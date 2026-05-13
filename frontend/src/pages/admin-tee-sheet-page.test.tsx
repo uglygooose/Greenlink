@@ -557,4 +557,69 @@ describe("AdminTeeSheetPage", () => {
       expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
     });
   });
+
+  describe("waitlist rail (Slice 7)", () => {
+    test("rail mounts to the right of the row list", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      expect(screen.getByTestId("waitlist-rail")).toBeInTheDocument();
+      expect(screen.getByTestId("tee-sheet-row-list")).toBeInTheDocument();
+    });
+
+    test("rail renders empty-state drop hint (Path 1 stub: no backend waitlist)", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      expect(screen.getByTestId("waitlist-rail-empty")).toBeInTheDocument();
+      // Header counts reflect zero
+      expect(screen.getByTestId("waitlist-rail-counts")).toHaveTextContent("0 parties · 0 players");
+      // Running total reflects zero
+      expect(screen.getByTestId("waitlist-rail-total")).toHaveTextContent("R 0");
+    });
+
+    test("rail is full-width 308 px (FlexBox shrink prevented)", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      const rail = screen.getByTestId("waitlist-rail");
+      expect(rail.style.width).toBe("308px");
+      expect(rail.style.flexShrink).toBe("0");
+    });
+
+    test("popover still positions correctly with rail mounted (Slice 5 preserved)", () => {
+      const slots = [
+        makeSlot({
+          slot_datetime: "2026-05-12T06:30:00+02:00",
+          local_time: "06:30:00",
+          display_status: "reserved",
+          bookings: [
+            {
+              id: "b1",
+              status: "reserved",
+              party_size: 2,
+              holes: 18,
+              slot_datetime: "2026-05-12T06:30:00+02:00",
+              fee_label: "Member · Sat AM",
+              fee_amount: "870.00",
+              fee_currency: "ZAR",
+              participants: [
+                { id: "p1", display_name: "M. Dlamini", participant_type: "member", is_primary: true },
+              ],
+            },
+          ],
+        }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      renderPage();
+      fireEvent.click(screen.getByTestId("row-price-button"));
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      expect(screen.getByTestId("waitlist-rail")).toBeInTheDocument();
+    });
+
+    test("modal still mounts with rail present (Slice 6 preserved)", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      fireEvent.keyDown(document, { key: "?" });
+      expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
+      expect(screen.getByTestId("waitlist-rail")).toBeInTheDocument();
+    });
+  });
 });
