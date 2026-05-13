@@ -1,9 +1,12 @@
 // Phase 7 — Admin layout. Replaces the pre-rebuild AdminShell wrapper with
 // the new admin-shell components in frontend/src/components/admin-shell/.
 // Route metadata still controls title + search placeholder per path.
+// Slice 6 wraps the layout in ShortcutsProvider and forwards the page's
+// registered open-handler to AdminShell so the topbar "?" chip can call it.
 import { Outlet, useLocation } from "react-router-dom";
 
 import { AdminShell } from "../components/admin-shell/AdminShell";
+import { ShortcutsProvider, useShortcuts } from "../components/admin-shell/shortcuts-context";
 
 interface AdminRouteMeta {
   title: string;
@@ -40,13 +43,27 @@ function routeMetaFor(pathname: string): AdminRouteMeta {
   );
 }
 
-export function AdminLayout(): JSX.Element {
+function AdminLayoutInner(): JSX.Element {
   const location = useLocation();
   const meta = routeMetaFor(location.pathname);
+  const { openShortcuts, hasOpenHandler } = useShortcuts();
 
   return (
-    <AdminShell title={meta.title} breadcrumbs={meta.breadcrumbs} searchPlaceholder={meta.searchPlaceholder}>
+    <AdminShell
+      title={meta.title}
+      breadcrumbs={meta.breadcrumbs}
+      searchPlaceholder={meta.searchPlaceholder}
+      onOpenShortcuts={hasOpenHandler ? openShortcuts : undefined}
+    >
       <Outlet />
     </AdminShell>
+  );
+}
+
+export function AdminLayout(): JSX.Element {
+  return (
+    <ShortcutsProvider>
+      <AdminLayoutInner />
+    </ShortcutsProvider>
   );
 }

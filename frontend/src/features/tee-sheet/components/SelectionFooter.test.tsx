@@ -57,18 +57,20 @@ describe("SelectionFooter", () => {
     expect(screen.getByTestId("selection-lock-line").textContent).toContain("Slot — · — remaining");
   });
 
-  test("? button has aria-label flagging Slice 6 wiring and is disabled", () => {
+  test("? button without onOpenShortcuts is disabled (no consumer wired)", () => {
     render(<SelectionFooter selectedSlot={null} />);
     const btn = screen.getByTestId("selection-shortcuts-button");
-    expect(btn.getAttribute("aria-label")).toMatch(/ships in slice 6/i);
     expect(btn).toBeDisabled();
+    expect(btn.getAttribute("aria-label")).toMatch(/open keyboard shortcuts/i);
   });
 
-  test("? button click is a no-op (button is disabled — no handler wired)", () => {
-    const onClick = vi.fn();
-    render(<SelectionFooter selectedSlot={null} />);
-    fireEvent.click(screen.getByTestId("selection-shortcuts-button"));
-    expect(onClick).not.toHaveBeenCalled();
+  test("? button click fires onOpenShortcuts when wired", () => {
+    const onOpenShortcuts = vi.fn();
+    render(<SelectionFooter selectedSlot={null} onOpenShortcuts={onOpenShortcuts} />);
+    const btn = screen.getByTestId("selection-shortcuts-button");
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(onOpenShortcuts).toHaveBeenCalledTimes(1);
   });
 
   test("four shortcut chips render: n, s, c, p", () => {

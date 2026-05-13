@@ -1,4 +1,4 @@
-// Path: frontend/src/features/tee-sheet/components/SelectionFooter.tsx — Phase 10 Slice 4.
+// Path: frontend/src/features/tee-sheet/components/SelectionFooter.tsx — Phase 10 Slices 4–6.
 // Persistent footer below the row list. Always visible — its height is
 // constant whether or not a row is selected (no layout shift between empty
 // and hydrated states).
@@ -6,7 +6,8 @@
 // Slice 4 stubs (wired in later slices):
 // - Shortcut chips render but bind nothing      → Slice 10 wires keys
 // - Lock-holder line is always the stub text    → Slice 9a wires real locks
-// - "?" affordance is decorative + disabled     → Slice 6 wires the modal
+// Slice 6 wired:
+// - "?" button now opens the ShortcutHelpModal via the onOpenShortcuts prop
 import type { CSSProperties } from "react";
 
 import { Icon } from "../../../components/ui/Icon";
@@ -23,9 +24,13 @@ const SHORTCUT_CHIPS: Array<{ key: string; label: string }> = [
 
 export interface SelectionFooterProps {
   selectedSlot: TeeSheetSlotView | null;
+  onOpenShortcuts?: () => void;
 }
 
-export function SelectionFooter({ selectedSlot }: SelectionFooterProps): JSX.Element {
+export function SelectionFooter({
+  selectedSlot,
+  onOpenShortcuts,
+}: SelectionFooterProps): JSX.Element {
   const hasSelection = selectedSlot !== null;
   const selectedTime = selectedSlot ? timeKey(selectedSlot.local_time) : null;
 
@@ -87,8 +92,10 @@ export function SelectionFooter({ selectedSlot }: SelectionFooterProps): JSX.Ele
 
       <button
         type="button"
-        aria-label="Shortcuts — ships in Slice 6"
-        disabled
+        aria-label="Open keyboard shortcuts"
+        title="Open keyboard shortcuts"
+        onClick={onOpenShortcuts}
+        disabled={!onOpenShortcuts}
         data-testid="selection-shortcuts-button"
         style={{
           width: 28,
@@ -101,7 +108,7 @@ export function SelectionFooter({ selectedSlot }: SelectionFooterProps): JSX.Ele
           fontFamily: "var(--gl-font-mono)",
           fontSize: 11,
           color: "var(--gl-text-secondary)",
-          cursor: "not-allowed",
+          cursor: onOpenShortcuts ? "pointer" : "not-allowed",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",

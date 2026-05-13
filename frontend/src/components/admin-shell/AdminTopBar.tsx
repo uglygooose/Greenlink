@@ -9,13 +9,19 @@ export interface AdminTopBarProps {
   title: ReactNode;
   breadcrumbs?: string[];
   searchPlaceholder?: string;
+  // Slice 6: when the current page has registered a shortcut help map,
+  // AdminLayout passes its open-handler in here and the "?" chip becomes
+  // interactive. Pages without shortcuts leave the chip disabled.
+  onOpenShortcuts?: () => void;
 }
 
 export function AdminTopBar({
   title,
   breadcrumbs,
   searchPlaceholder = "Search members, GL codes, dates…",
+  onOpenShortcuts,
 }: AdminTopBarProps): JSX.Element {
+  const shortcutsAvailable = typeof onOpenShortcuts === "function";
   return (
     <header
       style={{
@@ -102,10 +108,16 @@ export function AdminTopBar({
           type="button"
           className="gl-btn gl-btn--secondary"
           data-size="sm"
+          data-testid="admin-topbar-shortcuts"
+          onClick={onOpenShortcuts}
           style={{ height: 28, padding: "0 8px" }}
-          disabled
-          aria-label="Shortcuts — ships in Phase 10 (tee sheet)"
-          title="Press ? for shortcuts"
+          disabled={!shortcutsAvailable}
+          aria-label={
+            shortcutsAvailable
+              ? "Open keyboard shortcuts"
+              : "Shortcuts — not available on this page"
+          }
+          title={shortcutsAvailable ? "Press ? for shortcuts" : undefined}
         >
           <span className="gl-kbd" style={{ height: 16, fontSize: 10 }} aria-hidden="true">
             ?

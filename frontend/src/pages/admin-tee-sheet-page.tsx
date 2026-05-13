@@ -1,4 +1,4 @@
-// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–5.
+// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–6.
 // Read-only tee-sheet skeleton at /admin/tee-sheet. Lives parallel to the
 // pre-rebuild admin-golf-tee-sheet-page.tsx until later slices land.
 //
@@ -10,11 +10,14 @@
 // - Slice 5: pricing popover wired to price-button clicks. Click selects row
 //            AND opens popover. Popover owns outside-click + esc dismiss;
 //            the Slice 4 page-level esc handler bails when popover is open.
+// - Slice 6: shortcut help modal wired to "?" key and the two "?" buttons
+//            (selection footer + topbar via ShortcutsProvider context). The
+//            page registers its 21-entry tee-sheet shortcut map on mount.
+//            Esc priority is now modal > popover > selection.
 //
-// What's NOT here (later slices): shortcut modal (6), waitlist rail (7),
-// drag-and-drop (8), real lock acquisition (9), full keyboard shortcuts (10),
-// slot-interval + density toggles (11), tournament mode (12),
-// marshal-on-phone (13).
+// What's NOT here (later slices): waitlist rail (7), drag-and-drop (8),
+// real lock acquisition (9), full keyboard shortcuts (10), slot-interval
+// + density toggles (11), tournament mode (12), marshal-on-phone (13).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -31,7 +34,10 @@ import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/compone
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
+import { TEE_SHEET_SHORTCUTS } from "../features/tee-sheet/shortcuts";
 import { PricePopover } from "../components/ui/PricePopover";
+import { ShortcutHelpModal } from "../components/ui/ShortcutHelpModal";
+import { useShortcuts } from "../components/admin-shell/shortcuts-context";
 import { useSession } from "../session/session-context";
 
 const LEGEND_STATES = ["open", "booked", "checkedin", "atrisk", "noshow", "blocked"] as const;
@@ -115,25 +121,59 @@ export function AdminTeeSheetPage(): JSX.Element {
   // click + esc dismiss listeners; the page only sets/clears the anchor.
   const [pricePopover, setPricePopover] = useState<{ slotKey: string; anchorEl: HTMLElement } | null>(null);
 
+  // Slice 6: shortcut help modal. Modal owns its own esc + backdrop dismiss;
+  // the page only sets/clears the open flag and registers its shortcut map
+  // with the shell so the topbar's "?" chip can reach `openShortcuts`.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const { setOpenHandler } = useShortcuts();
+  useEffect(() => {
+    setOpenHandler(() => setShortcutsOpen(true));
+    return () => setOpenHandler(null);
+  }, [setOpenHandler]);
+
   // Clear selection AND popover when the active course or date changes —
-  // both reference rows that no longer exist on the new sheet.
+  // both reference rows that no longer exist on the new sheet. The modal
+  // is help, not data, so it survives navigation.
   useEffect(() => {
     setSelectedSlotKey(null);
     setPricePopover(null);
   }, [courseId, selectedDate]);
 
-  // Esc at the page level clears selection ONLY when the popover is not
-  // open. When the popover is open its own keydown listener fires onDismiss
-  // (which clears pricePopover). Without this guard, esc would clear both
-  // popover AND selection in one keypress — the user would lose context
-  // they didn't intend to drop.
+  // Esc priority: modal first, popover second, selection third. Both
+  // sub-components (modal + popover) own their own esc handlers and fire
+  // onDismiss directly; the page handler only needs to keep its OWN tier
+  // (selection clear) silent when a higher tier is on screen.
   const pricePopoverOpenRef = useRef(false);
   pricePopoverOpenRef.current = pricePopover != null;
+  const shortcutsOpenRef = useRef(false);
+  shortcutsOpenRef.current = shortcutsOpen;
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
+      if (shortcutsOpenRef.current) return;
       if (pricePopoverOpenRef.current) return;
       setSelectedSlotKey(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // "?" opens the modal. Skipped when the user is typing — input, textarea,
+  // and contenteditable surfaces own that keystroke. Mirrors the Phase 8
+  // a11y note: "no shortcut steals focus from a search input."
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "?") return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        if (active.isContentEditable) return;
+      }
+      event.preventDefault();
+      setShortcutsOpen(true);
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -179,6 +219,14 @@ export function AdminTeeSheetPage(): JSX.Element {
     setPricePopover(null);
   }, []);
 
+  const openShortcuts = useCallback(() => {
+    setShortcutsOpen(true);
+  }, []);
+
+  const dismissShortcuts = useCallback(() => {
+    setShortcutsOpen(false);
+  }, []);
+
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
@@ -211,7 +259,7 @@ export function AdminTeeSheetPage(): JSX.Element {
             ))
           )}
         </div>
-        <SelectionFooter selectedSlot={selectedSlot} />
+        <SelectionFooter selectedSlot={selectedSlot} onOpenShortcuts={openShortcuts} />
       </div>
       {pricePopover ? (
         <PricePopover
@@ -224,6 +272,12 @@ export function AdminTeeSheetPage(): JSX.Element {
           onDismiss={dismissPricePopover}
         />
       ) : null}
+      <ShortcutHelpModal
+        isOpen={shortcutsOpen}
+        onDismiss={dismissShortcuts}
+        title="Tee sheet shortcuts"
+        shortcuts={TEE_SHEET_SHORTCUTS}
+      />
     </div>
   );
 }

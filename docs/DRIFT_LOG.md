@@ -17,6 +17,24 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — Slice 6 shell→page bridge: AdminTopBar prop extension + ShortcutsProvider context
+
+- **Surfaced by**: Phase 10 Slice 6 (shortcut help modal) when planning the path from page-owned modal state to the topbar's ? affordance.
+- **Claim**: Slice 6 spec asked the page to "pass the handler down to AdminTopBar via whatever prop-passing convention AdminShell already uses (check the existing topbar prop interface; if it doesn't carry per-page callbacks, extend it conservatively)."
+- **Reality**: The path page → AdminLayout → AdminShell → AdminTopBar carries no per-page callback channel today. Pages render as `<Outlet/>` children of `<AdminLayout/>` and `AdminLayout` derives chrome props from STATIC route meta (`ADMIN_ROUTE_META`). There is no prop-passing convention for runtime-derived callbacks because that convention doesn't exist yet on this surface. Extending route meta would couple compile-time config to runtime page state — wrong fit.
+- **Evidence**: `frontend/src/routes/admin-layout.tsx:14-33` (route meta is static `{ title, breadcrumbs?, searchPlaceholder? }`); `frontend/src/components/admin-shell/AdminTopBar.tsx` pre-Slice-6 had no callback props.
+- **Resolution**: Two-part extension. (1) `AdminTopBarProps` gains an optional `onOpenShortcuts?: () => void` — when supplied, the ? chip is interactive; when undefined, it stays disabled. (2) New shell context at `frontend/src/components/admin-shell/shortcuts-context.tsx` exposes `setOpenHandler(handler)` for pages to register their open-action and `openShortcuts()` / `hasOpenHandler` for chrome to consume. AdminLayout wraps with `<ShortcutsProvider>` and passes `hasOpenHandler ? openShortcuts : undefined` to AdminShell. Page registers its handler in a `useEffect` on mount; chrome's ? chip enables automatically. The context handles other surfaces too — future pages that ship shortcut maps just call `setOpenHandler` and get the topbar affordance for free. Documented because the architecture is now load-bearing for any future cross-cutting chrome-action that needs page-derived state (e.g. a "?" -style notifications surface).
+
+---
+### 2026-05-13 — Slice 6 esc priority enforced via aria-modal DOM signal in PricePopover
+
+- **Surfaced by**: Phase 10 Slice 6 test "esc with modal open dismisses modal; popover survives" failing initially because the popover and modal both registered `document.addEventListener("keydown", ...)` and both fired their `onDismiss` on the same Escape event.
+- **Claim**: Slice 6 spec specified esc priority order "modal > popover > selection" with "stop" semantics: "If modal is open → dismiss modal, stop. Else if popover is open → dismiss popover, stop. Else if selection is set → clear selection."
+- **Reality**: `document.addEventListener` listeners on the same target fire in registration order; `event.preventDefault()` does not stop sibling listeners, and `stopImmediatePropagation()` only halts listeners registered AFTER the calling one. Because the popover mounts before the modal, its esc listener registers earlier — so even if the modal called `stopImmediatePropagation`, the popover would have already fired its `onDismiss`. The spec's "stop" wording assumes a coordination primitive that wasn't yet in the codebase.
+- **Evidence**: Two `useEffect(() => { document.addEventListener("keydown", ...); }, [...])` blocks: `frontend/src/components/ui/PricePopover.tsx` (popover) and `frontend/src/components/ui/ShortcutHelpModal.tsx` (modal). Page-level esc listener in `admin-tee-sheet-page.tsx` already used a ref-based check to bail when popover open; the popover lacked an equivalent guard for the modal tier.
+- **Resolution**: Added an aria-modal deferral to the popover's esc listener. The popover checks `document.querySelector('[role="dialog"][aria-modal="true"]')` before dismissing — when an aria-modal dialog is mounted, the popover bails. The modal dialog sets `aria-modal="true"`; the popover does not. This achieves the spec's priority order via a DOM signal that any future higher-tier overlay can opt into by setting `aria-modal="true"`. No shared dismiss-stack registry needed. The same pattern will scale to any future modal-tier overlay (close-day modal, etc.) without coupling overlays to each other directly.
+
+---
 ### 2026-05-13 — Slice 5 price popover ships against a Path-1 single-line stub (additive breakdown endpoint TBD)
 
 - **Surfaced by**: Phase 10 Slice 5 Deliverable 2 read of `backend/app/schemas/rule_evaluation.py`, `backend/app/services/booking_commercial_service.py`, and `backend/app/schemas/tee_sheet.py`.

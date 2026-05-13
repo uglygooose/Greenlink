@@ -128,7 +128,14 @@ export function PricePopover({
       onDismiss();
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onDismiss();
+      if (event.key !== "Escape") return;
+      // Defer to a higher-tier overlay: any aria-modal dialog (e.g. the
+      // shortcut help modal) gets dismissed first; the popover keeps state
+      // until the modal closes. Matches the spec's esc priority order
+      // (modal > popover > selection) without requiring a shared
+      // dismiss-stack registry between sibling overlays.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      onDismiss();
     };
     document.addEventListener("mousedown", onMouseDown);
     document.addEventListener("keydown", onKey);

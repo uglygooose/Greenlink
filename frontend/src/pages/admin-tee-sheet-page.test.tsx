@@ -456,4 +456,105 @@ describe("AdminTeeSheetPage", () => {
       expect(screen.queryByTestId("price-popover")).toBeNull();
     });
   });
+
+  describe("shortcut help modal (Slice 6)", () => {
+    test('"?" key opens the modal', () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      expect(screen.queryByTestId("shortcut-help-modal")).toBeNull();
+      fireEvent.keyDown(document, { key: "?" });
+      expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
+    });
+
+    test('"?" key with focus on an input does NOT open the modal', () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay([]), isPending: false, isError: false });
+      renderPage();
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      input.focus();
+      expect(document.activeElement).toBe(input);
+      fireEvent.keyDown(document, { key: "?" });
+      expect(screen.queryByTestId("shortcut-help-modal")).toBeNull();
+      input.remove();
+    });
+
+    test("? button in the selection footer opens the modal", () => {
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      renderPage();
+      expect(screen.queryByTestId("shortcut-help-modal")).toBeNull();
+      fireEvent.click(screen.getByTestId("selection-shortcuts-button"));
+      expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
+    });
+
+    test("esc with modal open dismisses modal; selection survives", () => {
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = renderPage();
+      // Select a row first
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      // Open the modal
+      fireEvent.keyDown(document, { key: "?" });
+      expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
+      // Esc closes modal — selection survives (page handler bails when modal open)
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByTestId("shortcut-help-modal")).toBeNull();
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+    });
+
+    test("esc with modal open dismisses modal; popover survives", () => {
+      const slots = [
+        makeSlot({
+          slot_datetime: "2026-05-12T06:30:00+02:00",
+          local_time: "06:30:00",
+          display_status: "reserved",
+          bookings: [
+            {
+              id: "b1",
+              status: "reserved",
+              party_size: 2,
+              holes: 18,
+              slot_datetime: "2026-05-12T06:30:00+02:00",
+              fee_label: "Member · Sat AM",
+              fee_amount: "870.00",
+              fee_currency: "ZAR",
+              participants: [
+                { id: "p1", display_name: "M. Dlamini", participant_type: "member", is_primary: true },
+              ],
+            },
+          ],
+        }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      renderPage();
+      // Open the popover
+      fireEvent.click(screen.getByTestId("row-price-button"));
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      // Open the modal on top
+      fireEvent.keyDown(document, { key: "?" });
+      expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
+      // Esc dismisses the modal. Popover survives because the popover's own
+      // esc handler defers when an aria-modal dialog is mounted.
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByTestId("shortcut-help-modal")).toBeNull();
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+    });
+
+    test("esc with everything closed but selection set clears selection (Slice 4 behaviour preserved)", () => {
+      const slots = [
+        makeSlot({ slot_datetime: "2026-05-12T06:30:00+02:00", local_time: "06:30:00", display_status: "reserved" }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slots), isPending: false, isError: false });
+      const { container } = renderPage();
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
+    });
+  });
 });
