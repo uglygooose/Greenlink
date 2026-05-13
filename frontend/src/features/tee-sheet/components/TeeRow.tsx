@@ -136,6 +136,10 @@ export interface TeeRowProps {
   coalesceWithPrevious?: boolean;
   isSelected?: boolean;
   onSelect?: (slotKey: string) => void;
+  // Phase 8 (phase8-tee-sheet.jsx:576) wires clicking the price to select the
+  // row AND open the price popover. The TeeRow fires both callbacks; the page
+  // composes selection + popover state from them.
+  onPriceClick?: (slotKey: string, anchorEl: HTMLButtonElement) => void;
 }
 
 export function TeeRow({
@@ -143,6 +147,7 @@ export function TeeRow({
   coalesceWithPrevious = false,
   isSelected = false,
   onSelect,
+  onPriceClick,
 }: TeeRowProps): JSX.Element | null {
   const state = rowStateFromDisplayStatus(slot.display_status);
 
@@ -272,13 +277,20 @@ export function TeeRow({
           justifyContent: "center",
         }}
       />
-      {/* Price button: stopPropagation no-op stub. Slice 5 will wire the
-          PricePopover overlay here without firing row selection. */}
+      {/* Price button: fires onSelect + onPriceClick (Phase 8 parity); data-role
+          tags the element so the PricePopover's outside-click listener can
+          swap the anchor instead of dismissing when another price is clicked.
+          Blocked rows render the cell disabled — no popover, no selection. */}
       <button
         type="button"
         data-testid="row-price-button"
+        data-role="row-price-button"
+        disabled={isBlocked}
         onClick={(e) => {
           e.stopPropagation();
+          if (isBlocked) return;
+          onSelect?.(slot.slot_datetime);
+          onPriceClick?.(slot.slot_datetime, e.currentTarget);
         }}
         style={{
           width: 76,
@@ -289,11 +301,11 @@ export function TeeRow({
           justifyContent: "flex-end",
           fontSize: 12,
           fontWeight: 500,
-          color: "var(--gl-text-primary)",
+          color: isBlocked ? "var(--gl-text-secondary)" : "var(--gl-text-primary)",
           background: "transparent",
           border: "none",
           font: "inherit",
-          cursor: "pointer",
+          cursor: isBlocked ? "default" : "pointer",
         }}
       >
         <span className="gl-mono gl-tabular">{price}</span>

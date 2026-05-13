@@ -1,4 +1,4 @@
-// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–4.
+// Path: frontend/src/pages/admin-tee-sheet-page.tsx — Phase 10 Slices 2–5.
 // Read-only tee-sheet skeleton at /admin/tee-sheet. Lives parallel to the
 // pre-rebuild admin-golf-tee-sheet-page.tsx until later slices land.
 //
@@ -7,12 +7,15 @@
 // - Slice 3: multi-course portfolio strip above the date strip
 // - Slice 4: single-row selection state + SelectionFooter mount; esc clears;
 //            course/date change clears; vanished-slot clears silently
+// - Slice 5: pricing popover wired to price-button clicks. Click selects row
+//            AND opens popover. Popover owns outside-click + esc dismiss;
+//            the Slice 4 page-level esc handler bails when popover is open.
 //
-// What's NOT here (later slices): pricing popover (5), shortcut modal (6),
-// waitlist rail (7), drag-and-drop (8), real lock acquisition (9), full
-// keyboard shortcuts (10), slot-interval + density toggles (11), tournament
-// mode (12), marshal-on-phone (13).
-import { useEffect, useMemo, useState } from "react";
+// What's NOT here (later slices): shortcut modal (6), waitlist rail (7),
+// drag-and-drop (8), real lock acquisition (9), full keyboard shortcuts (10),
+// slot-interval + density toggles (11), tournament mode (12),
+// marshal-on-phone (13).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { Button } from "../components/ui/Button";
@@ -26,7 +29,9 @@ import { PortfolioStrip } from "../features/tee-sheet/components/PortfolioStrip"
 import { SelectionFooter } from "../features/tee-sheet/components/SelectionFooter";
 import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/components/TeeRow";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
+import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
+import { PricePopover } from "../components/ui/PricePopover";
 import { useSession } from "../session/session-context";
 
 const LEGEND_STATES = ["open", "booked", "checkedin", "atrisk", "noshow", "blocked"] as const;
@@ -105,17 +110,30 @@ export function AdminTeeSheetPage(): JSX.Element {
   // lane once multi-lane lands).
   const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
 
-  // Clear selection when the active course or date changes — a row from
-  // yesterday's sheet has no meaning on today's sheet.
+  // Slice 5: pricing popover state. Single instance — anchor swaps when the
+  // user clicks another row's price button. Popover owns its own outside-
+  // click + esc dismiss listeners; the page only sets/clears the anchor.
+  const [pricePopover, setPricePopover] = useState<{ slotKey: string; anchorEl: HTMLElement } | null>(null);
+
+  // Clear selection AND popover when the active course or date changes —
+  // both reference rows that no longer exist on the new sheet.
   useEffect(() => {
     setSelectedSlotKey(null);
+    setPricePopover(null);
   }, [courseId, selectedDate]);
 
-  // Esc clears selection at the page level. This is the only keyboard
-  // binding Slice 4 introduces; Slice 10 wires j/k/n/s/c/p/x.
+  // Esc at the page level clears selection ONLY when the popover is not
+  // open. When the popover is open its own keydown listener fires onDismiss
+  // (which clears pricePopover). Without this guard, esc would clear both
+  // popover AND selection in one keypress — the user would lose context
+  // they didn't intend to drop.
+  const pricePopoverOpenRef = useRef(false);
+  pricePopoverOpenRef.current = pricePopover != null;
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setSelectedSlotKey(null);
+      if (event.key !== "Escape") return;
+      if (pricePopoverOpenRef.current) return;
+      setSelectedSlotKey(null);
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -129,6 +147,14 @@ export function AdminTeeSheetPage(): JSX.Element {
     return match ? match.slot : null;
   }, [selectedSlotKey, slotRows]);
 
+  const popoverSlot = useMemo(() => {
+    if (pricePopover == null) return null;
+    const match = slotRows.find((row) => row.slot.slot_datetime === pricePopover.slotKey);
+    return match ? match.slot : null;
+  }, [pricePopover, slotRows]);
+
+  const priceBreakdown = usePriceBreakdown({ slot: popoverSlot });
+
   // Silently clear when the selected slot disappears (data refetch, course
   // change race, etc). The user shouldn't see a footer pointing at a row
   // that no longer renders.
@@ -137,6 +163,21 @@ export function AdminTeeSheetPage(): JSX.Element {
       setSelectedSlotKey(null);
     }
   }, [selectedSlotKey, selectedSlot, slotRows]);
+
+  // Same silent clear for the popover anchor.
+  useEffect(() => {
+    if (pricePopover != null && popoverSlot == null && slotRows.length > 0) {
+      setPricePopover(null);
+    }
+  }, [pricePopover, popoverSlot, slotRows]);
+
+  const handlePriceClick = useCallback((slotKey: string, anchorEl: HTMLButtonElement) => {
+    setPricePopover({ slotKey, anchorEl });
+  }, []);
+
+  const dismissPricePopover = useCallback(() => {
+    setPricePopover(null);
+  }, []);
 
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
@@ -165,12 +206,24 @@ export function AdminTeeSheetPage(): JSX.Element {
                 coalesceWithPrevious={coalesce}
                 isSelected={selectedSlotKey === slot.slot_datetime}
                 onSelect={setSelectedSlotKey}
+                onPriceClick={handlePriceClick}
               />
             ))
           )}
         </div>
         <SelectionFooter selectedSlot={selectedSlot} />
       </div>
+      {pricePopover ? (
+        <PricePopover
+          anchorEl={pricePopover.anchorEl}
+          title={priceBreakdown.title}
+          currency={priceBreakdown.currency}
+          breakdown={priceBreakdown.breakdown}
+          loading={priceBreakdown.loading}
+          error={priceBreakdown.error}
+          onDismiss={dismissPricePopover}
+        />
+      ) : null}
     </div>
   );
 }

@@ -17,6 +17,15 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-13 — Slice 5 price popover ships against a Path-1 single-line stub (additive breakdown endpoint TBD)
+
+- **Surfaced by**: Phase 10 Slice 5 Deliverable 2 read of `backend/app/schemas/rule_evaluation.py`, `backend/app/services/booking_commercial_service.py`, and `backend/app/schemas/tee_sheet.py`.
+- **Claim**: Phase 8's `PricePopover` design renders an additive rule-line stack — `Base R 650 + Weekend AM premium +R 100 + Cart +R 70 + Channel · Direct R 0 = R 820` — composed by the backend and rendered as-is by the frontend.
+- **Reality**: The backend models pricing as a set of **competing** `PricingCandidate`s (each carrying an absolute `price: Decimal` and a `reason` string). `BookingCommercialService.snapshot_from_availability` picks the one candidate when exactly one matches and returns `BookingCommercialSnapshot(fee_amount, fee_currency)` — single absolute price, no decomposition. `TeeSheetBookingSummary` carries `fee_label / fee_amount / fee_currency`, no `breakdown` field. The additive `Base + Premium + Addon + Channel + Discount` shape does not exist anywhere in the current backend. Deriving deltas (e.g. `+R 100` premium) in the frontend would require subtracting two PricingCandidates → frontend pricing math → forbidden by `ENGINEERING_STANDARDS.md` §1.
+- **Evidence**: `backend/app/schemas/rule_evaluation.py:52-92` (PricingCandidate carries absolute `price`, not deltas; `PricingEvaluationResult.candidate_rules` is a list of competing matches, not a stack); `backend/app/services/booking_commercial_service.py:38-51` (`snapshot_from_availability` returns one snapshot when `len(candidates) == 1` else empty); `backend/app/schemas/tee_sheet.py:76-89` (`TeeSheetBookingSummary` exposes only `fee_label`/`fee_amount`/`fee_currency`, no breakdown).
+- **Resolution**: Per slice owner's Path-1 decision, Slice 5 ships a degraded stub. `frontend/src/features/tee-sheet/use-price-breakdown.ts` synthesises one `kind: "base"` line per booking in the slot, sourced from `fee_label` + `fee_amount` + `fee_currency`; the row-level total is the same presentation aggregation the row Price column already uses (sum of `fee_amount` across bookings). Channel renders as `"—"` because `TeeSheetBookingSummary.source` doesn't exist (already recorded in DRIFT_LOG 2026-05-13 #1). A new FROZEN comment in `use-price-breakdown.ts` marks the swap point for the future real endpoint. Once backend exposes either (a) `breakdown: list[PriceLine]` per `TeeSheetBookingSummary`, or (b) a dedicated `GET /api/golf/tee-sheet/slot-breakdown` returning `{ lines, channel, total, currency }`, the hook implementation swaps without touching the popover component or the wiring in `admin-tee-sheet-page.tsx`. FROZEN count in `frontend/src/features/tee-sheet/` + `frontend/src/components/ui/` goes from 5 → 6.
+
+---
 ### 2026-05-13 — Slice 4 selection-dismiss + price-click semantics differ from slice spec; followed Phase 8
 
 - **Surfaced by**: Phase 10 Slice 4 (row selection + selection footer) when verifying the spec's listed dismiss behaviours against the Phase 8 prototype.

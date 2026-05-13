@@ -316,4 +316,144 @@ describe("AdminTeeSheetPage", () => {
       expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
     });
   });
+
+  describe("price popover (Slice 5)", () => {
+    function slotsWithFee(): TeeSheetSlotView[] {
+      return [
+        makeSlot({
+          slot_datetime: "2026-05-12T06:30:00+02:00",
+          local_time: "06:30:00",
+          display_status: "reserved",
+          bookings: [
+            {
+              id: "b1",
+              status: "reserved",
+              party_size: 2,
+              holes: 18,
+              slot_datetime: "2026-05-12T06:30:00+02:00",
+              fee_label: "Member · Sat AM",
+              fee_amount: "870.00",
+              fee_currency: "ZAR",
+              participants: [
+                { id: "p1", display_name: "M. Dlamini", participant_type: "member", is_primary: true },
+              ],
+            },
+          ],
+        }),
+        makeSlot({
+          slot_datetime: "2026-05-12T06:38:00+02:00",
+          local_time: "06:38:00",
+          display_status: "reserved",
+          bookings: [
+            {
+              id: "b2",
+              status: "reserved",
+              party_size: 1,
+              holes: 18,
+              slot_datetime: "2026-05-12T06:38:00+02:00",
+              fee_label: "Member · Sat AM",
+              fee_amount: "435.00",
+              fee_currency: "ZAR",
+              participants: [
+                { id: "p2", display_name: "T. Botha", participant_type: "member", is_primary: true },
+              ],
+            },
+          ],
+        }),
+      ];
+    }
+
+    test("clicking a row's price button opens the popover AND selects the row", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      renderPage();
+      expect(screen.queryByTestId("price-popover")).toBeNull();
+      fireEvent.click(screen.getAllByTestId("row-price-button")[0]);
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      expect(screen.getByTestId("price-popover-total")).toHaveTextContent("R 870");
+      // Row is also selected per Phase 8 parity
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+    });
+
+    test("outside-click dismisses popover but keeps selection", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      renderPage();
+      fireEvent.click(screen.getAllByTestId("row-price-button")[0]);
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      const outside = document.createElement("div");
+      document.body.appendChild(outside);
+      fireEvent.mouseDown(outside);
+      expect(screen.queryByTestId("price-popover")).toBeNull();
+      // Selection persists
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      outside.remove();
+    });
+
+    test("esc with popover open clears popover only, keeps selection", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      renderPage();
+      fireEvent.click(screen.getAllByTestId("row-price-button")[0]);
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByTestId("price-popover")).toBeNull();
+      // Selection persists — popover's esc handler clears popover; page's
+      // esc handler bails (popover-open guard).
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+    });
+
+    test("esc with no popover open still clears selection (Slice 4 behaviour preserved)", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      const { container } = renderPage();
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
+    });
+
+    test("clicking another row's price button moves the popover, doesn't dismiss", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      renderPage();
+      const buttons = screen.getAllByTestId("row-price-button");
+      fireEvent.click(buttons[0]);
+      expect(screen.getByTestId("price-popover-total")).toHaveTextContent("R 870");
+      fireEvent.mouseDown(buttons[1]);
+      fireEvent.click(buttons[1]);
+      // Popover still rendered, anchor swapped, total updated to second row's fee
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      expect(screen.getByTestId("price-popover-total")).toHaveTextContent("R 435");
+    });
+
+    test("changing the active course closes the popover (parallel to selection clear)", () => {
+      function CourseSwitchProbe(): JSX.Element {
+        const [, setSearchParams] = useSearchParams();
+        return (
+          <button
+            type="button"
+            data-testid="course-switch-probe"
+            onClick={() => {
+              setSearchParams((prev) => {
+                prev.set("course_id", "course-2");
+                return prev;
+              });
+            }}
+          >
+            switch
+          </button>
+        );
+      }
+      mockUseTeeSheetDayQuery.mockReturnValue({ data: makeDay(slotsWithFee()), isPending: false, isError: false });
+      render(
+        <MemoryRouter
+          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+          initialEntries={["/admin/tee-sheet?course_id=course-1&date=2026-05-12"]}
+        >
+          <AdminTeeSheetPage />
+          <CourseSwitchProbe />
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getAllByTestId("row-price-button")[0]);
+      expect(screen.getByTestId("price-popover")).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("course-switch-probe"));
+      expect(screen.queryByTestId("price-popover")).toBeNull();
+    });
+  });
 });

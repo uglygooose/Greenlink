@@ -258,11 +258,43 @@ describe("TeeRow selection (Slice 4)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  test("price button click does NOT fire onSelect (stopPropagation)", () => {
+  test("price button click fires onSelect AND onPriceClick (Phase 8 parity)", () => {
     const onSelect = vi.fn();
-    render(<TeeRow slot={slot()} onSelect={onSelect} />);
+    const onPriceClick = vi.fn();
+    render(<TeeRow slot={slot()} onSelect={onSelect} onPriceClick={onPriceClick} />);
     fireEvent.click(screen.getByTestId("row-price-button"));
+    // Fires once (price button), NOT twice (row bubble suppressed via stopPropagation)
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("2026-05-12T06:30:00+02:00");
+    expect(onPriceClick).toHaveBeenCalledTimes(1);
+    // Anchor element is the button itself
+    expect(onPriceClick.mock.calls[0][0]).toBe("2026-05-12T06:30:00+02:00");
+    expect((onPriceClick.mock.calls[0][1] as HTMLElement).tagName).toBe("BUTTON");
+  });
+
+  test("blocked row's price button is disabled and fires no callbacks", () => {
+    const onSelect = vi.fn();
+    const onPriceClick = vi.fn();
+    render(
+      <TeeRow
+        slot={slot({
+          display_status: "blocked",
+          blockers: [{ code: "x", reason: "Closed", details: {} }],
+        })}
+        onSelect={onSelect}
+        onPriceClick={onPriceClick}
+      />,
+    );
+    const priceButton = screen.getByTestId("row-price-button");
+    expect(priceButton).toBeDisabled();
+    fireEvent.click(priceButton);
     expect(onSelect).not.toHaveBeenCalled();
+    expect(onPriceClick).not.toHaveBeenCalled();
+  });
+
+  test("price button carries data-role for the popover anchor-swap listener", () => {
+    render(<TeeRow slot={slot()} />);
+    expect(screen.getByTestId("row-price-button").getAttribute("data-role")).toBe("row-price-button");
   });
 
   test("more_vert button click does NOT fire onSelect (stopPropagation)", () => {
