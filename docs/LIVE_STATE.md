@@ -282,8 +282,8 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
 
 ## Database
 
-- Migration head: `202605120001` (`backend/alembic/versions/202605120001_legal_foundations.py`).
-- Migration count: 25 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
+- Migration head: `202605130001` (`backend/alembic/versions/202605130001_add_walk_in_booking_source.py`).
+- Migration count: 26 revision files in `backend/alembic/versions/`. Chain is linear (single head, single root at `202603270001_foundation_scaffold.py` with `down_revision = None`).
 - Schema/model parity: `alembic --autogenerate` against a fresh-migrated DB produces zero proposed ops (Phase 5 baseline, preserved through the 9-series).
 - Models live in: `backend/app/models/`.
 - Tables (from `__tablename__` declarations):
@@ -321,7 +321,8 @@ Prefixes set in `backend/app/api/router.py`. Endpoints listed with absolute path
   - `tees` (`backend/app/models/tee.py:14`)
   - `tee_sheet_slot_states` (`backend/app/models/tee_sheet_slot_state.py:17`)
   - `users` (`backend/app/models/user.py:23`)
-- Columns added by the most recent migration (`202605120001_legal_foundations.py`):
+- Most recent migration (`202605130001_add_walk_in_booking_source.py`) — extends the native Postgres ENUM `bookingsource` with value `walk_in` via `ALTER TYPE ... ADD VALUE IF NOT EXISTS`. Empty downgrade (Postgres has no `DROP VALUE`). `BookingSource` enum now: `{admin, member_portal, staff, walk_in}` (`backend/app/models/enums.py:149-153`). Phase 10 Slice 7.5 prerequisite for the walk-in waitlist drop interaction (Slice 8a).
+- Columns added by the prior column-adding migration (`202605120001_legal_foundations.py`):
   - `people.consent_captured_at` (timestamptz, nullable) — POPIA consent timestamp (`backend/app/models/person.py:33`).
   - `people.consent_version` (String(64), nullable) — POPIA consent version label (`backend/app/models/person.py:34`).
   - `people.consent_source` (String(32), nullable) + CHECK `ck_people_consent_source_valid` over `{onboarding, member_app, admin_capture, import}` (`backend/app/models/person.py:35`; `backend/alembic/versions/202605120001_legal_foundations.py:43-60`).

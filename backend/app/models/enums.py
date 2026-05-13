@@ -150,6 +150,7 @@ class BookingSource(StrEnum):
     ADMIN = "admin"
     MEMBER_PORTAL = "member_portal"
     STAFF = "staff"
+    WALK_IN = "walk_in"
 
 
 class FinanceAccountStatus(StrEnum):

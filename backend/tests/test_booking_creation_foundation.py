@@ -661,3 +661,87 @@ def test_booking_create_blocks_when_member_participant_lacks_club_membership(
     assert payload["availability"] is None
     assert any(item["code"] == "membership_required" for item in payload["failures"])
     assert db_session.scalar(select(func.count()).select_from(Booking)) == 0
+
+
+def test_booking_source_enum_includes_walk_in() -> None:
+    """Slice 7.5 closure: BookingSource carries a WALK_IN value with the
+    canonical lower-snake-case string. The native Postgres ENUM is
+    extended by the 202605130001 migration; this test guards the Python
+    side against a regression that would silently drop the value."""
+    assert BookingSource.WALK_IN.value == "walk_in"
+    assert "walk_in" in {member.value for member in BookingSource}
+
+
+def test_booking_create_with_walk_in_source_persists_and_emits_audit(
+    client: TestClient, db_session: Session
+) -> None:
+    """End-to-end Slice 7.5 acceptance: a walk-in booking created via the
+    API persists with source='walk_in' and emits a booking.created event.
+    Walk-in parties are unknown people — all participants are GUEST type
+    with guest_name only (no person_id)."""
+    admin = _create_user(db_session, email="walkin-admin@example.com")
+    club = _create_club(db_session, name="Walk-in Club", slug="walkin-club")
+    _assign_membership(db_session, user=admin, club=club, role=ClubMembershipRole.CLUB_ADMIN)
+    course, tee = _seed_course_stack(db_session, club=club)
+    _seed_club_config(db_session, club=club)
+    _seed_rules(db_session, club=club)
+
+    slot_datetime = datetime(2026, 3, 30, 4, 0, tzinfo=UTC)
+    db_session.add(
+        TeeSheetSlotState(
+            club_id=club.id,
+            course_id=course.id,
+            tee_id=tee.id,
+            slot_datetime=slot_datetime,
+            player_capacity=4,
+            manually_blocked=False,
+            reserved_state_active=False,
+            competition_controlled=False,
+            event_controlled=False,
+            externally_unavailable=False,
+        )
+    )
+    db_session.commit()
+
+    headers = _auth_headers(client, admin.email, str(club.id))
+    response = client.post(
+        "/api/golf/bookings",
+        headers=headers,
+        json={
+            "course_id": str(course.id),
+            "tee_id": str(tee.id),
+            "slot_datetime": slot_datetime.isoformat(),
+            "source": "walk_in",
+            "applies_to": "guest",
+            "reference_datetime": datetime(2026, 3, 25, 6, 0, tzinfo=UTC).isoformat(),
+            "participants": [
+                {
+                    "participant_type": "guest",
+                    "guest_name": "K. Mokoena",
+                    "is_primary": True,
+                },
+                {
+                    "participant_type": "guest",
+                    "guest_name": "Guest Two",
+                    "is_primary": False,
+                },
+            ],
+        },
+    )
+    assert response.status_code == 201
+    payload = response.json()
+
+    assert payload["decision"] == "allowed"
+    assert payload["booking"]["source"] == "walk_in"
+    assert payload["booking"]["party_size"] == 2
+
+    persisted = db_session.scalar(select(Booking))
+    assert persisted is not None
+    assert persisted.source == BookingSource.WALK_IN
+
+    assert_event_emitted(
+        db_session,
+        entity_type="booking",
+        entity_id=payload["booking"]["id"],
+        action="booking.created",
+    )
