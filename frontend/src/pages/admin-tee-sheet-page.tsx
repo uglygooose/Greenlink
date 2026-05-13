@@ -40,7 +40,15 @@ import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { useWaitlist } from "../features/tee-sheet/use-waitlist";
 import { useCreateWalkinBooking } from "../features/tee-sheet/use-create-walkin-booking";
 import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
-import type { DragPayload, SlotDropTarget } from "../features/tee-sheet/dnd/types";
+import type {
+  CellOccupant,
+  DragPayload,
+  ParticipantDragPayload,
+  SlotDropTarget,
+} from "../features/tee-sheet/dnd/types";
+import { useParticipantSwap } from "../features/tee-sheet/use-participant-swap";
+import { useMoveParticipant } from "../features/tee-sheet/use-move-participant";
+import { PartialSwapPill } from "../features/tee-sheet/components/PartialSwapPill";
 import { currentDateInTimezone } from "../features/tee-sheet/sheet-shared";
 import { TEE_SHEET_SHORTCUTS } from "../features/tee-sheet/shortcuts";
 import { PricePopover } from "../components/ui/PricePopover";
@@ -253,19 +261,133 @@ export function AdminTeeSheetPage(): JSX.Element {
     return new Set([createWalkinBooking.variables.entry.id]);
   }, [createWalkinBooking.isPending, createWalkinBooking.variables]);
 
+  // Slice 8b — participant move + sequential swap orchestrator. The
+  // move hook is mounted twice in effect: once standalone (for cross-row
+  // move onto an open cell) and once embedded inside the swap orchestrator
+  // (for the two-step swap onto a filled cell). Both share the same
+  // tee-sheet day cache.
+  const moveParticipant = useMoveParticipant({
+    accessToken,
+    selectedClubId,
+    selectedDate,
+    membershipType: "staff",
+    teeId: null,
+  });
+  const participantSwap = useParticipantSwap({
+    accessToken,
+    selectedClubId,
+    selectedDate,
+    membershipType: "staff",
+    teeId: null,
+  });
+
   const handleDropOnSlot = useCallback(
-    (target: SlotDropTarget, payload: DragPayload) => {
-      if (payload.kind !== "waitlist") return;
+    (target: SlotDropTarget, payload: DragPayload, occupant: CellOccupant | null) => {
       if (!courseId) return;
-      dragController.endDrag();
-      createWalkinBooking.mutate({
-        entry: payload.entry,
-        slotDatetime: target.slot_datetime,
-        courseId,
-      });
+      if (payload.kind === "waitlist") {
+        dragController.endDrag();
+        createWalkinBooking.mutate({
+          entry: payload.entry,
+          slotDatetime: target.slot_datetime,
+          courseId,
+        });
+        return;
+      }
+      if (payload.kind === "participant") {
+        // Same-row drops are already short-circuited inside the cell. Defensive guard.
+        if (payload.source_row_key === target.row_key) {
+          dragController.endDrag();
+          return;
+        }
+        dragController.endDrag();
+        if (occupant === null) {
+          moveParticipant.mutate({
+            bookingId: payload.booking_id,
+            participantId: payload.participant_id,
+            targetSlotDatetime: target.slot_datetime,
+            sourceSlotDatetime: payload.source_slot_datetime,
+            displayName: payload.display_name,
+          });
+          return;
+        }
+        // Cross-row swap — orchestrator needs the live target row to
+        // gate on intermediate-cell viability.
+        const targetRow = day?.rows.find((row) =>
+          row.slots.some((slot) => slot.slot_datetime === target.slot_datetime),
+        );
+        if (!targetRow) return;
+        participantSwap.initiate(
+          {
+            participantA: {
+              bookingId: payload.booking_id,
+              participantId: payload.participant_id,
+              displayName: payload.display_name,
+              partySize: payload.party_size,
+              slotDatetime: payload.source_slot_datetime,
+              rowKey: payload.source_row_key,
+            },
+            participantB: {
+              bookingId: occupant.booking_id,
+              participantId: occupant.participant_id,
+              displayName: occupant.display_name,
+              partySize: occupant.party_size,
+              slotDatetime: target.slot_datetime,
+              rowKey: target.row_key,
+            },
+          },
+          targetRow,
+        );
+      }
     },
-    [courseId, createWalkinBooking, dragController],
+    [
+      courseId,
+      createWalkinBooking,
+      dragController,
+      day,
+      moveParticipant,
+      participantSwap,
+    ],
   );
+
+  const handleParticipantDragStart = useCallback(
+    (payload: ParticipantDragPayload) => {
+      dragController.startDrag(payload);
+    },
+    [dragController],
+  );
+
+  // Post-drop aria-live announcements. The drag controller's announcement
+  // covers in-flight drags; this state carries the announcement of the
+  // most recent mutation outcome until the next drag begins.
+  const [postDropAnnouncement, setPostDropAnnouncement] = useState("");
+  useEffect(() => {
+    if (
+      moveParticipant.isSuccess &&
+      moveParticipant.variables &&
+      participantSwap.state.kind === "idle"
+    ) {
+      setPostDropAnnouncement(
+        `Moved ${moveParticipant.variables.displayName} to slot ${moveParticipant.variables.targetSlotDatetime}`,
+      );
+    }
+  }, [moveParticipant.isSuccess, moveParticipant.variables, participantSwap.state.kind]);
+  useEffect(() => {
+    const kind = participantSwap.state.kind;
+    if (kind === "succeeded") {
+      setPostDropAnnouncement("Swap complete");
+    } else if (kind === "partial-failure-second") {
+      setPostDropAnnouncement(
+        `Partial swap — ${participantSwap.state.input.participantB.displayName} pending`,
+      );
+    } else if (kind === "restored") {
+      setPostDropAnnouncement("First move restored");
+    } else if (kind === "rejected-target-row-full") {
+      setPostDropAnnouncement("Swap not possible — target row is full");
+    }
+  }, [participantSwap.state]);
+  useEffect(() => {
+    if (dragController.announcement) setPostDropAnnouncement("");
+  }, [dragController.announcement]);
 
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
@@ -279,6 +401,46 @@ export function AdminTeeSheetPage(): JSX.Element {
             <WalkinBookingErrorBanner
               message={createWalkinBooking.error.message}
               onDismiss={() => createWalkinBooking.reset()}
+            />
+          ) : null}
+          {moveParticipant.isError ? (
+            <WalkinBookingErrorBanner
+              message={moveParticipant.error.message}
+              onDismiss={() => moveParticipant.reset()}
+            />
+          ) : null}
+          {participantSwap.state.kind === "rejected-target-row-full" ? (
+            <WalkinBookingErrorBanner
+              message="Swap not possible — target row is full."
+              onDismiss={() => participantSwap.reset()}
+            />
+          ) : null}
+          {participantSwap.state.kind === "partial-failure-second" ? (
+            <PartialSwapPill
+              participantAName={participantSwap.state.input.participantA.displayName}
+              participantBName={participantSwap.state.input.participantB.displayName}
+              isRetrying={participantSwap.state.kind === "partial-failure-second" && participantSwap.moveMutation.isPending}
+              isRestoring={false}
+              onRetry={participantSwap.retrySecond}
+              onRestore={participantSwap.restoreFirst}
+            />
+          ) : participantSwap.state.kind === "restoring" ? (
+            <PartialSwapPill
+              participantAName={participantSwap.state.input.participantA.displayName}
+              participantBName={participantSwap.state.input.participantB.displayName}
+              isRetrying={false}
+              isRestoring
+              onRetry={participantSwap.retrySecond}
+              onRestore={participantSwap.restoreFirst}
+            />
+          ) : participantSwap.state.kind === "restore-failed" ? (
+            <WalkinBookingErrorBanner
+              message={`Restore failed: ${
+                participantSwap.state.error instanceof Error
+                  ? participantSwap.state.error.message
+                  : "Unknown error"
+              }`}
+              onDismiss={() => participantSwap.reset()}
             />
           ) : null}
           <div style={{ flex: 1, overflow: "auto" }} data-testid="tee-sheet-row-list">
@@ -313,6 +475,8 @@ export function AdminTeeSheetPage(): JSX.Element {
                     }
                   }}
                   onDropOnSlot={handleDropOnSlot}
+                  onParticipantDragStart={handleParticipantDragStart}
+                  onParticipantDragEnd={dragController.endDrag}
                 />
               ))
             )}
@@ -365,7 +529,7 @@ export function AdminTeeSheetPage(): JSX.Element {
           border: 0,
         }}
       >
-        {dragController.announcement}
+        {dragController.announcement || postDropAnnouncement}
       </div>
     </div>
   );

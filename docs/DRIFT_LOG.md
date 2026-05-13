@@ -17,6 +17,24 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — Slice 8b accepts v1 partial-state in two-call swap (no atomic-swap backend endpoint)
+
+- **Surfaced by**: Phase 10 Slice 8b Deliverable 6 (swap orchestrator) design.
+- **Claim**: A swap of two players between rows should be atomic — either both end at their new positions, or neither moves.
+- **Reality**: There is no atomic-swap endpoint. `POST /api/golf/bookings/{booking_id}/move` is the only relevant endpoint; it moves one booking (or one participant of a multi-participant booking via the participant_id field) at a time. Two operators' worth of state needs two calls.
+- **Evidence**: `backend/app/api/routes/golf.py:476` (`@router.post("/bookings/{booking_id}/move", ...)`) is the sole move route. `backend/app/services/booking_move_service.py:50` (`MOVEABLE_STATUSES = {RESERVED, CHECKED_IN}`) and the same file's validation chain (lines 130–306) are per-booking, not per-pair. No "/bookings/swap" or "/bookings/atomic-swap" route exists. `grep -rn "swap\b" backend/app/api/routes/` returns 0 matches.
+- **Resolution**: Slice 8b ships a sequential orchestrator (`frontend/src/features/tee-sheet/use-participant-swap.ts`) that fires move A → move B. When move B fails after move A commits, the orchestrator enters `partial-failure-second`. The page renders a `PartialSwapPill` action banner with two operator-driven actions: Retry (re-fire move B) or Restore (reverse move A using its NEW booking_id from the split response). Restore failure surfaces a separate inline error banner; no further recovery is automated.
+- **Status**: Open — Slice 9b candidate. Building an atomic-swap endpoint is a single backend slice; would eliminate the Pill state entirely.
+---
+### 2026-05-14 — Slice 8b same-row reorder rejected client-side (deferral, not a contract violation)
+
+- **Surfaced by**: Phase 10 Slice 8b Q2 deferral.
+- **Claim**: Drag-and-drop in a tee sheet should let operators reorder players within a single row.
+- **Reality**: The backend rejects same-row, same-lane, same-tee moves as `move_is_no_op` (`backend/app/services/booking_move_service.py:138-157`) because nothing about the booking actually changes — the per-row participant order is derived at read time, not stored. The frontend currently has no way to express "reorder within a slot" because the move endpoint operates on (slot_datetime + start_lane + tee_id), not on a position index.
+- **Evidence**: `BookingMoveInput` (`backend/app/schemas/bookings.py:347-360`) has no `target_position` or `target_cell_index` field. Read-side participant ordering is whatever the SQL query yields — no `cell_index` column exists on `booking_participants`. Adding intra-row reordering requires a new backend concept (`participants.sort_order` or `participants.cell_index`) and a new mutation endpoint.
+- **Resolution**: Slice 8b rejects same-row drags client-side BEFORE any /move call. The cell renders a `--gl-state-atrisk`-toned banner ("Same-row reorder not yet supported"); the drop is a no-op. Both the row-level and cell-level drop handlers short-circuit for defence in depth. The reject visual is intentionally honest — it tells the operator the feature isn't supported rather than silently dropping the interaction.
+- **Status**: Open — Slice 12+ candidate (depends on the read model gaining a participant ordering signal).
+---
 ### 2026-05-14 — Slice 8a accepts v1 concurrency gap: no soft-lock during in-flight optimistic walk-in drop
 
 - **Surfaced by**: Phase 10 Slice 8a Deliverable 5 (page integration) review.

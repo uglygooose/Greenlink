@@ -51,5 +51,8 @@ function announcementFor(payload: DragPayload | null): string {
     const seats = entry.party === 1 ? "1 seat" : `${entry.party} seats`;
     return `Picking up ${entry.name} · ${seats}`;
   }
+  if (payload.kind === "participant") {
+    return `Picking up ${payload.display_name} from ${payload.source_row_key}`;
+  }
   return "";
 }

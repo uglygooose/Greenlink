@@ -18,6 +18,61 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 8b: Player cell move + sequential swap with partial-state Pill (2026-05-14)
+
+Frontend slice. Extends the Slice 8a DnD pipeline to support cross-row participant moves and two-step swaps. Filled player cells with moveable bookings (RESERVED / CHECKED_IN, mirroring `backend/app/services/booking_move_service.py:50`) become drag sources; empty AND filled cells in different rows become drop targets. Same-row reorder is rejected client-side before any backend call; partial-swap failures surface an inline action banner with Retry / Restore.
+
+- **Scope**:
+  - `dnd/types.ts` extended: `ParticipantDragPayload` variant on `DragPayload` (booking_id, participant_id, display_name, party_size, source_slot_datetime, source_row_key, source_cell_index); new `CellOccupant` record for the drop callback.
+  - `dnd/use-drag-state.ts` extended: aria-live announcement now covers `kind: "participant"` ("Picking up {display_name} from {source_row_key}").
+  - New `use-move-participant.ts`: typed mutation hook calling `POST /api/golf/bookings/{booking_id}/move` with `{target_slot_datetime, target_start_lane: null, target_tee_id: null, participant_id}`. `MoveParticipantError` carries the structured `BookingMoveResult` plus a categorised failure (`capacity_full | target_blocked | target_reserved | booking_not_moveable | crosses_day_boundary | no_op | target_tee_not_found | participant_not_found | booking_not_found | club_config_not_found | unknown`). Optimistic patch removes participant from source booking + adds an `optimistic-move-` transient at the target slot. Rollback on error, invalidate on settle.
+  - New `use-participant-swap.ts`: orchestrator wrapping two `useMoveParticipant` calls in sequence. Reducer-based state machine: `idle | first-pending | second-pending | succeeded | partial-failure-first | partial-failure-second | rejected-target-row-full | restoring | restore-failed | restored`. `targetRowHasIntermediateSpace(targetRow, targetSlotDatetime)` checks for at least one open cell in the target slot — short-circuits with `rejected-target-row-full` if not viable. `restoreFirst` uses the NEW booking_id from move A's response (split case) for the reverse move.
+  - New `components/PartialSwapPill.tsx`: info-toned action banner (heritage-500 at 7% / 35% — matches Slice 8a banner idiom). "Retry move" + "Restore" buttons; busy states; ARIA alert.
+  - `components/TeeRow.tsx` extended: `buildPlayerCells` threads booking_id + participant_id + party_size + booking_status through each player-cell spec. Filled cells with moveable booking become drag sources (`draggable={true}`, cursor: grab); on dragstart they write a `ParticipantDragPayload` to the dataTransfer. Drop-mode per cell computed at row level: `none | valid | reject`. Cross-row drag of a participant + filled cell → drop-target valid; same-row drag + any cell → reject (dashed `--gl-state-atrisk` border, "Same-row reorder not yet supported" mono label). Drop on same-row cells is a client-side no-op (backend would also reject with `move_is_no_op`).
+  - `pages/admin-tee-sheet-page.tsx` extended: mounts `useMoveParticipant` + `useParticipantSwap`. Drop handler routes by `payload.kind`:
+    - `waitlist` → existing walk-in mutation (Slice 8a behaviour preserved).
+    - `participant` + same-row → no-op (defensive double-guard; cell already short-circuits).
+    - `participant` + cross-row + open cell → single move mutation.
+    - `participant` + cross-row + filled cell → swap orchestrator with the live target row passed in for intermediate-space gating.
+    - Renders `PartialSwapPill` when orchestrator is in `partial-failure-second` / `restoring`. Renders an inline error banner for move errors, restore failures, and the row-full rejection.
+  - aria-live region now also announces post-drop outcomes: "Moved {name} to slot {target_slot_datetime}", "Swap complete", "Partial swap — {name} pending", "First move restored", "Swap not possible — target row is full".
+  - 46 new tests: `use-move-participant.test.tsx` (22 — payload builder, failure categorisation, optimistic patch + rollback, missing session). `use-participant-swap.test.tsx` (10 — sequencing, success, partial failures, retry, restore using NEW booking_id, target-row-full rejection, reset). `PartialSwapPill.test.tsx` (5 — copy, button actions, busy states). `TeeRow.test.tsx` (+9 — drag source on moveable cells, non-draggable on cancelled, dragStart payload write, cross-row drop on filled cell, same-row rejection visual, drop on same-row no-op, occupant threading to onDropOnSlot, buildPlayerCells field threading).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/dnd/types.ts` (participant variant + CellOccupant)
+  - `frontend/src/features/tee-sheet/dnd/use-drag-state.ts` (participant announcement)
+  - `frontend/src/features/tee-sheet/use-move-participant.ts` (created, 245 lines)
+  - `frontend/src/features/tee-sheet/use-move-participant.test.tsx` (created, 340 lines)
+  - `frontend/src/features/tee-sheet/use-participant-swap.ts` (created, 230 lines)
+  - `frontend/src/features/tee-sheet/use-participant-swap.test.tsx` (created, 314 lines)
+  - `frontend/src/features/tee-sheet/components/PartialSwapPill.tsx` (created, 81 lines)
+  - `frontend/src/features/tee-sheet/components/PartialSwapPill.test.tsx` (created, 86 lines)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (drag source + drop modes + occupant threading)
+  - `frontend/src/features/tee-sheet/components/TeeRow.test.tsx` (+9 tests)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (move + swap mounts; drop router; banners; aria-live)
+  - `docs/PHASE_LOG.md` (this entry), `docs/DRIFT_LOG.md`, `docs/LIVE_STATE.md`
+- **Outcome**: 495 frontend tests pass (was 449; +46). Lint: 0 errors (13 pre-existing warnings unrelated). Typecheck clean. No new dependencies; no DnD library. FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex in any new file (grep `#[0-9a-fA-F]{3,8}\b` on use-move-participant.ts, use-participant-swap.ts, PartialSwapPill.tsx → 0).
+- **Decisions made**:
+  - **Native HTML5 DnD only**, no library. The interaction shape is well-bounded (cell-to-cell with a single payload kind).
+  - **Cross-row participant move is the primary supported flow** (Phase 8 design's per-player drag primitive). Whole-booking move is deferred — Phase 8 doesn't design a row-handle drag for v1.
+  - **Same-row reorder rejected client-side** (Q2 deferral). The drop visual uses `--gl-state-atrisk` at 4% / dashed border + a mono `--gl-text-secondary` "Same-row reorder not yet supported" label. Drop is a no-op; no backend call. Both the row-level onDrop and the cell-level handleDrop short-circuit (defence in depth per ENGINEERING_STANDARDS §1).
+  - **Sequential two-call swap** (Q3 Option a). No atomic-swap backend endpoint exists; the orchestrator composes two `/move` calls. State machine surfaces every transition through a discriminated union. When move B fails after move A commits, the `PartialSwapPill` lets the operator Retry or Restore.
+  - **Restore uses move A's NEW booking_id from the response**. When A is the sole participant of its source booking, no split → same id. When A is one of N>1 participants, split → new id. Either way, `firstResult.booking.id` is authoritative.
+  - **Intermediate-cell viability check is "open cell present in target row at target slot"** (Q3 a's honest variant). The backend's capacity check has the same effect — the frontend short-circuits to avoid the network round trip with a clean "Swap not possible — target row is full" surface.
+  - **PartialSwapPill is NOT a literal use of the `Pill` primitive** (Pill is badge-sized). The "Pill" name in the spec refers to the heritage-500 visual tone; the actual surface is a banner — a custom component using the same color-mix idiom as Slice 8a's `WalkinBookingErrorBanner`.
+  - **Banner mount point** chosen at top-of-grid above the row list, mirroring `WalkinBookingErrorBanner`. SelectionFooter mounting was acceptable per spec but spec also offered a top banner; chosen for consistency with the in-flight error idiom and because the Pill persists across drag interactions independent of selection state.
+  - **Optimistic patch is per-call (no whole-swap atomic optimistic state)**. Patch 1 lands after move A; patch 2 lands after move B succeeds. When move B fails, only patch 1's state is in flight, which matches backend reality (move A is committed). On rollback (move B failure invalidates the cache anyway through `onSettled`), the live data refreshes with A in its new slot.
+  - **No concurrency lock** (Slice 9a). Two operators dragging onto the same cell simultaneously: backend rejects the second with a `BookingMoveResult.decision = "blocked"` → caller surfaces it via the inline error banner. Same trade-off as Slice 8a; documented in DRIFT_LOG.
+- **Follow-ups created**:
+  - Atomic-swap backend endpoint (Slice 9b candidate). The sequential two-call sequence works but introduces a partial-state failure mode that the operator must resolve manually. A single backend transaction would eliminate the Pill entirely.
+  - Slot soft-locks during in-flight moves (Slice 9a, already tracked).
+  - Whole-booking move (row-handle drag) — Phase 8 hasn't designed the interaction shape for v1.
+  - Keyboard-driven move/swap parity — Slice 10+ candidate (pick up, navigate, place).
+- **Notes**:
+  - The Slice 8a `WalkinBookingErrorBanner` is now reused for three additional surfaces: move errors, restore failures, swap-not-possible. The component generalises cleanly because its message is a single string — no Slice 8b-specific component grew on its back.
+  - `buildPlayerCells` previously called `bookingParticipantNames` (names-only); replaced with a direct iteration over `booking.participants` so the cell can carry participant_id + booking metadata. The fallback for bookings with empty `participants[]` arrays (party_size > 0, no participant records) preserves the prior "Player 1 / Player 2 / …" placeholder naming.
+  - The teeSheetKeys.day shape is `["tee-sheet", clubId, courseId, day, membershipType, teeId]` — caught a typo in my first draft of the move hook's day-query predicate where I had `k[1] === "day"` (no such segment exists). Fixed by index-based matching against the actual shape; documented this here so it doesn't recur.
+
+---
 ## Phase 10 — Slice 8a: Waitlist → tee-row drag-and-drop (2026-05-14)
 
 Frontend slice. Wires the waitlist rail (Slice 7) and the tee-row grid (Slice 2) into a working drag-and-drop pipeline that creates walk-in bookings via the existing `POST /api/golf/bookings` endpoint with `source="walk_in"` (Slice 7.5) and N GUEST participants.

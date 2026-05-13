@@ -1,10 +1,14 @@
-// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slices 2–8a.
+// Path: frontend/src/features/tee-sheet/components/TeeRow.tsx — Phase 10 Slices 2–8b.
 // Renders one Phase 8 tee row from a single TeeSheetSlotView. Slice 4 added
 // selection: row-level click fires onSelect (except blocked rows), price and
 // more_vert are stop-propagation buttons that stay inert until later slices
-// wire their popover/menu. Slice 8a adds drop-target wiring on empty player
-// cells: dragOver renders the brand-dashed "Drop here · {name}" visual,
-// drop fires the page-level mutation with the slot_datetime.
+// wire their popover/menu. Slice 8a added drop-target wiring on empty player
+// cells (waitlist → open cell). Slice 8b extends drag/drop to filled cells:
+// moveable bookings (RESERVED / CHECKED_IN) become drag sources, and the
+// drop target now accepts cross-row participant moves on both open and
+// filled cells. Same-row drags render an at-risk-toned rejection visual
+// and the drop is a no-op client-side (spec deferral; backend also
+// rejects via move_is_no_op).
 //
 // Backend gaps consciously NOT papered over:
 // - channel/source per booking → channel dot per player cell omitted
@@ -14,10 +18,21 @@
 import type { CSSProperties, DragEvent } from "react";
 
 import { Icon } from "../../../components/ui/Icon";
+import type { BookingStatus } from "../../../types/bookings";
 import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../../types/tee-sheet";
-import { DRAG_PAYLOAD_MIME, type DragPayload, type SlotDropTarget } from "../dnd/types";
-import { bookingParticipantNames, slotCapacity, timeKey } from "../sheet-shared";
+import {
+  DRAG_PAYLOAD_MIME,
+  type CellOccupant,
+  type DragPayload,
+  type ParticipantDragPayload,
+  type SlotDropTarget,
+} from "../dnd/types";
+import { slotCapacity, timeKey } from "../sheet-shared";
 import { isOptimisticBookingId } from "../use-create-walkin-booking";
+
+// Subset of BookingStatus values that allow drag-out. Mirrors backend
+// MOVEABLE_STATUSES in booking_move_service.py:50.
+const MOVEABLE_BOOKING_STATUSES: ReadonlyArray<BookingStatus> = ["reserved", "checked_in"];
 
 export type RowState = "open" | "booked" | "atrisk" | "blocked";
 
@@ -83,16 +98,38 @@ interface PlayerCellSpec {
   kind: "player" | "open";
   name?: string;
   cart?: boolean;
+  // Slice 8b — drag-source coordinates. Populated only on `player`
+  // cells; carries the booking_id + participant_id + status the page
+  // needs to emit a participant-move payload.
+  booking_id?: string;
+  participant_id?: string;
+  party_size?: number;
+  booking_status?: BookingStatus;
 }
 
 export function buildPlayerCells(slot: TeeSheetSlotView): PlayerCellSpec[] {
   const capacity = slotCapacity(slot);
   const cells: PlayerCellSpec[] = [];
   for (const booking of slot.bookings) {
-    const names = bookingParticipantNames(booking);
-    for (const name of names) {
+    const participants = booking.participants.length > 0
+      ? booking.participants
+      : Array.from({ length: booking.party_size }, (_, index) => ({
+          id: `${booking.id}-p${index}`,
+          display_name: `Player ${index + 1}`,
+          participant_type: "guest" as const,
+          is_primary: index === 0,
+        }));
+    for (const participant of participants) {
       if (cells.length >= capacity) break;
-      cells.push({ kind: "player", name, cart: Boolean(booking.cart_flag) });
+      cells.push({
+        kind: "player",
+        name: participant.display_name,
+        cart: Boolean(booking.cart_flag),
+        booking_id: booking.id,
+        participant_id: participant.id,
+        party_size: booking.party_size,
+        booking_status: booking.status,
+      });
     }
     if (cells.length >= capacity) break;
   }
@@ -152,7 +189,16 @@ export interface TeeRowProps {
   activeDropTarget?: SlotDropTarget | null;
   onDragEnterSlot?: (target: SlotDropTarget) => void;
   onDragLeaveSlot?: (target: SlotDropTarget) => void;
-  onDropOnSlot?: (target: SlotDropTarget, payload: DragPayload) => void;
+  onDropOnSlot?: (
+    target: SlotDropTarget,
+    payload: DragPayload,
+    occupant: CellOccupant | null,
+  ) => void;
+  // Slice 8b — participant drag source. When a filled player cell with a
+  // moveable booking is dragged, the row emits a participant payload via
+  // onParticipantDragStart, and clears via onParticipantDragEnd.
+  onParticipantDragStart?: (payload: ParticipantDragPayload) => void;
+  onParticipantDragEnd?: () => void;
 }
 
 export function TeeRow({
@@ -166,6 +212,8 @@ export function TeeRow({
   onDragEnterSlot,
   onDragLeaveSlot,
   onDropOnSlot,
+  onParticipantDragStart,
+  onParticipantDragEnd,
 }: TeeRowProps): JSX.Element | null {
   const state = rowStateFromDisplayStatus(slot.display_status);
 
@@ -186,15 +234,20 @@ export function TeeRow({
   // The row dims while the mutation resolves.
   const isOptimistic = slot.bookings.some((booking) => isOptimisticBookingId(booking.id));
 
-  // Slice 8a — drop-target eligibility: non-blocked rows accept waitlist
-  // drags into their empty player cells. The page passes the active drag
-  // payload down; the cells render the brand-dashed visual when targeted.
-  const dropEligible = !isBlocked && dragPayload !== null && onDropOnSlot !== undefined;
+  // Slice 8a/8b — drop-target eligibility & rejection.
+  // - Waitlist payload: open cells only.
+  // - Participant payload (cross-row): both open and filled cells.
+  // - Participant payload (same-row): every cell is "reject" — visual
+  //   short-circuit so the operator sees they can't drop here.
+  const rowKey = timeKey(slot.local_time);
   const dropTarget: SlotDropTarget = {
     kind: "slot",
     slot_datetime: slot.slot_datetime,
-    row_key: timeKey(slot.local_time),
+    row_key: rowKey,
   };
+  const sameRowDrag =
+    dragPayload?.kind === "participant" && dragPayload.source_row_key === rowKey;
+  const dropEnabled = !isBlocked && dragPayload !== null && onDropOnSlot !== undefined;
   const isActiveDropTarget =
     activeDropTarget !== null &&
     activeDropTarget !== undefined &&
@@ -284,18 +337,41 @@ export function TeeRow({
         </div>
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "stretch", position: "relative" }}>
-          {cells.map((cell, i) => (
-            <PlayerCell
-              key={i}
-              cell={cell}
-              dropEligible={dropEligible && cell.kind === "open"}
-              isActiveDropTarget={isActiveDropTarget && cell.kind === "open"}
-              dragLabel={dragLabelFor(dragPayload)}
-              onDragEnter={() => onDragEnterSlot?.(dropTarget)}
-              onDragLeave={() => onDragLeaveSlot?.(dropTarget)}
-              onDrop={(payload) => onDropOnSlot?.(dropTarget, payload)}
-            />
-          ))}
+          {cells.map((cell, i) => {
+            const dropMode = dropModeForCell(cell, dragPayload, dropEnabled, sameRowDrag);
+            const isMoveable =
+              cell.kind === "player" &&
+              cell.booking_status !== undefined &&
+              MOVEABLE_BOOKING_STATUSES.includes(cell.booking_status);
+            return (
+              <PlayerCell
+                key={i}
+                cell={cell}
+                cellIndex={i}
+                rowKey={rowKey}
+                slotDatetime={slot.slot_datetime}
+                dropMode={dropMode}
+                isActiveDropTarget={isActiveDropTarget && dropMode !== "none"}
+                dragLabel={dragLabelFor(dragPayload)}
+                isMoveable={isMoveable}
+                onDragEnter={() => onDragEnterSlot?.(dropTarget)}
+                onDragLeave={() => onDragLeaveSlot?.(dropTarget)}
+                onDrop={(payload, occupant) => {
+                  // Same-row reject is handled inside the cell — it never
+                  // calls onDrop. Defensive: cross-check at the row level.
+                  if (
+                    payload.kind === "participant" &&
+                    payload.source_row_key === rowKey
+                  ) {
+                    return;
+                  }
+                  onDropOnSlot?.(dropTarget, payload, occupant);
+                }}
+                onParticipantDragStart={onParticipantDragStart}
+                onParticipantDragEnd={onParticipantDragEnd}
+              />
+            );
+          })}
           {note && state === "atrisk" ? (
             <span
               style={{
@@ -388,89 +464,203 @@ export function TeeRow({
   );
 }
 
+// Drop mode per cell — the row decides; the cell renders accordingly.
+//   "none"   — no active drag, or row is blocked.
+//   "valid"  — drag is valid against this cell; renders the brand-dashed
+//              drop visual on hover.
+//   "reject" — drag is same-row (participant); renders the at-risk-toned
+//              rejection visual on hover; drop is a no-op.
+type CellDropMode = "none" | "valid" | "reject";
+
+function dropModeForCell(
+  cell: PlayerCellSpec,
+  dragPayload: DragPayload | null,
+  dropEnabled: boolean,
+  sameRowDrag: boolean,
+): CellDropMode {
+  if (!dropEnabled || !dragPayload) return "none";
+  if (sameRowDrag) return "reject";
+  if (dragPayload.kind === "waitlist") {
+    return cell.kind === "open" ? "valid" : "none";
+  }
+  // participant cross-row: open + filled cells are both targets.
+  return "valid";
+}
+
 interface PlayerCellProps {
   cell: PlayerCellSpec;
-  dropEligible?: boolean;
+  cellIndex: number;
+  rowKey: string;
+  slotDatetime: string;
+  dropMode?: CellDropMode;
   isActiveDropTarget?: boolean;
   dragLabel?: string | null;
+  isMoveable?: boolean;
   onDragEnter?: () => void;
   onDragLeave?: () => void;
-  onDrop?: (payload: DragPayload) => void;
+  onDrop?: (payload: DragPayload, occupant: CellOccupant | null) => void;
+  onParticipantDragStart?: (payload: ParticipantDragPayload) => void;
+  onParticipantDragEnd?: () => void;
 }
 
 function PlayerCell({
   cell,
-  dropEligible = false,
+  cellIndex,
+  rowKey,
+  slotDatetime,
+  dropMode = "none",
   isActiveDropTarget = false,
   dragLabel = null,
+  isMoveable = false,
   onDragEnter,
   onDragLeave,
   onDrop,
+  onParticipantDragStart,
+  onParticipantDragEnd,
 }: PlayerCellProps): JSX.Element {
   const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
-    if (!dropEligible) return;
+    if (dropMode === "none") return;
+    // For "reject" we still preventDefault so the browser doesn't bypass
+    // our onDrop (which is itself a no-op for same-row).
     event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
+    event.dataTransfer.dropEffect = dropMode === "valid" ? "move" : "none";
   };
 
   const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
-    if (!dropEligible) return;
+    if (dropMode === "none") return;
     event.preventDefault();
     onDragEnter?.();
   };
 
   const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
-    if (!dropEligible) return;
-    // Only fire leave when the drag actually exits the cell, not when it
-    // moves between child elements of the same cell.
+    if (dropMode === "none") return;
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     onDragLeave?.();
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-    if (!dropEligible || !onDrop) return;
+    if (dropMode === "none") return;
     event.preventDefault();
     event.stopPropagation();
+    if (dropMode === "reject") {
+      // Same-row reject — drop is a no-op. The row-level handler also
+      // double-guards (see TeeRow body) per ENGINEERING_STANDARDS §1
+      // defence-in-depth.
+      return;
+    }
+    if (!onDrop) return;
     const raw = event.dataTransfer.getData(DRAG_PAYLOAD_MIME);
     if (!raw) return;
     try {
       const payload = JSON.parse(raw) as DragPayload;
-      onDrop(payload);
+      const occupant: CellOccupant | null =
+        cell.kind === "player" &&
+        cell.booking_id !== undefined &&
+        cell.participant_id !== undefined &&
+        cell.party_size !== undefined
+          ? {
+              booking_id: cell.booking_id,
+              participant_id: cell.participant_id,
+              display_name: cell.name ?? "Player",
+              party_size: cell.party_size,
+            }
+          : null;
+      onDrop(payload, occupant);
     } catch {
-      // Malformed payload — ignore. Drop event has been consumed.
+      // Malformed payload — ignore.
     }
   };
 
-  if (cell.kind === "open") {
-    if (isActiveDropTarget && dragLabel !== null) {
-      return (
-        <div
-          data-testid="drop-target-active"
-          aria-dropeffect="move"
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          style={{
-            ...cellStyleBase,
-            border: "1px dashed var(--gl-brand)",
-            borderLeft: "1px dashed var(--gl-brand)",
-            background: "color-mix(in oklab, var(--gl-brand) 12%, transparent)",
-            color: "var(--gl-brand)",
-            margin: "2px 2px 2px 0",
-            borderRadius: "var(--gl-radius-xs)",
-          }}
-        >
-          <Icon name="north_east" size={12} color="var(--gl-brand)" />
-          <span className="gl-mono" style={{ fontSize: 10.5 }}>
-            Drop here · {dragLabel}
-          </span>
-        </div>
-      );
+  const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
+    if (
+      !isMoveable ||
+      cell.booking_id === undefined ||
+      cell.participant_id === undefined ||
+      cell.party_size === undefined
+    ) {
+      event.preventDefault();
+      return;
     }
+    const payload: ParticipantDragPayload = {
+      kind: "participant",
+      booking_id: cell.booking_id,
+      participant_id: cell.participant_id,
+      display_name: cell.name ?? "Player",
+      party_size: cell.party_size,
+      source_slot_datetime: slotDatetime,
+      source_row_key: rowKey,
+      source_cell_index: cellIndex,
+    };
+    event.dataTransfer.setData(DRAG_PAYLOAD_MIME, JSON.stringify(payload));
+    event.dataTransfer.effectAllowed = "move";
+    event.currentTarget.setAttribute("data-dragging", "true");
+    onParticipantDragStart?.(payload);
+  };
+
+  const handleDragEnd = (event: DragEvent<HTMLDivElement>): void => {
+    event.currentTarget.removeAttribute("data-dragging");
+    onParticipantDragEnd?.();
+  };
+
+  // ----- Active drop-target rendering (overrides the cell content) -----
+  if (isActiveDropTarget && dragLabel !== null && dropMode === "valid") {
     return (
       <div
-        data-testid={dropEligible ? "drop-target-eligible" : undefined}
+        data-testid="drop-target-active"
+        aria-dropeffect="move"
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={{
+          ...cellStyleBase,
+          border: "1px dashed var(--gl-brand)",
+          borderLeft: "1px dashed var(--gl-brand)",
+          background: "color-mix(in oklab, var(--gl-brand) 12%, transparent)",
+          color: "var(--gl-brand)",
+          margin: "2px 2px 2px 0",
+          borderRadius: "var(--gl-radius-xs)",
+        }}
+      >
+        <Icon name="north_east" size={12} color="var(--gl-brand)" />
+        <span className="gl-mono" style={{ fontSize: 10.5 }}>
+          Drop here · {dragLabel}
+        </span>
+      </div>
+    );
+  }
+
+  if (isActiveDropTarget && dropMode === "reject") {
+    return (
+      <div
+        data-testid="drop-target-reject"
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={{
+          ...cellStyleBase,
+          border: "1px dashed var(--gl-state-atrisk)",
+          borderLeft: "1px dashed var(--gl-state-atrisk)",
+          background: "color-mix(in oklab, var(--gl-state-atrisk) 4%, transparent)",
+          color: "var(--gl-text-secondary)",
+          margin: "2px 2px 2px 0",
+          borderRadius: "var(--gl-radius-xs)",
+        }}
+      >
+        <Icon name="block" size={11} color="var(--gl-state-atrisk)" />
+        <span className="gl-mono" style={{ fontSize: 10.5 }}>
+          Same-row reorder not yet supported
+        </span>
+      </div>
+    );
+  }
+
+  // ----- Default cell rendering (open vs filled) -----
+  if (cell.kind === "open") {
+    return (
+      <div
+        data-testid={dropMode === "valid" ? "drop-target-eligible" : undefined}
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -486,9 +676,20 @@ function PlayerCell({
   }
   return (
     <div
+      draggable={isMoveable}
+      onDragStart={isMoveable ? handleDragStart : undefined}
+      onDragEnd={isMoveable ? handleDragEnd : undefined}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-testid={cell.participant_id ? `player-cell-${cell.participant_id}` : undefined}
+      data-dropmode={dropMode}
+      data-moveable={isMoveable ? "true" : undefined}
       style={{
         ...cellStyleBase,
         background: "var(--gl-surface-raised)",
+        cursor: isMoveable ? "grab" : "default",
       }}
     >
       {/* FROZEN — backend gap. Do not extend, branch, or duplicate.
