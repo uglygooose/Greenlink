@@ -58,6 +58,10 @@
   --gl-text-onbrand:   var(--gl-parchment);
   --gl-text-onaccent:  var(--gl-parchment);
 
+  /* Control thumbs (Switch, future Toggle, etc.) — must stay light against
+     both the brand and the stone track in both themes. */
+  --gl-control-thumb:  #ffffff;
+
   --gl-border:         var(--gl-stone);
   --gl-border-strong:  #a8a394;
   --gl-border-subtle:  #d8d3c2;
@@ -155,6 +159,8 @@
   --gl-text-secondary: #9c9587;
   --gl-text-onbrand:   #ece8da;
   --gl-text-onaccent:  #ece8da;
+
+  --gl-control-thumb:  #ece8da;
 
   --gl-border:         #2e2a22;
   --gl-border-strong:  #514a3c;

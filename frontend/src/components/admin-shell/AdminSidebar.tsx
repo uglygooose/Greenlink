@@ -61,10 +61,10 @@ const NAV_GROUPS: NavGroupSpec[] = [
 
 function NavGroup({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 4 }}>
       <div
         style={{
-          padding: "8px 10px 4px 10px",
+          padding: "6px 10px 3px 10px",
           fontSize: 10,
           color: "var(--gl-text-secondary)",
           letterSpacing: "0.12em",
@@ -87,12 +87,12 @@ function NavItem({ spec }: NavItemProps): JSX.Element {
   const sharedStyle = (active: boolean): React.CSSProperties => ({
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    padding: "7px 10px",
+    gap: 9,
+    padding: "6px 10px",
     borderRadius: 5,
     color: active ? "var(--gl-text-primary)" : "var(--gl-text-secondary)",
     background: active ? "var(--gl-surface-raised)" : "transparent",
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: active ? 500 : 400,
     textDecoration: "none",
     borderLeft: active ? "2px solid var(--gl-brand)" : "2px solid transparent",
@@ -112,7 +112,7 @@ function NavItem({ spec }: NavItemProps): JSX.Element {
           cursor: "not-allowed",
         }}
       >
-        <Icon name={spec.icon} size={16} color={iconColor(false)} />
+        <Icon name={spec.icon} size={15} color={iconColor(false)} />
         <span style={{ flex: 1 }}>{spec.label}</span>
         {spec.comingPhase ? (
           <span
@@ -142,7 +142,7 @@ function NavItem({ spec }: NavItemProps): JSX.Element {
     >
       {({ isActive }) => (
         <>
-          <Icon name={spec.icon} size={16} color={iconColor(isActive)} />
+          <Icon name={spec.icon} size={15} color={iconColor(isActive)} />
           <span style={{ flex: 1 }}>{spec.label}</span>
           {spec.badge ? (
             <span
@@ -181,10 +181,10 @@ export function AdminSidebar(): JSX.Element {
     <aside
       aria-label="Primary navigation"
       style={{
-        width: 224,
+        width: 220,
         background: "var(--gl-surface-2)",
         borderRight: "1px solid var(--gl-border-subtle)",
-        padding: "20px 12px",
+        padding: "16px 10px",
         display: "flex",
         flexDirection: "column",
         gap: 4,
@@ -193,14 +193,14 @@ export function AdminSidebar(): JSX.Element {
     >
       <div
         style={{
-          padding: "8px 10px 18px 10px",
+          padding: "6px 10px 16px 10px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
-        <Wordmark size={20} color="var(--gl-text-primary)" />
-        <Icon name="unfold_more" size={16} color="var(--gl-text-secondary)" />
+        <Wordmark size={18} color="var(--gl-text-primary)" />
+        <Icon name="unfold_more" size={14} color="var(--gl-text-secondary)" />
       </div>
 
       <nav aria-label="Admin sections" style={{ display: "flex", flexDirection: "column" }}>
@@ -213,20 +213,20 @@ export function AdminSidebar(): JSX.Element {
         ))}
       </nav>
 
-      <div style={{ marginTop: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ marginTop: "auto", padding: 6, display: "flex", flexDirection: "column", gap: 8 }}>
         <NavItem spec={{ icon: "settings", label: "Settings", to: "/admin/settings" }} />
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
-            padding: "8px 8px",
-            borderRadius: 6,
+            padding: "6px 8px",
+            borderRadius: 5,
             background: "var(--gl-surface-raised)",
             border: "1px solid var(--gl-border-subtle)",
           }}
         >
-          <Avatar initials={initials} />
+          <Avatar initials={initials} size={26} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -241,7 +241,7 @@ export function AdminSidebar(): JSX.Element {
             </div>
             <div
               style={{
-                fontSize: 10.5,
+                fontSize: 10,
                 color: "var(--gl-text-secondary)",
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",

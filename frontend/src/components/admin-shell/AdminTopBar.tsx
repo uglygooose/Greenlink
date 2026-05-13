@@ -1,6 +1,6 @@
-// Path: frontend/src/components/admin-shell/AdminTopBar.tsx — Phase 7 admin chrome.
-// Replaces the legacy frontend/src/components/shell/AdminTopbar.tsx (deleted in
-// Phase 7). Ports the prototype's 64px top bar with title + search + actions.
+// Path: frontend/src/components/admin-shell/AdminTopBar.tsx — Phase 8 admin chrome.
+// 52-px topbar with breadcrumb above title + search + actions. Replaces the
+// Phase 7 64-px topbar after Slice 1 reconciliation against the Phase 8 design.
 import type { ReactNode } from "react";
 
 import { Icon } from "../ui/Icon";
@@ -19,31 +19,33 @@ export function AdminTopBar({
   return (
     <header
       style={{
-        height: 64,
+        height: 52,
         borderBottom: "1px solid var(--gl-border-subtle)",
         display: "flex",
         alignItems: "center",
-        padding: "0 28px",
-        gap: 20,
+        padding: "0 20px",
+        gap: 16,
         background: "var(--gl-surface)",
         flexShrink: 0,
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
-              fontSize: 11,
+              gap: 4,
+              fontSize: 10,
               color: "var(--gl-text-secondary)",
               letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              marginBottom: 3,
             }}
           >
             {breadcrumbs.map((crumb, i) => (
-              <span key={`${crumb}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                {i > 0 ? <Icon name="chevron_right" size={12} color="var(--gl-text-secondary)" /> : null}
+              <span key={`${crumb}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                {i > 0 ? <Icon name="chevron_right" size={11} color="var(--gl-text-secondary)" /> : null}
                 <span>{crumb}</span>
               </span>
             ))}
@@ -52,19 +54,18 @@ export function AdminTopBar({
         <div
           className="gl-serif"
           style={{
-            fontSize: 22,
+            fontSize: 19,
             fontWeight: 500,
-            letterSpacing: "-0.01em",
-            marginTop: breadcrumbs && breadcrumbs.length > 0 ? 2 : 0,
+            letterSpacing: "-0.012em",
           }}
         >
           {title}
         </div>
       </div>
 
-      <div style={{ flex: 1, maxWidth: 420, marginLeft: 24 }}>
-        <label className="gl-input" style={{ paddingLeft: 12, height: 36 }}>
-          <Icon name="search" size={16} color="var(--gl-text-secondary)" />
+      <div style={{ flex: 1, maxWidth: 320, marginLeft: 16 }}>
+        <label className="gl-input" style={{ paddingLeft: 10, height: 30, fontSize: 12 }}>
+          <Icon name="search" size={14} color="var(--gl-text-secondary)" />
           <input
             type="search"
             aria-label="Search"
@@ -75,41 +76,40 @@ export function AdminTopBar({
               background: "transparent",
               color: "inherit",
               font: "inherit",
-              fontSize: 13,
+              fontSize: 12,
               padding: 0,
             }}
             placeholder={searchPlaceholder}
           />
-          <span className="gl-kbd" aria-hidden="true">
+          <span className="gl-kbd" style={{ height: 16, fontSize: 10 }} aria-hidden="true">
             ⌘K
           </span>
         </label>
       </div>
 
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-        <button type="button" className="gl-btn gl-btn--secondary" data-size="sm" disabled aria-label="New booking — ships in Phase 10">
-          <Icon name="add" size={14} />
-          New booking
-        </button>
         <button
           type="button"
           className="gl-btn gl-btn--secondary"
           data-size="sm"
-          style={{ padding: "0 10px" }}
+          style={{ height: 28, padding: "0 8px" }}
           disabled
           aria-label="Notifications — ships in Phase 9E"
         >
-          <Icon name="notifications" size={16} />
+          <Icon name="notifications" size={14} />
         </button>
         <button
           type="button"
           className="gl-btn gl-btn--secondary"
           data-size="sm"
-          style={{ padding: "0 10px" }}
-          aria-label="Help"
+          style={{ height: 28, padding: "0 8px" }}
           disabled
+          aria-label="Shortcuts — ships in Phase 10 (tee sheet)"
+          title="Press ? for shortcuts"
         >
-          <Icon name="help_outline" size={16} />
+          <span className="gl-kbd" style={{ height: 16, fontSize: 10 }} aria-hidden="true">
+            ?
+          </span>
         </button>
       </div>
     </header>
