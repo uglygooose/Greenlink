@@ -18,6 +18,44 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 cleanup / Slice 11b: frontend — SlotIntervalToggle wired to the Slice 11.5 backend (2026-05-14)
+
+Frontend slice. Closes the Phase 10 cleanup wave by wiring the `SlotIntervalToggle` segmented control into the date strip and threading `intervalMinutes` through the API client + hook + query key. Slice 11.5 shipped the backend route earlier the same day; this slice consumes it. Override is page-state only — no URL or localStorage persistence in v1.
+
+- **Scope**:
+  - `frontend/src/features/tee-sheet/components/SlotIntervalToggle.tsx` (new) — 4-button segmented control wrapping the Slice 1 `Segmented` primitive with values 6 / 8 / 10 / 12. Group `aria-label="Slot interval"`; per-button `aria-checked` (the primitive's existing contract). Inherits `Segmented`'s charcoal-bg selected chrome; mono labels via `className="gl-mono"`.
+  - `frontend/src/api/operations.ts` — `fetchTeeSheetDay` accepts optional `intervalMinutes`; appends `&interval_minutes=N` to the query string when supplied.
+  - `frontend/src/features/tee-sheet/hooks.ts` — `useTeeSheetDayQuery` + `teeSheetDayQueryOptions` accept `intervalMinutes`. `teeSheetKeys.day` gains a 6th positional slot; null/undefined collapses to the literal `"default"` sentinel.
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` — new `intervalOverride` page state (null by default). Threaded into the hook call. `DateStrip` extended with `activeInterval` + `onIntervalChange` props; renders `SlotIntervalToggle` on its right side. Selected button reads from `day?.interval_minutes ?? 8` (truth-from-server). The onChange handler sets `intervalOverride` AND clears `selectedSlotKey` (slot times no longer align across intervals).
+  - `frontend/src/features/tee-sheet/components/SlotIntervalToggle.test.tsx` (new) — 4 tests: 4-button render, aria-checked driven by `selectedValue`, onChange numeric value, aria-label.
+  - `frontend/src/features/tee-sheet/hooks.test.ts` — extended: existing canonical-key test asserts the new `intervalMinutes: undefined` shape in the API-client call; +2 new tests for the `"default"` sentinel and explicit-number key composition.
+  - `frontend/src/pages/admin-tee-sheet-page.test.tsx` — extended: mock now forwards args so hook-call params are observable; +4 Slice 11b tests (toggle mounts, truth-from-server highlight, click re-calls the hook with the new param, click clears row selection).
+  - `docs/DRIFT_LOG.md` — interval_minutes gap entry's Status updated to mark Slice 11b shipped (previously listed Slice 11b as the remaining follow-up).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/components/SlotIntervalToggle.tsx` (created)
+  - `frontend/src/features/tee-sheet/components/SlotIntervalToggle.test.tsx` (created)
+  - `frontend/src/api/operations.ts` (`intervalMinutes` param + query-string append)
+  - `frontend/src/features/tee-sheet/hooks.ts` (signature + query-key sentinel)
+  - `frontend/src/features/tee-sheet/hooks.test.ts` (extended)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (integration into `DateStrip`)
+  - `frontend/src/pages/admin-tee-sheet-page.test.tsx` (extended; mock now forwards args)
+  - `docs/DRIFT_LOG.md` (resolution updated)
+  - `docs/PHASE_LOG.md` (this entry — added in a separate follow-up commit per the pre-Phase-11 documentation audit)
+- **Outcome**: Frontend 576 → 586 tests (+10) across 72 → 73 files (+1). Lint clean (13 baseline warnings preserved). Typecheck clean. Backend untouched at 332. No new dependencies. No hex literals in new files. FROZEN count unchanged at 13.
+- **Decisions made**:
+  - **Query-key sentinel `"default"` for omitted `intervalMinutes`.** `teeSheetKeys.day(..., teeId, intervalMinutes)` collapses null/undefined to the literal string `"default"`. PortfolioStrip's per-course summary queries (which never pass `intervalMinutes`) and the page's main day query (when `intervalOverride === null`) produce identical keys — Slice 3 cache reuse is preserved. Numeric overrides get their own cache slot. Verified by an explicit test in `hooks.test.ts`.
+  - **`aria-checked` over `data-selected` on the Segmented primitive.** The spec mentioned `data-selected` as a possible signal; the Slice 1 `Segmented` exposes `aria-checked` on each `role="radio"` button instead. Followed the primitive's existing contract rather than extending Slice 1 for tests. The spec authorised this via the `(or whatever Segmented exposes)` parenthetical.
+  - **Override is page-state only.** No URL search param, no localStorage. Refresh resets to the club's default. If product wants persistence later, that's a separate follow-up — adds localStorage at the page level or a backend preference column; neither is in scope for v1.
+  - **Truth-from-server for the selected button.** The highlighted `aria-checked` segment is driven by `day?.interval_minutes` (the response's resolved value), not by `intervalOverride` (the request-side state). A stale override can't linger if the backend coerces or normalises the value. Loading-state fallback is `8` per Phase 8 default.
+  - **Interval change clears row selection.** Slot times no longer align across intervals (e.g. `06:32` exists at 8m but not at 10m). The page's `onIntervalChange` callback sets the override AND clears `selectedSlotKey` in one call.
+- **Follow-ups created**:
+  - None. Toggle is complete. Persistence is explicitly out of scope (see Decisions).
+- **Notes**:
+  - Resolves the `interval_minutes` gap originally documented in DRIFT_LOG 2026-05-14 (Slice 11 reconnaissance entry). The Status field on that entry now reads "Resolved: Slice 11.5 (backend) + Slice 11b (frontend, 2026-05-14)".
+  - Closes the Phase 10 cleanup wave (11.5 backend + 11b frontend). Phase 10 surface is feature-complete through Slice 11; Phase 11 owns tournament mode, Phase 12 owns mobile surfaces (DRIFT_LOG 2026-05-14).
+  - The Slice 11b implementation commit (`4eddb82`) only updated DRIFT_LOG.md among the docs; this PHASE_LOG entry is added in a separate follow-up commit per the pre-Phase-11 documentation audit.
+
+---
 ## Phase 10 cleanup / Slice 11.5: backend — interval_minutes query param on GET /tee-sheet/day (2026-05-14)
 
 Backend-only mini-slice. Closes the gap recorded in DRIFT_LOG 2026-05-14 ("GET /api/golf/tee-sheet/day has NO `interval_minutes` query param; slot interval is server-resolved only"). Slice 11 shipped density-only after the recon discovered the spec premise was wrong; Slice 11.5 makes the override path real so a future Slice 11b can ship the frontend `SlotIntervalToggle` against a working backend contract.
