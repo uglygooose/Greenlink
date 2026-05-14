@@ -17,6 +17,15 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — Operational: backend tests share the public schema; never run two pytest invocations concurrently
+
+- **Surfaced by**: Phase 10 Slice 8.5 full-suite validation. The first `pytest tests/` run reported 67 failures + 13 errors with symptoms like `psycopg.errors.UndefinedTable: relation "people" does not exist` even though the alembic log showed every migration ran cleanly.
+- **Claim**: A failing full backend suite implies a code or migration regression in the slice under review.
+- **Reality**: The `db_session` fixture in `backend/tests/conftest.py:135-154` calls `_reset_public_schema(engine)` at fixture setup AND teardown. Every test starts by `DROP SCHEMA public CASCADE` + `CREATE SCHEMA public`, then re-runs every alembic migration. If a second pytest invocation is running concurrently against the same `GREENLINK_TEST_DATABASE_URL`, each suite's per-test schema reset clobbers the other suite's freshly-built tables mid-execution. The "relation does not exist" errors are symptoms of this race, not migration breakage.
+- **Evidence**: Confirmed locally — a focused rerun of representative failed tests (`test_same_time_bookings_are_projected_into_separate_lane_rows`) passed in isolation. `ps -ef | grep pytest` showed a still-running prior background pytest job. After `TaskStop` on the racing job, the focused suite passed and the full suite passed end-to-end with exit code 0.
+- **Resolution (operational guidance)**: Never run two pytest invocations concurrently against the same DB. Before launching a long-running full-suite run, check `ps -ef | grep pytest | grep -v grep` for in-flight jobs. If you see widespread `UndefinedTable` / `relation does not exist` errors across unrelated tests mid-suite, check for a backgrounded prior run BEFORE debugging the migration. This is not a code drift — it is a property of the shared-schema test harness that any future slice running the full backend suite needs to respect.
+- **Status**: Standing operational note. Future-phase improvement candidate: use a per-process schema name or per-worker DB to make concurrent suites safe (`pytest-xdist` would also surface this, so any move to parallel pytest workers must address the same race first).
+---
 ### 2026-05-14 — BookingMoveService splits multi-participant bookings on participant moves; consumers must use the response booking_id
 
 - **Surfaced by**: Phase 10 Slice 8b orchestrator implementation review (Restore handler).
