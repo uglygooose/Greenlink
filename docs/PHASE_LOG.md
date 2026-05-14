@@ -471,6 +471,211 @@ Backend mini-slice. One new value on an existing native Postgres ENUM type. Prer
   - Service-layer scan (`grep "BookingSource\." backend/app/`): 9 reference sites, all passthroughs or `== MEMBER_PORTAL` gates. Confirms no exhaustive enumeration that would silently misroute WALK_IN.
 
 ---
+## Phase 10 — Slice 7: Walk-in waitlist rail (visual) (2026-05-13)
+
+Walk-in waitlist rail chrome on the right of the tee-sheet grid. Ships against a Path-1 empty backend stub — no `Waitlist` model, no `/api/golf/waitlist` endpoint, no suggestion engine. The chrome + drop targets render so Slice 8a can wire the drag interaction; the moment the backend lands the waitlist entity, the rail lights up with zero frontend changes downstream of the hook.
+
+- **Scope**:
+  - New `WaitlistRail.tsx` (240 lines) — column container mounted to the right of the row list; loading + empty + populated states; footer running-total of fee amounts.
+  - New `WaitlistCard.tsx` (113 lines) — per-entry card with party name, party size, source label, since-time, optional auto-fit suggestion strip. `Send to POS` + `Add` buttons remain stub chrome.
+  - New `use-waitlist.ts` (63 lines) — typed hook `useWaitlist(params): { waitlist, loading, error }`; returns empty data unconditionally; carries FROZEN annotations naming the missing backend entities.
+  - Page integration: `admin-tee-sheet-page.tsx` mounts the rail to the right of the row list inside a flex row.
+- **Files touched** (9 files, +737 / -34):
+  - `docs/DRIFT_LOG.md` (+20 — waitlist Path-1 stub entry)
+  - `frontend/src/components/admin-shell/shortcuts-context.test.tsx` (+8)
+  - `frontend/src/features/tee-sheet/components/WaitlistCard.tsx` (new, 113 lines) + `WaitlistCard.test.tsx` (new, 78 lines)
+  - `frontend/src/features/tee-sheet/components/WaitlistRail.tsx` (new, 240 lines) + `WaitlistRail.test.tsx` (new, 110 lines)
+  - `frontend/src/features/tee-sheet/use-waitlist.ts` (new, 63 lines)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (+74 / -34) + `admin-tee-sheet-page.test.tsx` (+65)
+- **Outcome**: Waitlist rail mounted, empty by default. 4 FROZEN logical gaps annotated (5 line matches): `use-waitlist.ts:6` (header) + `:51` (swap-point inside `synthesizeStubWaitlist()`), `WaitlistCard.tsx:99` (suggestion strip; line 136 at HEAD), `WaitlistRail.tsx:43` (footer running-total; line 53 at HEAD), plus a meta-reference in `WaitlistRail.tsx` header. FROZEN count: 6 → 11.
+- **Decisions made**:
+  - **Path 1 — chrome against empty stub** (vs Path 2 — defer the rail or Path 3 — backend-extension-first). The rail chrome and drop targets are what Slice 8a needs; the suggestion engine ("Fits 06:46 · 2 slots") is itself a product decision (capacity policy, party-mix rules, time-of-day preferences) unscoped for Umhlali's actual walk-in flow. Path 3 was rejected because building the suggestion engine pre-emptively is speculative scope against an unknown product decision; the rail delivers value today without it. See DRIFT_LOG 2026-05-13 — "Slice 7 waitlist rail ships against a Path-1 empty stub".
+  - **Three concrete backend gaps named in the FROZEN annotations**: no `Waitlist` model, no `/api/golf/waitlist` endpoint, no `BookingSource.WALK_IN` enum value. Slice 7.5 (the very next commit pair) addresses the third; the first two remain open.
+- **Follow-ups created**:
+  - DRIFT_LOG 2026-05-13 — "Slice 7 waitlist rail ships against a Path-1 empty stub".
+  - 5 new FROZEN line matches across 4 logical gap-annotations (see above).
+  - Immediately spawned Slice 7.5 (the `BookingSource.WALK_IN` enum addition) — the backend-only mini-slice that closes the third named gap so Slice 8a can emit walk-in bookings with the right source value.
+- **Notes**:
+  - Slice 7 establishes the FROZEN-with-named-gap pattern: each annotation names the missing entity (model / endpoint / enum value) so the future backend slice has a starting point.
+  - The rail's `Send to POS` and `Add` buttons stay as Phase 8 chrome stubs until POS integration ships in a later phase.
+
+---
+## Phase 10 — Slice 6: Shortcut help modal (shared) + tee-sheet wiring (2026-05-13)
+
+Shared `ShortcutHelpModal` primitive + the shell-bridge that lets pages register their shortcut maps with the topbar's "?" affordance. Codifies the aria-modal overlay coordination contract (modal > popover > selection) that all later slices honour.
+
+- **Scope (main commit `6569bad`)**:
+  - New `ShortcutHelpModal.tsx` (330 lines) — `role="dialog"` + `aria-modal="true"`; Esc + backdrop dismiss; renders grouped shortcut catalogs.
+  - New shell context `shortcuts-context.tsx` (54 lines) — pages register `openShortcuts` handler in a `useEffect` on mount; topbar reads via `useShortcuts()`.
+  - `AdminTopBar.tsx`: optional `onOpenShortcuts?: () => void` prop; the "?" chip enables when supplied.
+  - `AdminLayout.tsx`: wraps with `<ShortcutsProvider>`; threads `hasOpenHandler ? openShortcuts : undefined` to the topbar.
+  - `PricePopover.tsx` (Slice 5's component): added the aria-modal deferral check (defers when a higher-tier `[role="dialog"][aria-modal="true"]` is mounted).
+  - New `shortcuts.ts` (49 lines) — tee-sheet shortcut catalog data shape; the Phase 8 keyboard model.
+  - `SelectionFooter.tsx`: "?" affordance fires the page's `openShortcuts` callback.
+  - Page integration: `shortcutsOpen` state + `?` keydown handler; escape priority "modal > popover > selection" enforced via the aria-modal DOM signal + page-level ref flags.
+- **Scope (follow-up `35e965c`)**:
+  - DRIFT_LOG amended to state the aria-modal contract as a three-rule explicit primitive so Slice 7+ overlay work doesn't re-derive the layering rule. Modal-tier sets `aria-modal="true"` and runs unconditionally; non-modal tier defers via `document.querySelector('[role="dialog"][aria-modal="true"]')`; page-level handlers read ref flags.
+- **Files touched** (main + follow-up, 14 files, +927 / -32 total):
+  - `docs/DRIFT_LOG.md` (+18 main + 8 follow-up — two architectural entries)
+  - `frontend/src/components/admin-shell/AdminTopBar.tsx` (+18)
+  - `frontend/src/components/admin-shell/shortcuts-context.tsx` (new, 54 lines) + `shortcuts-context.test.tsx` (new, 90 lines)
+  - `frontend/src/components/ui/PricePopover.tsx` (aria-modal deferral check, +9)
+  - `frontend/src/components/ui/ShortcutHelpModal.tsx` (new, 330 lines) + `ShortcutHelpModal.test.tsx` (new, 147 lines)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.tsx` (+19) + `SelectionFooter.test.tsx` (+16)
+  - `frontend/src/features/tee-sheet/shortcuts.ts` (new, 49 lines)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (+78) + `admin-tee-sheet-page.test.tsx` (+101)
+  - `frontend/src/routes/admin-layout.tsx` (+21)
+- **Outcome**: Modal mounts on `?` keypress; topbar "?" chip works once the page registers its handler; popover defers correctly when modal is open; selection bails when popover or modal is open. Composing new overlays requires zero changes to existing ones — the DOM signal pattern is the load-bearing primitive. Two DRIFT_LOG entries.
+- **Decisions made**:
+  - **aria-modal DOM signal as the coordination primitive** (the standing contract). `document.addEventListener` listeners fire in registration order; `stopImmediatePropagation` only halts later listeners. Building a shared dismiss-stack registry was rejected as over-engineered. The aria-modal DOM query at esc-time achieves the spec's priority order with no shared state and no rediscovery. See DRIFT_LOG 2026-05-13 — "Slice 6 esc priority enforced via aria-modal DOM signal in PricePopover" and follow-up's three-rule restatement.
+  - **`ShortcutsProvider` context for the shell→page bridge**. Static route meta couldn't carry runtime-derived callbacks; extending `AdminTopBarProps` with an optional `onOpenShortcuts` + a context `setOpenHandler` register pattern keeps the shell ↔ page coupling minimal and reusable. Future cross-cutting chrome actions that need page-derived state can follow the same shape. See DRIFT_LOG 2026-05-13 — "Slice 6 shell→page bridge".
+- **Follow-ups created**:
+  - The aria-modal contract is now a standing architectural primitive; every overlay shipped after Slice 6 honours it without rediscovery.
+- **Notes**:
+  - The three esc priority tiers (modal / popover / selection) recur in every later slice that ships an overlay. Slice 8a/b's drag overlays sit below the modal/popover tier; Slice 9a's lock-conflict info uses a popover-tier `role="dialog"` without `aria-modal`.
+
+---
+## Phase 10 — Slice 5: Pricing popover (shared) + tee-sheet wiring (2026-05-13)
+
+Shared `PricePopover` primitive in `frontend/src/components/ui/` + tee-sheet integration. Click a row's price → popover opens anchored to the button, shows the additive breakdown stub (one `base` line per booking), dismisses on outside click or Esc.
+
+- **Scope**:
+  - New `PricePopover.tsx` (387 lines) — outside-click + Esc dismiss; anchor-positioned at a button; renders `kind: "base" | "premium" | "addon" | "channel" | "discount"` line types in additive layout. Shared primitive — usable by future variance-style popovers (close-day, etc.).
+  - New `use-price-breakdown.ts` (108 lines) hook — synthesises a one-line `base` breakdown per booking from the existing `TeeSheetBookingSummary.fee_label / fee_amount / fee_currency` (backend has no additive endpoint yet). FROZEN annotation at `:29` names the swap-point.
+  - `TeeRow.tsx`: price button now fires both `onSelect` (matching Phase 8) and `onPriceClick(slotKey, anchorEl)`.
+  - `admin-tee-sheet-page.tsx`: page state `pricePopover: { slotKey, anchorEl } | null`; click handler sets state; Esc priority "popover > selection" via a `useRef` flag the page-level handler reads.
+- **Files touched** (8 files, +1030 / -17):
+  - `docs/DRIFT_LOG.md` (+9 — price popover Path-1 stub entry)
+  - `frontend/src/components/ui/PricePopover.tsx` (new, 387 lines) + `PricePopover.test.tsx` (new, 272 lines)
+  - `frontend/src/features/tee-sheet/use-price-breakdown.ts` (new, 108 lines)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (+20) + `TeeRow.test.tsx` (+36)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (+75) + `admin-tee-sheet-page.test.tsx` (+140)
+- **Outcome**: Pricing popover renders against the existing single-fee backend shape. 1 new FROZEN annotation (`use-price-breakdown.ts:29`) marks the swap-point for a future additive backend endpoint. FROZEN count: 5 → 6.
+- **Decisions made**:
+  - **Path-1 single-line stub, not invented backend additive breakdown.** The Phase 8 design renders `Base + Premium + Addon + Channel + Discount = Total`; the backend models pricing as competing `PricingCandidate`s with absolute prices, not additive deltas. Synthesising deltas client-side would require subtracting two candidates — FE business logic, forbidden by ENGINEERING_STANDARDS.md §1. The hook ships a one-line `base` per booking; the popover renders whatever shape the hook returns. When backend exposes either `breakdown: list[PriceLine]` on `TeeSheetBookingSummary` or a dedicated `GET /tee-sheet/slot-breakdown`, the hook swaps without touching the popover or the page. See DRIFT_LOG 2026-05-13 — "Slice 5 price popover ships against a Path-1 single-line stub".
+  - **Channel renders as `—`** because `TeeSheetBookingSummary.source` doesn't exist (DRIFT_LOG 2026-05-13 Slice 2 channel-tag gap). Slice 7.5 later adds `WALK_IN` to the `BookingSource` enum, but the value is still not surfaced on the day response.
+  - **Price-click sets selection AND opens popover** (matches Phase 8 prototype). Reverses Slice 4's stop-propagation no-op — the Slice 4 DRIFT_LOG flagged this as Slice 5's call.
+- **Follow-ups created**:
+  - 1 new FROZEN at `use-price-breakdown.ts:29` — backend additive breakdown endpoint.
+  - DRIFT_LOG 2026-05-13 — "Slice 5 price popover ships against a Path-1 single-line stub".
+- **Notes**:
+  - The aria-modal contract that Slice 6 later codifies grows out of Slice 5's popover: at this slice, the popover registers a document-level Escape listener; Slice 6 adds the `aria-modal="true"` check to defer to higher-tier dialogs.
+
+---
+## Phase 10 — Slice 4: Row selection + selection footer (2026-05-13)
+
+Single-row selection state added to the tee-sheet page. Click a non-blocked row → row highlights and `SelectionFooter` hydrates with the slot's local time + state. Esc clears. Course or date change clears silently. Mounts `SelectionFooter` at the page level.
+
+- **Scope**:
+  - New `SelectionFooter.tsx` (114 lines) — page-anchored footer that shows the selected slot's time + state pill; later slices add lock line (Slice 9a) + action buttons (Slice 10).
+  - `TeeRow.tsx` extended (+71 lines): row click sets selection; `aria-selected` reflects state; `data-selected` attribute for hooks. Blocked rows are click-no-ops.
+  - Page-level `selectedSlotKey` state added to `admin-tee-sheet-page.tsx`; document-level keydown listener clears on Esc; `useEffect` clears on `courseId` or `selectedDate` change.
+- **Files touched** (7 files, +475 / -27):
+  - `docs/DRIFT_LOG.md` (+9 — selection-dismiss semantics entry)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.tsx` (new, 114 lines) + `SelectionFooter.test.tsx` (new, 86 lines)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (+71) + `TeeRow.test.tsx` (+67)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (+71) + `admin-tee-sheet-page.test.tsx` (+84)
+- **Outcome**: Single-row selection state machine complete. `data-has-selection` attribute on the footer is the test-side observable signal that becomes the selection-state shorthand in every subsequent slice's tests.
+- **Decisions made**:
+  - **Esc-only dismiss; no toggle; no outside-click handler.** The Slice 4 spec described three dismiss paths ("esc OR click the same row twice OR click outside the grid") but the Phase 8 prototype implements only esc. Followed Phase 8. The spec's qualifier "Verify the exact dismiss behaviour against Phase 8; match it" applied. See DRIFT_LOG 2026-05-13 — "Slice 4 selection-dismiss + price-click semantics differ from slice spec; followed Phase 8".
+  - **Price-button click is a stop-propagation no-op at this slice.** The Phase 8 prototype's price-click sets selection AND opens the price popover — but the popover doesn't exist until Slice 5. Slice 4 kept the spec's stop-propagation no-op; Slice 5 reverses it.
+  - **Course / date change clears selection silently** via a `useEffect` keyed on both. Slot keys don't survive grid changes; surfacing a stale-selection footer would be wrong.
+- **Follow-ups created**:
+  - DRIFT_LOG 2026-05-13 — "Slice 4 selection-dismiss + price-click semantics differ from slice spec; followed Phase 8".
+- **Notes**:
+  - `selectedSlotKey` (slot_datetime as string) is the identity used throughout Phase 10. Multi-lane rendering (Slice 12 / Phase 11) will need to compose this with the lane key.
+  - Slice 6's modal layer later extends the esc priority order to "modal > popover > selection". Slice 4's page-level esc handler reads ref flags (added in Slice 6) to bail when higher-tier overlays own the keystroke.
+
+---
+## Phase 10 — Slice 3: Multi-course portfolio strip (2026-05-13)
+
+Multi-course portfolio strip mounted above the date strip on `/admin/tee-sheet`. Fans out one tee-sheet-day query per course of the active club, computes per-tile and portfolio-wide aggregates, and writes the active course back to the URL search param on tile click. Establishes the cache-shared query-key composition that later slices (8a/b, 9a/b, 11b) rely on.
+
+- **Scope (main commit `82cd2e9`)**:
+  - New `PortfolioStrip.tsx` (267 lines) — owns the course-list query, fans out per-course day queries via `useQueries`, computes per-tile aggregates (utilisation %, tee times booked/total, revenue) and portfolio-wide eyebrow totals.
+  - New `PortfolioTile.tsx` (119 lines) — per-course tile chrome; `role="tab"` semantics with `aria-selected` driven by the active-course URL param.
+  - Page integration: `admin-tee-sheet-page.tsx` mounts `PortfolioStrip` above the date strip; tile clicks set the `course_id` search param.
+- **Scope (follow-up `189e74c`)**:
+  - Utilisation metric switched from `occupied / capacity` to `(occupied + reserved) / capacity` so a fully-reserved morning sheet reads its real day-ahead occupancy instead of 0% pre-check-in (A1 in the slice spec).
+  - Eyebrow dropped the literal word "today"; renders "Courses · {date}" always to avoid the lie on non-today views (A2).
+- **Files touched** (main + follow-up, 6 files, +835 / -9 total):
+  - `frontend/src/features/tee-sheet/components/PortfolioStrip.tsx` (new, 267 lines; +21 / -7 in follow-up)
+  - `frontend/src/features/tee-sheet/components/PortfolioStrip.test.tsx` (new, 299 lines; +18 / -1 in follow-up)
+  - `frontend/src/features/tee-sheet/components/PortfolioTile.tsx` (new, 119 lines)
+  - `frontend/src/features/tee-sheet/components/PortfolioTile.test.tsx` (new, 102 lines)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (+2)
+  - `frontend/src/pages/admin-tee-sheet-page.test.tsx` (+16)
+- **Outcome**: Multi-course strip rendered. Cache-shared per-course day queries (same key composition as the page's main day query) avoid duplicate network requests. ENGINEERING_STANDARDS.md §6 compliance: all aggregations are presentation-side concatenations of backend-validated values, no FE business logic.
+- **Decisions made**:
+  - **Cache-shared query key composition.** Per-course tile queries use `teeSheetDayQueryOptions({...})` with the same canonical key shape as the page's main day query — `["tee-sheet", clubId, courseId, day, membershipType, teeId]`. The active-course query is the SAME entry as PortfolioStrip's tile query for that course; no duplicate refetch. This pattern becomes load-bearing in Slice 11b when `intervalMinutes` is added to the key with a `"default"` sentinel so PortfolioStrip continues to share cache.
+  - **Utilisation includes reserved players** (follow-up A1). The portfolio metric is a day-ahead occupancy view, not a live-ops checkedin view; the latter belongs to row chrome.
+  - **Eyebrow drops "today"** (follow-up A2). Avoids the lie on non-today views without adding a relative-date helper that isn't needed elsewhere yet.
+- **Follow-ups created**:
+  - None blocking. Bundled the two implementation-time corrections (A1, A2) into the follow-up commit (`189e74c`).
+- **Notes**:
+  - The cache-shared query-key composition this slice establishes is the architectural foundation for Slice 11b's `"default"` sentinel in `teeSheetKeys.day` — without preserving the Slice 3 cache-share, the interval-toggle would have invalidated PortfolioStrip's per-course summaries.
+
+---
+## Phase 10 — Slice 2: Tee sheet skeleton (read-only) at /admin/tee-sheet (2026-05-13)
+
+Read-only tee-sheet skeleton at a new admin route. Renders the date strip, legend, grid header, and a single-lane row list against the existing `GET /api/golf/tee-sheet/day` backend. No selection, no interaction beyond hover. Foundation for Slices 3 onwards.
+
+- **Scope**:
+  - New page `frontend/src/pages/admin-tee-sheet-page.tsx` (356 lines) mounted at `/admin/tee-sheet` per `frontend/src/routes/router.tsx` (+2). Parallel route to the legacy `/admin/golf/tee-sheet`; new page becomes the linked nav target.
+  - New `TeeRow.tsx` (336 lines) component with the six-state row chrome (consumes `TeeStateChip` from Slice 1).
+  - `AdminSidebar.tsx`: "Tee sheet" item now links at `/admin/tee-sheet` (the new Phase 10 route).
+  - Loading / empty / error states with skeleton rows; aria-labelled legend + column-header rows.
+- **Files touched** (8 files, +1176 / -1):
+  - `docs/DRIFT_LOG.md` (+21 — two new entries; see Follow-ups)
+  - `frontend/src/components/admin-shell/AdminSidebar.tsx` (sidebar link target swap)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (new, 336 lines) + `TeeRow.test.tsx` (new, 236 lines)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (new, 356 lines) + `admin-tee-sheet-page.test.tsx` (new, 223 lines)
+  - `frontend/src/routes/admin-layout.tsx` (+1)
+  - `frontend/src/routes/router.tsx` (+2)
+- **Outcome**: New surface mountable at `/admin/tee-sheet`. Legacy `/admin/golf/tee-sheet` still resolves; nav now points to the new route. 3 FROZEN annotations planted in `TeeRow.tsx` for backend gaps surfaced during recon (row-state mapping, per-cell channel dot, per-row audit clock). 2 DRIFT_LOG entries added.
+- **Decisions made**:
+  - **Single-lane render**: renders only `response.rows[0].slots`. The backend's per-lane orientation differs from Phase 8's per-time-row orientation; the mismatch becomes load-bearing for shotgun / tournament view (deferred to Phase 11 per DRIFT_LOG 2026-05-14). See DRIFT_LOG 2026-05-13 — "Phase 8 tee-sheet design vs backend response orientation mismatch".
+  - **`checkedin` and `noshow` row states fold to `booked`** because `TeeSheetSlotView.display_status` only carries 5 values (the row-level state is a booking aggregation that the slice spec forbids the FE from computing). FROZEN at the row-state mapping function.
+  - **Per-cell channel dot omitted** because `TeeSheetBookingSummary` has no `source` / `channel` field at this point in the codebase. FROZEN at the PlayerCell body. Partially resolved by Slice 7.5's `BookingSource.WALK_IN` enum addition (the value still isn't surfaced via the day response).
+  - **Per-row audit clock omitted** because no `has_audit_events` boolean exists on the read model. FROZEN at the time-cell body. See DRIFT_LOG 2026-05-13 — "Tee-sheet row state, channel dot, audit cue not derivable from current backend response".
+- **Follow-ups created**:
+  - 3 FROZEN annotations in `TeeRow.tsx` (row-state mapping function, PlayerCell body, time-cell body; lines `:76`, `:323`, `:736` at HEAD).
+  - DRIFT_LOG 2026-05-13 — "Phase 8 tee-sheet design vs backend response orientation mismatch": deferred to the eventual shotgun / tournament slice.
+  - DRIFT_LOG 2026-05-13 — "Tee-sheet row state, channel dot, audit cue not derivable from current backend response": three backend-extension follow-ups grouped.
+- **Notes**:
+  - The first Phase 10 slice to touch the new tee-sheet surface. Establishes the single-lane render pattern that all subsequent slices (3-11) build on.
+
+---
+## Phase 10 — Slice 1: Token reconcile + shell topbar adjust + 7 new primitives (2026-05-13)
+
+Foundation slice. Reconciled the GreenLink token set with the Phase 6 prototype canonical, adjusted the admin shell chrome (sidebar + topbar) to match the Phase 7-onwards design language, and added seven new UI primitives that the rest of Phase 10 consumes.
+
+- **Scope**:
+  - `frontend/src/styles/tokens.css`: 6 lines of additions reconciling against `docs/phase6_prototype/tokens.css`.
+  - `AdminSidebar.tsx` + `AdminTopBar.tsx`: shell chrome adjustments to align with the Phase 7 design language.
+  - 7 new primitives in `frontend/src/components/ui/`, each with a vitest test alongside:
+    - `Pill.tsx` (49 lines) — compact rounded label; `kind` variants over the `--gl-*` palette.
+    - `Kbd.tsx` (20 lines) — keyboard-key glyph styling for shortcut affordances.
+    - `CardHead.tsx` (42 lines) — `eyebrow` / `title` / `right` composition for `Card` headers.
+    - `TeeStateChip.tsx` (93 lines) — six-state chip (`open` / `booked` / `checkedin` / `atrisk` / `noshow` / `blocked`) for the tee-sheet legend and per-row state.
+    - `Switch.tsx` (54 lines) — accessible toggle with `role="switch"` + `aria-checked`.
+    - `Slider.tsx` (100 lines) — single-thumb range input with aria value attributes.
+    - `Segmented.tsx` (68 lines) — `role="radiogroup"` of inline buttons (`role="radio"` + `aria-checked` per segment); generic over string values.
+- **Files touched** (17 files, +732 / -45):
+  - `frontend/src/components/admin-shell/AdminSidebar.tsx` (34 LOC of changes)
+  - `frontend/src/components/admin-shell/AdminTopBar.tsx` (56 LOC of changes)
+  - 7 new primitives + 7 new `.test.tsx` files in `frontend/src/components/ui/`
+  - `frontend/src/styles/tokens.css` (+6)
+- **Outcome**: 7 new primitives in `frontend/src/components/ui/`, each tested. `components/ui/` total grows from 9 → 16 primitives at the close of this slice (Phase 10 Slices 5 and 6 later add `PricePopover` + `ShortcutHelpModal` for the 18-primitive count visible at HEAD).
+- **Decisions made**:
+  - Implementation-time decisions are not documented in a slice report (this entry was backfilled retroactively from the commit message + diff stat + Phase 6 prototype reference). The primitives' API shapes (e.g. `Segmented` exposes `aria-checked` per segment rather than `data-selected`) become contracts that later slices consume directly — notably Slice 11b's `SlotIntervalToggle`, which follows the primitive contract instead of extending the primitive for tests.
+- **Follow-ups created**:
+  - None. The primitive set unblocks Slices 2 onwards.
+- **Notes**:
+  - Foundation for the entire Phase 10 tee-sheet rebuild. Every subsequent slice consumes at least one of the new primitives (Slice 2 `TeeStateChip` + `Pill`, Slice 4 footer chrome reuses the same, Slice 6 wires `Kbd` into the shortcut catalog, Slice 11b consumes `Segmented`).
+  - Entry backfilled retroactively as part of the pre-Phase-11 documentation cleanup; PHASE_LOG did not carry Slices 1–7 narratives at the time they shipped.
+
+---
 ## Phase 9A — Legal foundations: POPIA + VAT + HNA Player ID (2026-05-12)
 
 Backend extension wave. Three legal/regulatory fields the v1 product needs in the data model before any surface can capture them, plus the §10.3 WI-11 closeout.
