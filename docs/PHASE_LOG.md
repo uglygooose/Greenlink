@@ -18,6 +18,63 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 8.5: Backend tee-sheet lock primitive (2026-05-14)
+
+Backend-only mini-slice. Adds the optimistic-lock primitive that Slice 9a/9b will use for UI coordination on the tee-sheet surface. Locks are advisory — booking endpoints do not consult them; the existing capacity check on `POST /api/golf/bookings` remains the source of truth for placement. Locks are a signal so operators can see when another operator is editing a slot.
+
+- **Scope**:
+  - New model `TeeSheetLock` (`backend/app/models/tee_sheet_lock.py`) — one row per (course_id, slot_datetime), enforced by `uq_tee_sheet_locks_course_slot` unique constraint. Uses `UUIDPrimaryKeyMixin` + `TimestampMixin` (created_at carries the acquire timestamp, exposed as `acquired_at` on the response schema; updated_at moves on renew).
+  - New schemas (`backend/app/schemas/tee_sheet_locks.py`): `TeeSheetLockAcquireRequest`, `TeeSheetLockResponse` (with `remaining_seconds` derived at serialization), `TeeSheetLockConflictDetail` (409 body), `TeeSheetLockListResponse`. Helper `remaining_seconds_for(expires_at)` shared by route serializers.
+  - New service `TeeSheetLockService` (`backend/app/services/tee_sheet_lock_service.py`) with 4 methods:
+    - `acquire(*, club_id, course_id, slot_datetime, holder_user_id, context=None) -> TeeSheetLock | TeeSheetLockConflict`
+    - `renew(*, club_id, lock_id, holder_user_id, context=None) -> TeeSheetLock` — raises `ConflictError` for expired or not-held-by-caller
+    - `release(*, club_id, lock_id, holder_user_id, context=None) -> None` — idempotent; raises `ConflictError` only when the lock exists but isn't the caller's
+    - `list_active(*, club_id, course_id, day) -> list[TeeSheetLock]` — uses the club's ClubConfig timezone to compute the day-range bounds; filters `expires_at > now()`
+  - TTL = `LOCK_TTL_SECONDS = 60`. Hard-coded; v1 is not per-club configurable.
+  - Expired-lock handling per spec Approach A: on acquire, an expired row for the target slot is deleted before INSERT and emits its own `tee_sheet_lock.released` event with `reason="expired"`. Clean audit trail.
+  - Race-handling: if two concurrent acquires both pass the existence check, the second's INSERT raises `IntegrityError` on the unique constraint; the service rolls back, re-reads the winner row, and returns `TeeSheetLockConflict`.
+  - Four routes registered on the existing `golf.router` (`backend/app/api/routes/golf.py`):
+    - `POST /api/golf/tee-sheet/locks` → 201 / 409 with `TeeSheetLockConflictDetail`
+    - `POST /api/golf/tee-sheet/locks/{lock_id}/renew` → 200
+    - `DELETE /api/golf/tee-sheet/locks/{lock_id}` → 204 (idempotent)
+    - `GET /api/golf/tee-sheet/locks?course_id=...&date=...` → 200 `TeeSheetLockListResponse`
+  - Access guards: acquire/renew/release require `require_operations_write` (staff with write access); list uses `_require_golf_read` so members + staff who can see the tee sheet can see the locks on it (necessary for Slice 9b visibility).
+  - Event types emitted via the existing `DatabaseEventPublisher` idiom:
+    - `tee_sheet_lock.acquired` — payload includes lock_id, course_id, slot_datetime, holder_user_id, expires_at.
+    - `tee_sheet_lock.renewed` — payload includes lock_id, new expires_at.
+    - `tee_sheet_lock.released` — payload includes lock_id, previous_holder_user_id, reason (`"released"` or `"expired"`).
+  - Migration `202605140001_add_tee_sheet_locks` (down_revision=`202605130001`): `create_table` with all columns + the unique constraint + three indexes (`ix_tee_sheet_locks_club_id`, `ix_tee_sheet_locks_course_id`, `ix_tee_sheet_locks_course_slot_expires`). Clean downgrade drops indexes + table. Round-trip verified (`alembic upgrade head` + `alembic downgrade -1` + re-upgrade).
+  - 14 new tests in `backend/tests/test_tee_sheet_locks.py` (HTTP-level + service-level): acquire happy path + event, conflict 409, expired-then-acquire (release event + acquire event), renew happy + event, renew non-holder 409, renew expired 409, release happy + event, release non-holder 409, release nonexistent 204, list active filters expired, list empty, race condition fallback (mocks `_load_lock_for_slot` to exercise the IntegrityError path), renew missing → ConflictError, service-level release event emission.
+- **Files touched**:
+  - `backend/app/models/tee_sheet_lock.py` (created, 67 lines)
+  - `backend/app/models/__init__.py` (TeeSheetLock import + __all__)
+  - `backend/app/schemas/tee_sheet_locks.py` (created, 67 lines)
+  - `backend/app/services/tee_sheet_lock_service.py` (created, 251 lines)
+  - `backend/app/api/routes/golf.py` (HTTPException import + lock serializer helper + 4 new routes)
+  - `backend/alembic/versions/202605140001_add_tee_sheet_locks.py` (created, 89 lines)
+  - `backend/tests/test_tee_sheet_locks.py` (created, 405 lines)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`
+- **Outcome**: Backend tests at HEAD: 306 → 320 (+14). Ruff clean. Alembic round-trip clean. No frontend code touched.
+- **Decisions made**:
+  - **Slot-level locks**, not row-level. Phase 8's selection footer says "Slot 06:46 held by you" — the unit is the slot (slot_datetime), not the row (lane + time). Matches the frontend's selection model which keys off slot_datetime.
+  - **60-second TTL hard-coded** at the service layer (`LOCK_TTL_SECONDS`). Per-club configurability deferred until there is a concrete reason to vary it.
+  - **Approach A** for expired locks (DELETE the expired row + emit release event, then INSERT the new lock) over Approach B (UPDATE in place). Cleaner audit trail — every state transition produces its own event.
+  - **Optimistic locking via unique constraint**. No `pg_advisory_lock` or `SELECT FOR UPDATE` — the unique constraint on `(course_id, slot_datetime)` already serializes concurrent INSERTs at the storage layer.
+  - **Locks are advisory**. Booking endpoints do NOT consult them. Two operators dropping different parties on the same slot still both fire `POST /api/golf/bookings`; the second is rejected by the existing availability check (Slice 8a's documented v1 concurrency gap), not by the lock. Locks are UI signal only.
+  - **No real-time push**. v1 is REST + polling (Slice 9b decides the cadence). Yjs awareness is a future-phase migration; the route surface is stable enough to swap the transport later without breaking the contract.
+  - **No scheduled cleanup job**. Expired rows accumulate but the unique constraint plus on-demand deletion (Approach A) means they never block acquires. Future-phase improvement.
+  - **List endpoint requires golf-read, not operations-write**. Members who can see the tee sheet must also see the visibility-of-other-operators' holds (necessary for Slice 9b's "Slot held by {operator}" annotation).
+- **Follow-ups created**:
+  - Slice 9a (frontend) — wire acquire/renew/release into the selection lifecycle, render the selection-footer countdown, surface the 409 conflict with the existing holder visibility.
+  - Slice 9b (frontend) — poll `GET /tee-sheet/locks` and render the lock badge on other operators' tiles per Phase 8 annot #4.
+  - Cleanup task for expired lock rows (low-priority — unique constraint + on-demand delete handles correctness).
+  - Yjs awareness migration once real-time push is on the roadmap.
+- **Notes**:
+  - The first full-suite run reported 67 failures + 13 errors, all transient. Confirmed via diagnosis: a previous background `pytest tests/ -q` job (the same suite) was still racing on the shared test database. Killing it cleared the contention; the focused rerun of representative failed tests passed cleanly. Documented here so future slices avoid the same false signal.
+  - `_load_lock_for_slot` is patched in the race-condition test to simulate two concurrent acquires both passing the existence check. The unit-test approach (rather than threading) is the spec's explicit fallback when the codebase doesn't support pytest-async / parallel transactions natively.
+  - The frontend's existing `BookingMoveResult.booking.id` capture pattern (DRIFT_LOG 2026-05-14, post Slice 8b) does not apply here — lock mutations have no split semantics. The acquire response carries a stable `id` that never changes; renew/release/list all operate on the same id.
+
+---
 ## Phase 10 — Slice 8b: Player cell move + sequential swap with partial-state Pill (2026-05-14)
 
 Frontend slice. Extends the Slice 8a DnD pipeline to support cross-row participant moves and two-step swaps. Filled player cells with moveable bookings (RESERVED / CHECKED_IN, mirroring `backend/app/services/booking_move_service.py:50`) become drag sources; empty AND filled cells in different rows become drop targets. Same-row reorder is rejected client-side before any backend call; partial-swap failures surface an inline action banner with Retry / Restore.

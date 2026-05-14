@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -72,6 +72,13 @@ from app.schemas.operations import (
     TeeResponse,
 )
 from app.schemas.tee_sheet import TeeSheetDayQuery, TeeSheetDayResponse
+from app.schemas.tee_sheet_locks import (
+    TeeSheetLockAcquireRequest,
+    TeeSheetLockConflictDetail,
+    TeeSheetLockListResponse,
+    TeeSheetLockResponse,
+    remaining_seconds_for,
+)
 from app.services.booking_cancellation_service import BookingCancellationService
 from app.services.booking_checkin_service import BookingCheckInService
 from app.services.booking_completion_service import BookingCompletionService
@@ -82,6 +89,7 @@ from app.services.booking_service import BookingService
 from app.services.booking_update_service import BookingUpdateService
 from app.services.golf_settings_service import GolfSettingsService
 from app.services.player_booking_read_model_service import PlayerBookingReadModelService
+from app.services.tee_sheet_lock_service import TeeSheetLockConflict, TeeSheetLockService
 from app.services.tee_sheet_service import TeeSheetService
 
 router = APIRouter()
@@ -575,3 +583,128 @@ def mark_booking_no_show(
             acting_user_id=current_user.id,
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 / Slice 8.5 — tee-sheet optimistic locks
+# ---------------------------------------------------------------------------
+
+
+def _serialize_lock(db: Session, lock) -> TeeSheetLockResponse:
+    holder = db.get(User, lock.holder_user_id)
+    holder_display_name = holder.display_name if holder is not None else "Unknown operator"
+    return TeeSheetLockResponse(
+        id=lock.id,
+        club_id=lock.club_id,
+        course_id=lock.course_id,
+        slot_datetime=lock.slot_datetime,
+        holder_user_id=lock.holder_user_id,
+        holder_display_name=holder_display_name,
+        acquired_at=lock.created_at,
+        expires_at=lock.expires_at,
+        remaining_seconds=remaining_seconds_for(lock.expires_at),
+    )
+
+
+@router.post(
+    "/tee-sheet/locks",
+    response_model=TeeSheetLockResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={status.HTTP_409_CONFLICT: {"model": TeeSheetLockConflictDetail}},
+)
+def acquire_tee_sheet_lock(
+    payload: TeeSheetLockAcquireRequest,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TeeSheetLockResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = TeeSheetLockService(db)
+    result = service.acquire(
+        club_id=context.selected_club.id,
+        course_id=payload.course_id,
+        slot_datetime=payload.slot_datetime,
+        holder_user_id=current_user.id,
+    )
+    if isinstance(result, TeeSheetLockConflict):
+        conflict_body = TeeSheetLockConflictDetail(
+            existing_lock=_serialize_lock(db, result.existing_lock),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=conflict_body.model_dump(mode="json"),
+        )
+    db.commit()
+    db.refresh(result)
+    return _serialize_lock(db, result)
+
+
+@router.post(
+    "/tee-sheet/locks/{lock_id}/renew",
+    response_model=TeeSheetLockResponse,
+)
+def renew_tee_sheet_lock(
+    lock_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TeeSheetLockResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = TeeSheetLockService(db)
+    lock = service.renew(
+        club_id=context.selected_club.id,
+        lock_id=lock_id,
+        holder_user_id=current_user.id,
+    )
+    db.commit()
+    db.refresh(lock)
+    return _serialize_lock(db, lock)
+
+
+@router.delete(
+    "/tee-sheet/locks/{lock_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def release_tee_sheet_lock(
+    lock_id: uuid.UUID,
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    require_operations_write(current_user, context)
+    assert context.selected_club is not None
+    service = TeeSheetLockService(db)
+    service.release(
+        club_id=context.selected_club.id,
+        lock_id=lock_id,
+        holder_user_id=current_user.id,
+    )
+    db.commit()
+
+
+@router.get(
+    "/tee-sheet/locks",
+    response_model=TeeSheetLockListResponse,
+)
+def list_tee_sheet_locks(
+    course_id: uuid.UUID = Query(),
+    day: date = Query(alias="date"),
+    raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TeeSheetLockListResponse:
+    context = resolve_required_club_context(db, current_user, raw_selected_club_id)
+    _require_golf_read(current_user=current_user, context=context)
+    assert context.selected_club is not None
+    service = TeeSheetLockService(db)
+    locks = service.list_active(
+        club_id=context.selected_club.id,
+        course_id=course_id,
+        day=day,
+    )
+    return TeeSheetLockListResponse(locks=[_serialize_lock(db, lock) for lock in locks])

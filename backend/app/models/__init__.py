@@ -69,6 +69,7 @@ from app.models.pricing_matrix import PricingMatrix
 from app.models.pricing_rule import PricingRule
 from app.models.product import Product
 from app.models.tee import Tee
+from app.models.tee_sheet_lock import TeeSheetLock
 from app.models.tee_sheet_slot_state import TeeSheetSlotState
 from app.models.user import User
 
@@ -141,6 +142,7 @@ __all__ = [
     "ReadinessStatus",
     "StartLane",
     "Tee",
+    "TeeSheetLock",
     "TeeSheetSlotState",
     "User",
     "UserType",
