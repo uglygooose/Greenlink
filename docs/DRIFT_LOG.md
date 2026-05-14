@@ -17,6 +17,15 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — BookingMoveService splits multi-participant bookings on participant moves; consumers must use the response booking_id
+
+- **Surfaced by**: Phase 10 Slice 8b orchestrator implementation review (Restore handler).
+- **Claim**: A participant move via `POST /api/golf/bookings/{booking_id}/move` with a `participant_id` body keeps the participant on the same booking, just at a new slot.
+- **Reality**: When the source booking has more than one participant, `BookingMoveService._split_booking_for_participant` creates a NEW booking carrying only the moved participant; the original booking shrinks. The response's `booking.id` is the NEW booking's id — NOT the booking_id the caller sent in the URL. When the source booking has exactly one participant, no split occurs and the response carries the same id back. Either way, the response is authoritative for any follow-up mutation on the moved participant.
+- **Evidence**: `backend/app/services/booking_move_service.py:302-306` (`if participant is not None and len(booking.participants) > 1: moved_booking = self._split_booking_for_participant(booking=booking, participant=participant)`); the function constructs a new `Booking` record and returns it via `BookingSummary.model_validate(moved_booking)` in the ALLOWED response. `BookingMoveResult.booking` (`backend/app/schemas/bookings.py:392-397`) carries this BookingSummary.
+- **Resolution**: This is the standing contract for move-adjacent frontend code. Any follow-up mutation on a moved participant — Restore, second-step move, cancellation, check-in, finance posting — MUST use the booking_id from `BookingMoveResult.booking.id`, not the original. Slice 8b's `useParticipantSwap` orchestrator (`frontend/src/features/tee-sheet/use-participant-swap.ts`) captures `firstResult` on the state machine for exactly this reason; the Restore handler reads `firstResult.booking?.id` (with a defensive fallback to the original bookingId for the no-split case). Future move-adjacent slices (Slice 9 locks, Slice 11+ booking lifecycle, any participant-level workflow that chains operations) must apply the same pattern: capture the response, thread the new booking_id forward.
+- **Status**: Standing architectural contract. Not a drift — the backend behavior is correct; this entry preserves the fact so future code doesn't reinvent the bug.
+---
 ### 2026-05-14 — Slice 8b accepts v1 partial-state in two-call swap (no atomic-swap backend endpoint)
 
 - **Surfaced by**: Phase 10 Slice 8b Deliverable 6 (swap orchestrator) design.
