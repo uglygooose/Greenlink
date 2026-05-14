@@ -45,6 +45,7 @@ function buildHarness(overrides: HarnessOverrides = {}) {
   const onCheckInBooking = vi.fn();
   const onMarkNoShow = vi.fn();
   const onOpenPricePopoverForSelected = vi.fn();
+  const onCycleDensity = vi.fn(() => "default");
   const setShortcutAnnouncement = vi.fn();
 
   const slotRows = overrides.slotRows ?? [
@@ -64,6 +65,7 @@ function buildHarness(overrides: HarnessOverrides = {}) {
       onCheckInBooking,
       onMarkNoShow,
       onOpenPricePopoverForSelected,
+      onCycleDensity,
       setShortcutAnnouncement,
     });
     return null;
@@ -76,6 +78,7 @@ function buildHarness(overrides: HarnessOverrides = {}) {
     onCheckInBooking,
     onMarkNoShow,
     onOpenPricePopoverForSelected,
+    onCycleDensity,
     setShortcutAnnouncement,
     ...utils,
   };
@@ -324,13 +327,23 @@ describe("useTeeSheetShortcuts — Bucket C (forward refs)", () => {
   test.each([
     [{ key: "T", shiftKey: true }, "Tournament mode arrives in Slice 12."],
     [{ key: "M", shiftKey: true }, "Marshal view arrives in Slice 13."],
-    [{ key: "v" }, "Density toggle arrives in Slice 11."],
   ])("%o announces %s", (eventInit, message) => {
     vi.useFakeTimers();
     const h = buildHarness();
     fireEvent.keyDown(document, eventInit);
     vi.runAllTimers();
     expect(h.setShortcutAnnouncement).toHaveBeenLastCalledWith(message);
+  });
+
+  // Slice 11 — v moved from forward-ref stub to real Bucket A handler.
+  test("v fires onCycleDensity and announces the new density", () => {
+    vi.useFakeTimers();
+    const h = buildHarness();
+    h.onCycleDensity.mockReturnValueOnce("comfortable");
+    fireEvent.keyDown(document, { key: "v" });
+    vi.runAllTimers();
+    expect(h.onCycleDensity).toHaveBeenCalledTimes(1);
+    expect(h.setShortcutAnnouncement).toHaveBeenLastCalledWith("Density: comfortable");
   });
 });
 

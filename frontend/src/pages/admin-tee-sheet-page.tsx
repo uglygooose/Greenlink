@@ -45,6 +45,7 @@ import { buildLocksBySlot } from "../features/tee-sheet/lock-utils";
 import { useCheckInBooking } from "../features/tee-sheet/use-checkin-booking";
 import { useMarkNoShow } from "../features/tee-sheet/use-mark-no-show";
 import { useTeeSheetShortcuts } from "../features/tee-sheet/use-tee-sheet-shortcuts";
+import { useDensity } from "../features/tee-sheet/use-density";
 import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
 import type {
   CellOccupant,
@@ -477,6 +478,12 @@ export function AdminTeeSheetPage(): JSX.Element {
     window.setTimeout(() => setShortcutAnnouncement(message), 0);
   }, []);
 
+  // Slice 11 — density cycle. Keyboard-only access via `v`.
+  // useDensity reads localStorage + applies `data-density` to the
+  // document root; cycleDensity advances and returns the new value so
+  // the shortcut hook can announce it.
+  const densityController = useDensity();
+
   useTeeSheetShortcuts({
     slotRows,
     selectedSlotKey,
@@ -487,6 +494,7 @@ export function AdminTeeSheetPage(): JSX.Element {
     onCheckInBooking: (bookingId) => checkInBookingMutation.mutate({ bookingId }),
     onMarkNoShow: (bookingId) => markNoShowMutation.mutate({ bookingId }),
     onOpenPricePopoverForSelected: handleOpenPricePopoverForSelected,
+    onCycleDensity: () => densityController.cycleDensity(),
     setShortcutAnnouncement,
   });
 

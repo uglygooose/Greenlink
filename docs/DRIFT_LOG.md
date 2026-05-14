@@ -17,6 +17,15 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — GET /api/golf/tee-sheet/day has NO `interval_minutes` query param; slot interval is server-resolved only
+
+- **Surfaced by**: Phase 10 Slice 11 reconnaissance for the slot-interval segmented toggle.
+- **Claim**: Slice 11's spec premise — "The interval_minutes param already works… Pass `intervalMinutes` to useTeeSheetDayQuery (it already accepts an optional override per the DnD audit)" — implies a request-side path for overriding the day's slot interval.
+- **Reality**: `GET /tee-sheet/day` (`backend/app/api/routes/golf.py:298-329`) accepts `course_id`, `date`, `tee_id`, `start_lane`, `membership_type`, `reference_datetime`. No `interval_minutes`. `TeeSheetDayQuery` Pydantic model (`backend/app/schemas/tee_sheet.py:34-41`) mirrors that — no field for the override. `TeeSheetService.load_day` hardcodes `interval_minutes = club_config.default_slot_interval_minutes` (`tee_sheet_service.py:76`); there is no override path at the service layer either. The response carries `interval_minutes` (the resolved value, `schemas/tee_sheet.py:126`) — so the UI can DISPLAY which interval is active, but it cannot REQUEST a different one. The FE day query hook + `fetchTeeSheetDay` likewise have no `interval_minutes` parameter.
+- **Evidence**: `grep -n "interval_minutes" backend/app/api/routes/golf.py` returns no matches in the day route signature; `grep -n "interval_minutes" backend/app/services/tee_sheet_service.py` shows only the hardcoded read from ClubConfig and the response-side projection. `grep -n "interval_minutes\|intervalMinutes" frontend/src/features/tee-sheet/hooks.ts frontend/src/api/operations.ts` returns no matches.
+- **Resolution**: Slice 11 ships density only (Path A in the stop-and-ask). The SlotIntervalToggle component is deferred; the segmented control in the date strip is not built in this slice. A future Slice 11.5 backend mini-slice (mirroring Slice 8.5's shape) needs to add `interval_minutes` to the route + `TeeSheetDayQuery` + the service signature + a clamp/whitelist if Phase 8's 6/8/10/12 set should be enforced server-side. A subsequent Slice 11b frontend slice can then wire the toggle once the backend supports it.
+- **Status**: Open — Slice 11.5 + 11b candidates. Until the backend slice lands, the page renders whatever interval the backend resolves from ClubConfig.default_slot_interval_minutes; operators have no way to switch.
+---
 ### 2026-05-14 — TypeScript narrowing: `let var: Union | null` + repeated `!` doesn't preserve discriminant narrowing
 
 - **Surfaced by**: Phase 10 Slice 9b full-build typecheck caught a latent issue in `use-acquire-lock.test.tsx` from Slice 9a.

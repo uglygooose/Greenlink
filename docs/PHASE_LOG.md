@@ -18,6 +18,39 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 11: Density toggle (density-only; interval toggle deferred) (2026-05-14)
+
+Frontend slice. Ships the density-cycle half of Slice 11. The slot-interval segmented toggle was deferred during reconnaissance because the backend doesn't accept `interval_minutes` as a query param on `GET /tee-sheet/day` (the spec premise was wrong). Recorded in DRIFT_LOG 2026-05-14; future Slice 11.5 backend mini-slice + Slice 11b frontend slice will complete the interval-toggle path. Density itself is keyboard-only access via the `v` shortcut (Slice 10's stub is replaced); preference persists per-user via localStorage.
+
+- **Scope**:
+  - `use-density.ts` (new) — three-mode cycle (`compact | default | comfortable`). Hook reads `localStorage["gl.tee-sheet.density"]` on mount; defaults to `compact` when absent (per Slice 1 token reconciliation). `cycleDensity()` advances compact → default → comfortable → compact, writes to localStorage, applies `data-density` to `document.documentElement` (removed when value is `default` so :root tokens win). Returns `{ density, cycleDensity }` and accepts an optional `onCycle(next)` callback. Synchronous mirror via `useRef` so consecutive cycleDensity calls in the same tick advance correctly even when React batches the state update.
+  - `use-tee-sheet-shortcuts.ts` — Slice 10's `v` stub (`announce("Density toggle arrives in Slice 11.")`) is replaced. New required param `onCycleDensity: () => string`. The keystroke handler calls it, captures the returned new-density string, and announces `Density: ${next}` on aria-live.
+  - `admin-tee-sheet-page.tsx` — mounts `useDensity` and threads `onCycleDensity: () => densityController.cycleDensity()` to the shortcut hook. No visible chrome change.
+  - 8 new tests: `use-density.test.tsx` (7 — default + stored value + malformed-value fallback + cycle order + localStorage write + data-density attribute + onCycle callback), `use-tee-sheet-shortcuts.test.tsx` (+1 — `v` fires onCycleDensity and announces the new density; the prior `v` stub assertion is removed).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/use-density.ts` (created, 100 lines)
+  - `frontend/src/features/tee-sheet/use-density.test.tsx` (created, 80 lines)
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts` (replace stub; add `onCycleDensity` param)
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.test.tsx` (harness gains `onCycleDensity` mock; new test replaces the old stub assertion)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (mount useDensity, thread to shortcut hook)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`, `docs/DRIFT_LOG.md` (backend gap entry)
+- **Outcome**: 576 frontend tests pass (was 569; net +7). Lint: 0 errors (13 pre-existing warnings unrelated). Typecheck clean. No new dependencies. FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex colors in any new file.
+- **Decisions made**:
+  - **Path A — density only**. Confirmed at stop-and-ask: the backend has no `interval_minutes` query param on `GET /tee-sheet/day`, so the SlotIntervalToggle component can't ship today. Drift recorded; Slice 11.5 (backend) + Slice 11b (frontend) will complete the interval-toggle path.
+  - **Density preference is frontend-only**. localStorage (`gl.tee-sheet.density`). No backend persistence in v1; no `/users/me/preferences` endpoint. Survives across sessions per browser.
+  - **Default density = `compact`** when localStorage is absent (per the Slice 1 reconciliation note). Note that tokens.css :root values (36px row) match the `default` density mode; the `data-density="default"` attribute is intentionally REMOVED on the document root in that case so :root wins (the alternative — adding a `[data-density="default"]` selector — duplicates the :root tokens for no benefit).
+  - **Synchronous-mirror ref pattern in useDensity**. The naive implementation set a closure variable inside `setDensity`'s updater and read it after — but React 18 doesn't guarantee the updater has fired by the time the call returns. Caught by the cycle-sequence test (first cycle worked, second cycle saw stale state). Fix: a `useRef` tracks the "logical" current density synchronously so chained calls advance correctly.
+  - **`v` keystroke remains keyboard-only access**. No chrome toggle. Phase 8 design's a11y note ("density lives in the shortcut modal") is preserved.
+  - **aria-live announcement format**: `Density: {next}`. Mirrors the Slice 10 announcement protocol (clear-then-set via `setTimeout(0)` boundary).
+- **Follow-ups created**:
+  - **Slice 11.5 (backend)** — add `interval_minutes` to `GET /tee-sheet/day` route + `TeeSheetDayQuery` schema + `TeeSheetService.load_day` signature. Optional clamp / whitelist on the allowed set (Phase 8 specifies 6/8/10/12). Tests for round-tripping + ClubConfig default fallback when omitted.
+  - **Slice 11b (frontend)** — wire the `SlotIntervalToggle` to the now-available query param. Selection clears on interval change. Selected value comes from the response's `interval_minutes` (truth-from-server).
+  - Per-user backend preference store for density (deferred; localStorage covers v1).
+- **Notes**:
+  - The DnD audit's note "interval_minutes param already works" was the source of the spec premise. Recon disproved it. Confirmed via `grep -n "interval_minutes" backend/app/api/routes/golf.py backend/app/schemas/tee_sheet.py backend/app/services/tee_sheet_service.py` — only the response-side projection + the hardcoded service-side read from ClubConfig exist; no override path.
+  - The synchronous-mirror useRef pattern surfaced here is the same shape as Slice 9a's `activeSlotRef` (stale-call coordination) and Slice 10's `multiKeyStateRef` (gg sequence). Pattern recurs anywhere a hook's callback identity needs to stay stable while reading state that updates async.
+
+---
 ## Phase 10 — Slice 10: Wire keyboard shortcuts (2026-05-14)
 
 Frontend slice. Wires the tee-sheet keyboard surface end-to-end. The 24-entry shortcut map (Slice 6) gains action handlers across three buckets: 13 fully wired (Bucket A), 6 honest aria-live stubs for deferred surfaces (Bucket B), 3 forward-references to Slices 11/12/13 (Bucket C). esc and ? remain on their Slice 4/6 handlers (Bucket D — pre-wired). The skip-gate honours focused inputs / textareas / contenteditables; the gg sequence handler decays after 1 second.

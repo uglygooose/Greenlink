@@ -45,6 +45,10 @@ export interface UseTeeSheetShortcutsParams {
   // this to a click on the row's price button (which already fires the
   // shared popover handler).
   onOpenPricePopoverForSelected: () => void;
+  // v — Slice 11 density cycle. Returns the new density string so the
+  // hook can announce it on aria-live. Slice 10 shipped a stub
+  // ("Density toggle arrives in Slice 11."); Slice 11 replaces that.
+  onCycleDensity: () => string;
   // Announce setter (shared aria-live region). The hook pushes shortcut
   // results + stub messages through this. The page is responsible for
   // composing this with the drag controller's announcement (priority is
@@ -206,7 +210,7 @@ export function useTeeSheetShortcuts(params: UseTeeSheetShortcutsParams): void {
           return;
         case "v":
           event.preventDefault();
-          announce("Density toggle arrives in Slice 11.");
+          handleCycleDensity();
           return;
         default:
           return;
@@ -306,6 +310,12 @@ export function useTeeSheetShortcuts(params: UseTeeSheetShortcutsParams): void {
       }
       p.onMarkNoShow(eligible.id);
       announce(`Marking no-show: ${describeBooking(eligible)}`);
+    }
+
+    function handleCycleDensity(): void {
+      const p = paramsRef.current;
+      const next = p.onCycleDensity();
+      announce(`Density: ${next}`);
     }
   }, [announce]);
 }
