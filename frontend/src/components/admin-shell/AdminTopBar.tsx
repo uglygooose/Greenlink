@@ -75,6 +75,7 @@ export function AdminTopBar({
           <input
             type="search"
             aria-label="Search"
+            data-testid="admin-topbar-search"
             style={{
               flex: 1,
               border: 0,

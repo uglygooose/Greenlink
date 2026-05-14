@@ -18,6 +18,51 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 10: Wire keyboard shortcuts (2026-05-14)
+
+Frontend slice. Wires the tee-sheet keyboard surface end-to-end. The 24-entry shortcut map (Slice 6) gains action handlers across three buckets: 13 fully wired (Bucket A), 6 honest aria-live stubs for deferred surfaces (Bucket B), 3 forward-references to Slices 11/12/13 (Bucket C). esc and ? remain on their Slice 4/6 handlers (Bucket D — pre-wired). The skip-gate honours focused inputs / textareas / contenteditables; the gg sequence handler decays after 1 second.
+
+- **Scope**:
+  - `use-checkin-booking.ts` (new) + `use-mark-no-show.ts` (new) — React Query mutations calling `POST /api/golf/bookings/{id}/check-in` and `/no-show`. Backend constructs the request body from URL + authenticated user, so the client sends an empty body. `decision !== "allowed"` throws a typed `CheckInBookingError` / `MarkNoShowError` carrying the full result; success invalidates the tee-sheet day query so the row's status flips visually.
+  - `use-tee-sheet-shortcuts.ts` (new) — ONE document-level keydown listener installed via `useEffect`; the dispatch is a single switch over `event.key` plus modifier checks. Refs hold the live params + the gg-sequence state so the listener installs once at mount and never re-registers. The hook returns nothing — pure side-effect.
+  - Bucket A handlers (13): `t` jumps to today via `setDate(todayInClubTimezone())`; `←/→` shift the URL `date` param by ±1 day (`shiftIsoDate` utility, UTC-based to dodge host TZ); `j/k` step `selectedSlotKey` through the rendered `slotRows`; `gg` scrolls the row list to top; `⇧G` scrolls to bottom; `/` focuses the topbar search input via the new `data-testid="admin-topbar-search"`; `w` focuses the WaitlistRail's Add button; `c` fires `onCheckInBooking` on the selected row's first booking (status must be `reserved`); `x` fires `onMarkNoShow` with the same eligibility gate; `⌥P` opens the price popover for the selected row by clicking its `[data-testid="row-price-button"]` — reuses the Slice 5 path.
+  - Bucket B stubs (6): `n` ("New booking flow not yet built."), `s` ("Squeeze-insert deferred from Phase 10."), `p` ("Pace status flow not yet built."), `⌘Z` ("Undo not yet available."), `⌥A` ("Audit history not yet available."), `h/l` ("Column selection not yet available."). Each fires an aria-live announcement; no other side effects.
+  - Bucket C forward refs (3): `⇧T` ("Tournament mode arrives in Slice 12."), `⇧M` ("Marshal view arrives in Slice 13."), `v` ("Density toggle arrives in Slice 11."). Slices 11/12/13 will replace these handler bodies; the keystroke wiring stays.
+  - `SelectionFooter` extension — the four shortcut chips (n/s/c/p) are now real buttons when the page supplies handlers (`onShortcutN/S/C/P` props); they fall back to the Slice 4 visual `<span>` stub when handlers are absent (preserves isolated component-test mounts). Each chip click fires the same handler as the keystroke, so mouse + keyboard parity is preserved.
+  - `AdminTopBar` — search input gains `data-testid="admin-topbar-search"` so the `/` shortcut can target it via DOM query without coupling to the input's id or label.
+  - `admin-tee-sheet-page.tsx` — `searchParams` destructure now includes `setSearchParams`. The page maintains a new `shortcutAnnouncement` state and threads `setShortcutAnnouncement` to the hook. aria-live region now composes drag > shortcut > post-drop. The page also wires footer chip clicks: `c` fires the check-in mutation with the same eligibility guard as the keystroke handler.
+  - Clear-then-set announcement protocol: the hook's internal `announce(message)` calls `setShortcutAnnouncement("")` then `window.setTimeout(() => setShortcutAnnouncement(message), 0)`. The empty interval forces React to commit the empty state before the new message, so screen readers re-announce on repeats.
+  - 37 new tests: `use-checkin-booking` (3), `use-mark-no-show` (3), `use-tee-sheet-shortcuts` (29 — shiftIsoDate utility + Bucket A handlers + skip-gate + stubs + forward refs + ⌥P with/without selection), SelectionFooter extension (+2 — chip clicks fire handlers, chips fall back to spans when no handlers).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/use-checkin-booking.ts` + `.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/use-mark-no-show.ts` + `.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts` + `.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.tsx` (chip click handlers)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.test.tsx` (+2 chip tests)
+  - `frontend/src/components/admin-shell/AdminTopBar.tsx` (`data-testid="admin-topbar-search"`)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (mount hook + shared announce state + chip click wiring)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`
+- **Outcome**: 569 frontend tests pass (was 532; +37). Lint: 0 errors (13 pre-existing warnings unrelated). Typecheck clean. No new dependencies. FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex colors in any new file.
+- **Decisions made**:
+  - **Single page-level keydown listener for the 22 new shortcuts** (existing esc + ? handlers stay on their own listeners — they predate this slice). The dispatch lives in one switch over `event.key` plus modifier checks. Refs hold the live params so the listener installs once and stays stable.
+  - **gg sequence handler**: 1-second decay. Each `g` keydown checks if the previous keydown was `g` within 1s. Older state clears on any non-`g` key or on timeout naturally.
+  - **Skip-gate**: respects `<input>`, `<textarea>`, and contenteditable elements — every shortcut is suppressed when one of these owns focus. Mirrors the Slice 6 "?" handler's gate verbatim.
+  - **Clear-then-set aria-live protocol** for shortcut announcements. Forces screen readers to re-announce repeats (same message → same message). `setTimeout(0)` is the cheapest way to break the React state-batching boundary; `queueMicrotask` doesn't work because it stays inside the same batch.
+  - **Eligibility checks at the keystroke level**, not at the mutation level. The hook inspects the selected row's first booking and verifies `status === "reserved"` before firing `c` / `x`. The backend would also reject (`booking_status_not_*`), but the client-side guard gives instant feedback via the aria-live "No eligible booking…" branch.
+  - **Multi-booking rows: c / x act on the first booking only**. Bulk check-in / no-show is a future surface; not invented here.
+  - **Backend ownership absolute**: the mutation hooks send empty bodies; `acting_user_id` is set on the backend from `current_user`. The client doesn't pass it. Matches `BookingLifecycleMutationRequest` in `backend/app/schemas/bookings.py:247-251`.
+  - **Footer chip clicks fire the same handler as the keystroke** for mouse + keyboard parity. n/s/p chip clicks produce the same aria-live stub the keystroke would.
+  - **`/` shortcut focuses the topbar search input via `data-testid`**. The topbar isn't owned by the tee-sheet page (it's the shell), so DOM-level query is the right boundary — `data-testid` is more robust than relying on `aria-label="Search"` (multiple search inputs could land in the DOM in the future).
+  - **`⌥P` opens the popover by clicking the row's existing price button**, not by reconstructing the popover state directly. Reuses the Slice 5 click handler chain so the popover's anchor + dismiss behaviour are identical to mouse-driven activation.
+- **Follow-ups created**:
+  - Slice 11 will replace the `v` handler with a density-cycling implementation. The keystroke wiring is already in place.
+  - Slice 12 will replace `⇧T`. Slice 13 will replace `⇧M`. Same shape.
+  - New-booking flow (Bucket B `n`), pace-status flow (`p`), squeeze-insert (`s`), undo (`⌘Z`), audit-history overlay (`⌥A`), column selection (`h/l`) all remain Phase 11+ candidates. Each has an honest aria-live stub today.
+- **Notes**:
+  - The `j/k` test in `use-tee-sheet-shortcuts.test.tsx` initially tried to chain `j` and `k` in a single harness mount, expecting setSelectedSlotKey to advance and then retreat. That fails because the harness's `selectedSlotKey` prop is closed over at mount and doesn't actually update on each `setSelectedSlotKey` call — the hook computes the next slot from the stale prop. Fixed by splitting into per-direction tests with the right starting state. Pattern recorded: tests that exercise multiple sequential selection moves need a harness that actually re-renders with the updated prop, or split into one assertion per call.
+  - The shortcut map continues to ship as-is (24 entries) — Slice 6 already shipped the map; Slice 10 only wires actions. The Phase 8 "28 shortcuts" count includes some affordances the map doesn't currently catalogue; reconciliation is a future-doc concern, not a code concern.
+
+---
 ## Phase 10 — Slice 9b: Lock visibility (other-operator side) (2026-05-14)
 
 Frontend slice. Completes the holder + observer pair: Slice 9a renders the operator's own lock in the selection footer; Slice 9b polls `GET /api/golf/tee-sheet/locks` every 15s and renders a non-interactive lock badge on rows held by OTHER operators. The badge sits in the action column, replacing the more_vert button per Phase 8 Annot #4 ("their tile carries a small lock badge in place of the chevron"). Locks remain advisory — booking mutations still fire.

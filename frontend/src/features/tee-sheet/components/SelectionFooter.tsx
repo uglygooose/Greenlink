@@ -37,6 +37,13 @@ export interface SelectionFooterProps {
   lockState?: SelectionLockState;
   lockSecondsRemaining?: number;
   lockHolderDisplayName?: string | null;
+  // Slice 10 — chip click handlers. Each chip fires the same handler as
+  // the corresponding keystroke. n/s/p produce aria-live stubs at the
+  // page level (deferred surfaces); c fires the check-in mutation.
+  onShortcutN?: () => void;
+  onShortcutS?: () => void;
+  onShortcutC?: () => void;
+  onShortcutP?: () => void;
 }
 
 export function SelectionFooter({
@@ -45,7 +52,17 @@ export function SelectionFooter({
   lockState,
   lockSecondsRemaining = 0,
   lockHolderDisplayName = null,
+  onShortcutN,
+  onShortcutS,
+  onShortcutC,
+  onShortcutP,
 }: SelectionFooterProps): JSX.Element {
+  const chipHandlers: Record<string, (() => void) | undefined> = {
+    n: onShortcutN,
+    s: onShortcutS,
+    c: onShortcutC,
+    p: onShortcutP,
+  };
   const hasSelection = selectedSlot !== null;
   const selectedTime = selectedSlot ? timeKey(selectedSlot.local_time) : null;
 
@@ -83,12 +100,51 @@ export function SelectionFooter({
         data-testid="selection-shortcut-chips"
         style={{ ...dimmedStyle, display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
       >
-        {SHORTCUT_CHIPS.map((chip, i) => (
-          <span key={chip.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: i === 0 ? 0 : 4 }}>
-            <Kbd>{chip.key}</Kbd>
-            <span>{chip.label}</span>
-          </span>
-        ))}
+        {SHORTCUT_CHIPS.map((chip, i) => {
+          const handler = chipHandlers[chip.key];
+          // Slice 10 — chips are buttons when a handler is supplied;
+          // span fallback when not (preserves the Slice 4 visual stub
+          // for isolated component-test mounts).
+          if (!handler) {
+            return (
+              <span
+                key={chip.key}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  marginLeft: i === 0 ? 0 : 4,
+                }}
+              >
+                <Kbd>{chip.key}</Kbd>
+                <span>{chip.label}</span>
+              </span>
+            );
+          }
+          return (
+            <button
+              key={chip.key}
+              type="button"
+              data-testid={`selection-shortcut-chip-${chip.key}`}
+              onClick={handler}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                marginLeft: i === 0 ? 0 : 4,
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                font: "inherit",
+                color: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <Kbd>{chip.key}</Kbd>
+              <span>{chip.label}</span>
+            </button>
+          );
+        })}
       </span>
 
       <span

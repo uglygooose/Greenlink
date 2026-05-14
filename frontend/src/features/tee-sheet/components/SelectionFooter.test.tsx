@@ -155,6 +155,39 @@ describe("SelectionFooter", () => {
     expect(line.style.color).toContain("var(--gl-state-atrisk)");
   });
 
+  test("Slice 10 — chip clicks fire the corresponding handlers", () => {
+    const onN = vi.fn();
+    const onS = vi.fn();
+    const onC = vi.fn();
+    const onP = vi.fn();
+    render(
+      <SelectionFooter
+        selectedSlot={null}
+        onShortcutN={onN}
+        onShortcutS={onS}
+        onShortcutC={onC}
+        onShortcutP={onP}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("selection-shortcut-chip-n"));
+    fireEvent.click(screen.getByTestId("selection-shortcut-chip-s"));
+    fireEvent.click(screen.getByTestId("selection-shortcut-chip-c"));
+    fireEvent.click(screen.getByTestId("selection-shortcut-chip-p"));
+    expect(onN).toHaveBeenCalledTimes(1);
+    expect(onS).toHaveBeenCalledTimes(1);
+    expect(onC).toHaveBeenCalledTimes(1);
+    expect(onP).toHaveBeenCalledTimes(1);
+  });
+
+  test("Slice 10 — chips fall back to span (no test-id) when no handlers supplied", () => {
+    render(<SelectionFooter selectedSlot={null} />);
+    expect(screen.queryByTestId("selection-shortcut-chip-n")).toBeNull();
+    expect(screen.queryByTestId("selection-shortcut-chip-c")).toBeNull();
+    const chips = screen.getByTestId("selection-shortcut-chips");
+    const kbds = chips.querySelectorAll(".gl-kbd");
+    expect(kbds).toHaveLength(4);
+  });
+
   test("countdown updates when prop changes", () => {
     const lock = makeLock({ holder_user_id: "user-1" });
     const { rerender } = render(

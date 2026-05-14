@@ -42,6 +42,9 @@ import { useCreateWalkinBooking } from "../features/tee-sheet/use-create-walkin-
 import { useSelectionLock } from "../features/tee-sheet/use-selection-lock";
 import { useTeeSheetLocks } from "../features/tee-sheet/use-tee-sheet-locks";
 import { buildLocksBySlot } from "../features/tee-sheet/lock-utils";
+import { useCheckInBooking } from "../features/tee-sheet/use-checkin-booking";
+import { useMarkNoShow } from "../features/tee-sheet/use-mark-no-show";
+import { useTeeSheetShortcuts } from "../features/tee-sheet/use-tee-sheet-shortcuts";
 import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
 import type {
   CellOccupant,
@@ -85,7 +88,7 @@ function formatDateLabel(value: string, timezone?: string | null): string {
 
 export function AdminTeeSheetPage(): JSX.Element {
   const { accessToken, bootstrap } = useSession();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const selectedClubId = bootstrap?.selected_club_id ?? null;
   const clubTimezone = bootstrap?.selected_club?.timezone ?? null;
@@ -391,6 +394,9 @@ export function AdminTeeSheetPage(): JSX.Element {
   // covers in-flight drags; this state carries the announcement of the
   // most recent mutation outcome until the next drag begins.
   const [postDropAnnouncement, setPostDropAnnouncement] = useState("");
+  // Slice 10 — keyboard shortcut announcements share the aria-live
+  // region. Priority order in the JSX below: drag > shortcut > post-drop.
+  const [shortcutAnnouncement, setShortcutAnnouncement] = useState("");
   useEffect(() => {
     if (
       moveParticipant.isSuccess &&
@@ -419,6 +425,70 @@ export function AdminTeeSheetPage(): JSX.Element {
   useEffect(() => {
     if (dragController.announcement) setPostDropAnnouncement("");
   }, [dragController.announcement]);
+
+  // Slice 10 — keyboard-shortcut wiring. The hook installs a single
+  // document-level keydown listener and dispatches the 22 shortcuts in
+  // Buckets A/B/C. esc and ? continue to live on the existing handlers
+  // above (Bucket D — pre-wired in Slices 4–6).
+  const checkInBookingMutation = useCheckInBooking({
+    accessToken,
+    selectedClubId,
+    selectedDate,
+    membershipType: "staff",
+    teeId: null,
+    courseId,
+  });
+  const markNoShowMutation = useMarkNoShow({
+    accessToken,
+    selectedClubId,
+    selectedDate,
+    membershipType: "staff",
+    teeId: null,
+    courseId,
+  });
+
+  const handleSetDate = useCallback(
+    (date: string) => {
+      const next = new URLSearchParams(searchParams);
+      next.set("date", date);
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const handleOpenPricePopoverForSelected = useCallback(() => {
+    if (selectedSlotKey === null) return;
+    // The selected row's slot_datetime maps to its `data-slot-time`
+    // (HH:MM). Find the matching row in the DOM and click its price
+    // button — this reuses the existing onPriceClick path (Slice 5),
+    // which sets popover state + anchor in one call.
+    const slot = slotRows.find((r) => r.slot.slot_datetime === selectedSlotKey)?.slot;
+    if (!slot) return;
+    const timeKeyValue = slot.local_time.slice(0, 5);
+    const rowEl = document.querySelector(`[data-slot-time="${timeKeyValue}"]`);
+    const priceBtn = rowEl?.querySelector(
+      '[data-testid="row-price-button"]',
+    ) as HTMLButtonElement | null;
+    priceBtn?.click();
+  }, [selectedSlotKey, slotRows]);
+
+  const announceShortcutOnce = useCallback((message: string) => {
+    setShortcutAnnouncement("");
+    window.setTimeout(() => setShortcutAnnouncement(message), 0);
+  }, []);
+
+  useTeeSheetShortcuts({
+    slotRows,
+    selectedSlotKey,
+    setSelectedSlotKey,
+    selectedDate,
+    setDate: handleSetDate,
+    todayInClubTimezone: () => currentDateInTimezone(clubTimezone),
+    onCheckInBooking: (bookingId) => checkInBookingMutation.mutate({ bookingId }),
+    onMarkNoShow: (bookingId) => markNoShowMutation.mutate({ bookingId }),
+    onOpenPricePopoverForSelected: handleOpenPricePopoverForSelected,
+    setShortcutAnnouncement,
+  });
 
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
@@ -529,6 +599,23 @@ export function AdminTeeSheetPage(): JSX.Element {
         lockState={selectionLock.state}
         lockSecondsRemaining={selectionLock.secondsRemaining}
         lockHolderDisplayName={selectionLock.holderDisplayName}
+        onShortcutN={() => announceShortcutOnce("New booking flow not yet built.")}
+        onShortcutS={() => announceShortcutOnce("Squeeze-insert deferred from Phase 10.")}
+        onShortcutP={() => announceShortcutOnce("Pace status flow not yet built.")}
+        onShortcutC={() => {
+          if (selectedSlotKey === null) {
+            announceShortcutOnce("No eligible booking to check in.");
+            return;
+          }
+          const slot = slotRows.find((r) => r.slot.slot_datetime === selectedSlotKey)?.slot;
+          const booking = slot?.bookings[0];
+          if (!booking || booking.status !== "reserved") {
+            announceShortcutOnce("No eligible booking to check in.");
+            return;
+          }
+          checkInBookingMutation.mutate({ bookingId: booking.id });
+          announceShortcutOnce("Checking in selected booking.");
+        }}
       />
       {pricePopover ? (
         <PricePopover
@@ -567,7 +654,7 @@ export function AdminTeeSheetPage(): JSX.Element {
           border: 0,
         }}
       >
-        {dragController.announcement || postDropAnnouncement}
+        {dragController.announcement || shortcutAnnouncement || postDropAnnouncement}
       </div>
     </div>
   );
