@@ -17,6 +17,26 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — TypeScript narrowing: `let var: Union | null` + repeated `!` doesn't preserve discriminant narrowing
+
+- **Surfaced by**: Phase 10 Slice 9b full-build typecheck caught a latent issue in `use-acquire-lock.test.tsx` from Slice 9a.
+- **Claim**: A pattern like `let outcome: ResultUnion | null = null; outcome = await mutateAsync(...); if (outcome!.kind === "X") { ... outcome!.fieldOnX ... }` preserves the discriminant narrowing across statements.
+- **Reality**: TypeScript treats each `!` non-null assertion as an INDEPENDENT narrowing point. Inside `if (outcome!.kind === "X")`, the narrowing only applies to that single expression — the next `outcome!.fieldOnX` is re-narrowed from `ResultUnion | null` to `ResultUnion` (because of `!`), but the `kind === "X"` knowledge is lost. The compiler can't see the `X` variant's fields. Production code reviews caught this when the lock module entered the build graph and the union grew enough to break the implicit-`any` fallback.
+- **Evidence**: `frontend/src/features/tee-sheet/use-acquire-lock.test.tsx` (the conflict-path test). First fix attempt `const settled = outcome as LockAcquireResult` triggered TS2352 because `outcome`'s type still includes `null`. Final fix: `const settled = outcome as unknown as LockAcquireResult` (with the preceding `expect(outcome).not.toBeNull()` guarding the runtime). Narrowing on `settled` works correctly because TS knows the const is `LockAcquireResult` (not nullable), and the discriminant `kind` check narrows it through the rest of the block.
+- **Resolution (standing developer pattern)**: When writing tests that capture a mutation result whose type is a discriminated union, prefer one of:
+  1. **Capture into a typed const after a runtime null-check**:
+     ```ts
+     expect(outcome).not.toBeNull();
+     const settled = outcome as unknown as LockAcquireResult;
+     if (settled.kind === "conflict") { ... settled.existing_lock ... }
+     ```
+  2. **Pre-declare with a default of the right variant** (when there's a sensible default):
+     ```ts
+     let outcome: LockAcquireResult = { kind: "lock", lock: makeLock() };
+     ```
+  3. **Skip the variable entirely** and assert inline on the awaited value when possible.
+- **Status**: Standing developer pattern. Applies to any test file that uses `let var: SomeUnion | null = null` followed by an awaited assignment and discriminated-union access — common when testing mutation hooks with `LockAcquireResult` / `BookingCreateResult` / `BookingMoveResult` style returns.
+---
 ### 2026-05-14 — ApiError.body carries the parsed response body; structured-conflict consumers read it directly
 
 - **Surfaced by**: Phase 10 Slice 9a need to read the structured 409 conflict shape (`TeeSheetLockConflictDetail.existing_lock`) returned by `POST /api/golf/tee-sheet/locks`.
