@@ -17,6 +17,31 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — Pattern: `useRef` as synchronous source of truth for state read+written across same-tick callbacks
+
+- **Surfaced by**: Slice 11 use-density implementation; same shape previously surfaced in Slice 9a (activeSlotRef) and Slice 10 (multiKeyStateRef). Three occurrences across the lock orchestrator, the keyboard shortcut hook, and now the density cycle — enough to codify as the codebase convention.
+- **Claim**: A `useState`-backed value inside a `useCallback` is safe to read and write consecutively within the same tick.
+- **Reality**: React 18 batches state updates; the `setState` updater is not guaranteed to have flushed by the time the call returns. When a `useCallback` is invoked twice in rapid succession (chained DnD callbacks, keypress sequences, repeated keystrokes), the second call sees the stale state from the previous render — not the value the first call just "set". Closure variables assigned inside the updater are similarly unreliable because the updater itself may not have fired yet.
+- **Evidence**: Three independent implementations converged on the same fix:
+  - `frontend/src/features/tee-sheet/use-selection-lock.ts` — `activeSlotRef` tracks the live target slot synchronously so per-mutation callbacks can short-circuit stale acquires after the user has moved on.
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts` — `multiKeyStateRef` tracks the last `g` keypress timestamp so consecutive keydown events within the same tick correctly form the `gg` sequence.
+  - `frontend/src/features/tee-sheet/use-density.ts` — `currentDensityRef` mirrors the logical density so `cycleDensity()` chained calls advance correctly. (Caught by the cycle-sequence test: first cycle worked, second saw stale state and produced the wrong next value.)
+- **Resolution (standing developer pattern)**: When a hook's `useCallback` needs to read and write state across consecutive calls within the same tick, use a parallel `useRef` as the synchronous source of truth. `useState` is retained for triggering re-renders (so consumers re-render and read updated values), but the ref is what the callback reads and updates on each invocation. The two are kept in sync via a `useEffect` (or direct write inside the callback) so render-time reads still see the current value. The `useCallback` itself stays stable (empty dep array) because it only reads via the ref.
+  ```ts
+  const [value, setValue] = useState<T>(initial);
+  const valueRef = useRef<T>(initial);
+  useEffect(() => { valueRef.current = value; }, [value]);
+
+  const callback = useCallback(() => {
+    const current = valueRef.current;
+    const next = compute(current);
+    valueRef.current = next; // sync for next call within the same tick
+    setValue(next);          // queue the re-render
+    return next;
+  }, []);
+  ```
+- **Status**: Standing codebase convention. Established by Slices 9a / 10 / 11. Applies anywhere a callback's stable identity must coexist with state that updates async — DnD coordination, keypress sequences, optimistic UI orchestrators, any future timer-driven or rapid-fire user-input flow.
+---
 ### 2026-05-14 — GET /api/golf/tee-sheet/day has NO `interval_minutes` query param; slot interval is server-resolved only
 
 - **Surfaced by**: Phase 10 Slice 11 reconnaissance for the slot-interval segmented toggle.
