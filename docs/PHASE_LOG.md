@@ -18,6 +18,37 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 cleanup / Slice 11.5: backend — interval_minutes query param on GET /tee-sheet/day (2026-05-14)
+
+Backend-only mini-slice. Closes the gap recorded in DRIFT_LOG 2026-05-14 ("GET /api/golf/tee-sheet/day has NO `interval_minutes` query param; slot interval is server-resolved only"). Slice 11 shipped density-only after the recon discovered the spec premise was wrong; Slice 11.5 makes the override path real so a future Slice 11b can ship the frontend `SlotIntervalToggle` against a working backend contract.
+
+- **Scope**:
+  - `backend/app/schemas/tee_sheet.py` — `TeeSheetDayQuery` gains `interval_minutes_override: int | None = None`. Internal field name; the HTTP query param is `interval_minutes` per Phase 8 naming.
+  - `backend/app/services/tee_sheet_service.py` — new private helper `_resolve_interval_minutes(*, club_config, override)`. Returns the override when supplied, else `club_config.default_slot_interval_minutes`. `load_day` line 76 now calls this resolver. Override is request-scoped only; the persisted `ClubConfig.default_slot_interval_minutes` is untouched.
+  - `backend/app/api/routes/golf.py` — `get_tee_sheet_day` accepts `interval_minutes: int | None = Query(default=None, ge=6, le=12)`. Module-level constant `ALLOWED_TEE_SHEET_INTERVAL_MINUTES = (6, 8, 10, 12)`. Route body raises `HTTPException(400)` with `detail="interval_minutes must be one of: 6, 8, 10, 12"` when the value is outside the set. The override is passed through to the DTO.
+  - `backend/tests/test_tee_sheet_interval_override.py` (new) — 12 tests covering: omitted → club default, four allowed values (6/8/10/12) each bucket slots correctly, set-check rejections (7/9/11 → 400), range rejections (5/15 → 422 via Pydantic), type rejection ("abc" → 422), and a persistence guard verifying the override doesn't mutate `ClubConfig.default_slot_interval_minutes`.
+  - **No migration.** Override is request-scoped; nothing persists. Alembic head unchanged at `202605140001`.
+- **Files touched**:
+  - `backend/app/schemas/tee_sheet.py` (DTO field added)
+  - `backend/app/services/tee_sheet_service.py` (resolver helper + call-site swap)
+  - `backend/app/api/routes/golf.py` (query param + set check + DTO passthrough + module constant)
+  - `backend/tests/test_tee_sheet_interval_override.py` (created, 12 tests)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`, `docs/DRIFT_LOG.md` (resolution note on the 2026-05-14 interval-minutes gap entry)
+- **Outcome**: Backend tests at HEAD: 320 → 332 (+12). Ruff clean. Alembic round-trip unaffected (no schema change). No frontend code touched.
+- **Decisions made**:
+  - **Two-layer validation: Pydantic `ge=6, le=12` + route-body set check.** The ge/le narrows the integer range cheaply at the Query layer (5 / 15 / -1 → 422 ValidationError before the route body runs). The set check catches in-range non-allowed values (7, 9, 11 → 400). Status code asymmetry recorded explicitly in the test names so future readers know the design is intentional, not a bug.
+  - **Override is request-scoped, not persisted.** No new column on `ClubConfig`, no migration. `ClubConfig.default_slot_interval_minutes` remains the persisted truth. A future "per-user preferred view interval" surface could add localStorage on the frontend or a separate preference table on the backend; not this slice.
+  - **No event emission.** Reading the day with a different interval is not a domain mutation. No `tee_sheet.*` event types added.
+  - **Internal field name (`interval_minutes_override`) differs from the HTTP query param (`interval_minutes`)**. The HTTP-facing name matches Phase 8's segmented-control naming; the internal name makes it obvious the field is an override of the persisted default. The route passes the value through explicitly.
+  - **Allowed set is hard-coded at the route layer** (`ALLOWED_TEE_SHEET_INTERVAL_MINUTES = (6, 8, 10, 12)`). If product later wants finer granularity, a follow-up slice can move the set into ClubConfig or a settings table.
+- **Follow-ups created**:
+  - Slice 11b (frontend) — now unblocked. The `SlotIntervalToggle` can ship: render the four-button segmented control on the date strip, fire `setSearchParams` with the new `interval_minutes`, refetch via `useTeeSheetDayQuery`, clear `selectedSlotKey` on change because slot times no longer align across intervals.
+  - The Slice 11 DRIFT_LOG entry on the original gap is now closed.
+- **Notes**:
+  - Followed the operational guidance from DRIFT_LOG 2026-05-14 (shared-schema race) — confirmed no concurrent pytest was running before launching the full suite (`ps -ef | grep pytest | grep -v grep` returned no in-flight jobs).
+  - The Slice 7.5 stop-and-ask discipline applied here in reverse — Slice 11 stopped and asked when the spec premise was wrong; Slice 11.5 ships the backend that makes the spec premise correct. Clean Slice 11 → 11.5 sequencing.
+
+---
 ## Phase 10 cleanup — Marshal-on-phone (Slice 13) deferred to Phase 12 (2026-05-14)
 
 Docs + stub-wording cleanup. No new features, no new components, no behaviour change. Phase 10 closed at Slice 11; Slice 12 (tournament mode) was deferred to Phase 11 by user decision after the tournament-mode audit. Slice 13 (marshal-on-phone) was carried forward but never explicitly reassigned. This cleanup formalises the deferral and updates the `⇧M` shortcut handler's stub message so it no longer references the never-shipped Slice 13.

@@ -295,6 +295,9 @@ def rollback_golf_pricing(
     return GolfSettingsService(db).rollback_pricing_matrix(context.selected_club.id)
 
 
+ALLOWED_TEE_SHEET_INTERVAL_MINUTES = (6, 8, 10, 12)
+
+
 @router.get("/tee-sheet/day", response_model=TeeSheetDayResponse)
 def get_tee_sheet_day(
     course_id: uuid.UUID = Query(),
@@ -303,10 +306,19 @@ def get_tee_sheet_day(
     start_lane: StartLane | None = Query(default=None),
     membership_type: BookingRuleAppliesTo = Query(default=BookingRuleAppliesTo.MEMBER),
     reference_datetime: datetime | None = Query(default=None),
+    interval_minutes: int | None = Query(default=None, ge=6, le=12),
     raw_selected_club_id: uuid.UUID | None = Depends(get_requested_club_id),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TeeSheetDayResponse:
+    # Slice 11.5 — ge=6/le=12 narrows the integer range at Pydantic level
+    # (5 / 15 / etc → 422). The set check rejects intermediates (7, 9, 11)
+    # not in Phase 8's segmented-control allowed values.
+    if interval_minutes is not None and interval_minutes not in ALLOWED_TEE_SHEET_INTERVAL_MINUTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="interval_minutes must be one of: 6, 8, 10, 12",
+        )
     context = resolve_required_club_context(db, current_user, raw_selected_club_id)
     _require_golf_read(current_user=current_user, context=context)
     assert context.selected_club is not None
@@ -325,6 +337,7 @@ def get_tee_sheet_day(
             start_lane=start_lane,
             membership_type=normalized_membership_type,
             reference_datetime=reference_datetime,
+            interval_minutes_override=interval_minutes,
         )
     )
 

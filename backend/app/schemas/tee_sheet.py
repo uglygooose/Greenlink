@@ -39,6 +39,12 @@ class TeeSheetDayQuery(BaseModel):
     start_lane: StartLane | None = None
     membership_type: BookingRuleAppliesTo = BookingRuleAppliesTo.MEMBER
     reference_datetime: datetime | None = None
+    # Slice 11.5 — request-scoped override of the day's slot interval.
+    # When None, the service resolves from ClubConfig.default_slot_interval_minutes
+    # (existing behaviour). Allowed override values: {6, 8, 10, 12}; the route
+    # layer enforces the set so the service receives a pre-validated int.
+    # NOT persisted; the club's default remains the source of truth.
+    interval_minutes_override: int | None = None
 
 
 class TeeSheetPartySummary(BaseModel):

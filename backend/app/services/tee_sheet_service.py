@@ -73,7 +73,10 @@ class TeeSheetService:
                 )
             )
 
-        interval_minutes = club_config.default_slot_interval_minutes
+        interval_minutes = self._resolve_interval_minutes(
+            club_config=club_config,
+            override=query.interval_minutes_override,
+        )
         slot_datetimes = self._generate_slot_datetimes(
             query.date, zone, club_config.operating_hours, interval_minutes
         )
@@ -217,6 +220,23 @@ class TeeSheetService:
                 for participant in booking.participants
             ],
         )
+
+    def _resolve_interval_minutes(
+        self,
+        *,
+        club_config: ClubConfig,
+        override: int | None,
+    ) -> int:
+        """Resolve the slot interval for a day-view response.
+
+        The override is request-scoped (Slice 11.5 — accepted as a query
+        param on GET /tee-sheet/day, validated against {6, 8, 10, 12} at
+        the route layer). When absent, falls back to the club's persisted
+        default. The override does NOT mutate ClubConfig.
+        """
+        if override is not None:
+            return override
+        return club_config.default_slot_interval_minutes
 
     def _load_row_scopes(self, query: TeeSheetDayQuery) -> list[tuple[Tee | None, StartLane]]:
         lanes = (
