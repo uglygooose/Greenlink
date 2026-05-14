@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -25,7 +25,7 @@ vi.mock("../features/golf-settings/hooks", () => ({
 }));
 
 vi.mock("../features/tee-sheet/hooks", () => ({
-  useTeeSheetDayQuery: () => mockUseTeeSheetDayQuery(),
+  useTeeSheetDayQuery: (args: unknown) => mockUseTeeSheetDayQuery(args),
 }));
 
 vi.mock("../features/tee-sheet/components/PortfolioStrip", () => ({
@@ -633,6 +633,83 @@ describe("AdminTeeSheetPage", () => {
       fireEvent.keyDown(document, { key: "?" });
       expect(screen.getByTestId("shortcut-help-modal")).toBeInTheDocument();
       expect(screen.getByTestId("waitlist-rail")).toBeInTheDocument();
+    });
+  });
+
+  describe("slot-interval toggle (Slice 11b)", () => {
+    test("date strip mounts the SlotIntervalToggle with the four allowed values", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({
+        data: makeDay([]),
+        isPending: false,
+        isError: false,
+      });
+      renderPage();
+      const group = screen.getByRole("radiogroup", { name: /slot interval/i });
+      const buttons = within(group).getAllByRole("radio");
+      expect(buttons.map((b) => b.textContent)).toEqual(["6m", "8m", "10m", "12m"]);
+    });
+
+    test("active button reflects the response's interval_minutes (truth-from-server)", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({
+        data: { ...makeDay([]), interval_minutes: 10 },
+        isPending: false,
+        isError: false,
+      });
+      renderPage();
+      const buttons = within(
+        screen.getByRole("radiogroup", { name: /slot interval/i }),
+      ).getAllByRole("radio");
+      expect(buttons.map((b) => b.getAttribute("aria-checked"))).toEqual([
+        "false",
+        "false",
+        "true",
+        "false",
+      ]);
+    });
+
+    test("clicking an interval button re-calls the hook with the new intervalMinutes", () => {
+      mockUseTeeSheetDayQuery.mockReturnValue({
+        data: makeDay([]),
+        isPending: false,
+        isError: false,
+      });
+      renderPage();
+      const initialArgs = mockUseTeeSheetDayQuery.mock.calls[0][0] as { intervalMinutes: number | null };
+      expect(initialArgs.intervalMinutes).toBeNull();
+
+      const buttons = within(
+        screen.getByRole("radiogroup", { name: /slot interval/i }),
+      ).getAllByRole("radio");
+      fireEvent.click(buttons[2]); // 10m
+
+      const latestArgs = mockUseTeeSheetDayQuery.mock.calls.at(-1)![0] as {
+        intervalMinutes: number | null;
+      };
+      expect(latestArgs.intervalMinutes).toBe(10);
+    });
+
+    test("changing the interval clears the active row selection", () => {
+      const slots = [
+        makeSlot({
+          slot_datetime: "2026-05-12T06:30:00+02:00",
+          local_time: "06:30:00",
+          display_status: "reserved",
+        }),
+      ];
+      mockUseTeeSheetDayQuery.mockReturnValue({
+        data: makeDay(slots),
+        isPending: false,
+        isError: false,
+      });
+      const { container } = renderPage();
+      fireEvent.click(container.querySelector("[data-row-state]") as HTMLElement);
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("true");
+
+      const buttons = within(
+        screen.getByRole("radiogroup", { name: /slot interval/i }),
+      ).getAllByRole("radio");
+      fireEvent.click(buttons[2]); // 10m
+      expect(screen.getByTestId("selection-footer").getAttribute("data-has-selection")).toBe("false");
     });
   });
 });

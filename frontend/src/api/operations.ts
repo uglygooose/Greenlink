@@ -264,6 +264,7 @@ export function fetchTeeSheetDay(
     membershipType: "member" | "guest" | "staff";
     teeId?: string | null;
     referenceDatetime?: string | null;
+    intervalMinutes?: number | null;
   },
   { accessToken, selectedClubId }: AuthenticatedOptions,
 ): Promise<TeeSheetDayResponse> {
@@ -277,6 +278,9 @@ export function fetchTeeSheetDay(
   }
   if (params.referenceDatetime) {
     searchParams.set("reference_datetime", params.referenceDatetime);
+  }
+  if (params.intervalMinutes != null) {
+    searchParams.set("interval_minutes", String(params.intervalMinutes));
   }
   return apiRequest<TeeSheetDayResponse>(`/api/golf/tee-sheet/day?${searchParams.toString()}`, {
     method: "GET",

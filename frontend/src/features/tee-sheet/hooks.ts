@@ -8,8 +8,27 @@ export const TEE_SHEET_STALE_TIME = 60_000;
 export const TEE_SHEET_REFETCH_INTERVAL = 30_000;
 
 export const teeSheetKeys = {
-  day: (clubId: string, courseId: string, day: string, membershipType: BookingRuleAppliesTo, teeId?: string | null) =>
-    ["tee-sheet", clubId, courseId, day, membershipType, teeId ?? "all-tees"] as const,
+  // intervalMinutes null/undefined collapses to the "default" sentinel so a
+  // call site that omits the override (PortfolioStrip per-course summaries)
+  // shares cache with a call site that explicitly opts into the club default
+  // (the page when no override is set). Numeric overrides get their own slot.
+  day: (
+    clubId: string,
+    courseId: string,
+    day: string,
+    membershipType: BookingRuleAppliesTo,
+    teeId?: string | null,
+    intervalMinutes?: number | null,
+  ) =>
+    [
+      "tee-sheet",
+      clubId,
+      courseId,
+      day,
+      membershipType,
+      teeId ?? "all-tees",
+      intervalMinutes ?? "default",
+    ] as const,
 };
 
 interface TeeSheetQueryOptions {
@@ -19,6 +38,7 @@ interface TeeSheetQueryOptions {
   date: string;
   membershipType: BookingRuleAppliesTo;
   teeId?: string | null;
+  intervalMinutes?: number | null;
 }
 
 function isReady(
@@ -36,12 +56,20 @@ export function teeSheetDayQueryOptions({
   date,
   membershipType,
   teeId,
+  intervalMinutes,
 }: TeeSheetQueryOptions) {
   return {
-    queryKey: teeSheetKeys.day(selectedClubId ?? "none", courseId ?? "none", date, membershipType, teeId),
+    queryKey: teeSheetKeys.day(
+      selectedClubId ?? "none",
+      courseId ?? "none",
+      date,
+      membershipType,
+      teeId,
+      intervalMinutes,
+    ),
     queryFn: () =>
       fetchTeeSheetDay(
-        { courseId: courseId as string, date, membershipType, teeId },
+        { courseId: courseId as string, date, membershipType, teeId, intervalMinutes },
         { accessToken: accessToken as string, selectedClubId: selectedClubId as string },
       ),
     staleTime: TEE_SHEET_STALE_TIME,
@@ -55,6 +83,7 @@ export function useTeeSheetDayQuery({
   date,
   membershipType,
   teeId,
+  intervalMinutes,
 }: TeeSheetQueryOptions) {
   return useQuery<TeeSheetDayResponse>({
     ...teeSheetDayQueryOptions({
@@ -64,6 +93,7 @@ export function useTeeSheetDayQuery({
       date,
       membershipType,
       teeId,
+      intervalMinutes,
     }),
     enabled: isReady(accessToken, selectedClubId, courseId),
     placeholderData: (previousData) => previousData,

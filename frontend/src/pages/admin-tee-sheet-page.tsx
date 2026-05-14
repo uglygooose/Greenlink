@@ -33,6 +33,7 @@ import { TeeStateChip } from "../components/ui/TeeStateChip";
 import { useCoursesQuery } from "../features/golf-settings/hooks";
 import { PortfolioStrip } from "../features/tee-sheet/components/PortfolioStrip";
 import { SelectionFooter } from "../features/tee-sheet/components/SelectionFooter";
+import { SlotIntervalToggle } from "../features/tee-sheet/components/SlotIntervalToggle";
 import { TeeRow, rowStateFromDisplayStatus } from "../features/tee-sheet/components/TeeRow";
 import { WaitlistRail } from "../features/tee-sheet/components/WaitlistRail";
 import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
@@ -102,6 +103,12 @@ export function AdminTeeSheetPage(): JSX.Element {
   const dateValid = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam);
   const selectedDate = dateValid ? dateParam : currentDateInTimezone(clubTimezone);
 
+  // Slice 11b — page-state override of the request-side slot interval. null
+  // sends nothing on the wire; the resolved value comes back in
+  // `day.interval_minutes` and drives the toggle's selected button (truth-
+  // from-server). Override is not persisted across refresh.
+  const [intervalOverride, setIntervalOverride] = useState<number | null>(null);
+
   const teeSheetQuery = useTeeSheetDayQuery({
     accessToken,
     selectedClubId,
@@ -109,6 +116,7 @@ export function AdminTeeSheetPage(): JSX.Element {
     date: selectedDate,
     membershipType: "staff",
     teeId: null,
+    intervalMinutes: intervalOverride,
   });
 
   const day = teeSheetQuery.data;
@@ -501,7 +509,15 @@ export function AdminTeeSheetPage(): JSX.Element {
   return (
     <div className="gl" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <PortfolioStrip selectedDate={selectedDate} activeCourseId={courseId} />
-      <DateStrip date={selectedDate} timezone={day?.timezone ?? clubTimezone} />
+      <DateStrip
+        date={selectedDate}
+        timezone={day?.timezone ?? clubTimezone}
+        activeInterval={day?.interval_minutes ?? 8}
+        onIntervalChange={(value) => {
+          setIntervalOverride(value);
+          setSelectedSlotKey(null);
+        }}
+      />
       <LegendStrip />
       <div style={{ flex: 1, display: "flex", flexDirection: "row", minHeight: 0, overflow: "hidden" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -668,7 +684,17 @@ export function AdminTeeSheetPage(): JSX.Element {
   );
 }
 
-function DateStrip({ date, timezone }: { date: string; timezone: string | null }): JSX.Element {
+function DateStrip({
+  date,
+  timezone,
+  activeInterval,
+  onIntervalChange,
+}: {
+  date: string;
+  timezone: string | null;
+  activeInterval: number;
+  onIntervalChange: (value: number) => void;
+}): JSX.Element {
   const label = formatDateLabel(date, timezone);
   return (
     <div
@@ -698,6 +724,9 @@ function DateStrip({ date, timezone }: { date: string; timezone: string | null }
         <Button variant="tertiary" size="sm" disabled aria-label="Pick date — ships in slice 6">
           <Icon name="calendar_today" size={13} />
         </Button>
+      </div>
+      <div style={{ marginLeft: "auto" }}>
+        <SlotIntervalToggle selectedValue={activeInterval} onChange={onIntervalChange} />
       </div>
     </div>
   );
