@@ -17,6 +17,18 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — ApiError.body carries the parsed response body; structured-conflict consumers read it directly
+
+- **Surfaced by**: Phase 10 Slice 9a need to read the structured 409 conflict shape (`TeeSheetLockConflictDetail.existing_lock`) returned by `POST /api/golf/tee-sheet/locks`.
+- **Claim**: Surfacing structured error bodies requires either a parallel fetch wrapper or a request-by-request override of `apiRequest`'s default throwing behavior.
+- **Reality**: `apiRequest` already parses non-OK response bodies into `ErrorBody | null` (`frontend/src/api/client.ts`); it just didn't preserve the parsed shape on the thrown `ApiError`. Slice 9a extended `ApiError` with an optional `body: unknown` field (default `null`) so callers that need the structured shape can read `err.body` directly. Backwards-compatible: every existing caller continues to read only `status` + `message`.
+- **Evidence**: `frontend/src/api/client.ts` (`ApiError` class + the `apiRequest` non-OK branch that now passes `body` through). `frontend/src/api/operations.ts:unwrapLockConflict` shows the consumer pattern — narrow `err.body` from `unknown` to the typed shape via runtime checks, then return a discriminated union from the helper (`{kind: "lock"}` vs `{kind: "conflict"}`).
+- **Resolution**: This is the standing architectural primitive for any future endpoint that returns a structured non-200 body. Examples to wire as they ship:
+  - Close-day reconciliation conflicts (when the close-day wizard returns structured per-line variance details on 409).
+  - The future participant-reorder endpoint (when Slice 12+ adds it, its 409 body for "slot is full / position taken" will follow the same shape).
+  - Future atomic-swap booking endpoint (would replace Slice 8B's sequential orchestrator; would emit structured per-participant failure details on 409).
+- **Status**: Standing architectural contract. Not a drift — the backend behavior is correct; this entry records the FE-side pattern so future slices reuse the primitive instead of duplicating `apiRequest`'s auth / refresh-token logic in a parallel wrapper.
+---
 ### 2026-05-14 — Operational: backend tests share the public schema; never run two pytest invocations concurrently
 
 - **Surfaced by**: Phase 10 Slice 8.5 full-suite validation. The first `pytest tests/` run reported 67 failures + 13 errors with symptoms like `psycopg.errors.UndefinedTable: relation "people" does not exist` even though the alembic log showed every migration ran cleanly.
