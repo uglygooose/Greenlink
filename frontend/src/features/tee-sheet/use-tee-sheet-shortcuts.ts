@@ -139,7 +139,7 @@ export function useTeeSheetShortcuts(params: UseTeeSheetShortcutsParams): void {
       // ⇧M — marshal view (Bucket C forward ref).
       if (event.shiftKey && event.key === "M") {
         event.preventDefault();
-        announce("Marshal view arrives in Slice 13.");
+        announce("Marshal view arrives in Phase 12.");
         return;
       }
       // ⇧G — go to bottom (Bucket A).

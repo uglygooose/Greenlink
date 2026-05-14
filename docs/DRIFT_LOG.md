@@ -17,6 +17,23 @@ Each entry uses this format:
 ```
 
 ---
+### 2026-05-14 — Phase 10 Slice 13 (marshal-on-phone) deferred to Phase 12
+
+- **Surfaced by**: Phase 10 cleanup audit on the `⇧M` shortcut handler. The marshal-on-phone slice was originally Slice 13 in the published Phase 10 plan (responsive web, NOT Expo/RN — per the v1 locked decision recorded earlier in the phase). It was implicitly deferred when Phase 10 closed at Slice 11 (the user's Path 1 decision on the Slice 12 audit moved tournament mode to Phase 11), but the marshal-on-phone deferral was never formally documented. Surfaced by the read-only audit reporting that `⇧M` still announces the stub `"Marshal view arrives in Slice 13."` — stale wording, given Slice 13 will not ship in Phase 10.
+- **Claim**: Phase 10's published slice plan listed Slice 13 (marshal-on-phone — 360×720 responsive view, 3-button start/turn/finish workflow, on-tee-now panel, pace-alert pattern) as the closing slice of the tee-sheet rebuild.
+- **Reality**: Phase 10 closed at Slice 11 (density toggle); Slice 12 was deferred to Phase 11 by user decision after the tournament-mode audit. Slice 13 was carried forward but never explicitly reassigned. Audit findings for marshal-on-phone work today:
+  - **No `MarshalView` component, no marshal route, no marshal-specific hook.** `grep -rln "marshal\|Marshal\|MarshalView" frontend/src/` returns five matches, all forward-reference text only:
+    - `frontend/src/features/tee-sheet/shortcuts.ts:36` — the shortcut catalog entry (`{ keys: ["⇧", "M"], label: "Marshal view" }`).
+    - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts:139-142` — the Bucket C forward-reference stub handler (the stale wording this entry resolves).
+    - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.test.tsx:329` — the test that asserts the stub message.
+    - `frontend/src/pages/admin-tee-sheet-page.tsx:23` — a comment in the page header cataloguing the planned slice sequence (`// toggles (11), tournament mode (12), marshal-on-phone (13).`).
+    - `frontend/src/pages/onboarding-popia-page.tsx:136` — feature-unrelated onboarding copy about role-based access (`"… marshals see today's sheet only."`).
+  - **Phase 8 design treats marshal-on-phone as a sibling artboard** — a separate 360×720 device mock with a three-button start/turn/finish workflow, an on-tee-now panel, and the pace-alert pattern (distinct from the desktop tee-sheet artboards Phases 7–10 implemented). Implementation note in Phase 8 originally recommended a separate Expo/RN module; the v1 locked decision was responsive web inside the existing React tree.
+  - **Backend support is largely already in place** for the marshal workflow — `POST /api/golf/bookings/{id}/check-in` and `POST /api/golf/bookings/{id}/no-show` (Slice 10 wired both into desktop shortcuts) cover start/turn/finish state transitions; `GET /api/golf/tee-sheet/day` is the on-tee-now data source. The remaining gaps are the Phase 8 design details (pace-alert UX, viewport-specific chrome, on-tee-now panel composition) and any pace-status flow if it lands (Slice 10 stubbed `p` as "Pace status flow not yet built").
+- **Evidence**: Read-only audit of git range `8c8ea2f..d108bd4` confirmed two commits in the range, both docs-only, neither marshal-related. No `MarshalView` component anywhere in `frontend/src/`. `⇧M` handler unchanged from Slice 10. `DRIFT_LOG.md` had no entry referencing Slice 13 before this one; `PHASE_LOG.md` referenced Slice 13 only in Slice 10's forward-reference cataloguing (lines 63, 92).
+- **Resolution**: Slice 13 formally deferred from Phase 10 to Phase 12. **Phase 12 will own all mobile surfaces** — marshal-on-phone + player app + any future mobile-shape work. Rationale: mobile surfaces share design patterns (touch targets, viewport assumptions, responsive breakpoints, chrome-shell decisions, gesture vs keyboard input model) and should be built together rather than one-off-by-one-off. The `⇧M` stub announcement is updated from `"Marshal view arrives in Slice 13."` → `"Marshal view arrives in Phase 12."` (this same commit). The shortcut catalog entry, the test assertion, and the page header comment remain as forward references and will be updated when Phase 12 lands.
+- **Status**: Deferred to Phase 12. Phase 10 closes after Slice 11 (already recorded). Phase 11 owns tournament mode. Phase 12 owns mobile surfaces (marshal-on-phone + player app).
+---
 ### 2026-05-14 — Slice 12 (tournament mode / shotgun view) deferred from Phase 10 to Phase 11
 
 - **Surfaced by**: Phase 10 Slice 12 reconnaissance audit (read-only, no code).

@@ -18,6 +18,32 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 cleanup — Marshal-on-phone (Slice 13) deferred to Phase 12 (2026-05-14)
+
+Docs + stub-wording cleanup. No new features, no new components, no behaviour change. Phase 10 closed at Slice 11; Slice 12 (tournament mode) was deferred to Phase 11 by user decision after the tournament-mode audit. Slice 13 (marshal-on-phone) was carried forward but never explicitly reassigned. This cleanup formalises the deferral and updates the `⇧M` shortcut handler's stub message so it no longer references the never-shipped Slice 13.
+
+- **Scope**:
+  - Update the Bucket C forward-reference stub handler for `⇧M` (`frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts:142`): `announce("Marshal view arrives in Slice 13.")` → `announce("Marshal view arrives in Phase 12.")`.
+  - Update the corresponding test assertion (`frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.test.tsx:329`) to match the new wording.
+  - DRIFT_LOG entry recording the deferral with the audit findings as evidence so future-phase authors don't redo the recon.
+  - PHASE_LOG entry (this one).
+- **Files modified** (4 expected):
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.ts` (1 line — announcement string)
+  - `frontend/src/features/tee-sheet/use-tee-sheet-shortcuts.test.tsx` (1 line — test assertion string)
+  - `docs/DRIFT_LOG.md` (new entry)
+  - `docs/PHASE_LOG.md` (this entry)
+- **Outcome**: Tests unchanged in count and structure (the `⇧M` test still exists and still asserts the announcement; only the asserted string is updated). Lint clean, typecheck clean, full suite green. No new dependencies. FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13.
+- **Decisions made**:
+  - **Phase 12 owns all mobile surfaces** — marshal-on-phone + player app + any future mobile-shape work. Rationale: mobile surfaces share design patterns (touch targets, viewport assumptions, responsive breakpoints, chrome-shell decisions, gesture vs keyboard input model) and should be built together rather than one-off-by-one-off. The v1 locked decision (responsive web, not Expo/RN) remains in effect.
+  - **The shortcut catalog entry, the test assertion, and the page header comment remain as forward references** — only the operator-facing stub announcement is updated. The catalog (`shortcuts.ts:36`) and the page comment (`admin-tee-sheet-page.tsx:23`) describe the keystroke for users / readers and will be updated when Phase 12 actually lands the surface.
+- **Follow-ups created**:
+  - Phase 12 implementation will replace the `⇧M` stub announcement with a real handler that opens the marshal view (probably routing to a separate marshal-shell route given the 360×720 viewport assumption + 3-button workflow).
+  - The page-header comment in `admin-tee-sheet-page.tsx:23` will need updating when Phase 12 ships; harmless until then.
+- **Notes**:
+  - See DRIFT_LOG 2026-05-14 entry "Phase 10 Slice 13 (marshal-on-phone) deferred to Phase 12" for full audit findings.
+  - The Slice 12 deferral (DRIFT_LOG 2026-05-14, tournament mode → Phase 11) was a backend-blocked deferral. Slice 13 is a different shape — backend largely supports the marshal workflow already (check-in / no-show endpoints from Slice 10) — but the design is part of a cohesive mobile-surface effort that belongs in its own phase.
+
+---
 ## Phase 10 — Slice 11: Density toggle (density-only; interval toggle deferred) (2026-05-14)
 
 Frontend slice. Ships the density-cycle half of Slice 11. The slot-interval segmented toggle was deferred during reconnaissance because the backend doesn't accept `interval_minutes` as a query param on `GET /tee-sheet/day` (the spec premise was wrong). Recorded in DRIFT_LOG 2026-05-14; future Slice 11.5 backend mini-slice + Slice 11b frontend slice will complete the interval-toggle path. Density itself is keyboard-only access via the `v` shortcut (Slice 10's stub is replaced); preference persists per-user via localStorage.

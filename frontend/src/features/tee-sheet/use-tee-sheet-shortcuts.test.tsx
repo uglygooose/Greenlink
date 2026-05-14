@@ -326,7 +326,7 @@ describe("useTeeSheetShortcuts — Bucket B (stubs)", () => {
 describe("useTeeSheetShortcuts — Bucket C (forward refs)", () => {
   test.each([
     [{ key: "T", shiftKey: true }, "Tournament mode arrives in Slice 12."],
-    [{ key: "M", shiftKey: true }, "Marshal view arrives in Slice 13."],
+    [{ key: "M", shiftKey: true }, "Marshal view arrives in Phase 12."],
   ])("%o announces %s", (eventInit, message) => {
     vi.useFakeTimers();
     const h = buildHarness();
