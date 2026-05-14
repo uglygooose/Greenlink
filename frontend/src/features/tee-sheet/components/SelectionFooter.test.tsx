@@ -85,4 +85,108 @@ describe("SelectionFooter", () => {
     expect(chips.textContent).toContain("check-in");
     expect(chips.textContent).toContain("pace");
   });
+
+  // ---------- Slice 9a lock-line states ----------
+
+  test("idle lock state renders the empty placeholder", () => {
+    render(<SelectionFooter selectedSlot={null} lockState={{ kind: "idle" }} />);
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("idle");
+    expect(line.textContent).toContain("Slot — · — remaining");
+  });
+
+  test("acquiring renders the info pill", () => {
+    render(<SelectionFooter selectedSlot={slot()} lockState={{ kind: "acquiring" }} />);
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("acquiring");
+    expect(line.textContent).toContain("Acquiring slot lock");
+  });
+
+  test("held-by-me renders 'held by you' with countdown", () => {
+    const lock = makeLock({ holder_user_id: "user-1" });
+    render(
+      <SelectionFooter
+        selectedSlot={slot()}
+        lockState={{ kind: "held-by-me", lock }}
+        lockSecondsRemaining={38}
+      />,
+    );
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("held-by-me");
+    expect(line.textContent).toContain("Slot 06:46 held by you · 38s remaining");
+  });
+
+  test("held-by-other renders holder name + countdown in atrisk tone", () => {
+    const lock = makeLock({
+      holder_user_id: "user-2",
+      holder_display_name: "Mokoena",
+    });
+    render(
+      <SelectionFooter
+        selectedSlot={slot()}
+        lockState={{ kind: "held-by-other", lock }}
+        lockSecondsRemaining={22}
+        lockHolderDisplayName="Mokoena"
+      />,
+    );
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("held-by-other");
+    expect(line.textContent).toContain("Slot 06:46 held by Mokoena · 22s remaining");
+    expect(line.style.color).toContain("var(--gl-state-atrisk)");
+  });
+
+  test("releasing renders the neutral pill", () => {
+    render(<SelectionFooter selectedSlot={slot()} lockState={{ kind: "releasing" }} />);
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("releasing");
+    expect(line.textContent).toContain("Releasing");
+  });
+
+  test("error renders the recovery hint in atrisk tone", () => {
+    render(
+      <SelectionFooter
+        selectedSlot={slot()}
+        lockState={{ kind: "error", message: "Renew failed" }}
+      />,
+    );
+    const line = screen.getByTestId("selection-lock-line");
+    expect(line.getAttribute("data-lock-kind")).toBe("error");
+    expect(line.textContent).toContain("Lock error — try selecting again");
+    expect(line.style.color).toContain("var(--gl-state-atrisk)");
+  });
+
+  test("countdown updates when prop changes", () => {
+    const lock = makeLock({ holder_user_id: "user-1" });
+    const { rerender } = render(
+      <SelectionFooter
+        selectedSlot={slot()}
+        lockState={{ kind: "held-by-me", lock }}
+        lockSecondsRemaining={59}
+      />,
+    );
+    expect(screen.getByTestId("selection-lock-line").textContent).toContain("59s remaining");
+    rerender(
+      <SelectionFooter
+        selectedSlot={slot()}
+        lockState={{ kind: "held-by-me", lock }}
+        lockSecondsRemaining={58}
+      />,
+    );
+    expect(screen.getByTestId("selection-lock-line").textContent).toContain("58s remaining");
+  });
 });
+
+function makeLock(overrides: Partial<import("../../../types/tee-sheet-locks").TeeSheetLockResponse> = {}) {
+  return {
+    id: "lock-1",
+    club_id: "club-1",
+    course_id: "course-1",
+    slot_datetime: "2026-05-12T06:46:00+02:00",
+    holder_user_id: "user-1",
+    holder_display_name: "Operator A",
+    acquired_at: "2026-05-12T06:45:00+02:00",
+    expires_at: "2026-05-12T06:46:00+02:00",
+    remaining_seconds: 60,
+    ...overrides,
+  };
+}

@@ -18,6 +18,54 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 9a: Optimistic lock (holder side) (2026-05-14)
+
+Frontend slice. Closes the holder-side half of the v1 concurrency gap documented in DRIFT_LOG 2026-05-14 (Slice 8A). Selection drives the lock lifecycle: when the operator selects a tee row, the page acquires the slot lock; when selection clears or shifts, the page releases. A single page-level setInterval ticks the countdown every second and auto-renews at 30s remaining. Other-operator visibility (Slice 9b) is out of scope — Slice 9a only renders the holder-side state in the SelectionFooter.
+
+- **Scope**:
+  - `frontend/src/api/client.ts` — `ApiError` now carries an optional `body` field so callers that need the structured response shape (lock 409 conflict detail) can read it without redoing the fetch. Backwards-compatible: the existing `status` + `message` are unchanged; the new field defaults to `null`.
+  - `frontend/src/types/tee-sheet-locks.ts` (new) — mirrors `backend/app/schemas/tee_sheet_locks.py`: `TeeSheetLockAcquireRequest`, `TeeSheetLockResponse` (with `remaining_seconds` server-derived but re-derived client-side for the live countdown), `TeeSheetLockConflictDetail`, `TeeSheetLockListResponse`, and the FastAPI 409-body wrapping shape `TeeSheetLockConflict409Body`.
+  - `frontend/src/api/operations.ts` — new client helpers: `acquireTeeSheetLock` (returns `LockAcquireResult` discriminated union — 409 surfaces as `kind: "conflict"`, never thrown), `renewTeeSheetLock` (same shape via `LockRenewResult`), `releaseTeeSheetLock` (DELETE; swallows errors silently per spec), `listTeeSheetLocks` (read endpoint for Slice 9b's eventual use). Private `unwrapLockConflict` narrows the FastAPI `{detail: ...}` wrapper into the typed conflict shape.
+  - Three thin React Query mutation hooks: `use-acquire-lock.ts`, `use-renew-lock.ts`, `use-release-lock.ts`. They wrap the client helpers; the orchestrator does the coordination.
+  - `use-selection-lock.ts` (new) — the orchestrator. State machine: `idle | acquiring | held-by-me | held-by-other | releasing | error`. Single page-level `window.setInterval(1000)` mounted via `useEffect` gated on `state.kind` ∈ {held-by-me, held-by-other}. Stale-call coordination via an `activeSlotRef` — every mutation callback re-checks the live `selectedSlotKey` before applying its result, and if the slot has moved on, a successful acquire fires an immediate release for the orphaned lock. Unmount cleanup fires release for any current lock.
+  - 409 dual-path: when acquire returns conflict and `existing_lock.holder_user_id === currentUserId`, the orchestrator reuses the existing lock as `held-by-me` (no new lock created). When the holder is a different user, state is `held-by-other` and the footer shows their name + countdown.
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.tsx` — replaces the Slice 4 stub `"Slot — · — remaining"` line with state-driven rendering across all six SelectionLockState kinds. `lockLineColor` switches to `--gl-state-atrisk` for `held-by-other` and `error`; the held-by-me / held-by-other countdowns render in `gl-mono`. Acquiring/releasing use the existing Pill primitive (info / neutral). When `lockState` is omitted (isolated component-test mounts, legacy callers), the legacy empty placeholder still renders.
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` — mounts `useSelectionLock` at page level and threads `state` + `secondsRemaining` + `holderDisplayName` to SelectionFooter. The orchestrator observes `selectedSlotKey` and `courseId`; the existing esc/course-change/popover-dismiss selection-clear paths automatically flow through to lock release. Booking mutations (Slice 8A/8B) are untouched — locks remain advisory.
+  - 25 new tests: `use-acquire-lock.test.tsx` (4), `use-renew-lock.test.tsx` (3), `use-release-lock.test.tsx` (3), `use-selection-lock.test.tsx` (8 — idle / acquire success / 409 by other / 409 by self / selection-clear release / auto-renewal at 30s / renewal failure → error / unmount release), `SelectionFooter.test.tsx` extension (+7 — each of the 6 lock-line states + countdown prop update).
+- **Files touched**:
+  - `frontend/src/api/client.ts` (ApiError + body)
+  - `frontend/src/api/operations.ts` (4 lock helpers + unwrapper)
+  - `frontend/src/types/tee-sheet-locks.ts` (created)
+  - `frontend/src/features/tee-sheet/use-acquire-lock.ts` (created)
+  - `frontend/src/features/tee-sheet/use-acquire-lock.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/use-renew-lock.ts` (created)
+  - `frontend/src/features/tee-sheet/use-renew-lock.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/use-release-lock.ts` (created)
+  - `frontend/src/features/tee-sheet/use-release-lock.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/use-selection-lock.ts` (created)
+  - `frontend/src/features/tee-sheet/use-selection-lock.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.tsx` (state-driven lock line)
+  - `frontend/src/features/tee-sheet/components/SelectionFooter.test.tsx` (+7 tests)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (mount orchestrator + pass to footer)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`
+- **Outcome**: 520 frontend tests pass (was 495; +25). Lint: 0 errors (13 pre-existing warnings unrelated). Typecheck clean. No new dependencies; FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex colors in any new file.
+- **Decisions made**:
+  - **Selection drives the lock**. The existing Slice 4 selection state is the single source of truth — no parallel "lock state" lives outside the orchestrator. When selection changes (set → null, null → set, set → set), the hook releases the prior lock and acquires the new one.
+  - **Single page-level interval** (window.setInterval, 1000ms) inside a `useEffect` gated on `state.kind`. The interval is created when the orchestrator enters held-by-me/held-by-other and cleared on exit. Renewal threshold: 30 seconds (half the 60s server TTL).
+  - **409 typed, not thrown**. The acquire client helper returns `LockAcquireResult` as a discriminated union — `{kind: "lock"}` on 201 or `{kind: "conflict"}` on 409. The orchestrator decides whether 409 with `holder_user_id === currentUserId` means "reuse the existing lock" (held-by-me) or "another operator has it" (held-by-other). React Query's mutation `mutate` doesn't see 409 as an error; the hook resolves successfully with the conflict shape.
+  - **ApiError body extension** chosen over a parallel fetch wrapper. The smallest surgical change to surface structured 409 bodies; backwards-compatible (every existing caller continues to use `status` + `message` exactly as before).
+  - **Stale-call coordination via `activeSlotRef`**. Each per-call mutation callback compares the slot it was fired for against the ref's current value. Stale responses are ignored, and if a stale acquire succeeded for an abandoned slot, the orchestrator fires an immediate release. React Query's built-in mutation behavior preserves per-call callbacks correctly; the ref pattern is what makes the orchestrator's `state` only reflect the current selection.
+  - **Browser unload uses standard fetch** via React Query's mutation (not `navigator.sendBeacon`). The 60s server-side TTL handles the eventual cleanup if the in-flight DELETE doesn't reach the server during page-close.
+  - **Locks remain advisory**. Booking mutations (POST /api/golf/bookings, POST /move) still fire optimistically and the backend validates. The lock is a UI-coordination signal only.
+- **Follow-ups created**:
+  - Slice 9b — poll `GET /api/golf/tee-sheet/locks` and render the lock badge on other operators' tiles per Phase 8 annot #4.
+  - Slice 9c+ candidate — consider `navigator.sendBeacon` for the unmount release to maximise delivery during browser-close (would tighten the TTL-decay window).
+  - Future-phase real-time push (Yjs awareness) once the polling model is proven and a transport upgrade is on the roadmap.
+- **Notes**:
+  - The fake-timer test for auto-renewal needed two layers of awaiting (`Promise.resolve()` calls around `vi.advanceTimersByTime`) to flush the React Query microtask queue between ticks. Recorded here so future hooks with mixed timers + mutations follow the same idiom.
+  - The orchestrator stores the current lock in a `useRef` (not state) so the interval can read it without re-creating itself on every renewal. A separate `useState<now>` is updated by the ticker to force re-renders and drive the countdown — the hook returns `secondsRemaining` computed at render time from `lock.expires_at` + `now`.
+
+---
 ## Phase 10 — Slice 8.5: Backend tee-sheet lock primitive (2026-05-14)
 
 Backend-only mini-slice. Adds the optimistic-lock primitive that Slice 9a/9b will use for UI coordination on the tee-sheet surface. Locks are advisory — booking endpoints do not consult them; the existing capacity check on `POST /api/golf/bookings` remains the source of truth for placement. Locks are a signal so operators can see when another operator is editing a slot.

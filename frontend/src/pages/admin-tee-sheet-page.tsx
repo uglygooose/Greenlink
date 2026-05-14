@@ -39,6 +39,7 @@ import { useTeeSheetDayQuery } from "../features/tee-sheet/hooks";
 import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { useWaitlist } from "../features/tee-sheet/use-waitlist";
 import { useCreateWalkinBooking } from "../features/tee-sheet/use-create-walkin-booking";
+import { useSelectionLock } from "../features/tee-sheet/use-selection-lock";
 import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
 import type {
   CellOccupant,
@@ -248,6 +249,19 @@ export function AdminTeeSheetPage(): JSX.Element {
   // Slice 8a — DnD state + walk-in booking mutation. The drag controller
   // lives at the page level so WaitlistCard (source) and TeeRow (target)
   // can coordinate through one source of truth.
+  // Slice 9a — selection-driven optimistic lock orchestrator. Mounts at
+  // the page level so the same lifecycle that drives selection drives the
+  // lock acquire / renew / release. Locks are advisory; booking mutations
+  // (Slice 8A/8B) still fire unconditionally and the backend validates.
+  const currentUserId = bootstrap?.user?.id ?? null;
+  const selectionLock = useSelectionLock({
+    accessToken,
+    selectedClubId,
+    courseId,
+    selectedSlotKey,
+    currentUserId,
+  });
+
   const dragController = useDragState();
   const createWalkinBooking = useCreateWalkinBooking({
     accessToken,
@@ -491,7 +505,13 @@ export function AdminTeeSheetPage(): JSX.Element {
           optimisticallyRemovedEntryIds={optimisticallyRemovedEntryIds}
         />
       </div>
-      <SelectionFooter selectedSlot={selectedSlot} onOpenShortcuts={openShortcuts} />
+      <SelectionFooter
+        selectedSlot={selectedSlot}
+        onOpenShortcuts={openShortcuts}
+        lockState={selectionLock.state}
+        lockSecondsRemaining={selectionLock.secondsRemaining}
+        lockHolderDisplayName={selectionLock.holderDisplayName}
+      />
       {pricePopover ? (
         <PricePopover
           anchorEl={pricePopover.anchorEl}

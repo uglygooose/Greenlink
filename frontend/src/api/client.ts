@@ -8,10 +8,16 @@ import {
 
 export class ApiError extends Error {
   status: number;
+  // Phase 10 / Slice 9a — structured response body preserved so callers
+  // that need the parsed shape (e.g. lock conflict detail on 409) can
+  // read it without redoing the fetch. Other callers continue to use
+  // `status` + `message` exactly as before.
+  body: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: unknown = null) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -165,7 +171,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}, 
       throw new ApiError(401, "Session expired. Please sign in again.");
     }
     const body = (await response.json().catch(() => null)) as ErrorBody | null;
-    throw new ApiError(response.status, extractErrorMessage(body));
+    throw new ApiError(response.status, extractErrorMessage(body), body);
   }
 
   if (response.status === 204) {

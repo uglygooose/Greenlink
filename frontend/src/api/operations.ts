@@ -49,6 +49,14 @@ import type {
   TeeInput,
 } from "../types/operations";
 import type { TeeSheetDayResponse } from "../types/tee-sheet";
+import type {
+  TeeSheetLockAcquireRequest,
+  TeeSheetLockConflict409Body,
+  TeeSheetLockConflictDetail,
+  TeeSheetLockListResponse,
+  TeeSheetLockResponse,
+} from "../types/tee-sheet-locks";
+import { ApiError } from "./client";
 
 interface AuthenticatedOptions {
   accessToken: string;
@@ -563,4 +571,116 @@ export function postOrderCharge(
     selectedClubId,
     body: JSON.stringify({}),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10 / Slice 9a — tee-sheet optimistic locks (holder side).
+// The acquire endpoint returns 409 with a structured TeeSheetLockConflictDetail
+// when the slot is already held; the client unwraps it into a typed result
+// so the orchestrator hook can distinguish "held by me" from "held by other".
+// ---------------------------------------------------------------------------
+
+export type LockAcquireResult =
+  | { kind: "lock"; lock: TeeSheetLockResponse }
+  | { kind: "conflict"; existing_lock: TeeSheetLockResponse; message: string };
+
+export async function acquireTeeSheetLock(
+  payload: TeeSheetLockAcquireRequest,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<LockAcquireResult> {
+  try {
+    const lock = await apiRequest<TeeSheetLockResponse>("/api/golf/tee-sheet/locks", {
+      method: "POST",
+      accessToken,
+      selectedClubId,
+      body: JSON.stringify(payload),
+    });
+    return { kind: "lock", lock };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      const detail = unwrapLockConflict(err.body);
+      if (detail) {
+        return { kind: "conflict", existing_lock: detail.existing_lock, message: detail.message };
+      }
+    }
+    throw err;
+  }
+}
+
+export type LockRenewResult =
+  | { kind: "lock"; lock: TeeSheetLockResponse }
+  | { kind: "conflict"; existing_lock: TeeSheetLockResponse | null; message: string };
+
+export async function renewTeeSheetLock(
+  lockId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<LockRenewResult> {
+  try {
+    const lock = await apiRequest<TeeSheetLockResponse>(
+      `/api/golf/tee-sheet/locks/${lockId}/renew`,
+      {
+        method: "POST",
+        accessToken,
+        selectedClubId,
+      },
+    );
+    return { kind: "lock", lock };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      const detail = unwrapLockConflict(err.body);
+      return {
+        kind: "conflict",
+        existing_lock: detail?.existing_lock ?? null,
+        message: detail?.message ?? err.message,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function releaseTeeSheetLock(
+  lockId: string,
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<void> {
+  try {
+    await apiRequest<void>(`/api/golf/tee-sheet/locks/${lockId}`, {
+      method: "DELETE",
+      accessToken,
+      selectedClubId,
+    });
+  } catch {
+    // Release failures are non-recoverable per slice spec — the lock
+    // decays via the 60s server-side TTL. Swallow.
+  }
+}
+
+export function listTeeSheetLocks(
+  params: { courseId: string; date: string },
+  { accessToken, selectedClubId }: AuthenticatedOptions,
+): Promise<TeeSheetLockListResponse> {
+  const search = new URLSearchParams({ course_id: params.courseId, date: params.date });
+  return apiRequest<TeeSheetLockListResponse>(`/api/golf/tee-sheet/locks?${search.toString()}`, {
+    method: "GET",
+    accessToken,
+    selectedClubId,
+  });
+}
+
+// FastAPI's HTTPException(detail=...) emits `{ detail: ... }`. The
+// generic ErrorBody type in client.ts knows `detail` can be a string or
+// validation-error array, but Slice 8.5 returns a structured object on
+// 409. Narrow to the lock-conflict shape if present.
+function unwrapLockConflict(body: unknown): TeeSheetLockConflictDetail | null {
+  if (typeof body !== "object" || body === null) return null;
+  const wrapped = body as Partial<TeeSheetLockConflict409Body>;
+  if (!wrapped.detail || typeof wrapped.detail !== "object") return null;
+  const detail = wrapped.detail as Partial<TeeSheetLockConflictDetail>;
+  if (
+    !detail.existing_lock ||
+    typeof detail.existing_lock !== "object" ||
+    typeof detail.message !== "string"
+  ) {
+    return null;
+  }
+  return detail as TeeSheetLockConflictDetail;
 }
