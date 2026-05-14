@@ -18,6 +18,45 @@ Each entry uses this format:
 ```
 
 ---
+## Phase 10 — Slice 9b: Lock visibility (other-operator side) (2026-05-14)
+
+Frontend slice. Completes the holder + observer pair: Slice 9a renders the operator's own lock in the selection footer; Slice 9b polls `GET /api/golf/tee-sheet/locks` every 15s and renders a non-interactive lock badge on rows held by OTHER operators. The badge sits in the action column, replacing the more_vert button per Phase 8 Annot #4 ("their tile carries a small lock badge in place of the chevron"). Locks remain advisory — booking mutations still fire.
+
+- **Scope**:
+  - New `use-tee-sheet-locks.ts` — React Query polling hook calling `GET /api/golf/tee-sheet/locks?course_id&date`. Key shape `["tee-sheet-locks", clubId, courseId, date]`. `refetchInterval: 15_000` (half the 60s lock TTL). `refetchIntervalInBackground: false` (pauses when the tab is backgrounded). `enabled` gated on (`accessToken && clubId && courseId && date`). `staleTime` matches refetch interval so consumers don't trigger extra fetches between ticks.
+  - New `lock-utils.ts` — pure `buildLocksBySlot(locks, currentUserId)` indexes the polled list by `slot_datetime`, filtering out the current user's locks. Slice 9a's holder-side footer already renders the operator's own lock; rendering a row badge for the same lock would be redundant.
+  - `components/TeeRow.tsx` extended — new `otherLock?: TeeSheetLockResponse | null` prop. The action column renders the lock badge (non-interactive `<span>` with the lock icon at 12px, atrisk-toned, on an atrisk 8% tinted background, radius `--gl-radius-sm`, 22×22 inside the existing 32px column) when `otherLock` is set; falls back to the existing more_vert button otherwise. `aria-label="Slot held by {holder_display_name}"`; `title="{holder_display_name} · {remaining_seconds}s remaining"` for hover-reveal. The badge is non-interactive — no popover; Phase 8 doesn't design one.
+  - `pages/admin-tee-sheet-page.tsx` — mounts `useTeeSheetLocks`, derives the per-slot Map via `buildLocksBySlot` (memoised on `[locks, currentUserId]`), passes `locksBySlot.get(slot.slot_datetime) ?? null` to each `<TeeRow>` as `otherLock`.
+  - Drop-target behaviour unchanged: rows with `otherLock` set are STILL drop targets. Locks are advisory; the backend handles whatever placement validation matters (capacity, hard-blocks). The badge is informational.
+  - 12 new tests: `lock-utils.test.ts` (4 — empty input, own-lock filtering, slot indexing, null user behaviour), `use-tee-sheet-locks.test.tsx` (5 — refetch interval constant, query key composition, two disabled cases, enabled fetch path), `TeeRow.test.tsx` extension (+3 — more_vert when no lock, badge when lock present, row remains drop target with lock set).
+- **Files touched**:
+  - `frontend/src/features/tee-sheet/use-tee-sheet-locks.ts` (created)
+  - `frontend/src/features/tee-sheet/use-tee-sheet-locks.test.tsx` (created)
+  - `frontend/src/features/tee-sheet/lock-utils.ts` (created)
+  - `frontend/src/features/tee-sheet/lock-utils.test.ts` (created)
+  - `frontend/src/features/tee-sheet/components/TeeRow.tsx` (otherLock prop + badge render)
+  - `frontend/src/features/tee-sheet/components/TeeRow.test.tsx` (+3 tests)
+  - `frontend/src/pages/admin-tee-sheet-page.tsx` (mount poll, derive map, pass otherLock)
+  - `frontend/src/features/tee-sheet/use-acquire-lock.test.tsx` (typecheck narrowing fix on the discriminated-union conflict result)
+  - `docs/PHASE_LOG.md` (this entry), `docs/LIVE_STATE.md`
+- **Outcome**: 532 frontend tests pass (was 520; +12). Lint: 0 errors (13 pre-existing warnings unrelated). Typecheck clean. No new dependencies; FROZEN count in `frontend/src/features/tee-sheet/` unchanged at 13. No new hex colors in any new file.
+- **Decisions made**:
+  - **15-second polling cadence** at v1. Half the 60s lock TTL → operators see at most 15s lag between another operator's release and the badge disappearing. Tunable later (single constant).
+  - **Polling pauses when backgrounded** (React Query's `refetchIntervalInBackground: false`). The lock list only matters when the operator is actively looking at the tee sheet.
+  - **Page-level query, not per-row**. One fetch services every row's badge via the per-slot Map.
+  - **Self-lock filtering at the page boundary**. The page filters `holder_user_id === currentUserId` before passing the map down. TeeRow stays unaware of the current user; it just renders whatever `otherLock` it receives.
+  - **Badge is non-interactive**. Phase 8 doesn't design a popover for the badge; the `title` attribute is the fallback affordance. Click-through to a holder-detail popover is a future-phase candidate.
+  - **No client-side countdown on the badge**. Unlike Slice 9a's footer (per-second countdown for your own lock), the badge shows `remaining_seconds` exactly as the backend returned it. The next poll refreshes it. Visual hierarchy is intentional: your own lock gets a precise countdown; other operators' locks get a coarser staleness window.
+  - **Slice 9a and Slice 9b are independent observers**. Both watch the same backend data via separate paths; they sync by the 15s poll cadence, not by frontend coordination. When the operator selects a slot another operator holds, both surfaces show the same `holder_display_name` and approximately the same `remaining_seconds` (within poll-jitter tolerance).
+  - **Drop targets unchanged**. Locks remain advisory; rows with `otherLock` set are still drop targets. The backend handles validation if it matters.
+- **Follow-ups created**:
+  - Future-phase real-time push (Yjs awareness) once polling is proven and a transport upgrade is on the roadmap.
+  - Slice 9c+ candidate — popover on the lock badge (when Phase 8 designs the interaction shape).
+- **Notes**:
+  - The Slice 9a `use-acquire-lock.test.tsx` had a latent typecheck narrowing issue: `outcome!` on a `LockAcquireResult | null` doesn't preserve discriminated narrowing across multiple non-null assertions. Fixed by capturing into a typed const (`const settled = outcome as unknown as LockAcquireResult`) and narrowing through that. Recorded here so future tests with `let var: Union | null` + `mutateAsync` follow the same idiom.
+  - The `_serialize_lock` helper on the backend already computes `remaining_seconds` at serialisation time (Slice 8.5). The frontend uses that value as-received in the badge tooltip — no client-side recomputation.
+
+---
 ## Phase 10 — Slice 9a: Optimistic lock (holder side) (2026-05-14)
 
 Frontend slice. Closes the holder-side half of the v1 concurrency gap documented in DRIFT_LOG 2026-05-14 (Slice 8A). Selection drives the lock lifecycle: when the operator selects a tee row, the page acquires the slot lock; when selection clears or shifts, the page releases. A single page-level setInterval ticks the countdown every second and auto-renews at 30s remaining. Other-operator visibility (Slice 9b) is out of scope — Slice 9a only renders the holder-side state in the SelectionFooter.

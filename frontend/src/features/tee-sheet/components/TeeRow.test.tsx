@@ -10,6 +10,22 @@ import {
 import { OPTIMISTIC_BOOKING_ID_PREFIX } from "../use-create-walkin-booking";
 import type { WaitlistEntry } from "../use-waitlist";
 import type { TeeSheetSlotView } from "../../../types/tee-sheet";
+import type { TeeSheetLockResponse } from "../../../types/tee-sheet-locks";
+
+function makeOtherLock(overrides: Partial<TeeSheetLockResponse> = {}): TeeSheetLockResponse {
+  return {
+    id: "lock-other-1",
+    club_id: "club-1",
+    course_id: "course-1",
+    slot_datetime: "2026-05-12T06:30:00+02:00",
+    holder_user_id: "user-2",
+    holder_display_name: "Mokoena",
+    acquired_at: "2026-05-12T06:29:00+02:00",
+    expires_at: "2026-05-12T06:30:00+02:00",
+    remaining_seconds: 38,
+    ...overrides,
+  };
+}
 
 function makeWaitlistEntry(overrides: Partial<WaitlistEntry> = {}): WaitlistEntry {
   return {
@@ -671,6 +687,53 @@ describe("TeeRow drop targets (Slice 8a)", () => {
       participant_id: "p-A",
       booking_status: "reserved",
     });
+  });
+
+  // ---------- Slice 9b lock badge ----------
+
+  test("otherLock null → action column renders the more_vert button (unchanged)", () => {
+    render(<TeeRow slot={slot()} />);
+    expect(screen.getByTestId("row-actions-button")).toBeInTheDocument();
+    expect(screen.queryByTestId("row-other-lock-badge")).toBeNull();
+  });
+
+  test("otherLock set → action column renders the lock badge in place of more_vert", () => {
+    render(<TeeRow slot={slot()} otherLock={makeOtherLock()} />);
+    const badge = screen.getByTestId("row-other-lock-badge");
+    expect(badge).toBeInTheDocument();
+    expect(screen.queryByTestId("row-actions-button")).toBeNull();
+    expect(badge.getAttribute("aria-label")).toBe("Slot held by Mokoena");
+    expect(badge.getAttribute("title")).toBe("Mokoena · 38s remaining");
+    expect(badge.getAttribute("data-holder-user-id")).toBe("user-2");
+  });
+
+  test("row remains a drop target with otherLock set (locks are advisory)", () => {
+    const onDropOnSlot = vi.fn();
+    const payload: ParticipantDragPayload = {
+      kind: "participant",
+      booking_id: "booking-z",
+      participant_id: "p-Z",
+      display_name: "Z",
+      party_size: 1,
+      source_slot_datetime: "2026-05-12T06:38:00+02:00",
+      source_row_key: "06:38",
+      source_cell_index: 0,
+    };
+    render(
+      <TeeRow
+        slot={slot()}
+        otherLock={makeOtherLock()}
+        dragPayload={payload}
+        onDropOnSlot={onDropOnSlot}
+      />,
+    );
+    expect(screen.getAllByTestId("drop-target-eligible").length).toBeGreaterThan(0);
+    fireEvent.drop(screen.getAllByTestId("drop-target-eligible")[0], {
+      dataTransfer: {
+        getData: (type: string) => (type === DRAG_PAYLOAD_MIME ? JSON.stringify(payload) : ""),
+      },
+    });
+    expect(onDropOnSlot).toHaveBeenCalledTimes(1);
   });
 
   // Slice 8a test name preserved — moves down here in the file.

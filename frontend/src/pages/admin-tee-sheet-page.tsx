@@ -40,6 +40,8 @@ import { usePriceBreakdown } from "../features/tee-sheet/use-price-breakdown";
 import { useWaitlist } from "../features/tee-sheet/use-waitlist";
 import { useCreateWalkinBooking } from "../features/tee-sheet/use-create-walkin-booking";
 import { useSelectionLock } from "../features/tee-sheet/use-selection-lock";
+import { useTeeSheetLocks } from "../features/tee-sheet/use-tee-sheet-locks";
+import { buildLocksBySlot } from "../features/tee-sheet/lock-utils";
 import { useDragState } from "../features/tee-sheet/dnd/use-drag-state";
 import type {
   CellOccupant,
@@ -261,6 +263,21 @@ export function AdminTeeSheetPage(): JSX.Element {
     selectedSlotKey,
     currentUserId,
   });
+
+  // Slice 9b — visibility of OTHER operators' locks. Polled every 15s
+  // while the page is mounted (half the 60s lock TTL). Independent of
+  // the Slice 9a holder-side state machine; both observe the same
+  // backend data via separate paths.
+  const teeSheetLocksQuery = useTeeSheetLocks({
+    accessToken,
+    clubId: selectedClubId,
+    courseId,
+    date: selectedDate,
+  });
+  const locksBySlot = useMemo(
+    () => buildLocksBySlot(teeSheetLocksQuery.data?.locks ?? [], currentUserId),
+    [teeSheetLocksQuery.data, currentUserId],
+  );
 
   const dragController = useDragState();
   const createWalkinBooking = useCreateWalkinBooking({
@@ -491,6 +508,7 @@ export function AdminTeeSheetPage(): JSX.Element {
                   onDropOnSlot={handleDropOnSlot}
                   onParticipantDragStart={handleParticipantDragStart}
                   onParticipantDragEnd={dragController.endDrag}
+                  otherLock={locksBySlot.get(slot.slot_datetime) ?? null}
                 />
               ))
             )}

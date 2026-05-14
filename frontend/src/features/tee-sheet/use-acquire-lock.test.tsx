@@ -83,9 +83,10 @@ describe("useAcquireLock", () => {
       });
     });
     expect(outcome).not.toBeNull();
-    expect(outcome!.kind).toBe("conflict");
-    if (outcome!.kind === "conflict") {
-      expect(outcome!.existing_lock.holder_user_id).toBe("user-2");
+    const settled = outcome as unknown as LockAcquireResult;
+    expect(settled.kind).toBe("conflict");
+    if (settled.kind === "conflict") {
+      expect(settled.existing_lock.holder_user_id).toBe("user-2");
     }
   });
 

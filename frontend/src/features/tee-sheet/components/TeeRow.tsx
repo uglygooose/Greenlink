@@ -20,6 +20,7 @@ import type { CSSProperties, DragEvent } from "react";
 import { Icon } from "../../../components/ui/Icon";
 import type { BookingStatus } from "../../../types/bookings";
 import type { TeeSheetSlotDisplayStatus, TeeSheetSlotView } from "../../../types/tee-sheet";
+import type { TeeSheetLockResponse } from "../../../types/tee-sheet-locks";
 import {
   DRAG_PAYLOAD_MIME,
   type CellOccupant,
@@ -199,6 +200,11 @@ export interface TeeRowProps {
   // onParticipantDragStart, and clears via onParticipantDragEnd.
   onParticipantDragStart?: (payload: ParticipantDragPayload) => void;
   onParticipantDragEnd?: () => void;
+  // Slice 9b — when another operator holds a lock on this slot, the
+  // action column renders a non-interactive lock badge in place of the
+  // more_vert button. Locks are advisory; the row remains a drop
+  // target regardless.
+  otherLock?: TeeSheetLockResponse | null;
 }
 
 export function TeeRow({
@@ -214,6 +220,7 @@ export function TeeRow({
   onDropOnSlot,
   onParticipantDragStart,
   onParticipantDragEnd,
+  otherLock = null,
 }: TeeRowProps): JSX.Element | null {
   const state = rowStateFromDisplayStatus(slot.display_status);
 
@@ -434,29 +441,63 @@ export function TeeRow({
       >
         <span className="gl-mono gl-tabular">{price}</span>
       </button>
-      {/* more_vert button: stopPropagation no-op stub. Phase 8 doesn't
-          specify the menu contents (recon B.4-14 unresolved). Do not invent. */}
-      <button
-        type="button"
-        aria-label={`Row actions for ${timeKey(slot.local_time)}`}
-        data-testid="row-actions-button"
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-        style={{
-          width: 32,
-          borderLeft: "1px solid var(--gl-border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-        }}
-      >
-        <Icon name="more_vert" size={14} color="var(--gl-text-secondary)" />
-      </button>
+      {otherLock ? (
+        // Slice 9b — Annot #4: when another operator's lock is active,
+        // their tile carries a small lock badge in place of the chevron.
+        // Non-interactive; the title attribute carries the holder name
+        // + remaining seconds for hover-reveal.
+        <span
+          aria-label={`Slot held by ${otherLock.holder_display_name}`}
+          title={`${otherLock.holder_display_name} · ${otherLock.remaining_seconds}s remaining`}
+          data-testid="row-other-lock-badge"
+          data-holder-user-id={otherLock.holder_user_id}
+          style={{
+            width: 32,
+            borderLeft: "1px solid var(--gl-border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span
+            style={{
+              width: 22,
+              height: 22,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "var(--gl-radius-sm)",
+              background: "color-mix(in oklab, var(--gl-state-atrisk) 8%, transparent)",
+            }}
+          >
+            <Icon name="lock" size={12} color="var(--gl-state-atrisk)" />
+          </span>
+        </span>
+      ) : (
+        /* more_vert button: stopPropagation no-op stub. Phase 8 doesn't
+           specify the menu contents (recon B.4-14 unresolved). Do not invent. */
+        <button
+          type="button"
+          aria-label={`Row actions for ${timeKey(slot.local_time)}`}
+          data-testid="row-actions-button"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          style={{
+            width: 32,
+            borderLeft: "1px solid var(--gl-border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          <Icon name="more_vert" size={14} color="var(--gl-text-secondary)" />
+        </button>
+      )}
 
       {/* coalesceWithPrevious passthrough acknowledgement — purely diagnostic, drives nothing visible */}
       <span style={{ display: "none" }} data-coalesce={coalesceWithPrevious ? "true" : "false"} />
